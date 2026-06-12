@@ -6,23 +6,24 @@ p1_count: 1
 timestamp: 2026-06-03T15-50-03Z
 slug: website-index-md
 ---
+
 # Critique: website/index.md (Aethon docs landing)
 
 ## Design Health Score
 
-| # | Heuristic | Score | Key Issue |
-|---|-----------|-------|-----------|
-| 1 | Visibility of System Status | 3 | Static page; `lastUpdated` + version dropdown give light status. No strong "you are here" beyond nav. |
-| 2 | Match System / Real World | 4 | Mythology framing + plain mechanism nouns map to the audience's mental model well. |
-| 3 | User Control and Freedom | 4 | n/a for static landing — nav, back, search all present; nothing traps the user. |
-| 4 | Consistency and Standards | 3 | Em dashes throughout violate the project's own copy rule; "three palettes" undersell vs. seven shipped. |
-| 5 | Error Prevention | 4 | n/a for static landing — no forms to mis-fill. |
-| 6 | Recognition Rather Than Recall | 3 | Three action buttons compete with no visual ranking between the two alts. |
-| 7 | Flexibility and Efficiency | 3 | Local search + version menu help experts; no copy-paste install command above the fold. |
-| 8 | Aesthetic and Minimalist Design | 2 | Gradient text + 4 identical cards + glow blob = the template aesthetic the brief explicitly bans. |
-| 9 | Error Recovery | 4 | n/a for static landing — no error states. |
-| 10 | Help and Documentation | 4 | This *is* docs; clear paths to guide/reference, GitHub, troubleshooting. |
-| **Total** | | **34/40** | **Good** (functional and credible, but visually template-bound) |
+| #         | Heuristic                       | Score     | Key Issue                                                                                               |
+| --------- | ------------------------------- | --------- | ------------------------------------------------------------------------------------------------------- |
+| 1         | Visibility of System Status     | 3         | Static page; `lastUpdated` + version dropdown give light status. No strong "you are here" beyond nav.   |
+| 2         | Match System / Real World       | 4         | Mythology framing + plain mechanism nouns map to the audience's mental model well.                      |
+| 3         | User Control and Freedom        | 4         | n/a for static landing — nav, back, search all present; nothing traps the user.                         |
+| 4         | Consistency and Standards       | 3         | Em dashes throughout violate the project's own copy rule; "three palettes" undersell vs. seven shipped. |
+| 5         | Error Prevention                | 4         | n/a for static landing — no forms to mis-fill.                                                          |
+| 6         | Recognition Rather Than Recall  | 3         | Three action buttons compete with no visual ranking between the two alts.                               |
+| 7         | Flexibility and Efficiency      | 3         | Local search + version menu help experts; no copy-paste install command above the fold.                 |
+| 8         | Aesthetic and Minimalist Design | 2         | Gradient text + 4 identical cards + glow blob = the template aesthetic the brief explicitly bans.       |
+| 9         | Error Recovery                  | 4         | n/a for static landing — no error states.                                                               |
+| 10        | Help and Documentation          | 4         | This _is_ docs; clear paths to guide/reference, GitHub, troubleshooting.                                |
+| **Total** |                                 | **34/40** | **Good** (functional and credible, but visually template-bound)                                         |
 
 ## Anti-Patterns Verdict
 
@@ -36,7 +37,7 @@ slug: website-index-md
 
 ## Overall Impression
 
-The token system is genuinely good and on-brand; the *composition* is template-default. The single biggest opportunity: the product's entire thesis is "the agent decides what you see" (layout-as-payload), yet the landing page is the most templated layout VitePress ships. The hero asserts the thesis in text instead of showing it, and the page's strongest moment (the Helios mythology paragraph + the real app screenshot) sits below the fold.
+The token system is genuinely good and on-brand; the _composition_ is template-default. The single biggest opportunity: the product's entire thesis is "the agent decides what you see" (layout-as-payload), yet the landing page is the most templated layout VitePress ships. The hero asserts the thesis in text instead of showing it, and the page's strongest moment (the Helios mythology paragraph + the real app screenshot) sits below the fold.
 
 ## What's Working
 
@@ -47,26 +48,31 @@ The token system is genuinely good and on-brand; the *composition* is template-d
 ## Priority Issues
 
 **[P0] Gradient text on the hero name — absolute ban, and the project's own.**
+
 - Why it matters: `--vp-home-hero-name-color: transparent` + a linear-gradient background (style.css:57-62, 141-146) renders "Aethon" as gradient-filled text in both schemes. Gradient text is an Impeccable absolute ban and the loudest "AI made this" tell; DESIGN.md §6 lists it as a Don't and flags this exact hero as "a known exception to revisit." It is the first thing on the page.
 - Fix: Kill the gradient — set the hero name to solid `--vp-c-brand-1` (or ink with the accent reserved for emphasis via weight/size). ~4-line CSS deletion.
 - Suggested command: `/impeccable quieter`
 
 **[P1] The composition is the VitePress default — it triggers the category reflex.**
+
 - Why it matters: "Generic VitePress default" is PRODUCT.md's #1 anti-reference. Tokens are reskinned but the shape is unmistakably stock (hero + 3-button row + 4 identical cards + glow blob). A developer evaluating the project may read the docs as low-effort and infer the app is too. The brand's pitch is a layout-as-payload product, yet the landing is the most templated layout possible.
 - Fix: Break the four-up grid into a deliberate, asymmetric arrangement (one large "Agent-rendered UI" feature paired with the screenshot, supporting features in a secondary row), or move the screenshot above the fold so it shows the thesis. At minimum, vary card sizing/weight so it stops reading as a generated grid.
 - Suggested command: `/impeccable layout`
 
 **[P2] Three co-equal CTAs; no single primary.**
+
 - Why it matters: "Get started" (brand) sits beside "Quick start" and "View on GitHub," both styled identically as `alt`. The One Flame Rule wants exactly one brass primary; two identical alts split the decision and dilute the brass action. The terminal-native evaluator wants one obvious next step.
 - Fix: Keep one brass primary ("Get started"), demote GitHub to a single ghost/text link, fold "Quick start" into the guide or make it visibly tertiary. Consider replacing one button with a copyable install one-liner.
 - Suggested command: `/impeccable layout`
 
 **[P3] Em dashes throughout the copy — violates the Impeccable copy rule.**
+
 - Why it matters: Em dashes in every feature detail and both prose blocks ("The interface is not a fixed IDE — it is a canvas…", "Three palettes ship in the box — Ember, Paper, Æther.", "still settling — pin the release…"). A flagged AI-cadence tell; combined with the gradient text it compounds the "generated" read.
 - Fix: Recast as periods, colons, or two sentences. "The interface is not a fixed IDE. It's a canvas the agent populates."
 - Suggested command: `/impeccable clarify`
 
 **[P3] Factual drift: "Three palettes ship" contradicts the seven shipped themes.**
+
 - Why it matters: index.md:41 says "Three palettes ship in the box — Ember, Paper, Æther." DESIGN.md §2 "The Seven-Theme Contract" documents seven shipped themes (adds Brink, Daylight, Mist, Nocturne), confirmed against `src/styles/themes.css`. A factual undersell the project's own design doc contradicts; drift like this erodes the "this project knows what it is" credibility PRODUCT.md is chasing.
 - Fix: "Seven themes ship in the box — Ember and Paper lead, with Æther, Brink, Daylight, Mist, and Nocturne." Reconcile against `themes.css` as source of truth.
 - Suggested command: `/impeccable clarify`

@@ -7,7 +7,7 @@ brand
 > Aethon has two design surfaces. The **primary** surface this file anchors to
 > is the **documentation website** (`website/`, VitePress) — a brand surface
 > where the design IS the product. The **secondary** surface is the desktop
-> app UI (`src/`), a *product* register where design serves an agent-driven
+> app UI (`src/`), a _product_ register where design serves an agent-driven
 > workflow. Both draw from one shared identity and the same token system
 > (Ember / Paper / Æther), so brand decisions here flow to both; per-task work
 > on the app can override the register to `product`.
@@ -47,7 +47,7 @@ where it counts — the literary, mythological framing (Helios, the sun chariot,
 "the blazing one") gives the brand its heat and its name — but the warmth serves
 clarity, not decoration. Honest about being early: the docs state pre-1.0
 status and breaking-change risk plainly rather than overselling. The emotional
-goal is *earned confidence* — a reader should feel the project is opinionated,
+goal is _earned confidence_ — a reader should feel the project is opinionated,
 deliberate, and worth their time, illuminated rather than dazzled.
 
 ## Anti-references

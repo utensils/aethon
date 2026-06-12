@@ -126,30 +126,101 @@
       }
     },
     "typographyMeta": {
-      "display": { "displayName": "Display", "purpose": "In-app hero numerals and splash titles; the docs landing hero scales the same Geist family up on a fluid clamp." },
-      "title": { "displayName": "Title", "purpose": "Section headings, panel titles, tab labels." },
-      "body": { "displayName": "Body", "purpose": "Primary running text and chat; cap measure at 65-75ch in prose." },
-      "caption": { "displayName": "Caption", "purpose": "Helper text, metadata, timestamps." },
-      "code": { "displayName": "Code", "purpose": "Inline + block code, terminal lines, agent tool I/O. The only permitted second family (Geist Mono)." }
+      "display": {
+        "displayName": "Display",
+        "purpose": "In-app hero numerals and splash titles; the docs landing hero scales the same Geist family up on a fluid clamp."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "Section headings, panel titles, tab labels."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Primary running text and chat; cap measure at 65-75ch in prose."
+      },
+      "caption": {
+        "displayName": "Caption",
+        "purpose": "Helper text, metadata, timestamps."
+      },
+      "code": {
+        "displayName": "Code",
+        "purpose": "Inline + block code, terminal lines, agent tool I/O. The only permitted second family (Geist Mono)."
+      }
     },
     "shadows": [
-      { "name": "shadow-1", "value": "0 1px 2px var(--elev-1-color)", "purpose": "Cards, inline chips. Tight hugging shadow. Color tint is per-theme." },
-      { "name": "shadow-2", "value": "0 4px 12px var(--elev-2-color)", "purpose": "Agent messages, sidebars, settled panels; default card shadow in dark themes." },
-      { "name": "shadow-3", "value": "0 12px 32px var(--elev-3-color)", "purpose": "Popovers, dropdowns." },
-      { "name": "shadow-4", "value": "0 20px 56px var(--elev-4-color)", "purpose": "Command palette, settings overlay; also the overlay shadow." },
-      { "name": "shadow-5", "value": "0 32px 80px var(--elev-5-color)", "purpose": "Toasts and raised modals. Most dramatic." },
-      { "name": "inner-highlight", "value": "inset 0 1px 0 rgba(255,180,120,0.06)", "purpose": "Top-edge sheen on elevated panels (per-theme); reads as ambient light catching the edge." }
+      {
+        "name": "shadow-1",
+        "value": "0 1px 2px var(--elev-1-color)",
+        "purpose": "Cards, inline chips. Tight hugging shadow. Color tint is per-theme."
+      },
+      {
+        "name": "shadow-2",
+        "value": "0 4px 12px var(--elev-2-color)",
+        "purpose": "Agent messages, sidebars, settled panels; default card shadow in dark themes."
+      },
+      {
+        "name": "shadow-3",
+        "value": "0 12px 32px var(--elev-3-color)",
+        "purpose": "Popovers, dropdowns."
+      },
+      {
+        "name": "shadow-4",
+        "value": "0 20px 56px var(--elev-4-color)",
+        "purpose": "Command palette, settings overlay; also the overlay shadow."
+      },
+      {
+        "name": "shadow-5",
+        "value": "0 32px 80px var(--elev-5-color)",
+        "purpose": "Toasts and raised modals. Most dramatic."
+      },
+      {
+        "name": "inner-highlight",
+        "value": "inset 0 1px 0 rgba(255,180,120,0.06)",
+        "purpose": "Top-edge sheen on elevated panels (per-theme); reads as ambient light catching the edge."
+      }
     ],
     "motion": [
-      { "name": "motion-fast", "value": "120ms", "purpose": "Hover/active state changes, button feedback." },
-      { "name": "motion-base", "value": "160ms", "purpose": "Default state transitions." },
+      {
+        "name": "motion-fast",
+        "value": "120ms",
+        "purpose": "Hover/active state changes, button feedback."
+      },
+      {
+        "name": "motion-base",
+        "value": "160ms",
+        "purpose": "Default state transitions."
+      },
       { "name": "motion-slow", "value": "240ms", "purpose": "Larger reveals." },
-      { "name": "motion-panel", "value": "300ms", "purpose": "Drawer slides, panel reflow." },
-      { "name": "ease-out", "value": "cubic-bezier(0.2, 0.7, 0.2, 1)", "purpose": "Default ease-out." },
-      { "name": "ease-out-strong", "value": "cubic-bezier(0.16, 1, 0.3, 1)", "purpose": "Decisive panel/drawer motion." },
-      { "name": "ease-spring", "value": "cubic-bezier(0.34, 1.56, 0.64, 1)", "purpose": "Springy overshoot for toasts and popovers entering." },
-      { "name": "ease-emphasis", "value": "cubic-bezier(0.2, 0, 0, 1)", "purpose": "Emphasis curve for layout shifts that should feel decisive." },
-      { "name": "reduced-motion", "value": "fast/base/panel -> 0ms, slow -> 60ms", "purpose": "prefers-reduced-motion collapses motion tokens and freezes signature spinners/glows." }
+      {
+        "name": "motion-panel",
+        "value": "300ms",
+        "purpose": "Drawer slides, panel reflow."
+      },
+      {
+        "name": "ease-out",
+        "value": "cubic-bezier(0.2, 0.7, 0.2, 1)",
+        "purpose": "Default ease-out."
+      },
+      {
+        "name": "ease-out-strong",
+        "value": "cubic-bezier(0.16, 1, 0.3, 1)",
+        "purpose": "Decisive panel/drawer motion."
+      },
+      {
+        "name": "ease-spring",
+        "value": "cubic-bezier(0.34, 1.56, 0.64, 1)",
+        "purpose": "Springy overshoot for toasts and popovers entering."
+      },
+      {
+        "name": "ease-emphasis",
+        "value": "cubic-bezier(0.2, 0, 0, 1)",
+        "purpose": "Emphasis curve for layout shifts that should feel decisive."
+      },
+      {
+        "name": "reduced-motion",
+        "value": "fast/base/panel -> 0ms, slow -> 60ms",
+        "purpose": "prefers-reduced-motion collapses motion tokens and freezes signature spinners/glows."
+      }
     ],
     "breakpoints": [
       { "name": "vp-mobile", "value": "640px" },
@@ -218,13 +289,41 @@
       "Seven shipped themes from one token contract, light and dark as equals."
     ],
     "rules": [
-      { "name": "The One Flame Rule", "body": "The accent marks at most one primary action per view. If two things on screen are both brass, neither reads as the thing to do next. Demote one to ghost or text.", "section": "colors" },
-      { "name": "The Warm-Black Rule", "body": "Dark grounds are warm near-black (hue pulled toward the accent), never #000 and never blue-gray-neutral. Light grounds are warm or cool near-white per theme, never the cream/sand/parchment band. The ground's temperature always relates to the theme's accent.", "section": "colors" },
-      { "name": "The Seven-Theme Contract", "body": "The palette is a token contract filled by seven shipped themes (Ember, Paper, Aether, Brink, Daylight, Mist, Nocturne). Any new surface must read correctly in all of them by consuming tokens, never hardcoded hex.", "section": "colors" },
-      { "name": "The One-Family Rule", "body": "Geist does display and body; do not introduce a second display face for personality. Personality comes from weight, size, and the brass accent. Mono is the only permitted second family, and only for literal machine text.", "section": "typography" },
-      { "name": "The Caps-Label Rule", "body": "Uppercase is reserved for short eyebrow labels (<=4 words) at 0.04em tracking in --text-dim. Never set a sentence, a heading, or body copy in all caps.", "section": "typography" },
-      { "name": "The Glow-Is-Earned Rule", "body": "Surfaces are flat at rest. Glow, lift, and shadow appear only as a response to state: hover, focus, elevation, or the ambient backdrop. A card that glows while sitting still is wrong.", "section": "elevation" },
-      { "name": "The Tonal-First Rule", "body": "Before reaching for a shadow, move the surface up a tier (--surface-2 to --surface-3). Shadow is the second tool for depth, not the first.", "section": "elevation" }
+      {
+        "name": "The One Flame Rule",
+        "body": "The accent marks at most one primary action per view. If two things on screen are both brass, neither reads as the thing to do next. Demote one to ghost or text.",
+        "section": "colors"
+      },
+      {
+        "name": "The Warm-Black Rule",
+        "body": "Dark grounds are warm near-black (hue pulled toward the accent), never #000 and never blue-gray-neutral. Light grounds are warm or cool near-white per theme, never the cream/sand/parchment band. The ground's temperature always relates to the theme's accent.",
+        "section": "colors"
+      },
+      {
+        "name": "The Seven-Theme Contract",
+        "body": "The palette is a token contract filled by seven shipped themes (Ember, Paper, Aether, Brink, Daylight, Mist, Nocturne). Any new surface must read correctly in all of them by consuming tokens, never hardcoded hex.",
+        "section": "colors"
+      },
+      {
+        "name": "The One-Family Rule",
+        "body": "Geist does display and body; do not introduce a second display face for personality. Personality comes from weight, size, and the brass accent. Mono is the only permitted second family, and only for literal machine text.",
+        "section": "typography"
+      },
+      {
+        "name": "The Caps-Label Rule",
+        "body": "Uppercase is reserved for short eyebrow labels (<=4 words) at 0.04em tracking in --text-dim. Never set a sentence, a heading, or body copy in all caps.",
+        "section": "typography"
+      },
+      {
+        "name": "The Glow-Is-Earned Rule",
+        "body": "Surfaces are flat at rest. Glow, lift, and shadow appear only as a response to state: hover, focus, elevation, or the ambient backdrop. A card that glows while sitting still is wrong.",
+        "section": "elevation"
+      },
+      {
+        "name": "The Tonal-First Rule",
+        "body": "Before reaching for a shadow, move the surface up a tier (--surface-2 to --surface-3). Shadow is the second tool for depth, not the first.",
+        "section": "elevation"
+      }
     ],
     "dos": [
       "Do consume tokens, never hardcoded hex; every surface must read correctly across all seven themes.",

@@ -59,8 +59,7 @@ pub(super) fn ensure_agent_spawned(
             key = key,
             "worker cwd changed; respawning agent"
         );
-        lock_recover(&intentional_exits, "intentional exits (cwd respawn)")
-            .insert(key.to_string());
+        lock_recover(&intentional_exits, "intentional exits (cwd respawn)").insert(key.to_string());
         {
             let mut child = lock_recover(&child, "agent child (cwd respawn)");
             let _ = child.kill();

@@ -134,6 +134,7 @@ personality-free** API reference with the myth scrubbed out. Aethon has a name
 with a story and the surface carries it.
 
 **Key Characteristics:**
+
 - Warm near-black or crisp near-white ground, never gray-neutral SaaS.
 - One rationed brass-orange accent as the system's only voice of emphasis.
 - Flat at rest; warmth, glow, and lift are state responses, not decoration.
@@ -148,6 +149,7 @@ reserve so the warmth never tips into monochrome. Color roles are theme-stable;
 the exact hex shifts per palette, but the role and the rarity do not.
 
 ### Primary
+
 - **Ember Brass** (`#ff7a29`, the default Ember theme; `#ff6a18` is the canonical
   brand flame used for the favicon theme-color and the docs hero): the single
   voice of emphasis. Primary buttons, active nav, focus rings, the cursor, the
@@ -159,6 +161,7 @@ the exact hex shifts per palette, but the role and the rarity do not.
   Demote one to ghost or text.
 
 ### Secondary
+
 - **Teal Ember** (`#4dd6cf` on Ember; **Ink-Blue Paper** `#2f5793`; **Steel
   Æther** `#6fb0ff`): the cool counterweight. Used for the informational state
   (`info`), secondary accent surfaces, and to stop a warm-on-warm screen from
@@ -166,10 +169,12 @@ the exact hex shifts per palette, but the role and the rarity do not.
   it carries "the other thing."
 
 ### Tertiary
+
 - **Gold Ember** (`#ffc24d`): warm highlight for tertiary chips and numerals.
   Rare. When in doubt, it is not gold; it is primary or nothing.
 
 ### Neutral — Ember (default dark)
+
 - **Cream Ink** (`#fbeede`): primary text. Warm off-white, never pure `#fff`,
   so it sits in the same temperature as the accent.
 - **Cream Dim** (`#9a9189`): metadata, timestamps, captions. Holds ≥4.5:1 on the
@@ -181,6 +186,7 @@ the exact hex shifts per palette, but the role and the rarity do not.
   `#4e4954` for strong separation.
 
 ### Neutral — Paper (default light)
+
 - **Paper Ink** (`#1c1b19`): primary text, near-black warm ink on bright stock.
 - **Paper Dim** (`#79756c`): metadata. Bumped toward ink (not light gray) so
   body-adjacent text clears AA on the near-white ground.
@@ -189,6 +195,7 @@ the exact hex shifts per palette, but the role and the rarity do not.
 - **Border Paper** (`#ddd8ce`): crisp 1px hairline.
 
 ### Named Rules
+
 **The Warm-Black Rule.** Dark grounds are warm near-black (hue pulled toward the
 accent), never `#000` and never blue-gray-neutral. Light grounds are warm or
 cool near-white per theme, never the cream/sand/parchment band. The temperature
@@ -216,6 +223,7 @@ speaks: code, terminal output, file paths, the agent's tool I/O. The
 sans/mono split is semantic, not decorative; mono means "this is literal."
 
 ### Hierarchy
+
 - **Display** (Geist 600, `1.4rem`, line-height 1.2, tracking -0.015em): in-app
   hero numerals and splash titles. On the docs landing the hero name scales up
   on a fluid `clamp()` (VitePress hero), but it is the same Geist family and
@@ -230,6 +238,7 @@ sans/mono split is semantic, not decorative; mono means "this is literal."
   terminal lines, syntax-highlighted output.
 
 ### Named Rules
+
 **The One-Family Rule.** Geist does display and body; do not introduce a second
 display face for "personality." Personality comes from weight, size, and the
 brass accent, not from a typeface change. Mono is the only permitted second
@@ -251,9 +260,11 @@ neutral-gray and surfaces stay crisp. The five-step shadow scale is reserved for
 genuinely-lifted UI.
 
 ### Shadow Vocabulary
+
 The shadow scale is composed from a shared shape (`--elev-N-shape`: offset +
 blur) and a per-theme color tint (`--elev-N-color`), so every theme keeps the
 same elevation geometry but its own depth and warmth.
+
 - **`--shadow-1`** (`0 1px 2px`): cards, inline chips. A tight, hugging shadow.
 - **`--shadow-2`** (`0 4px 12px`): agent messages, sidebars, settled panels.
 - **`--shadow-3`** (`0 12px 32px`): popovers, dropdowns.
@@ -261,6 +272,7 @@ same elevation geometry but its own depth and warmth.
 - **`--shadow-5`** (`0 32px 80px`): toasts and raised modals.
 
 ### Named Rules
+
 **The Glow-Is-Earned Rule.** Surfaces are flat at rest. Glow, lift, and shadow
 appear only as a response to state: hover, focus, elevation onto a higher layer,
 or the ambient backdrop. A card that glows while sitting still is wrong.
@@ -273,6 +285,7 @@ small; use a surface tier and the inner highlight instead.
 ## 5. Components
 
 ### Buttons
+
 - **Shape:** gently rounded (`8px`, `{rounded.md}`).
 - **Primary:** solid `--accent` fill, `--btn-text` label (a near-black tuned per
   theme so text clears AA on the accent), `10px 24px` padding, weight 600.
@@ -285,6 +298,7 @@ small; use a surface tier and the inner highlight instead.
   the "Open Project…" / alt-CTA treatment.
 
 ### Chips / Pills
+
 - **Style:** `--pill-bg` (the accent mixed a few percent into the elevated
   surface), 1px `--pill-border`, `--pill-text` (`--text-secondary`), fully
   rounded (`{rounded.pill}`).
@@ -292,6 +306,7 @@ small; use a surface tier and the inner highlight instead.
   label. Uppercase metadata labels use `0.04em` tracking in `--text-dim`.
 
 ### Cards / Containers
+
 - **Corner Style:** `12px` (`{rounded.lg}`).
 - **Background:** `--card-bg` (`--surface-3`); pure-white in Paper, warm-black in
   Ember.
@@ -303,6 +318,7 @@ small; use a surface tier and the inner highlight instead.
   benefits from a bounded surface. Never nest a card inside a card.
 
 ### Inputs / Fields
+
 - **Style:** `--bg-input` fill, 1px `--border`, `8px` radius.
 - **Focus:** border shifts toward `--accent` and the `--focus-ring` glow appears;
   no layout shift.
@@ -310,12 +326,14 @@ small; use a surface tier and the inner highlight instead.
   `--composer-shadow` lifting upward) with the send button overlaid bottom-right.
 
 ### Navigation
+
 - **Sidebar tree:** host → project → workspace, a single indented family sharing
   one gutter rhythm (`--ae-sb-*`). The active item pulses `--accent`; rows hover
   to `--bg-hover`, select to `--bg-selected` (an `--accent`-tinted wash).
 - **Docs nav:** the active sidebar item is brass; the rest is `--text-2`.
 
 ### Signature Component — The Agent Canvas
+
 Aethon's defining surface is not chrome at all: it is the **A2UI canvas** the
 agent populates at runtime. The default workstation layout is itself an A2UI
 payload, rendered by the same renderer that draws agent output. Components are
@@ -325,6 +343,7 @@ panel) can be swapped by an extension. Design every new surface as a token-drive
 overridable A2UI component, never as hardcoded React chrome.
 
 ### Signature Component — The Terminal
+
 PTY shells and the agent-bash stream render through a full ANSI-16 palette tuned
 per theme (`--ansi-*`, `--terminal-*`). The terminal is a first-class themed
 surface: its background, cursor, selection, and all 16 colors come from the same
@@ -334,6 +353,7 @@ not a foreign black box.
 ## 6. Do's and Don'ts
 
 ### Do:
+
 - **Do** consume tokens, never hardcoded hex. Every surface must read correctly
   across all seven themes by reading `--bg`, `--accent`, `--surface-0..4`, the
   state quads, and `--ansi-*`.
@@ -352,6 +372,7 @@ not a foreign black box.
 - **Do** use Geist for everything human and Geist Mono for everything literal.
 
 ### Don't:
+
 - **Don't** ship the **generic VitePress default**: stock brand green/blue, the
   untouched hero, an unconfigured-template look. The Ember/Paper identity is the
   point. (PRODUCT.md anti-reference.)

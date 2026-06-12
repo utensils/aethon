@@ -755,19 +755,10 @@ mod tests {
     fn touch_manages_prompt_started_at_lifecycle() {
         let meta = meta_with_stale_entry("tab:x");
         // Already in flight: flag true again must NOT reset the start time.
-        let before = meta
-            .lock()
-            .unwrap()
-            .get("tab:x")
-            .unwrap()
-            .prompt_started_at;
+        let before = meta.lock().unwrap().get("tab:x").unwrap().prompt_started_at;
         touch_worker_activity(&meta, "tab:x", Some(true));
         assert_eq!(
-            meta.lock()
-                .unwrap()
-                .get("tab:x")
-                .unwrap()
-                .prompt_started_at,
+            meta.lock().unwrap().get("tab:x").unwrap().prompt_started_at,
             before
         );
         // Turn end clears it.
