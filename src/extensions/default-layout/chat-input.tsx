@@ -24,6 +24,13 @@ import {
 import { useExtensionRegistry } from "../ExtensionRegistry";
 import type { QueuedMessage } from "../../types/tab";
 import { SlashPicker } from "./slash-picker";
+import { AtPicker } from "./at-picker";
+import {
+  atMentionRoot,
+  formatAtInsertion,
+  type AtFileMatch,
+} from "./at-mention";
+import { useAtMention } from "./use-at-mention";
 import { useComposerResize } from "./use-composer-resize";
 import { useDraftCommit } from "./use-draft-commit";
 import { useVoiceHotkey } from "../../hooks/useVoiceHotkey";
@@ -107,6 +114,23 @@ export function ChatInput({
       commandsRaw: props.commands,
       state,
     });
+  // Caret offset in the draft, tracked so the @file picker knows which
+  // token the user is editing. Updated on change + select (clicks,
+  // arrow keys) and after programmatic insertions.
+  const [cursor, setCursor] = useState(0);
+  const {
+    atMatch,
+    highlightIdx: atHighlightIdx,
+    setHighlightIdx: setAtHighlightIdx,
+    dismissPicker: dismissAtPicker,
+  } = useAtMention({
+    value,
+    cursor,
+    root: atMentionRoot(state),
+    // The slash picker owns the keyboard while it's open; `/command @arg`
+    // drafts stay slash-flavored.
+    enabled: !slashMatch,
+  });
   const inputContainerRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const { composerHeight, startComposerResize } = useComposerResize();
@@ -123,6 +147,7 @@ export function ChatInput({
       );
       setValue(next.text);
       commitDraft(next.text);
+      setCursor(next.cursor);
       requestAnimationFrame(() => {
         const current = textareaRef.current;
         if (!current) return;
@@ -197,6 +222,25 @@ export function ChatInput({
     commitDraft(text);
   };
 
+  // Replace the active `@token` with the chosen file reference and park
+  // the caret after the trailing space so typing continues naturally.
+  const insertAtFile = (m: AtFileMatch) => {
+    if (!atMatch) return;
+    const insertion = formatAtInsertion(m.rel);
+    const next =
+      value.slice(0, atMatch.start) + insertion + value.slice(atMatch.end);
+    const nextCursor = atMatch.start + insertion.length;
+    setValue(next);
+    commitDraft(next);
+    setCursor(nextCursor);
+    requestAnimationFrame(() => {
+      const current = textareaRef.current;
+      if (!current) return;
+      current.focus();
+      current.selectionStart = current.selectionEnd = nextCursor;
+    });
+  };
+
   const submitPayload = (value: string, mode: "normal" | "steer") => ({
     value,
     mode,
@@ -213,6 +257,7 @@ export function ChatInput({
   const handleChange = (e: ChangeEvent<HTMLTextAreaElement>) => {
     const next = e.target.value;
     setValue(next);
+    setCursor(e.target.selectionStart ?? next.length);
     scheduleDraftCommit();
   };
 
@@ -281,6 +326,42 @@ export function ChatInput({
         return;
       }
     }
+    if (!slashMatch && atMatch) {
+      const list = atMatch.matches;
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setAtHighlightIdx((i) => (i + 1) % list.length);
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setAtHighlightIdx((i) => (i - 1 + list.length) % list.length);
+        return;
+      }
+      if (e.key === "Tab") {
+        e.preventDefault();
+        const match = list[atHighlightIdx] ?? list[0];
+        if (match) insertAtFile(match);
+        return;
+      }
+      if (e.key === "Enter" && !e.shiftKey) {
+        // A hand-typed exact reference sends the message — same bypass
+        // the slash picker gives an exactly-typed command. Partial
+        // tokens complete instead of submitting.
+        const exact = list.some((m) => m.rel === atMatch.query);
+        if (!exact) {
+          e.preventDefault();
+          const match = list[atHighlightIdx] ?? list[0];
+          if (match) insertAtFile(match);
+          return;
+        }
+      }
+      if (e.key === "Escape") {
+        e.preventDefault();
+        dismissAtPicker();
+        return;
+      }
+    }
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       submit("normal");
@@ -333,6 +414,13 @@ export function ChatInput({
         onInsert={insertMatch}
         onSubmitArg={submitArgMatch}
       />
+      <AtPicker
+        anchorRef={inputContainerRef}
+        atMatch={atMatch}
+        highlightIdx={atHighlightIdx}
+        setHighlightIdx={setAtHighlightIdx}
+        onInsert={insertAtFile}
+      />
       {busy && (
         <div className="a2ui-chat-input-hint">
           <span>Enter queues</span>
@@ -357,6 +445,7 @@ export function ChatInput({
           value={value}
           onChange={handleChange}
           onKeyDown={handleKeyDown}
+          onSelect={(e) => setCursor(e.currentTarget.selectionStart ?? 0)}
         />
         {queueCount > 0 && (
           <span

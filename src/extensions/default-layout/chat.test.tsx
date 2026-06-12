@@ -145,6 +145,9 @@ vi.mock("react-virtuoso", () => ({
 import { ExtensionRegistry } from "../ExtensionRegistry";
 import { ExtensionRegistryProvider } from "../ExtensionRegistryProvider";
 import type { BuiltinComponentProps } from "../../components/A2UIRenderer";
+import { invoke } from "@tauri-apps/api/core";
+
+const invokeMock = invoke as unknown as ReturnType<typeof vi.fn>;
 
 class ResizeObserverMock {
   observe = vi.fn();
@@ -951,6 +954,99 @@ describe("ChatInput", () => {
     expect(
       screen.getByRole("link", { name: "https://example.com/after" }),
     ).toBeTruthy();
+  });
+});
+
+describe("ChatInput @file completion", () => {
+  const WALK = ["/proj/src/App.tsx", "/proj/src/main.tsx", "/proj/README.md"];
+
+  beforeEach(() => {
+    invokeMock.mockImplementation((cmd: string) =>
+      cmd === "fs_walk_project"
+        ? Promise.resolve(WALK)
+        : Promise.reject(new Error(`invoke not mocked: ${cmd}`)),
+    );
+  });
+
+  afterEach(() => {
+    // Restore the module-level default so unrelated tests keep seeing
+    // the "invoke not mocked" rejection.
+    invokeMock.mockImplementation(() =>
+      Promise.reject(new Error("invoke not mocked")),
+    );
+  });
+
+  function renderWithProject(onEvent = vi.fn()) {
+    return renderInput(onEvent, {}, { project: { path: "/proj" } });
+  }
+
+  it("offers file suggestions while typing an @token", async () => {
+    const { input } = renderWithProject();
+
+    fireEvent.change(input, { target: { value: "@app" } });
+
+    expect(await screen.findByText("App.tsx")).toBeTruthy();
+    expect(invokeMock).toHaveBeenCalledWith("fs_walk_project", {
+      root: "/proj",
+    });
+  });
+
+  it("inserts the highlighted file on Tab", async () => {
+    const { input } = renderWithProject();
+
+    fireEvent.change(input, { target: { value: "@app" } });
+    await screen.findByText("App.tsx");
+    fireEvent.keyDown(input, { key: "Tab" });
+
+    expect((input as HTMLTextAreaElement).value).toBe("@src/App.tsx ");
+  });
+
+  it("completes on Enter instead of submitting while the picker is open", async () => {
+    const { input, onEvent } = renderWithProject();
+
+    fireEvent.change(input, { target: { value: "@app" } });
+    await screen.findByText("App.tsx");
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    expect((input as HTMLTextAreaElement).value).toBe("@src/App.tsx ");
+    expect(onEvent).not.toHaveBeenCalledWith("submit", expect.any(Object));
+  });
+
+  it("dismisses on Escape and lets Enter submit the raw draft", async () => {
+    const { input, onEvent } = renderWithProject();
+
+    fireEvent.change(input, { target: { value: "@app" } });
+    await screen.findByText("App.tsx");
+    fireEvent.keyDown(input, { key: "Escape" });
+
+    expect(screen.queryByText("App.tsx")).toBeNull();
+
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(onEvent).toHaveBeenLastCalledWith("submit", {
+      value: "@app",
+      mode: "normal",
+    });
+  });
+
+  it("submits on Enter when the typed token is already an exact path", async () => {
+    const { input, onEvent } = renderWithProject();
+
+    fireEvent.change(input, { target: { value: "@src/App.tsx" } });
+    await screen.findByText("App.tsx");
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    expect(onEvent).toHaveBeenLastCalledWith("submit", {
+      value: "@src/App.tsx",
+      mode: "normal",
+    });
+  });
+
+  it("never triggers inside an email address", () => {
+    const { input } = renderWithProject();
+
+    fireEvent.change(input, { target: { value: "mail me@example" } });
+
+    expect(screen.queryByRole("listbox")).toBeNull();
   });
 });
 
