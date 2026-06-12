@@ -93,6 +93,30 @@ describe("TaskLauncher", () => {
     }
   });
 
+  it("offers @file completions rooted at the project and inserts on Tab", async () => {
+    invoke.mockResolvedValue(["/repo/aethon/src/App.tsx"]);
+    render(
+      <TaskLauncher
+        component={launcher({
+          project: { id: "p1", label: "aethon", path: "/repo/aethon" },
+        })}
+        state={{}}
+        onEvent={vi.fn()}
+      />,
+    );
+
+    const prompt = screen.getByLabelText("Task prompt");
+    fireEvent.change(prompt, { target: { value: "@app" } });
+
+    await screen.findByText("App.tsx");
+    expect(invoke).toHaveBeenCalledWith("fs_walk_project", {
+      root: "/repo/aethon",
+    });
+
+    fireEvent.keyDown(prompt, { key: "Tab" });
+    expect((prompt as HTMLTextAreaElement).value).toBe("@src/App.tsx ");
+  });
+
   it("allows a new workspace session with an automatic branch", async () => {
     const onEvent = vi.fn();
     render(

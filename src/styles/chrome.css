@@ -3676,6 +3676,36 @@ body.ae-resizing-composer * {
   color: var(--text-dim);
 }
 
+/* @file completion rows — same menu chrome as the slash picker, but
+   single-line file rows: icon, basename, dimmed directory. */
+.a2ui-at-item {
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.a2ui-at-item .ae-file-icon {
+  flex: none;
+}
+
+.a2ui-at-item-name {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.a2ui-at-item-dir {
+  color: var(--text-dim);
+  font-size: var(--chrome-text-compact);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  flex: 1;
+  direction: rtl;
+  text-align: left;
+}
+
 .a2ui-chat-input-field {
   flex: 1 1 auto;
   width: 100%;

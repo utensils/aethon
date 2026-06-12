@@ -24,6 +24,9 @@ import { DEFAULT_WORKSPACE_BASE_BRANCH } from "../../../projects";
 import { saveClipboardImageAttachment } from "../../../utils/imageAttachments";
 import { ImageAttachmentImage } from "../image-attachment-image";
 import { ImageLightbox } from "../image-lightbox";
+import { AtPicker } from "../at-picker";
+import { formatAtInsertion, type AtFileMatch } from "../at-mention";
+import { useAtMention } from "../use-at-mention";
 
 interface ProjectLite {
   id: string;
@@ -195,6 +198,50 @@ export function TaskLauncher({
     el.style.height = `${next}px`;
   }, [promptText]);
 
+  // `@file` completion — same picker as the chat composer, rooted at
+  // whatever the task will actually run against: the selected existing
+  // workspace, else the project root (a "+ New workspace" forks from the
+  // project, so its files are the right suggestions too).
+  const launcherRef = useRef<HTMLDivElement | null>(null);
+  const [cursor, setCursor] = useState(0);
+  const atRoot =
+    workspaceChoice.kind === "existing"
+      ? workspaceChoice.path
+      : (data.project?.path ?? null);
+  const {
+    atMatch,
+    highlightIdx: atHighlightIdx,
+    setHighlightIdx: setAtHighlightIdx,
+    dismissPicker: dismissAtPicker,
+  } = useAtMention({
+    value: promptText,
+    cursor,
+    root: atRoot,
+    enabled: !submitting,
+  });
+
+  const insertAtFile = useCallback(
+    (m: AtFileMatch) => {
+      if (!atMatch) return;
+      const insertion = formatAtInsertion(m.rel);
+      const next =
+        promptText.slice(0, atMatch.start) +
+        insertion +
+        promptText.slice(atMatch.end);
+      const nextCursor = atMatch.start + insertion.length;
+      setPromptText(next);
+      setTouched(true);
+      setCursor(nextCursor);
+      requestAnimationFrame(() => {
+        const el = textareaRef.current;
+        if (!el) return;
+        el.focus();
+        el.selectionStart = el.selectionEnd = nextCursor;
+      });
+    },
+    [atMatch, promptText],
+  );
+
   const submit = useCallback(() => {
     if (submitting) return;
     const text = promptText.trim();
@@ -243,6 +290,40 @@ export function TaskLauncher({
   ]);
 
   const onKey = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (atMatch) {
+      const list = atMatch.matches;
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setAtHighlightIdx((i) => (i + 1) % list.length);
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setAtHighlightIdx((i) => (i - 1 + list.length) % list.length);
+        return;
+      }
+      if (e.key === "Tab") {
+        e.preventDefault();
+        const match = list[atHighlightIdx] ?? list[0];
+        if (match) insertAtFile(match);
+        return;
+      }
+      if (e.key === "Enter" && !e.shiftKey) {
+        // A hand-typed exact reference submits; partial tokens complete.
+        const exact = list.some((m) => m.rel === atMatch.query);
+        if (!exact) {
+          e.preventDefault();
+          const match = list[atHighlightIdx] ?? list[0];
+          if (match) insertAtFile(match);
+          return;
+        }
+      }
+      if (e.key === "Escape") {
+        e.preventDefault();
+        dismissAtPicker();
+        return;
+      }
+    }
     // Plain Enter submits; Shift+Enter adds a newline. Matches the main
     // chat composer. Cmd/Ctrl+Enter also submits for users who hold
     // modifiers out of habit.
@@ -290,7 +371,7 @@ export function TaskLauncher({
     "model";
 
   return (
-    <div className="a2ui-task-launcher">
+    <div className="a2ui-task-launcher" ref={launcherRef}>
       <textarea
         ref={textareaRef}
         className="a2ui-task-launcher-input"
@@ -302,12 +383,21 @@ export function TaskLauncher({
         rows={3}
         onChange={(e) => {
           setPromptText(e.target.value);
+          setCursor(e.target.selectionStart ?? e.target.value.length);
           setTouched(true);
         }}
+        onSelect={(e) => setCursor(e.currentTarget.selectionStart ?? 0)}
         onPaste={onPaste}
         onKeyDown={onKey}
         disabled={submitting}
         aria-label="Task prompt"
+      />
+      <AtPicker
+        anchorRef={launcherRef}
+        atMatch={atMatch}
+        highlightIdx={atHighlightIdx}
+        setHighlightIdx={setAtHighlightIdx}
+        onInsert={insertAtFile}
       />
       {attachments.length > 0 && (
         <div className="a2ui-task-launcher-attachments">
