@@ -620,6 +620,43 @@ describe("handleChat", () => {
     expect(f.sent).not.toContainEqual({ type: "response_end", tabId: "tab-1" });
   });
 
+  it("dispatches prompts containing unresolved dotted @mentions instead of failing file-reference expansion", async () => {
+    const f = makeFixture();
+    const promptCalls: unknown[][] = [];
+    const tab = fakeTabRecord({
+      session: {
+        prompt: (...args: unknown[]) => {
+          promptCalls.push(args);
+          return new Promise<void>(() => {});
+        },
+        followUp: () => Promise.resolve(),
+        steer: () => Promise.resolve(),
+      } as unknown as TabRecord["session"],
+    });
+    f.state.tabs.set("tab-1", tab);
+
+    await handleChat(f.state, f.deps, {
+      type: "chat",
+      content: "Allow the @search_result.resolved_bbl.blank? guard to continue",
+      tabId: "tab-1",
+      mode: "normal",
+    });
+
+    expect(promptCalls).toEqual([
+      ["Allow the @search_result.resolved_bbl.blank? guard to continue"],
+    ]);
+    expect(f.sent).toContainEqual({
+      type: "notice",
+      tabId: "tab-1",
+      message:
+        "file references: @search_result.resolved_bbl.blank? was not found under " +
+        process.cwd(),
+    });
+    expect(f.sent).not.toContainEqual(
+      expect.objectContaining({ type: "error", tabId: "tab-1" }),
+    );
+  });
+
   it("treats steer as a normal prompt when the tab is idle", async () => {
     const f = makeFixture();
     const promptCalls: unknown[][] = [];

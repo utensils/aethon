@@ -100,10 +100,41 @@ describe("expandFileReferencesInPrompt", () => {
     expect(out.references[0]?.content).toContain("space path");
   });
 
-  it("throws a clear error for missing likely paths", async () => {
-    await expect(
-      expandFileReferencesInPrompt("Read @src/Missing.ts", { cwd: root }),
-    ).rejects.toMatchObject({ name: "FileReferenceError" });
+  it("reports missing explicit paths without failing the prompt", async () => {
+    const out = await expandFileReferencesInPrompt("Read @src/Missing.ts", {
+      cwd: root,
+    });
+    expect(out.references).toEqual([]);
+    expect(out.prompt).toBe("Read @src/Missing.ts");
+    expect(out.issues).toEqual([expect.stringContaining("@src/Missing.ts")]);
+
+    const bareOut = await expandFileReferencesInPrompt("Read @tsconfig.json", {
+      cwd: root,
+    });
+    expect(bareOut.references).toEqual([]);
+    expect(bareOut.issues).toEqual([expect.stringContaining("@tsconfig.json")]);
+  });
+
+  it("reports dotted expression-style @mentions without failing the prompt", async () => {
+    const prompt = "Allow the @search_result.resolved_bbl.blank? guard to continue";
+    const out = await expandFileReferencesInPrompt(prompt, { cwd: root });
+    expect(out.references).toEqual([]);
+    expect(out.prompt).toBe(prompt);
+    expect(out.issues).toEqual([
+      expect.stringContaining("@search_result.resolved_bbl.blank?"),
+    ]);
+  });
+
+  it("keeps valid file context when another @mention is unresolved", async () => {
+    const out = await expandFileReferencesInPrompt(
+      "Review @README.md and @search_result.resolved_bbl.blank?",
+      { cwd: root },
+    );
+    expect(out.references.map((ref) => ref.displayPath)).toEqual(["README.md"]);
+    expect(out.issues).toEqual([
+      expect.stringContaining("@search_result.resolved_bbl.blank?"),
+    ]);
+    expect(out.prompt).toContain("<aethon_file_references");
   });
 
   it("ignores missing package-style and punctuated @mentions", async () => {
@@ -118,16 +149,18 @@ describe("expandFileReferencesInPrompt", () => {
     }
   });
 
-  it("rejects directories and outside-root absolute paths", async () => {
-    await expect(
-      expandFileReferencesInPrompt("Read @src", { cwd: root }),
-    ).rejects.toThrow(/directory/);
+  it("reports directories and outside-root absolute paths without failing", async () => {
+    const dirOut = await expandFileReferencesInPrompt("Read @src", { cwd: root });
+    expect(dirOut.references).toEqual([]);
+    expect(dirOut.issues).toEqual([expect.stringContaining("directory")]);
 
     const outsideFile = join(outside, "secret.txt");
     await writeFile(outsideFile, "secret\n");
-    await expect(
-      expandFileReferencesInPrompt(`Read @${outsideFile}`, { cwd: root }),
-    ).rejects.toThrow(/outside/);
+    const outsideOut = await expandFileReferencesInPrompt(`Read @${outsideFile}`, {
+      cwd: root,
+    });
+    expect(outsideOut.references).toEqual([]);
+    expect(outsideOut.issues).toEqual([expect.stringContaining("outside")]);
   });
 
   it("does not treat a leading accepted @subagent as a file reference", async () => {
