@@ -1,6 +1,6 @@
 use std::path::{Component, Path, PathBuf};
 
-use crate::env;
+use super::common::{read_only_gh_command, read_only_tokio_gh_command};
 
 /// GitHub branch status as understood by `gh` CLI. Returned shape is
 /// intentionally narrow so the worktree-landing UI can render without
@@ -126,7 +126,7 @@ pub(crate) fn gh_branch_status_inner(project_path: &str, branch: &str) -> GhBran
         return status;
     }
     // 1. gh available + authed?
-    let auth = env::command("gh").args(["auth", "status"]).output();
+    let auth = read_only_gh_command().args(["auth", "status"]).output();
     let Ok(out) = auth else { return status };
     if !out.status.success() {
         return status;
@@ -139,7 +139,7 @@ pub(crate) fn gh_branch_status_inner(project_path: &str, branch: &str) -> GhBran
     //    convention), so we rely on `current_dir(&dir)` and a bare
     //    invocation. Output empty / non-zero on non-GitHub remotes,
     //    which doubles as our "is this on GitHub?" check.
-    let repo_out = env::command("gh")
+    let repo_out = read_only_gh_command()
         .args([
             "repo",
             "view",
@@ -166,7 +166,7 @@ pub(crate) fn gh_branch_status_inner(project_path: &str, branch: &str) -> GhBran
     //    as a separate path element and returns 404 even when the
     //    branch exists.
     let branch_encoded = url_encode_path_segment(branch);
-    let pushed_out = env::command("gh")
+    let pushed_out = read_only_gh_command()
         .args([
             "api",
             "-X",
@@ -184,7 +184,7 @@ pub(crate) fn gh_branch_status_inner(project_path: &str, branch: &str) -> GhBran
     //    open + closed (incl. merged). Limit 5 keeps the call cheap and
     //    the UI tidy. `--json` makes parsing robust against future CLI
     //    output tweaks.
-    let pr_out = env::command("gh")
+    let pr_out = read_only_gh_command()
         .args([
             "pr",
             "list",
@@ -344,7 +344,7 @@ async fn gh_repo_overview_inner(project_path: &str) -> GhRepoOverview {
     }
 
     // gh available + authed?
-    let auth = env::tokio_command("gh")
+    let auth = read_only_tokio_gh_command()
         .args(["auth", "status"])
         .output()
         .await;
@@ -356,7 +356,7 @@ async fn gh_repo_overview_inner(project_path: &str) -> GhRepoOverview {
 
     let dir_a = dir.clone();
     let repo_view_fut = async move {
-        env::tokio_command("gh")
+        read_only_tokio_gh_command()
             .args([
                 "repo",
                 "view",
@@ -370,7 +370,7 @@ async fn gh_repo_overview_inner(project_path: &str) -> GhRepoOverview {
 
     let dir_b = dir.clone();
     let pr_count_fut = async move {
-        env::tokio_command("gh")
+        read_only_tokio_gh_command()
             .args([
                 "pr", "list", "--state", "open", "--json", "number", "-q", "length",
             ])
@@ -388,7 +388,7 @@ async fn gh_repo_overview_inner(project_path: &str) -> GhRepoOverview {
     // which counts issues + PRs together and inflates the dashboard
     // figure when the repo has open PRs.
     let issue_count_fut = async move {
-        let count_out = env::tokio_command("gh")
+        let count_out = read_only_tokio_gh_command()
             .args([
                 "issue", "list", "--state", "open", "--limit", "1000", "--json", "number", "-q",
                 "length",
@@ -450,7 +450,7 @@ pub async fn gh_repo_avatar_url(project_path: String) -> Option<String> {
     if !dir.is_dir() {
         return None;
     }
-    let out = env::tokio_command("gh")
+    let out = read_only_tokio_gh_command()
         .args([
             "repo",
             "view",

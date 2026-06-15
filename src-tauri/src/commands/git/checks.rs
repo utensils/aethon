@@ -12,8 +12,8 @@
 use std::path::PathBuf;
 use std::time::Duration;
 
+use super::common::read_only_tokio_gh_command;
 use crate::commands::git::github::{url_encode_path_segment, worktree_is_dangling};
-use crate::env;
 
 /// One CI check-run, narrowed to what the UI shows.
 #[derive(serde::Serialize, Debug, Clone, PartialEq)]
@@ -73,7 +73,7 @@ async fn gh_checks_inner(project_path: &str, branch: &str) -> GhChecks {
         return checks;
     }
 
-    let auth = env::tokio_command("gh")
+    let auth = read_only_tokio_gh_command()
         .args(["auth", "status"])
         .output()
         .await;
@@ -84,7 +84,7 @@ async fn gh_checks_inner(project_path: &str, branch: &str) -> GhChecks {
     checks.gh_available = true;
 
     // Resolve <owner>/<repo>; empty / non-zero means no GitHub remote.
-    let repo_out = env::tokio_command("gh")
+    let repo_out = read_only_tokio_gh_command()
         .args([
             "repo",
             "view",
@@ -110,7 +110,7 @@ async fn gh_checks_inner(project_path: &str, branch: &str) -> GhChecks {
     // body doesn't merge cleanly under `gh api --paginate`). Branch names
     // with slashes must be percent-encoded.
     let branch_encoded = url_encode_path_segment(branch);
-    let runs_fut = env::tokio_command("gh")
+    let runs_fut = read_only_tokio_gh_command()
         .args([
             "api",
             "-X",

@@ -18,7 +18,7 @@ use std::time::Duration;
 
 use tauri::Emitter;
 
-use crate::env;
+use super::common::read_only_git_command;
 
 /// Git writes several files per operation (HEAD, index, a ref, sometimes
 /// packed-refs); coalesce a touch longer than the fs watcher's 120ms so a
@@ -70,7 +70,7 @@ fn absolutize(root: &Path, raw: &str) -> PathBuf {
 /// dir — which is the case that actually breaks today. Non-existent paths are
 /// dropped so `notify::watch` never errors on them.
 fn resolve_git_watch_targets(root: &Path) -> Vec<PathBuf> {
-    let out = env::command("git")
+    let out = read_only_git_command()
         .arg("-C")
         .arg(root)
         .args(["rev-parse", "--git-dir", "--git-common-dir"])

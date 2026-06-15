@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 
 import { readState, writeState } from "../../../persist";
+import { isGitIndexLockedError } from "../../../utils/gitErrors";
 import {
   EXPANDED_CAP_PER_PROJECT,
   EXPAND_STATE_FILE,
@@ -152,7 +153,10 @@ function useFileTreeData({
       if (projectPathRef.current !== rootPath) return;
       setGitStatuses(gitStatusesFromEntries(entries));
       setIgnoredPaths(Array.isArray(ignored) ? ignored : []);
-    } catch {
+    } catch (err) {
+      // If a user-owned git operation is holding `.git/index.lock`, keep the
+      // last decorations until the watcher/next poll refreshes successfully.
+      if (isGitIndexLockedError(err)) return;
       // Non-git directories, missing git binary, or transient status errors
       // should never block the file tree; just render without decorations.
       if (projectPathRef.current === rootPath) {
