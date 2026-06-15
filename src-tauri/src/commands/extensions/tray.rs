@@ -1,8 +1,8 @@
 //! Status-bar / tray icon. Left-click focuses the main window; the
 //! menu carries Show / New Tab / Quit plus any `location: "tray"`
-//! extension items. Idempotent across `set_extension_menu_items`
-//! pushes — the same `TRAY_ID` is used to remove the prior tray
-//! before rebuilding.
+//! extension items. Runtime updates keep the existing status item and
+//! replace only its menu, avoiding macOS `NSStatusItem` recreation
+//! while workspace/project switches are in flight.
 
 use tauri::AppHandle;
 
@@ -70,14 +70,15 @@ pub fn install_tray(
         .ok_or("no default_window_icon — bundle.icon missing?")?
         .clone();
 
-    // Idempotent: remove any prior tray with this id before building.
-    // `install_tray` runs at boot AND every time the frontend pushes
-    // `extension_menu_items` via `set_extension_menu_items` (so an
-    // extension-registered tray entry actually appears in the menu).
-    // Without this remove, `TrayIconBuilder.build()` registers a NEW
-    // tray each call — and macOS happily shows BOTH icons in the menu
-    // bar, which is the user-reported "two Æ icons" bug.
-    let _ = app.remove_tray_by_id(TRAY_ID);
+    // Boot creates the status item once. Runtime menu updates (for
+    // extension_menu_items replays during project/workspace switches)
+    // must not remove/recreate the macOS NSStatusItem: hang reports
+    // show AppKit blocking inside NSStatusBar::statusItemWithLength
+    // when that happens while a prompt/workspace launch is in flight.
+    if let Some(tray) = app.tray_by_id(TRAY_ID) {
+        tray.set_menu(Some(menu))?;
+        return Ok(());
+    }
 
     TrayIconBuilder::with_id(TRAY_ID)
         .icon(icon)
@@ -146,35 +147,40 @@ mod tests {
         assert_eq!(TRAY_ID, "main-tray");
     }
 
-    /// Regression for the "two Æ tray icons" bug.
+    /// Regression for the workspace-switch hang captured in
+    /// `Aethon-crash.txt`.
     ///
-    /// `install_tray` is called at boot AND every time the frontend
-    /// pushes `extension_menu_items` via `set_extension_menu_items`,
-    /// because an extension that registers a `location: "tray"` item
-    /// needs the tray rebuilt to appear. Without removing the prior
-    /// tray with the same id, `TrayIconBuilder.build` registers a
-    /// SECOND OS-level tray (NSStatusItem on macOS) — both icons
-    /// stay visible in the menu bar.
-    ///
-    /// The fix is `app.remove_tray_by_id(TRAY_ID)` before the
-    /// builder runs. We assert it's still there: deleting the line
-    /// would silently re-introduce the regression and a unit test
-    /// catches that at `cargo test --lib` time.
+    /// Project/workspace switches replay `extension_menu_items`. The
+    /// old implementation made every replay remove and recreate the
+    /// macOS `NSStatusItem`, and the hang report shows AppKit blocking
+    /// inside `NSStatusBar::statusItemWithLength` during that rebuild.
+    /// Runtime updates must keep the existing tray icon and replace
+    /// only its menu; the builder should run only when the tray does
+    /// not exist yet (boot / recovery path).
     #[test]
-    fn install_tray_calls_remove_tray_by_id_for_idempotency() {
+    fn install_tray_updates_existing_tray_instead_of_recreating_it() {
         let src = include_str!("tray.rs");
-        let needle = "remove_tray_by_id(TRAY_ID)";
+        let src = &src[..src.find("#[cfg(test)]").unwrap_or(src.len())];
+        let lookup = "tray_by_id(TRAY_ID)";
+        let update = "tray.set_menu(Some(menu))";
+        let build = "TrayIconBuilder::with_id(TRAY_ID)";
         assert!(
-            src.contains(needle),
-            "install_tray must remove the prior tray before rebuilding so calling it twice doesn't leave two OS-level tray icons. Looking for `{needle}` in commands/extensions/tray.rs.",
+            src.contains(lookup),
+            "install_tray must look up the existing tray before attempting to build a new NSStatusItem",
         );
-        // Also assert the call ORDER: the remove must precede the
-        // build, not follow it.
-        let remove_pos = src.find(needle).unwrap();
-        let build_pos = src.find("TrayIconBuilder::with_id(TRAY_ID)").unwrap();
         assert!(
-            remove_pos < build_pos,
-            "remove_tray_by_id must run BEFORE TrayIconBuilder::with_id, otherwise the new tray gets removed instead of the old one.",
+            src.contains(update),
+            "install_tray must update the existing tray menu instead of recreating the status item",
+        );
+        let lookup_pos = src.find(lookup).unwrap();
+        let build_pos = src.find(build).unwrap();
+        assert!(
+            lookup_pos < build_pos,
+            "install_tray must check for an existing tray before TrayIconBuilder::with_id runs",
+        );
+        assert!(
+            !src.contains("remove_tray_by_id("),
+            "runtime tray updates must not remove/recreate the macOS status item",
         );
     }
 }

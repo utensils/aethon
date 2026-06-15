@@ -17,7 +17,7 @@ use super::tray::install_tray;
 /// unused by the menu/tray builders below — kept on the struct so the
 /// bridge can ship them today and the Rust side can grow into them
 /// (nested submenus, id-keyed updates) without breaking the schema.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
 pub struct ExtensionMenuItem {
     #[allow(dead_code)]
     pub id: String,
@@ -46,12 +46,13 @@ pub fn set_extension_menu_items(
     app: AppHandle,
     store: State<'_, ExtensionMenuStore>,
 ) -> Result<(), String> {
-    {
-        let mut guard = store.0.lock().map_err(|e| format!("lock: {e}"))?;
-        *guard = items.clone();
+    let mut guard = store.0.lock().map_err(|e| format!("lock: {e}"))?;
+    if *guard == items {
+        return Ok(());
     }
     install_app_menu(&app, &items).map_err(|e| format!("install_app_menu: {e}"))?;
     install_tray(&app, &items).map_err(|e| format!("install_tray: {e}"))?;
+    *guard = items;
     Ok(())
 }
 
@@ -65,14 +66,16 @@ mod tests {
     //! invoke_handler check lives in the lib.rs source-grep test.
 
     #[test]
-    fn set_extension_menu_items_calls_install_tray() {
+    fn set_extension_menu_items_skips_unchanged_payloads() {
         let src = include_str!("menu_items.rs");
         assert!(
             src.contains("pub fn set_extension_menu_items("),
             "the Tauri command must exist",
         );
-        // It must call install_tray so the rebuild path covers
-        // tray entries (location: "tray"), not just the app menu.
+        // Workspace creation/project switching can replay an identical
+        // extension_menu_items list. That replay must be a no-op so it
+        // cannot rebuild native menu/tray state while a prompt is being
+        // launched.
         let body_start = src.find("pub fn set_extension_menu_items(").unwrap();
         let body_end = src[body_start..]
             .find("\nfn ")
@@ -82,8 +85,18 @@ mod tests {
             .unwrap_or(src.len());
         let body = &src[body_start..body_end];
         assert!(
+            body.contains("if *guard == items"),
+            "set_extension_menu_items must return early when the frontend replays an unchanged menu payload",
+        );
+        assert!(
             body.contains("install_tray("),
-            "set_extension_menu_items must call install_tray so location: \"tray\" extension items appear",
+            "changed tray entries still need to reach install_tray so extension items appear",
+        );
+        let install_pos = body.find("install_tray(").unwrap();
+        let store_pos = body.find("*guard = items").unwrap();
+        assert!(
+            install_pos < store_pos,
+            "the cached payload must be updated only after native menu/tray installation succeeds so retries are not skipped after an error",
         );
     }
 }
