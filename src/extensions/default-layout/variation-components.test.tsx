@@ -89,6 +89,31 @@ describe("ModelPicker", () => {
     expect(onEvent).toHaveBeenCalledWith("codex-fast-mode", { enabled: true });
   });
 
+  it("clamps stale reasoning state to the active model's supported levels", () => {
+    render(
+      <ModelPicker
+        component={{ id: "model-picker", type: "model-picker", props: {} }}
+        state={{
+          model: "openai-codex/gpt-5.5",
+          thinkingLevel: "xhigh",
+          sidebar: {
+            models: [
+              {
+                id: "openai-codex/gpt-5.5",
+                label: "GPT-5.5 Codex",
+                thinkingLevels: ["off", "medium"],
+              },
+            ],
+          },
+        }}
+        onEvent={vi.fn()}
+      />,
+    );
+
+    const select: HTMLSelectElement = screen.getByLabelText("Reasoning level");
+    expect(select.value).toBe("off");
+  });
+
   it("hides reasoning and Fast controls for plain models", () => {
     render(
       <ModelPicker

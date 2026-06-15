@@ -820,6 +820,35 @@ describe("useChat setModel", () => {
     expect(stateRef.current.status).toBe("reasoning default: high");
   });
 
+  it("rolls back optimistic reasoning changes when the bridge command fails", async () => {
+    const tab = {
+      ...makeEmptyTab("tab-1", "Tab 1"),
+      model: "openai-codex/gpt-5.5",
+      thinkingLevel: "medium",
+    };
+    const { ctx, stateRef } = buildContext({
+      model: "openai-codex/gpt-5.5",
+      thinkingLevel: "medium",
+      defaultThinkingLevel: "medium",
+      tabs: [tab],
+    });
+    invoke.mockImplementation((cmd) =>
+      cmd === "agent_command"
+        ? Promise.reject(new Error("offline"))
+        : Promise.resolve(),
+    );
+    const { result } = renderHook(() => useChat(ctx));
+
+    await act(async () => {
+      await result.current.setThinkingLevel("xhigh");
+    });
+
+    expect(stateRef.current.thinkingLevel).toBe("medium");
+    expect(stateRef.current.defaultThinkingLevel).toBe("medium");
+    expect((stateRef.current.tabs as Tab[])[0].thinkingLevel).toBe("medium");
+    expect(stateRef.current.status).toBe("reasoning switch failed");
+  });
+
   it("does not apply reasoning changes while the active prompt is busy", async () => {
     const busyTab = {
       ...makeEmptyTab("tab-1", "Tab 1"),
@@ -846,6 +875,27 @@ describe("useChat setModel", () => {
     expect((stateRef.current.tabs as Tab[])[0].thinkingLevel).toBe("medium");
     expect(stateRef.current.status).toBe(
       "agent busy — stop the current prompt before switching reasoning",
+    );
+  });
+
+  it("rolls back optimistic Codex Fast mode changes when persistence fails", async () => {
+    const { ctx, stateRef } = buildContext({ codexFastMode: false });
+    invoke.mockImplementation((cmd) =>
+      cmd === "write_config"
+        ? Promise.reject(new Error("disk full"))
+        : Promise.resolve(),
+    );
+    const { result } = renderHook(() => useChat(ctx));
+
+    await act(async () => {
+      await result.current.setCodexFastMode(true);
+    });
+
+    expect(stateRef.current.codexFastMode).toBe(false);
+    expect(stateRef.current.status).toBe("Codex Fast mode update failed");
+    expect(invoke).not.toHaveBeenCalledWith(
+      "agent_broadcast_command",
+      expect.anything(),
     );
   });
 

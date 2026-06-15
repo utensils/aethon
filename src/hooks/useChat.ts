@@ -805,6 +805,15 @@ export function useChat(ctx: UseChatContext): UseChatActions {
       }));
       return;
     }
+    const previousTabThinkingLevel = activeTab?.thinkingLevel;
+    const previousThinkingLevel =
+      typeof stateRef.current.thinkingLevel === "string"
+        ? stateRef.current.thinkingLevel
+        : undefined;
+    const previousDefaultThinkingLevel =
+      typeof stateRef.current.defaultThinkingLevel === "string"
+        ? stateRef.current.defaultThinkingLevel
+        : undefined;
     updateTab(activeId, (tab) => ({ ...tab, thinkingLevel: level }));
     setState((prev) => ({
       ...prev,
@@ -812,41 +821,92 @@ export function useChat(ctx: UseChatContext): UseChatActions {
       defaultThinkingLevel: level,
       status: `reasoning: ${level}`,
     }));
-    await invoke("agent_command", {
-      payload: JSON.stringify({
-        type: "set_thinking_level",
-        tabId: activeId,
-        thinkingLevel: level,
-      }),
-    });
+    try {
+      await invoke("agent_command", {
+        payload: JSON.stringify({
+          type: "set_thinking_level",
+          tabId: activeId,
+          thinkingLevel: level,
+        }),
+      });
+    } catch (err) {
+      updateTab(activeId, (tab) => {
+        const next = { ...tab };
+        if (previousTabThinkingLevel) {
+          next.thinkingLevel = previousTabThinkingLevel;
+        } else {
+          delete next.thinkingLevel;
+        }
+        return next;
+      });
+      setState((prev) => {
+        const next: Record<string, unknown> = {
+          ...prev,
+          status: "reasoning switch failed",
+        };
+        if (previousThinkingLevel) {
+          next.thinkingLevel = previousThinkingLevel;
+        } else {
+          delete next.thinkingLevel;
+        }
+        if (previousDefaultThinkingLevel) {
+          next.defaultThinkingLevel = previousDefaultThinkingLevel;
+        } else {
+          delete next.defaultThinkingLevel;
+        }
+        return next;
+      });
+      appendMessage(
+        {
+          id: crypto.randomUUID(),
+          role: "agent",
+          text: `Failed to switch reasoning: ${err}`,
+        },
+        activeId,
+      );
+    }
   }
 
   async function setCodexFastMode(enabled: boolean) {
+    const previousCodexFastMode = stateRef.current.codexFastMode === true;
     setState((prev) => ({ ...prev, codexFastMode: enabled }));
     let live: AethonConfig | null = null;
     try {
-      live = await getConfig();
-    } catch {
-      /* fall through with defaults */
+      try {
+        live = await getConfig();
+      } catch {
+        /* fall through with defaults */
+      }
+      const merged = {
+        ui: { ...(live?.ui ?? {}) },
+        agent: { ...(live?.agent ?? {}), codexFastMode: enabled },
+        shell: { ...(live?.shell ?? {}) },
+        shortcuts: { ...(live?.shortcuts ?? {}) },
+        voice: { ...(live?.voice ?? {}) },
+        updates: { ...(live?.updates ?? {}) },
+        devshell: { ...(live?.devshell ?? {}) },
+        guardrails: { ...(live?.guardrails ?? {}) },
+      };
+      await invoke("write_config", { config: merged });
+      clearConfigCache();
+      await invoke("agent_broadcast_command", {
+        payload: JSON.stringify({
+          type: "set_codex_fast_mode",
+          codexFastMode: enabled,
+        }),
+      });
+    } catch (err) {
+      setState((prev) => ({
+        ...prev,
+        codexFastMode: previousCodexFastMode,
+        status: "Codex Fast mode update failed",
+      }));
+      appendMessage({
+        id: crypto.randomUUID(),
+        role: "agent",
+        text: `Failed to update Codex Fast mode: ${err}`,
+      });
     }
-    const merged = {
-      ui: { ...(live?.ui ?? {}) },
-      agent: { ...(live?.agent ?? {}), codexFastMode: enabled },
-      shell: { ...(live?.shell ?? {}) },
-      shortcuts: { ...(live?.shortcuts ?? {}) },
-      voice: { ...(live?.voice ?? {}) },
-      updates: { ...(live?.updates ?? {}) },
-      devshell: { ...(live?.devshell ?? {}) },
-      guardrails: { ...(live?.guardrails ?? {}) },
-    };
-    await invoke("write_config", { config: merged });
-    clearConfigCache();
-    await invoke("agent_broadcast_command", {
-      payload: JSON.stringify({
-        type: "set_codex_fast_mode",
-        codexFastMode: enabled,
-      }),
-    });
   }
 
   /** Cmd+Shift+S: export the active agent tab's chat history as a

@@ -437,11 +437,13 @@ export function ModelPicker({
   const activeItem = sectionItems.find((it) => it.active);
   const activeModelItem = items.find((it) => it.id === activeId);
   const thinkingLevels = activeModelItem?.thinkingLevels ?? [];
-  const thinkingLevel =
+  const storedThinkingLevel =
     (resolvePointer(state, "/thinkingLevel") as string | undefined) ||
-    (resolvePointer(state, "/defaultThinkingLevel") as string | undefined) ||
-    thinkingLevels[0] ||
-    "";
+    (resolvePointer(state, "/defaultThinkingLevel") as string | undefined);
+  const thinkingLevel =
+    storedThinkingLevel && thinkingLevels.includes(storedThinkingLevel)
+      ? storedThinkingLevel
+      : thinkingLevels[0] || "";
   const codexFastMode = resolvePointer(state, "/codexFastMode") === true;
   const codexFastModeSupported =
     activeModelItem?.codexFastModeSupported === true;
