@@ -15,6 +15,9 @@ export function applyUiScale(scale: number) {
   root.style.setProperty("--app-ui-scale", String(scale));
   writeUiViewportVars(scale);
   root.style.zoom = String(scale);
+  window.dispatchEvent(
+    new CustomEvent("aethon:ui-scale-change", { detail: { scale } }),
+  );
 }
 
 export function readZoom(): number {
