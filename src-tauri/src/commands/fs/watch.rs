@@ -37,27 +37,69 @@ fn is_interesting_fs_event(kind: &notify::EventKind) -> bool {
     )
 }
 
+fn insert_changed_dir(dirs: &mut HashSet<PathBuf>, root: &Path, dir: &Path) {
+    let dir = if dir == root || dir.starts_with(root) {
+        dir
+    } else {
+        root
+    };
+    dirs.insert(dir.to_path_buf());
+}
+
 fn changed_dirs_for_paths(root: &Path, paths: &[PathBuf]) -> Vec<PathBuf> {
     let mut dirs = HashSet::new();
     for path in paths {
         if !(path == root || path.starts_with(root)) {
             continue;
         }
-        let dir = if path.is_dir() {
-            path.as_path()
+        if path == root {
+            dirs.insert(root.to_path_buf());
+            continue;
+        }
+        if path.is_dir() {
+            // A create/rename event for a new directory means the parent's
+            // listing changed, but some backends report directory-content
+            // changes as the directory path itself. Refresh both visible nodes;
+            // the frontend filters this set to expanded/watched directories.
+            insert_changed_dir(&mut dirs, root, path);
+            insert_changed_dir(&mut dirs, root, path.parent().unwrap_or(root));
         } else {
-            path.parent().unwrap_or(root)
-        };
-        let dir = if dir == root || dir.starts_with(root) {
-            dir
-        } else {
-            root
-        };
-        dirs.insert(dir.to_path_buf());
+            insert_changed_dir(&mut dirs, root, path.parent().unwrap_or(root));
+        }
     }
     let mut out: Vec<PathBuf> = dirs.into_iter().collect();
     out.sort();
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn existing_new_directory_paths_refresh_the_parent_listing() {
+        let tmp = std::env::temp_dir().join(format!(
+            "aethon-fs-watch-new-dir-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&tmp).unwrap();
+        let root = tmp.canonicalize().unwrap();
+        let created = root.join("agent-created-folder");
+        std::fs::create_dir_all(&created).unwrap();
+
+        let dirs = changed_dirs_for_paths(&root, &[created]);
+        let refreshed_parent = dirs.contains(&root);
+        std::fs::remove_dir_all(&tmp).ok();
+
+        assert!(
+            refreshed_parent,
+            "creating a folder should refresh its parent's listing; got {dirs:?}"
+        );
+    }
 }
 
 /// Watch the currently-visible file-tree directories for changes. The
