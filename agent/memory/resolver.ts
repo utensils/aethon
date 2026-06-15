@@ -2,7 +2,8 @@ import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from
 import { readFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { basename, dirname, join, resolve, sep } from "node:path";
-import { spawnSync } from "node:child_process";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import type { ProjectMemoryIdentity, ResolvedMemoryContext, ResolvedMemoryScope } from "./types";
 
 interface PersistedProject {
@@ -22,6 +23,9 @@ interface PersistedProjects {
   workspacesByProject?: Record<string, PersistedWorkspace[]>;
   worktreesByProject?: Record<string, PersistedWorkspace[]>;
 }
+
+const execFileAsync = promisify(execFile);
+const GIT_TIMEOUT_MS = 2_000;
 
 export interface ResolveMemoryOptions {
   userDir: string;
@@ -162,11 +166,17 @@ async function defaultReadProjectsJson(userDir: string): Promise<string | undefi
   }
 }
 
-function defaultGit(cwd: string, args: string[]): Promise<string | undefined> {
-  const out = spawnSync("git", ["-C", cwd, ...args], { encoding: "utf8" });
-  if (out.status !== 0) return Promise.resolve(undefined);
-  const text = out.stdout.trim();
-  return Promise.resolve(text.length > 0 ? text : undefined);
+async function defaultGit(cwd: string, args: string[]): Promise<string | undefined> {
+  try {
+    const out = await execFileAsync("git", ["-C", cwd, ...args], {
+      encoding: "utf8",
+      timeout: GIT_TIMEOUT_MS,
+    });
+    const text = out.stdout.trim();
+    return text.length > 0 ? text : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 async function projectIdentityFromGit(
@@ -198,6 +208,15 @@ async function projectIdentityFromGit(
   };
 }
 
+function writeIfChanged(path: string, text: string): void {
+  try {
+    if (readFileSync(path, "utf8") === text) return;
+  } catch {
+    // Missing or unreadable files are replaced below.
+  }
+  writeFileSync(path, text, "utf8");
+}
+
 function ensureScope(scope: ResolvedMemoryScope): void {
   mkdirSync(scope.topicsDir, { recursive: true });
   if (!existsSync(scope.memoryPath)) {
@@ -205,7 +224,7 @@ function ensureScope(scope: ResolvedMemoryScope): void {
   }
   if (scope.scope === "project" && scope.project) {
     const metaPath = join(scope.dir, "meta.json");
-    writeFileSync(
+    writeIfChanged(
       metaPath,
       `${JSON.stringify(
         {
@@ -214,13 +233,10 @@ function ensureScope(scope: ResolvedMemoryScope): void {
           root: scope.project.root,
           label: scope.project.label,
           source: scope.project.source,
-          resolvedFromCwd: scope.project.resolvedFromCwd,
-          updatedAt: new Date().toISOString(),
         },
         null,
         2,
       )}\n`,
-      "utf8",
     );
   }
 }

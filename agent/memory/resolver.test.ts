@@ -1,4 +1,4 @@
-import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -71,6 +71,30 @@ describe("memory resolver", () => {
     });
 
     expect(firstCtx.project.dir).toBe(secondCtx.project.dir);
+  });
+
+  it("does not rewrite project metadata when stable identity is unchanged", async () => {
+    const userDir = mkdtempSync(join(tmpdir(), "aethon-memory-"));
+    const options = {
+      userDir,
+      cwd: "/repo/aethon/src",
+      readProjectsJson: () =>
+        Promise.resolve(
+          JSON.stringify({ projects: [{ id: "p1", label: "Aethon", path: "/repo/aethon" }] }),
+        ),
+    };
+
+    const first = await resolveMemoryContext(options);
+    const metaPath = join(first.project.dir, "meta.json");
+    const firstMeta = readFileSync(metaPath, "utf8");
+    const firstMtime = statSync(metaPath).mtimeMs;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    await resolveMemoryContext(options);
+
+    expect(readFileSync(metaPath, "utf8")).toBe(firstMeta);
+    expect(statSync(metaPath).mtimeMs).toBe(firstMtime);
+    expect(firstMeta).not.toContain("resolvedFromCwd");
+    expect(firstMeta).not.toContain("updatedAt");
   });
 
   it("creates memory files under ~/.aethon without writing to the project", async () => {
