@@ -97,6 +97,10 @@ export function useNewTab(deps: NewTabDeps) {
       piDefaultModelRef.current,
       options?.model,
     );
+    const inheritedThinkingLevel =
+      typeof stateRef.current.defaultThinkingLevel === "string"
+        ? stateRef.current.defaultThinkingLevel
+        : undefined;
     const initialTerminalBuffer = inheritedCwd
       ? initialDevshellTerminalBuffer(stateRef.current, inheritedCwd)
       : "";
@@ -119,6 +123,9 @@ export function useNewTab(deps: NewTabDeps) {
         model: inheritedModel,
         terminalBuffer: initialTerminalBuffer,
         waiting: preparingDevshell,
+        ...(inheritedThinkingLevel
+          ? { thinkingLevel: inheritedThinkingLevel }
+          : {}),
         ...(inheritedCwd ? { cwd: inheritedCwd } : {}),
       };
       tabs.push(tab);
@@ -197,6 +204,9 @@ export function useNewTab(deps: NewTabDeps) {
           type: "tab_open",
           tabId: id,
           ...(inheritedModel ? { model: inheritedModel } : {}),
+          ...(inheritedThinkingLevel
+            ? { thinkingLevel: inheritedThinkingLevel }
+            : {}),
           ...(inheritedCwd ? { cwd: inheritedCwd } : {}),
           ...(options?.restoredSession ? { restoreHistory: true } : {}),
         }),

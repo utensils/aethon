@@ -63,6 +63,8 @@ function fakeTabRecord(overrides: Partial<TabRecord> = {}): TabRecord {
       prompt: () => Promise.resolve(),
       steer: () => Promise.resolve(),
       followUp: () => Promise.resolve(),
+      thinkingLevel: "medium",
+      getAvailableThinkingLevels: () => [],
     } as unknown as TabRecord["session"],
     toolArgsCache: new Map(),
     promptInFlight: false,
@@ -213,11 +215,17 @@ describe("dispatchInboundMessage", () => {
       }),
     );
 
-    await dispatchInboundMessage(f.state, f.deps, fakeAethonApi(), fakeExtensionApi, {
-      type: "native_slash_command",
-      name: "compact",
-      tabId: "tab-1",
-    });
+    await dispatchInboundMessage(
+      f.state,
+      f.deps,
+      fakeAethonApi(),
+      fakeExtensionApi,
+      {
+        type: "native_slash_command",
+        name: "compact",
+        tabId: "tab-1",
+      },
+    );
 
     expect(f.sent).toContainEqual({
       type: "native_slash_result",
@@ -562,7 +570,10 @@ describe("handleChat", () => {
     });
 
     expect(calls.prompt).toEqual([
-      ["look", { images: [{ type: "image", mimeType: "image/png", data: "abc123" }] }],
+      [
+        "look",
+        { images: [{ type: "image", mimeType: "image/png", data: "abc123" }] },
+      ],
     ]);
 
     await handleChat(f.state, f.deps, {
@@ -775,11 +786,50 @@ describe("handleSetModel", () => {
     expect(setModel).toHaveBeenCalledWith(nextModel);
     expect(reload).toHaveBeenCalledOnce();
     expect(f.writes()).toBe(1);
-    expect(f.sent).toContainEqual({
-      type: "model_changed",
+    expect(f.sent).toContainEqual(
+      expect.objectContaining({
+        type: "model_changed",
+        tabId: "tab-1",
+        model: "openai/gpt-5.5",
+      }),
+    );
+  });
+
+  it("preserves non-Codex colon tags that resemble reasoning suffixes", async () => {
+    const f = makeFixture();
+    const nextModel = {
+      provider: "ollama",
+      id: "foo:high",
+      name: "Foo high tag",
+    };
+    const find = vi.fn(() => nextModel);
+    const setModel = vi.fn(() => Promise.resolve());
+    f.state.modelRegistry = {
+      find,
+    } as unknown as AethonAgentState["modelRegistry"];
+    f.state.resourceLoader = {
+      reload: vi.fn(() => Promise.resolve()),
+    } as unknown as AethonAgentState["resourceLoader"];
+    f.state.tabs.set(
+      "tab-1",
+      fakeTabRecord({
+        session: {
+          prompt: () => Promise.resolve(),
+          steer: () => Promise.resolve(),
+          followUp: () => Promise.resolve(),
+          setModel,
+        } as unknown as TabRecord["session"],
+      }),
+    );
+
+    await handleSetModel(f.state, f.deps, {
+      type: "set_model",
+      id: "ollama/foo:high",
       tabId: "tab-1",
-      model: "openai/gpt-5.5",
     });
+
+    expect(find).toHaveBeenCalledWith("ollama", "foo:high");
+    expect(setModel).toHaveBeenCalledWith(nextModel);
   });
 
   it("routes model switch failures to the originating tab", async () => {

@@ -10,17 +10,27 @@ import { contextUsageFromMessage } from "./contextUsage";
 export const handleTabReady: BridgeMessageHandler = (data, ctx) => {
   const tabId = (data.tabId as string | undefined) ?? "default";
   const model = (data.model as string) ?? "";
+  const thinkingLevel =
+    typeof data.thinkingLevel === "string" ? data.thinkingLevel : undefined;
   const contextUsage = contextUsageFromMessage(
     (data.contextUsage as Record<string, unknown> | undefined) ?? {},
   );
   ctx.updateTab(tabId, (tab) => ({
     ...tab,
     model,
+    ...(thinkingLevel ? { thinkingLevel } : {}),
     ...(contextUsage ? { contextUsage } : {}),
   }));
   if (ctx.stateRef.current.activeTabId === tabId) {
     ctx.setState((prev) => ({
       ...prev,
+      ...(thinkingLevel
+        ? { thinkingLevel, defaultThinkingLevel: thinkingLevel }
+        : {}),
+      codexFastMode:
+        typeof data.codexFastMode === "boolean"
+          ? data.codexFastMode
+          : prev.codexFastMode,
       sidebar: recomputeModelPicker(
         prev.sidebar as Record<string, unknown> | undefined,
         model,

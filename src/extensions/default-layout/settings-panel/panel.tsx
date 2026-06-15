@@ -26,7 +26,10 @@ import {
   setSelectedVoiceProvider,
   setVoiceProviderEnabled,
 } from "../../../services/voice";
-import type { VoiceDownloadProgress, VoiceProviderInfo } from "../../../types/voice";
+import type {
+  VoiceDownloadProgress,
+  VoiceProviderInfo,
+} from "../../../types/voice";
 import { formatVoiceDownloadProgress } from "../../../utils/voice";
 import { SHARE_MODES, type ShareMode } from "../../../utils/shareMode";
 import { ANSI_PREVIEW_KEYS, BUILTIN_THEMES } from "./constants";
@@ -38,7 +41,10 @@ import {
 } from "./hooks";
 import { readSettingsState } from "./state";
 import { resolvePointer } from "../../../utils/jsonPointer";
-import { refreshDevshell, type DevshellEntry } from "../../../hooks/useDevshell";
+import {
+  refreshDevshell,
+  type DevshellEntry,
+} from "../../../hooks/useDevshell";
 
 export function SettingsPanel({ state, onEvent }: BuiltinComponentProps) {
   const settings = readSettingsState(state);
@@ -253,6 +259,25 @@ export function SettingsPanel({ state, onEvent }: BuiltinComponentProps) {
                 >
                   Open system-prompt.md
                 </button>
+              </Field>
+              <Field label="Codex Fast mode (supported GPT-5.5 / GPT-5.4 only)">
+                <label className="ae-settings-checkbox-row">
+                  <input
+                    type="checkbox"
+                    checked={eff.agent.codexFastMode}
+                    onChange={(e) =>
+                      update({
+                        agent: {
+                          ...eff.agent,
+                          codexFastMode: e.target.checked,
+                        },
+                      })
+                    }
+                  />
+                  <span>
+                    Use the higher-cost priority service tier when available.
+                  </span>
+                </label>
               </Field>
               <Field label="Provider request timeout (seconds)">
                 <input
@@ -490,8 +515,8 @@ export function SettingsPanel({ state, onEvent }: BuiltinComponentProps) {
               <p className="ae-settings-note">
                 Stable tracks signed releases. Nightly follows the{" "}
                 <code>nightly</code> tag — newer features, fewer guarantees.
-                Each install backs up the previous build; a hang within
-                ~20s of launch automatically rolls back.
+                Each install backs up the previous build; a hang within ~20s of
+                launch automatically rolls back.
               </p>
             </Section>
 
@@ -562,7 +587,10 @@ export function SettingsPanel({ state, onEvent }: BuiltinComponentProps) {
                     update({
                       devshell: {
                         ...eff.devshell,
-                        cacheTtlHours: Math.max(0, parseInt(e.target.value, 10) || 0),
+                        cacheTtlHours: Math.max(
+                          0,
+                          parseInt(e.target.value, 10) || 0,
+                        ),
                       },
                     })
                   }
@@ -603,8 +631,8 @@ export function SettingsPanel({ state, onEvent }: BuiltinComponentProps) {
             <Section id="advanced" title="Advanced">
               <p className="ae-settings-note">
                 For keys not surfaced here, edit{" "}
-                <code>~/.aethon/config.toml</code> directly. Aethon
-                round-trips comments and unknown keys, so hand edits survive.
+                <code>~/.aethon/config.toml</code> directly. Aethon round-trips
+                comments and unknown keys, so hand edits survive.
               </p>
               <button
                 type="button"
@@ -651,7 +679,11 @@ function SaveState({
   );
 }
 
-function Section(props: { id: string; title: string; children: React.ReactNode }) {
+function Section(props: {
+  id: string;
+  title: string;
+  children: React.ReactNode;
+}) {
   return (
     <section className="ae-settings-section" data-settings-section={props.id}>
       <h3 className="ae-settings-section-title">{props.title}</h3>
@@ -750,11 +782,14 @@ function VoiceProviders() {
     }
   };
 
-  if (!providers) return <p className="ae-settings-note">Loading voice providers...</p>;
+  if (!providers)
+    return <p className="ae-settings-note">Loading voice providers...</p>;
 
   return (
     <div className="ae-voice-provider-list">
-      {error ? <p className="ae-settings-note ae-voice-error">{error}</p> : null}
+      {error ? (
+        <p className="ae-settings-note ae-voice-error">{error}</p>
+      ) : null}
       {providers.map((provider) => {
         const isBusy = busyProvider === provider.id;
         const providerProgress =
@@ -775,7 +810,9 @@ function VoiceProviders() {
                   checked={provider.selected}
                   disabled={!provider.enabled}
                   onChange={() =>
-                    run(provider.id, () => setSelectedVoiceProvider(provider.id))
+                    run(provider.id, () =>
+                      setSelectedVoiceProvider(provider.id),
+                    )
                   }
                 />
                 Use
@@ -784,12 +821,18 @@ function VoiceProviders() {
             <div className="ae-voice-provider-meta">
               <span>{provider.statusLabel}</span>
               <span>{provider.privacyLabel}</span>
-              {provider.modelSizeLabel ? <span>{provider.modelSizeLabel}</span> : null}
-              {provider.acceleratorLabel ? <span>{provider.acceleratorLabel}</span> : null}
+              {provider.modelSizeLabel ? (
+                <span>{provider.modelSizeLabel}</span>
+              ) : null}
+              {provider.acceleratorLabel ? (
+                <span>{provider.acceleratorLabel}</span>
+              ) : null}
               {provider.cachePath ? <code>{provider.cachePath}</code> : null}
             </div>
             {provider.error ? (
-              <p className="ae-settings-note ae-voice-error">{provider.error}</p>
+              <p className="ae-settings-note ae-voice-error">
+                {provider.error}
+              </p>
             ) : null}
             {providerProgress ? (
               <p className="ae-settings-note">
@@ -815,7 +858,9 @@ function VoiceProviders() {
                   type="button"
                   className="ae-settings-secondary"
                   disabled={isBusy || isDownloading}
-                  onClick={() => run(provider.id, () => prepareVoiceProvider(provider.id))}
+                  onClick={() =>
+                    run(provider.id, () => prepareVoiceProvider(provider.id))
+                  }
                 >
                   {isDownloading
                     ? "Downloading..."
@@ -830,7 +875,9 @@ function VoiceProviders() {
                   className="ae-settings-secondary"
                   disabled={isBusy}
                   onClick={() =>
-                    run(provider.id, () => removeVoiceProviderModel(provider.id))
+                    run(provider.id, () =>
+                      removeVoiceProviderModel(provider.id),
+                    )
                   }
                 >
                   Remove model
@@ -889,7 +936,9 @@ function DevshellRefreshControl({ state }: { state: unknown }) {
 
 function resolveDevshellSlice(
   state: unknown,
-): { activeRoot?: string | null; entries?: Record<string, DevshellEntry> } | undefined {
+):
+  | { activeRoot?: string | null; entries?: Record<string, DevshellEntry> }
+  | undefined {
   try {
     return resolvePointer(state as Record<string, unknown>, "/devshell") as {
       activeRoot?: string | null;

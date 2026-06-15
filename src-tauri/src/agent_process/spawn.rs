@@ -237,6 +237,13 @@ fn apply_user_env(app: &AppHandle, command: &mut Command) {
             provider_timeout.to_string(),
         );
     }
+    let codex_fast_mode = cfg_json["agent"]["codexFastMode"]
+        .as_bool()
+        .unwrap_or(false);
+    command.env(
+        "AETHON_CODEX_FAST_MODE",
+        if codex_fast_mode { "1" } else { "0" },
+    );
     let bash_timeout_floor = cfg_json["agent"]["bashTimeoutFloorSeconds"]
         .as_u64()
         .unwrap_or(crate::helpers::AGENT_TIMEOUT_SECONDS_DEFAULT as u64);

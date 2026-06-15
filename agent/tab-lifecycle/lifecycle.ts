@@ -15,6 +15,7 @@ import {
   SessionManager,
   createAgentSession,
 } from "@mariozechner/pi-coding-agent";
+import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
 import type { Api, Model } from "@mariozechner/pi-ai";
 import { buildShellTools } from "../shell-tools";
 import { buildA2uiTools } from "../a2ui-tools";
@@ -22,6 +23,10 @@ import { createAethonBashToolDefinition } from "../bash-tool";
 import { buildDashboardTools } from "../dashboard-tools";
 import { buildSubagentTaskTool } from "../subagents/task-tool";
 import { buildMemoryTools } from "../memory/tools";
+import {
+  installCodexFastModePayloadHook,
+  supportsCodexFastMode,
+} from "../codex-fast-mode";
 import {
   buildDevshellSpawnHook,
   ensurePrepared as ensureDevshellPrepared,
@@ -41,6 +46,7 @@ import type { TabLifecycleDeps } from "./utils";
 
 export interface EnsureTabOptions {
   initialModel?: Model<Api>;
+  thinkingLevel?: ThinkingLevel;
   cwdOverride?: string;
 }
 
@@ -175,9 +181,11 @@ export async function ensureTab(
       buildSubagentTaskTool(state, deps, tabId),
     ],
     ...(options.initialModel ? { model: options.initialModel } : {}),
+    ...(options.thinkingLevel ? { thinkingLevel: options.thinkingLevel } : {}),
   });
   lifecycleLog.info(`session ready tabId=${tabId} cwd=${resolvedCwd}`);
   installAethonRetryClassifier(session);
+  installCodexFastModePayloadHook(state, session);
   wrapWithSourceGuard(session.agent, state.projectRoot, {
     tabRoot: resolvedCwd,
     hardEnforce: () =>
@@ -216,6 +224,10 @@ export async function ensureTab(
     type: "tab_ready",
     tabId,
     model: session.model ? modelKey(session.model) : "",
+    thinkingLevel: session.thinkingLevel,
+    thinkingLevels: session.getAvailableThinkingLevels(),
+    codexFastMode: state.codexFastMode,
+    codexFastModeSupported: supportsCodexFastMode(session.model),
     contextUsage: contextUsageSnapshot(state, tabId, rec),
   });
   emitContextUsage(state, deps, tabId, rec);

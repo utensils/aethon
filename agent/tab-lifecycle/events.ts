@@ -39,6 +39,7 @@ import { emitBashResult } from "./terminal";
 import { cancelAethonRetry, scheduleAethonRetry } from "./retry";
 import type { TabLifecycleDeps } from "./utils";
 import { modelKey } from "./utils";
+import { supportsCodexFastMode } from "../codex-fast-mode";
 import {
   addLiveContextUsageEstimate,
   clearLiveContextUsageEstimate,
@@ -270,6 +271,18 @@ export function handleSessionEvent(
           queued: rec.queuedCount,
         });
       }
+      break;
+    }
+    case "thinking_level_changed": {
+      deps.send({
+        type: "thinking_level_changed",
+        tabId,
+        model: rec.session.model ? modelKey(rec.session.model) : "",
+        thinkingLevel: rec.session.thinkingLevel,
+        thinkingLevels: rec.session.getAvailableThinkingLevels(),
+        codexFastMode: state.codexFastMode,
+        codexFastModeSupported: supportsCodexFastMode(rec.session.model),
+      });
       break;
     }
     case "message_update": {

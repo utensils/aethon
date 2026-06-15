@@ -10,8 +10,12 @@ describe("handleModelChanged", () => {
         activeTabId: "default",
         sidebar: {
           models: [
-            { id: "claude", label: "Claude" },
-            { id: "gpt", label: "GPT" },
+            {
+              id: "claude",
+              label: "Claude",
+              thinkingLevels: ["off", "medium"],
+            },
+            { id: "gpt", label: "GPT", codexFastModeSupported: true },
           ],
         },
       },
@@ -31,11 +35,42 @@ describe("handleModelChanged", () => {
     expect(mocks.recordProjectModel).toHaveBeenCalledWith("gpt", "default");
     const next = applySetState();
     expect(next.status).toBe("switched to gpt");
-    expect((next.sidebar as { models: { id: string; active: boolean }[] }).models)
-      .toEqual([
-        { id: "claude", label: "Claude", active: false },
-        { id: "gpt", label: "GPT", active: true },
-      ]);
+    expect(
+      (next.sidebar as { models: { id: string; active: boolean }[] }).models,
+    ).toEqual([
+      {
+        id: "claude",
+        label: "Claude",
+        thinkingLevels: ["off", "medium"],
+        active: false,
+      },
+      { id: "gpt", label: "GPT", codexFastModeSupported: true, active: true },
+    ]);
+  });
+
+  it("does not record project model memory for global Fast-mode changes", () => {
+    const { ctx, mocks, applySetState } = buildHandlerFixture({
+      state: {
+        activeTabId: "default",
+        codexFastMode: false,
+        sidebar: { models: [{ id: "gpt", label: "GPT" }] },
+      },
+    });
+
+    handleModelChanged(
+      {
+        type: "codex_fast_mode_changed",
+        tabId: "default",
+        model: "gpt",
+        codexFastMode: true,
+      },
+      ctx,
+    );
+
+    expect(mocks.recordProjectModel).not.toHaveBeenCalled();
+    const next = applySetState();
+    expect(next.codexFastMode).toBe(true);
+    expect(next.status).toBe("Codex Fast mode enabled");
   });
 
   it("leaves the picker untouched when a non-active tab changes model", () => {

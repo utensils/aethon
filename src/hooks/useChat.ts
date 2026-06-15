@@ -37,6 +37,29 @@ function queueOf(tab: Tab): QueuedMessage[] {
   return tab.queuedMessages ?? [];
 }
 
+const THINKING_LEVELS = new Set([
+  "off",
+  "minimal",
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+]);
+
+function parseModelIdWithThinking(raw: string): {
+  modelId: string;
+  thinkingLevel?: string;
+} {
+  const idx = raw.lastIndexOf(":");
+  if (idx <= 0) return { modelId: raw };
+  const modelId = raw.slice(0, idx);
+  const suffix = raw.slice(idx + 1);
+  if (!modelId.startsWith("openai-codex/") || !THINKING_LEVELS.has(suffix)) {
+    return { modelId: raw };
+  }
+  return { modelId, thinkingLevel: suffix };
+}
+
 export interface UseChatContext {
   setState: Dispatch<SetStateAction<Record<string, unknown>>>;
   stateRef: MutableRefObject<Record<string, unknown>>;
@@ -95,6 +118,8 @@ export interface UseChatActions {
     },
   ) => Promise<void>;
   setModel: (id: string) => Promise<void>;
+  setThinkingLevel: (level: string) => Promise<void>;
+  setCodexFastMode: (enabled: boolean) => Promise<void>;
   stopPrompt: (explicitTabId?: string) => Promise<void>;
   exportActiveChatMarkdown: () => Promise<void>;
   /** Replace the body of a queued message in place. No-op if the id has
@@ -186,6 +211,7 @@ export function useChat(ctx: UseChatContext): UseChatActions {
       voice: { ...(live?.voice ?? {}) },
       updates: { ...(live?.updates ?? {}) },
       devshell: { ...(live?.devshell ?? {}) },
+      guardrails: { ...(live?.guardrails ?? {}) },
     };
     try {
       await invoke("write_config", { config: merged });
@@ -585,6 +611,14 @@ export function useChat(ctx: UseChatContext): UseChatActions {
             stateRef.current.model.length > 0
           ? stateRef.current.model
           : undefined;
+    const targetThinkingLevel =
+      typeof targetTab?.thinkingLevel === "string" &&
+      targetTab.thinkingLevel.length > 0
+        ? targetTab.thinkingLevel
+        : typeof stateRef.current.thinkingLevel === "string" &&
+            stateRef.current.thinkingLevel.length > 0
+          ? stateRef.current.thinkingLevel
+          : undefined;
     try {
       await invoke("send_message", {
         request: {
@@ -594,6 +628,9 @@ export function useChat(ctx: UseChatContext): UseChatActions {
           ...(attachments.length > 0 ? { attachments } : {}),
           ...(targetCwd ? { cwd: targetCwd } : {}),
           ...(targetModel ? { model: targetModel } : {}),
+          ...(targetThinkingLevel
+            ? { thinkingLevel: targetThinkingLevel }
+            : {}),
           ...(typeof targetTab?.hardEnforceProjectRoot === "boolean"
             ? { hardEnforce: targetTab.hardEnforceProjectRoot }
             : {}),
@@ -667,7 +704,8 @@ export function useChat(ctx: UseChatContext): UseChatActions {
       persistDefaultModel(""); // writes [agent] model = null
       return;
     }
-    const trimmed = id.trim();
+    const parsed = parseModelIdWithThinking(id.trim());
+    const trimmed = parsed.modelId;
     if (!trimmed) return;
     const activeId = stateRef.current.activeTabId as string | undefined;
     const tabs = (stateRef.current.tabs as Tab[] | undefined) ?? [];
@@ -687,6 +725,12 @@ export function useChat(ctx: UseChatContext): UseChatActions {
     setState((prev) => ({
       ...prev,
       defaultModel: trimmed,
+      ...(parsed.thinkingLevel
+        ? {
+            thinkingLevel: parsed.thinkingLevel,
+            defaultThinkingLevel: parsed.thinkingLevel,
+          }
+        : {}),
       // Mirror onto /model for the header display when we're switching a
       // live session OR when no agent tab owns the header (dashboard /
       // shell focus) so the picker reflects the chosen default. When an
@@ -711,6 +755,9 @@ export function useChat(ctx: UseChatContext): UseChatActions {
           type: "set_model",
           id: trimmed,
           tabId: activeId,
+          ...(parsed.thinkingLevel
+            ? { thinkingLevel: parsed.thinkingLevel }
+            : {}),
         }),
       });
     } catch (err) {
@@ -733,6 +780,73 @@ export function useChat(ctx: UseChatContext): UseChatActions {
         activeId,
       );
     }
+  }
+
+  async function setThinkingLevel(level: string) {
+    const activeId = stateRef.current.activeTabId as string | undefined;
+    const tabs = (stateRef.current.tabs as Tab[] | undefined) ?? [];
+    const activeTab = activeId
+      ? tabs.find((t) => t.id === activeId)
+      : undefined;
+    if (!activeId || (activeTab?.kind ?? "agent") !== "agent") {
+      setState((prev) => ({
+        ...prev,
+        thinkingLevel: level,
+        defaultThinkingLevel: level,
+        status: `reasoning default: ${level}`,
+      }));
+      return;
+    }
+    if (stateRef.current.waiting === true || isAgentTabInFlight(activeTab)) {
+      setState((prev) => ({
+        ...prev,
+        status:
+          "agent busy — stop the current prompt before switching reasoning",
+      }));
+      return;
+    }
+    updateTab(activeId, (tab) => ({ ...tab, thinkingLevel: level }));
+    setState((prev) => ({
+      ...prev,
+      thinkingLevel: level,
+      defaultThinkingLevel: level,
+      status: `reasoning: ${level}`,
+    }));
+    await invoke("agent_command", {
+      payload: JSON.stringify({
+        type: "set_thinking_level",
+        tabId: activeId,
+        thinkingLevel: level,
+      }),
+    });
+  }
+
+  async function setCodexFastMode(enabled: boolean) {
+    setState((prev) => ({ ...prev, codexFastMode: enabled }));
+    let live: AethonConfig | null = null;
+    try {
+      live = await getConfig();
+    } catch {
+      /* fall through with defaults */
+    }
+    const merged = {
+      ui: { ...(live?.ui ?? {}) },
+      agent: { ...(live?.agent ?? {}), codexFastMode: enabled },
+      shell: { ...(live?.shell ?? {}) },
+      shortcuts: { ...(live?.shortcuts ?? {}) },
+      voice: { ...(live?.voice ?? {}) },
+      updates: { ...(live?.updates ?? {}) },
+      devshell: { ...(live?.devshell ?? {}) },
+      guardrails: { ...(live?.guardrails ?? {}) },
+    };
+    await invoke("write_config", { config: merged });
+    clearConfigCache();
+    await invoke("agent_broadcast_command", {
+      payload: JSON.stringify({
+        type: "set_codex_fast_mode",
+        codexFastMode: enabled,
+      }),
+    });
   }
 
   /** Cmd+Shift+S: export the active agent tab's chat history as a
@@ -877,6 +991,8 @@ export function useChat(ctx: UseChatContext): UseChatActions {
     clearChat,
     sendChat,
     setModel,
+    setThinkingLevel,
+    setCodexFastMode,
     stopPrompt,
     exportActiveChatMarkdown,
     editQueuedMessage,

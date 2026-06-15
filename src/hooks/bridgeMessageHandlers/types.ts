@@ -1,8 +1,4 @@
-import type {
-  Dispatch,
-  MutableRefObject,
-  SetStateAction,
-} from "react";
+import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 import type { A2UIPayload, ChatMessage } from "../../types/a2ui";
 import type { Tab } from "../../types/tab";
 import type { ExtensionRegistry } from "../../extensions/ExtensionRegistry";
@@ -30,6 +26,8 @@ export interface ModelDescriptor {
   id: string;
   label: string;
   provider: string;
+  thinkingLevels?: string[];
+  codexFastModeSupported?: boolean;
 }
 
 export interface DiscoveredSession {
@@ -65,7 +63,9 @@ export interface BridgeMessageContext {
   projectsRef: MutableRefObject<ProjectsState>;
   projectsLoadedRef: MutableRefObject<boolean>;
   activeResponseIdRef: MutableRefObject<string | null>;
-  hangWarnTimersRef: MutableRefObject<Map<string, ReturnType<typeof setTimeout>>>;
+  hangWarnTimersRef: MutableRefObject<
+    Map<string, ReturnType<typeof setTimeout>>
+  >;
   hangWarnActiveRef: MutableRefObject<Set<string>>;
   turnStartedAtRef: MutableRefObject<Map<string, number>>;
   lastExtensionStateKeysRef: MutableRefObject<Set<string>>;
@@ -79,7 +79,11 @@ export interface BridgeMessageContext {
   newTab: (
     tabId?: string,
     label?: string,
-    options?: { restoredSession?: boolean; cwd?: string; scrollToMatch?: string },
+    options?: {
+      restoredSession?: boolean;
+      cwd?: string;
+      scrollToMatch?: string;
+    },
   ) => void;
   dispatchTerminalReplay: (buffer: string) => void;
   autoRestoreDiscoveredSessions: (

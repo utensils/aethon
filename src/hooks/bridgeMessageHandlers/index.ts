@@ -82,6 +82,8 @@ export const bridgeMessageHandlers: Readonly<
   layout_patch: handleLayoutPatch,
   layout_set: handleLayoutSet,
   model_changed: handleModelChanged,
+  thinking_level_changed: handleModelChanged,
+  codex_fast_mode_changed: handleModelChanged,
   native_slash_result: handleNativeSlashResult,
   notice: handleNotice,
   notification: handleNotification,
@@ -109,4 +111,8 @@ export const bridgeMessageHandlers: Readonly<
   terminal_output: handleTerminalOutput,
 });
 
-export type { BridgeMessage, BridgeMessageContext, BridgeMessageHandler } from "./types";
+export type {
+  BridgeMessage,
+  BridgeMessageContext,
+  BridgeMessageHandler,
+} from "./types";

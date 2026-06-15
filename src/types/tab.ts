@@ -146,6 +146,8 @@ export interface Tab {
   queuedSteeringId?: string;
   canvas: unknown;
   model: string;
+  /** Active pi reasoning/thinking level for this session, when available. */
+  thinkingLevel?: string;
   contextUsage?: ContextUsageState;
   // Rolling buffer of bash output for this tab. The Terminal component
   // writes to xterm directly for the active tab; this buffer survives

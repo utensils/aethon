@@ -11,14 +11,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import type {
-  BooleanValue,
-  StringValue,
-} from "../../types/a2ui";
-import {
-  resolveBoolean,
-  resolveString,
-} from "../../utils/dataBinding";
+import type { BooleanValue, StringValue } from "../../types/a2ui";
+import { resolveBoolean, resolveString } from "../../utils/dataBinding";
 import { resolvePointer } from "../../utils/jsonPointer";
 import { PI_DEFAULT_MODEL_SENTINEL } from "../../utils/modelPicker";
 import type { BuiltinComponentProps } from "../../components/A2UIRenderer";
@@ -39,10 +33,7 @@ function readUiScale(): number {
 // the Workstation header (right side).
 // ---------------------------------------------------------------------------
 
-export function AgentStatusPill({
-  component,
-  state,
-}: BuiltinComponentProps) {
+export function AgentStatusPill({ component, state }: BuiltinComponentProps) {
   const props = component.props as {
     label?: StringValue;
     /** "live" (green dot) or "thinking" (pulsing accent). */
@@ -74,6 +65,8 @@ interface DropdownItem {
   label: string;
   hint?: string;
   active?: boolean;
+  thinkingLevels?: string[];
+  codexFastModeSupported?: boolean;
 }
 
 interface DropdownSection {
@@ -138,7 +131,10 @@ export function DropdownPickerCore({
       );
       setCoords({
         top: Math.min(r.bottom / scale + 6, Math.max(8, viewportHeight - 8)),
-        left: Math.max(8, Math.min(r.left / scale, Math.max(8, viewportWidth - 8))),
+        left: Math.max(
+          8,
+          Math.min(r.left / scale, Math.max(8, viewportWidth - 8)),
+        ),
         right: Math.max(8, viewportWidth - r.right / scale),
         width: panelWidth,
       });
@@ -300,12 +296,20 @@ export function DropdownPickerCore({
 function asDropdownItems(raw: unknown): DropdownItem[] {
   if (!Array.isArray(raw)) return [];
   return raw
-    .filter((v): v is Record<string, unknown> => typeof v === "object" && v !== null)
+    .filter(
+      (v): v is Record<string, unknown> => typeof v === "object" && v !== null,
+    )
     .map((v) => ({
       id: String(v.id ?? ""),
       label: String(v.label ?? v.id ?? ""),
       hint: v.hint != null ? String(v.hint) : undefined,
       active: v.active === true,
+      thinkingLevels: Array.isArray(v.thinkingLevels)
+        ? v.thinkingLevels.filter(
+            (level): level is string => typeof level === "string",
+          )
+        : undefined,
+      codexFastModeSupported: v.codexFastModeSupported === true,
     }))
     .filter((it) => it.id.length > 0);
 }
@@ -323,7 +327,11 @@ function asDropdownItems(raw: unknown): DropdownItem[] {
 // `PI_DEFAULT_MODEL_SENTINEL` instead, which `setModel` interprets.
 const CUSTOM_MODEL_SENTINEL = "__custom__";
 
-export function ModelPicker({ component, state, onEvent }: BuiltinComponentProps) {
+export function ModelPicker({
+  component,
+  state,
+  onEvent,
+}: BuiltinComponentProps) {
   const props = component.props as {
     source?: { $ref: string } | DropdownItem[];
     active?: StringValue;
@@ -331,7 +339,8 @@ export function ModelPicker({ component, state, onEvent }: BuiltinComponentProps
     buttonLabel?: StringValue;
     visible?: BooleanValue;
   };
-  const visible = props.visible === undefined ? true : resolveBoolean(props.visible, state);
+  const visible =
+    props.visible === undefined ? true : resolveBoolean(props.visible, state);
   // Custom-id mode: replaces the dropdown with a free-text input so a
   // model not in the loaded registry can still be set as the default.
   const [customMode, setCustomMode] = useState(false);
@@ -359,7 +368,7 @@ export function ModelPicker({ component, state, onEvent }: BuiltinComponentProps
     | undefined;
   const activeId = props.active
     ? resolveString(props.active, state)
-    : (activeTabModel || defaultModel || piDefaultModel || "");
+    : activeTabModel || defaultModel || piDefaultModel || "";
 
   const placeholder = props.placeholder
     ? resolveString(props.placeholder, state)
@@ -426,37 +435,80 @@ export function ModelPicker({ component, state, onEvent }: BuiltinComponentProps
     { id: CUSTOM_MODEL_SENTINEL, label: "Custom id…" },
   ];
   const activeItem = sectionItems.find((it) => it.active);
+  const activeModelItem = items.find((it) => it.id === activeId);
+  const thinkingLevels = activeModelItem?.thinkingLevels ?? [];
+  const thinkingLevel =
+    (resolvePointer(state, "/thinkingLevel") as string | undefined) ||
+    (resolvePointer(state, "/defaultThinkingLevel") as string | undefined) ||
+    thinkingLevels[0] ||
+    "";
+  const codexFastMode = resolvePointer(state, "/codexFastMode") === true;
+  const codexFastModeSupported =
+    activeModelItem?.codexFastModeSupported === true;
 
   const buttonLabel = props.buttonLabel
     ? resolveString(props.buttonLabel, state)
     : activeItem?.label || activeId || "model";
 
   return (
-    <DropdownPickerCore
-      className="a2ui-model-picker"
-      buttonLabel={buttonLabel}
-      align="right"
-      sections={[
-        {
-          id: "models",
-          title: "models",
-          items: sectionItems,
-          searchable: true,
-          searchPlaceholder: placeholder,
-          emptyLabel: "no models match",
-        },
-      ]}
-      onSelect={(sectionId, itemId) => {
-        if (itemId === CUSTOM_MODEL_SENTINEL) {
-          setCustomValue("");
-          setCustomMode(true);
-          return;
-        }
-        // PI_DEFAULT_MODEL_SENTINEL flows through unchanged — setModel
-        // interprets it as "reset to pi's env-driven default".
-        onEvent("select", { sectionId, itemId }, itemId);
-      }}
-    />
+    <span className="a2ui-model-picker-wrap">
+      <DropdownPickerCore
+        className="a2ui-model-picker"
+        buttonLabel={buttonLabel}
+        align="right"
+        sections={[
+          {
+            id: "models",
+            title: "models",
+            items: sectionItems,
+            searchable: true,
+            searchPlaceholder: placeholder,
+            emptyLabel: "no models match",
+          },
+        ]}
+        onSelect={(sectionId, itemId) => {
+          if (itemId === CUSTOM_MODEL_SENTINEL) {
+            setCustomValue("");
+            setCustomMode(true);
+            return;
+          }
+          // PI_DEFAULT_MODEL_SENTINEL flows through unchanged — setModel
+          // interprets it as "reset to pi's env-driven default".
+          onEvent("select", { sectionId, itemId }, itemId);
+        }}
+      />
+      {thinkingLevels.length > 0 ? (
+        <select
+          className="a2ui-model-picker-reasoning"
+          aria-label="Reasoning level"
+          value={thinkingLevel}
+          onChange={(e) =>
+            onEvent("thinking-level", { level: e.target.value }, e.target.value)
+          }
+        >
+          {thinkingLevels.map((level) => (
+            <option key={level} value={level}>
+              {level}
+            </option>
+          ))}
+        </select>
+      ) : null}
+      {codexFastModeSupported ? (
+        <label
+          className="a2ui-model-picker-fast"
+          title="Codex Fast mode uses OpenAI's priority service tier and may consume more credits."
+        >
+          <input
+            type="checkbox"
+            checked={codexFastMode}
+            onChange={(e) =>
+              onEvent("codex-fast-mode", { enabled: e.target.checked })
+            }
+          />
+          Fast
+        </label>
+      ) : null}
+    </span>
   );
 }
 
@@ -467,14 +519,19 @@ export function ModelPicker({ component, state, onEvent }: BuiltinComponentProps
 // routes to activateLayoutById / setTheme.
 // ---------------------------------------------------------------------------
 
-export function AppearanceMenu({ component, state, onEvent }: BuiltinComponentProps) {
+export function AppearanceMenu({
+  component,
+  state,
+  onEvent,
+}: BuiltinComponentProps) {
   const props = component.props as {
     layoutsSource?: { $ref: string } | DropdownItem[];
     themesSource?: { $ref: string } | DropdownItem[];
     buttonLabel?: StringValue;
     visible?: BooleanValue;
   };
-  const visible = props.visible === undefined ? true : resolveBoolean(props.visible, state);
+  const visible =
+    props.visible === undefined ? true : resolveBoolean(props.visible, state);
   if (!visible) return null;
 
   const layoutsRaw = Array.isArray(props.layoutsSource)
@@ -530,7 +587,11 @@ export function AppearanceMenu({ component, state, onEvent }: BuiltinComponentPr
 // active root is not a git repo.
 // ---------------------------------------------------------------------------
 
-export function VcsStatus({ component, state, onEvent }: BuiltinComponentProps) {
+export function VcsStatus({
+  component,
+  state,
+  onEvent,
+}: BuiltinComponentProps) {
   const props = component.props as { source?: { $ref: string } };
   const vcs =
     (props.source && "$ref" in props.source
@@ -574,9 +635,15 @@ export function VcsStatus({ component, state, onEvent }: BuiltinComponentProps) 
       : `${changeTotal} changed files — open the first in editor`;
 
   return (
-    <div className="ae-vcs-cluster" data-loading={vcs.loading ? "true" : undefined}>
+    <div
+      className="ae-vcs-cluster"
+      data-loading={vcs.loading ? "true" : undefined}
+    >
       {vcs.branch ? (
-        <span className="ae-vcs-chip ae-vcs-branch" title={`On branch ${vcs.branch}`}>
+        <span
+          className="ae-vcs-chip ae-vcs-branch"
+          title={`On branch ${vcs.branch}`}
+        >
           <span className="ae-vcs-glyph" aria-hidden="true">
             ⎇
           </span>

@@ -147,6 +147,33 @@ describe("useChat setModel", () => {
     });
   });
 
+  it("forwards a restored tab's reasoning level on the first chat", async () => {
+    const tab = {
+      ...makeEmptyTab("tab-1", "Tab 1"),
+      model: "openai-codex/gpt-5.5",
+      thinkingLevel: "high",
+    };
+    const { ctx } = buildContext({
+      model: "openai-codex/gpt-5.5",
+      tabs: [tab],
+    });
+    const { result } = renderHook(() => useChat(ctx));
+
+    await act(async () => {
+      await result.current.sendChat("hello");
+    });
+
+    expect(invoke).toHaveBeenCalledWith("send_message", {
+      request: {
+        message: "hello",
+        tabId: "tab-1",
+        mode: "normal",
+        model: "openai-codex/gpt-5.5",
+        thinkingLevel: "high",
+      },
+    });
+  });
+
   it("sends image attachments with the user message and clears draft attachments", async () => {
     const attachment = {
       id: "img-1",
@@ -734,6 +761,25 @@ describe("useChat setModel", () => {
     ).toBe(true);
   });
 
+  it("preserves non-Codex model ids with colon suffixes that look like reasoning levels", async () => {
+    const { ctx, stateRef } = buildContext();
+    const { result } = renderHook(() => useChat(ctx));
+
+    await act(async () => {
+      await result.current.setModel("ollama/foo:high");
+    });
+
+    expect(invoke).toHaveBeenCalledWith("agent_command", {
+      payload: JSON.stringify({
+        type: "set_model",
+        id: "ollama/foo:high",
+        tabId: "tab-1",
+      }),
+    });
+    expect(stateRef.current.model).toBe("ollama/foo:high");
+    expect(stateRef.current.defaultThinkingLevel).toBeUndefined();
+  });
+
   it("leaves the visible model alone while the active prompt is busy", async () => {
     const { ctx, stateRef } = buildContext({ waiting: true });
     const { result } = renderHook(() => useChat(ctx));
@@ -754,6 +800,52 @@ describe("useChat setModel", () => {
     expect(stateRef.current.model).toBe("anthropic/claude-opus-4-7");
     expect((stateRef.current.tabs as Tab[])[0].model).toBe(
       "anthropic/claude-opus-4-7",
+    );
+  });
+
+  it("records reasoning defaults when no agent tab is active", async () => {
+    const { ctx, stateRef } = buildContext({
+      activeTabId: undefined,
+      tabs: [],
+    });
+    const { result } = renderHook(() => useChat(ctx));
+
+    await act(async () => {
+      await result.current.setThinkingLevel("high");
+    });
+
+    expect(invoke).not.toHaveBeenCalledWith("agent_command", expect.anything());
+    expect(stateRef.current.thinkingLevel).toBe("high");
+    expect(stateRef.current.defaultThinkingLevel).toBe("high");
+    expect(stateRef.current.status).toBe("reasoning default: high");
+  });
+
+  it("does not apply reasoning changes while the active prompt is busy", async () => {
+    const busyTab = {
+      ...makeEmptyTab("tab-1", "Tab 1"),
+      model: "openai-codex/gpt-5.5",
+      thinkingLevel: "medium",
+      waiting: true,
+    };
+    const { ctx, stateRef } = buildContext({
+      model: "openai-codex/gpt-5.5",
+      thinkingLevel: "medium",
+      defaultThinkingLevel: "medium",
+      waiting: true,
+      tabs: [busyTab],
+    });
+    const { result } = renderHook(() => useChat(ctx));
+
+    await act(async () => {
+      await result.current.setThinkingLevel("xhigh");
+    });
+
+    expect(invoke).not.toHaveBeenCalledWith("agent_command", expect.anything());
+    expect(stateRef.current.thinkingLevel).toBe("medium");
+    expect(stateRef.current.defaultThinkingLevel).toBe("medium");
+    expect((stateRef.current.tabs as Tab[])[0].thinkingLevel).toBe("medium");
+    expect(stateRef.current.status).toBe(
+      "agent busy — stop the current prompt before switching reasoning",
     );
   });
 

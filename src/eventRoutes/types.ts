@@ -143,6 +143,8 @@ export interface EventRouteContext {
   toggleTerminal: () => void;
   clearChat: () => void;
   setModel: (id: string) => Promise<void>;
+  setThinkingLevel: (level: string) => Promise<void>;
+  setCodexFastMode: (enabled: boolean) => Promise<void>;
   setTheme: (id: string) => void;
   activateLayoutById: (id: string) => void;
   openProjectFromPicker: () => Promise<string | null>;

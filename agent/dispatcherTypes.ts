@@ -36,6 +36,8 @@ export interface InboundMessage {
   mode?: "normal" | "steer";
   cwd?: string;
   model?: string;
+  /** Optional pi reasoning/thinking level for model launch flows. */
+  thinkingLevel?: string;
   /** Per-tab hard project-root guardrail override, carried on `chat`. */
   hardEnforce?: boolean;
   name?: string;
@@ -54,6 +56,7 @@ export interface InboundMessage {
   mutationId?: string;
   success?: boolean;
   error?: string;
+  codexFastMode?: boolean;
   providerId?: string;
   profileId?: string;
   label?: string;

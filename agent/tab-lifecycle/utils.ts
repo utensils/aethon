@@ -5,8 +5,13 @@
  */
 
 import { join } from "node:path";
-import type { Api, Model } from "@mariozechner/pi-ai";
+import {
+  getSupportedThinkingLevels,
+  type Api,
+  type Model,
+} from "@mariozechner/pi-ai";
 import type { AethonAgentState, ModelDescriptor } from "../state";
+import { supportsCodexFastMode } from "../codex-fast-mode";
 
 export interface TabLifecycleDeps {
   send: (obj: Record<string, unknown>) => void;
@@ -17,10 +22,17 @@ export function modelKey(m: Model<Api>): string {
 }
 
 export function modelDescriptor(m: Model<Api>): ModelDescriptor {
+  const supportedThinkingLevels = getSupportedThinkingLevels(m);
+  const thinkingLevels =
+    supportedThinkingLevels.length === 1 && supportedThinkingLevels[0] === "off"
+      ? []
+      : supportedThinkingLevels;
   return {
     id: modelKey(m),
     label: m.name ?? m.id,
     provider: m.provider,
+    ...(thinkingLevels.length > 0 ? { thinkingLevels } : {}),
+    ...(supportsCodexFastMode(m) ? { codexFastModeSupported: true } : {}),
   };
 }
 

@@ -334,6 +334,7 @@ export const handleReady: BridgeMessageHandler = (data, ctx) => {
               cwd?: string;
               authProfileId?: string;
               contextUsage?: Record<string, unknown>;
+              thinkingLevel?: string;
             }[]
           | undefined) ?? [];
       const tabReplay =
@@ -357,6 +358,9 @@ export const handleReady: BridgeMessageHandler = (data, ctx) => {
         );
         if (bt?.model && !localTabs[i].model) {
           localTabs[i] = { ...localTabs[i], model: bt.model };
+        }
+        if (bt?.thinkingLevel) {
+          localTabs[i] = { ...localTabs[i], thinkingLevel: bt.thinkingLevel };
         }
         if (bt?.cwd && !localTabs[i].cwd) {
           localTabs[i] = { ...localTabs[i], cwd: bt.cwd };
@@ -407,6 +411,13 @@ export const handleReady: BridgeMessageHandler = (data, ctx) => {
     const tabsList = (next.tabs as Tab[] | undefined) ?? [];
     const activeTab = tabsList.find((t) => t.id === activeId);
     const activeModel = activeTab?.model || fallbackModel;
+    const activeThinkingLevel =
+      activeTab?.thinkingLevel ||
+      (typeof data.thinkingLevel === "string" ? data.thinkingLevel : undefined);
+    const existingDefaultThinkingLevel =
+      typeof next.defaultThinkingLevel === "string"
+        ? next.defaultThinkingLevel
+        : undefined;
     const activeTurnBusy =
       activeTab?.waiting === true ||
       (activeTab?.queueCount ?? 0) > 0 ||
@@ -417,6 +428,12 @@ export const handleReady: BridgeMessageHandler = (data, ctx) => {
       ...(projectRoot ? { projectRoot } : {}),
       ...(userDir ? { aethonRoot: userDir } : {}),
       model: activeModel,
+      ...(activeThinkingLevel ? { thinkingLevel: activeThinkingLevel } : {}),
+      defaultThinkingLevel: activeThinkingLevel ?? existingDefaultThinkingLevel,
+      codexFastMode:
+        typeof data.codexFastMode === "boolean"
+          ? data.codexFastMode
+          : next.codexFastMode,
       status: activeTurnBusy ? "thinking…" : "ready",
       connection: "connected",
       recentSessions,
@@ -427,6 +444,8 @@ export const handleReady: BridgeMessageHandler = (data, ctx) => {
           id: m.id,
           label: m.label,
           active: m.id === activeModel,
+          ...(m.thinkingLevels ? { thinkingLevels: m.thinkingLevels } : {}),
+          ...(m.codexFastModeSupported ? { codexFastModeSupported: true } : {}),
         })),
       },
     };
