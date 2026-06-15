@@ -18,9 +18,9 @@
     "version:check": "node scripts/sync-version.mjs --check"
   },
   "dependencies": {
-    "@mariozechner/pi-agent-core": "^0.72.1",
-    "@mariozechner/pi-ai": "^0.72.1",
-    "@mariozechner/pi-coding-agent": "^0.72.1",
+    "@mariozechner/pi-agent-core": "^0.73.1",
+    "@mariozechner/pi-ai": "^0.73.1",
+    "@mariozechner/pi-coding-agent": "^0.73.1",
     "@monaco-editor/react": "^4.7.0",
     "@shikijs/langs": "^4",
     "@shikijs/monaco": "^4.0.2",

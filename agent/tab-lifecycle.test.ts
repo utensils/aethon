@@ -5,6 +5,7 @@ import {
   type TabRecord,
 } from "./state";
 import {
+  buildPickerModels,
   cancelRunningToolCards,
   compilePattern,
   collectPiSlashCommands,
@@ -102,6 +103,35 @@ describe("ensurePickerHasModel", () => {
         }),
       ],
     });
+  });
+});
+
+describe("buildPickerModels", () => {
+  it("filters by enabledModels and keeps the active model visible", () => {
+    const { state } = makeFixture();
+    const claude = {
+      id: "claude-sonnet-4-5",
+      provider: "anthropic",
+      name: "Claude Sonnet",
+    };
+    const codex = {
+      id: "gpt-5.1-codex",
+      provider: "openai-codex",
+      name: "Codex",
+    };
+    const llama = { id: "llama3", provider: "ollama", name: "Llama" };
+    state.modelRegistry = {
+      getAll: () => [claude, codex, llama],
+      getAvailable: () => [claude, codex, llama],
+    } as unknown as AethonAgentState["modelRegistry"];
+    state.settingsManager = {
+      getEnabledModels: () => ["openai-codex/*"],
+    } as unknown as AethonAgentState["settingsManager"];
+
+    expect(buildPickerModels(state, claude as never).map(modelKey)).toEqual([
+      "anthropic/claude-sonnet-4-5",
+      "openai-codex/gpt-5.1-codex",
+    ]);
   });
 });
 
