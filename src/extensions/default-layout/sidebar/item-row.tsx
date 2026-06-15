@@ -102,18 +102,23 @@ export function ItemRow({
   const behind = git?.behind ?? 0;
 
   // Agent-activity dot — leading status indicator distinct from the trailing
-  // git dirty dot. When the project row is collapsed, fall back to the
-  // rollup so a hidden active workspace still surfaces a dot; when expanded,
-  // show only this row's own (main-scope) activity since the workspace rows
-  // carry their own dots.
+  // git dirty dot. A running workspace turn should keep the project line
+  // visibly active even while the project is expanded and another workspace
+  // is selected. Idle workspace-only sessions stay on their own rows while
+  // expanded to avoid duplicate idle rings; collapsed projects fall back to
+  // the rollup because their workspace rows are hidden.
   const agentRaw = item as {
     agent?: { status?: string; runningCount?: number };
     agentRollup?: { status?: string; runningCount?: number };
   };
+  const ownAgent = agentRaw.agent;
+  const rollupAgent = agentRaw.agentRollup;
   const agent =
-    disclosure === "collapsed"
-      ? (agentRaw.agentRollup ?? agentRaw.agent)
-      : agentRaw.agent;
+    rollupAgent?.status === "running"
+      ? rollupAgent
+      : disclosure === "collapsed"
+        ? (rollupAgent ?? ownAgent)
+        : ownAgent;
   const agentDotEl =
     agent && agent.status && agent.status !== "none" ? (
       <span
