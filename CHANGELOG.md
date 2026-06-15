@@ -4,6 +4,22 @@ All notable changes to Aethon. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 [SemVer](https://semver.org/).
 
+## [0.10.0](https://github.com/utensils/aethon/compare/v0.9.0...v0.10.0) (2026-06-15)
+
+
+### Features
+
+* **composer:** add [@file](https://github.com/file) completion picker to chat input and task launcher ([#266](https://github.com/utensils/aethon/issues/266)) ([efe504d](https://github.com/utensils/aethon/commit/efe504d04bf941d19e6f97695435d55f5b235a4e))
+* **memory:** add Aethon user and project memory ([ba313bb](https://github.com/utensils/aethon/commit/ba313bb6a267492176631effa58cf3f1ca690c35)), closes [#270](https://github.com/utensils/aethon/issues/270)
+
+
+### Bug Fixes
+
+* **agent:** keep bad at-file refs non-fatal ([#268](https://github.com/utensils/aethon/issues/268)) ([1ef61c6](https://github.com/utensils/aethon/commit/1ef61c647930c4d154947ce8877e4cfcef953f81))
+* **fs:** refresh sidebar after agent-created folders ([#269](https://github.com/utensils/aethon/issues/269)) ([a9edf4e](https://github.com/utensils/aethon/commit/a9edf4e0780192f1c9fadc9651202b7a17f66d29))
+* **sidebar:** show project activity for running workspaces ([#272](https://github.com/utensils/aethon/issues/272)) ([87ab959](https://github.com/utensils/aethon/commit/87ab9596b9316ed6e33ce4506c4e223f9459ce0d))
+* **tray:** avoid status item rebuilds on menu replays ([#271](https://github.com/utensils/aethon/issues/271)) ([d36df23](https://github.com/utensils/aethon/commit/d36df2331253492f4752e2f9345966bece22d918))
+
 ## [0.9.0](https://github.com/utensils/aethon/compare/v0.8.1...v0.9.0) (2026-06-10)
 
 ### ⚠ BREAKING CHANGES
