@@ -28,6 +28,8 @@ export interface ResolvedFileReference {
 export interface FileReferenceExpansion {
   prompt: string;
   references: ResolvedFileReference[];
+  /** Non-fatal reference issues surfaced to the user while the turn continues. */
+  issues?: string[];
 }
 
 export interface FileReferenceExpansionOptions {
@@ -139,8 +141,7 @@ export async function expandFileReferencesInPrompt(
     }
   }
 
-  if (issues.length > 0) throw new FileReferenceError(issues);
-  if (resolved.length === 0) return { prompt: content, references: [] };
+  if (resolved.length === 0) return { prompt: content, references: [], issues };
 
   const references: ResolvedFileReference[] = [];
   let remainingTotal = maxTotalBytes;
@@ -169,6 +170,7 @@ export async function expandFileReferencesInPrompt(
   return {
     prompt: `${content}${formatFileReferenceContext(root, references)}`,
     references,
+    issues,
   };
 }
 

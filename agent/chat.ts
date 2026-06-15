@@ -93,6 +93,13 @@ export async function handleChat(
       cwd: tabCwdForMention ?? process.cwd(),
       leadingSubagentName: explicitSubagent,
     });
+    if (expanded.issues?.length) {
+      deps.send({
+        type: "notice",
+        tabId,
+        message: `file references: ${expanded.issues.join("\n")}`,
+      });
+    }
     content = expanded.prompt;
   } catch (err) {
     if (explicitSubagent) state.pendingExplicitSubagent.delete(tabId);
