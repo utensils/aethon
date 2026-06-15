@@ -94,6 +94,8 @@ import { seedPreparedEnv } from "./devshell";
 import { getSubagentsForCwd } from "./subagents";
 import { buildExplicitSubagentSteer } from "./subagents/steer";
 import { loadDisabledExtensionsSnapshot } from "./disabled-extensions";
+import { resolveMemoryContext, readMemoryPath } from "./memory/resolver";
+import { renderMemoryPromptSection } from "./memory/renderer";
 import { captureProjectExtensionBaseline, runDispatcher } from "./dispatcher";
 import { withWorkerOrigin } from "./origin-gate";
 
@@ -238,7 +240,20 @@ async function main(): Promise<void> {
         git,
         softAnchor: softGuardrailPrompt,
       });
-      let systemPrompt = `${event.systemPrompt}\n\n${section}`;
+      const memoryContext = await resolveMemoryContext({
+        userDir: state.userDir,
+        cwd: resolvedCwd,
+      }).catch(() => null);
+      const memorySection = memoryContext
+        ? renderMemoryPromptSection({
+            ...memoryContext,
+            userMemory: readMemoryPath(memoryContext.user.memoryPath),
+            projectMemory: readMemoryPath(memoryContext.project.memoryPath),
+          })
+        : "";
+      let systemPrompt = memorySection
+        ? `${event.systemPrompt}\n\n${memorySection}\n\n${section}`
+        : `${event.systemPrompt}\n\n${section}`;
       // Advertise the subagents available for THIS tab's cwd, per turn — so a
       // tab on project A never sees project B's subagents even after B opens
       // (the static system-prompt snapshot can't be per-tab).

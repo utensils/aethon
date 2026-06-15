@@ -71,6 +71,7 @@ const BUILTIN_SLASH_NAMES = new Set([
   "reset",
   "reload",
   "rename",
+  "memory",
   "context",
   "session",
   "compact",
