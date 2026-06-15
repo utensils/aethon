@@ -21,7 +21,17 @@ import {
   resolveString,
 } from "../../utils/dataBinding";
 import type { BuiltinComponentProps } from "../../components/A2UIRenderer";
-import { observeTerminalTheme, readTerminalTheme, terminalFitDelay } from "./terminal-helpers";
+import {
+  applyTerminalHostUiScale,
+  applyTerminalUiScale,
+  observeTerminalTheme,
+  observeTerminalUiScale,
+  readAppUiScale,
+  readTerminalTheme,
+  terminalFitDelay,
+  terminalFontSizeForUiScale,
+  TERMINAL_UI_SCALE_SETTLE_MS,
+} from "./terminal-helpers";
 
 // ---------------------------------------------------------------------------
 // Terminal — xterm.js with WebGL renderer. Falls back to canvas if WebGL
@@ -93,18 +103,35 @@ export function Terminal({ component, state, onEvent }: BuiltinComponentProps) {
   const termRef = useRef<XTerm | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
   const lastOutputRef = useRef<string>("");
+  const fontSizeRef = useRef(fontSize);
+
+  useEffect(() => {
+    fontSizeRef.current = fontSize;
+    const term = termRef.current;
+    const fit = fitRef.current;
+    const host = containerRef.current;
+    if (!term || !fit || !host) return;
+    applyTerminalUiScale(host, term, fontSize);
+    try {
+      fit.fit();
+    } catch {
+      /* ignore transient xterm resize errors */
+    }
+  }, [fontSize]);
 
   useEffect(() => {
     if (!containerRef.current) return;
     if (termRef.current) return;
 
     const baseTheme = readTerminalTheme();
+    const uiScale = readAppUiScale();
+    applyTerminalHostUiScale(containerRef.current, uiScale);
     // xterm.js validates `cols`/`rows` as soon as they appear in the
     // options object — passing `cols: undefined` triggers
     // "cols must be numeric, value: undefined". Build the option bag
     // dynamically so only defined dimensions reach the constructor.
     const term = new XTerm({
-      fontSize,
+      fontSize: terminalFontSizeForUiScale(fontSize, uiScale),
       ...(typeof cols === "number" ? { cols } : {}),
       ...(typeof rows === "number" ? { rows } : {}),
       fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
@@ -139,7 +166,33 @@ export function Terminal({ component, state, onEvent }: BuiltinComponentProps) {
       console.warn("WebGL renderer unavailable, using canvas fallback:", err);
     }
 
-    fit.fit();
+    let resizeTimer: ReturnType<typeof setTimeout> | null = null;
+    let scaleSettleTimer: ReturnType<typeof setTimeout> | null = null;
+    const fitToContainer = () => {
+      resizeTimer = null;
+      try {
+        fit.fit();
+      } catch {
+        /* noop */
+      }
+    };
+    const syncUiScale = (scale = readAppUiScale()) => {
+      if (!containerRef.current) return;
+      applyTerminalUiScale(
+        containerRef.current,
+        term,
+        fontSizeRef.current,
+        scale,
+      );
+      fitToContainer();
+      if (scaleSettleTimer) clearTimeout(scaleSettleTimer);
+      scaleSettleTimer = window.setTimeout(() => {
+        scaleSettleTimer = null;
+        fitToContainer();
+      }, TERMINAL_UI_SCALE_SETTLE_MS);
+    };
+
+    syncUiScale(uiScale);
     term.write(bootGreetingRef.current);
 
     // onInput wires xterm's keystroke stream to an A2UI event so a future
@@ -182,15 +235,6 @@ export function Terminal({ component, state, onEvent }: BuiltinComponentProps) {
       window.addEventListener("aethon:terminal-replay", onReplayEvent);
     }
 
-    let resizeTimer: ReturnType<typeof setTimeout> | null = null;
-    const fitToContainer = () => {
-      resizeTimer = null;
-      try {
-        fit.fit();
-      } catch {
-        /* noop */
-      }
-    };
     const ro = new ResizeObserver(() => {
       if (resizeTimer) clearTimeout(resizeTimer);
       resizeTimer = setTimeout(
@@ -202,11 +246,14 @@ export function Terminal({ component, state, onEvent }: BuiltinComponentProps) {
     });
     ro.observe(containerRef.current);
     const stopThemeObserver = observeTerminalTheme(term);
+    const stopScaleObserver = observeTerminalUiScale(syncUiScale);
 
     return () => {
       ro.disconnect();
       if (resizeTimer) clearTimeout(resizeTimer);
+      if (scaleSettleTimer) clearTimeout(scaleSettleTimer);
       stopThemeObserver();
+      stopScaleObserver();
       if (onTerminalEvent) {
         window.removeEventListener("aethon:terminal", onTerminalEvent);
       }

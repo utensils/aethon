@@ -27,9 +27,15 @@ import type {
   BuiltinComponentProps,
 } from "../../../components/A2UIRenderer";
 import {
+  applyTerminalHostUiScale,
+  applyTerminalUiScale,
   observeTerminalTheme,
+  observeTerminalUiScale,
+  readAppUiScale,
   readTerminalTheme,
   terminalFitDelay,
+  terminalFontSizeForUiScale,
+  TERMINAL_UI_SCALE_SETTLE_MS,
 } from "../terminal-helpers";
 import {
   decideShellResize,
@@ -73,19 +79,35 @@ export function ShellCanvas({ component, state, onEvent }: BuiltinComponentProps
   const termRef = useRef<XTerm | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
   const tabIdRef = useRef<string>(tabId);
+  const fontSizeRef = useRef(fontSize);
   // Live cols×rows for the status line. Updated in the same ResizeObserver
   // callback that resizes the PTY so the displayed value never drifts.
   const [dims, setDims] = useState<{ cols: number; rows: number } | null>(null);
   useEffect(() => {
     tabIdRef.current = tabId;
   }, [tabId]);
+  useEffect(() => {
+    fontSizeRef.current = fontSize;
+    const term = termRef.current;
+    const fit = fitRef.current;
+    const host = containerRef.current;
+    if (!term || !fit || !host) return;
+    applyTerminalUiScale(host, term, fontSize);
+    try {
+      fit.fit();
+    } catch {
+      /* ignore transient xterm resize errors */
+    }
+  }, [fontSize]);
 
   useEffect(() => {
     if (!containerRef.current) return;
     if (!tabId) return; // no tab bound yet — wait for the layout to populate
 
+    const uiScale = readAppUiScale();
+    applyTerminalHostUiScale(containerRef.current, uiScale);
     const term = new XTerm({
-      fontSize,
+      fontSize: terminalFontSizeForUiScale(fontSize, uiScale),
       fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
       cursorBlink: true,
       allowProposedApi: true,
@@ -107,7 +129,6 @@ export function ShellCanvas({ component, state, onEvent }: BuiltinComponentProps
     } catch (err) {
       console.warn("WebGL renderer unavailable, using canvas fallback:", err);
     }
-    fit.fit();
     if (bootGreeting) term.write(bootGreeting);
 
     // Keystrokes → shell_input. Send the raw bytes the shell wants to
@@ -128,6 +149,7 @@ export function ShellCanvas({ component, state, onEvent }: BuiltinComponentProps
     // guards that keep panel-toggle from raising spurious SIGWINCHes.
     const lastSentDimsRef = { current: null as ShellDims | null };
     let resizeTimer: ReturnType<typeof setTimeout> | null = null;
+    let scaleSettleTimer: ReturnType<typeof setTimeout> | null = null;
     let ptyResizeTimer: ReturnType<typeof setTimeout> | null = null;
     let pendingPtyResize: ShellDims | null = null;
     const sendPtyResize = (dims: ShellDims) => {
@@ -187,6 +209,22 @@ export function ShellCanvas({ component, state, onEvent }: BuiltinComponentProps
         /* fit transient errors during teardown */
       }
     };
+    const syncUiScaleAndResize = (scale = readAppUiScale()) => {
+      if (!containerRef.current) return;
+      applyTerminalUiScale(
+        containerRef.current,
+        term,
+        fontSizeRef.current,
+        scale,
+      );
+      resizeToContainer();
+      if (scaleSettleTimer) clearTimeout(scaleSettleTimer);
+      scaleSettleTimer = window.setTimeout(() => {
+        scaleSettleTimer = null;
+        resizeToContainer();
+      }, TERMINAL_UI_SCALE_SETTLE_MS);
+    };
+    syncUiScaleAndResize(uiScale);
     const ro = new ResizeObserver((entries) => {
       if (shouldSkipResize(entries[0], containerRef.current)) return;
       if (resizeTimer) clearTimeout(resizeTimer);
@@ -199,6 +237,7 @@ export function ShellCanvas({ component, state, onEvent }: BuiltinComponentProps
     });
     ro.observe(containerRef.current);
     const stopThemeObserver = observeTerminalTheme(term);
+    const stopScaleObserver = observeTerminalUiScale(syncUiScaleAndResize);
 
     // PTY chunks land via per-tab CustomEvent (`aethon:shell-output:<tabId>`).
     // App.tsx dispatches them; we route to xterm.write here.
@@ -222,8 +261,10 @@ export function ShellCanvas({ component, state, onEvent }: BuiltinComponentProps
       window.removeEventListener(eventName, onShellOutput);
       ro.disconnect();
       if (resizeTimer) clearTimeout(resizeTimer);
+      if (scaleSettleTimer) clearTimeout(scaleSettleTimer);
       if (ptyResizeTimer) clearTimeout(ptyResizeTimer);
       stopThemeObserver();
+      stopScaleObserver();
       onDataDisposable.dispose();
       term.dispose();
       termRef.current = null;

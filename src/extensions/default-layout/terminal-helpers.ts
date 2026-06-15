@@ -48,11 +48,95 @@ const ANSI_FALLBACK: XTermThemeShape = {
 
 export const TERMINAL_FIT_DEBOUNCE_MS = 80;
 export const TERMINAL_FIT_DRAG_THROTTLE_MS = 48;
+export const TERMINAL_UI_SCALE_SETTLE_MS = 32;
+
+const UI_SCALE_EVENT = "aethon:ui-scale-change";
 
 export function terminalFitDelay(isUserResizing: boolean): number {
   return isUserResizing
     ? TERMINAL_FIT_DRAG_THROTTLE_MS
     : TERMINAL_FIT_DEBOUNCE_MS;
+}
+
+export function readAppUiScale(): number {
+  if (typeof window === "undefined") return 1;
+  const root = document.documentElement;
+  const raw =
+    root.style.getPropertyValue("--app-ui-scale") ||
+    getComputedStyle(root).getPropertyValue("--app-ui-scale") ||
+    root.style.zoom ||
+    "1";
+  const scale = Number.parseFloat(raw);
+  return Number.isFinite(scale) && scale > 0 ? scale : 1;
+}
+
+export function terminalFontSizeForUiScale(
+  baseFontSize: number,
+  scale = readAppUiScale(),
+): number {
+  return baseFontSize * scale;
+}
+
+// The app still uses root-level CSS zoom for chrome. Counter-zoom xterm's
+// host and scale xterm's own font metrics instead so mouse coordinates,
+// cached cell dimensions, and the rendered glyph grid stay in one coordinate
+// system after Cmd+/-. Keep the host at the panel size; app viewport
+// compensation already keeps the visible layout bounds correct.
+export function applyTerminalHostUiScale(
+  host: HTMLElement,
+  scale = readAppUiScale(),
+): void {
+  host.style.transformOrigin = "top left";
+  host.style.zoom = String(1 / scale);
+  host.style.width = "100%";
+  host.style.height = "100%";
+}
+
+export function applyTerminalUiScale(
+  host: HTMLElement,
+  term: XTerm,
+  baseFontSize: number,
+  scale = readAppUiScale(),
+): number {
+  applyTerminalHostUiScale(host, scale);
+  const scaledFontSize = terminalFontSizeForUiScale(baseFontSize, scale);
+  term.options.fontSize = scaledFontSize;
+  try {
+    term.refresh(0, Math.max(0, term.rows - 1));
+  } catch {
+    /* terminal may be mid-open/dispose; refit path will retry */
+  }
+  return scaledFontSize;
+}
+
+export function observeTerminalUiScale(onScale: (scale: number) => void): () => void {
+  if (typeof window === "undefined") return () => {};
+  let lastScale = readAppUiScale();
+  const emitIfChanged = (nextScale: number) => {
+    if (!Number.isFinite(nextScale) || nextScale <= 0) return;
+    if (Math.abs(nextScale - lastScale) < 0.0001) return;
+    lastScale = nextScale;
+    onScale(nextScale);
+  };
+  const notifyIfChanged = () => emitIfChanged(readAppUiScale());
+  const onEvent = (event: Event) => {
+    const detailScale = (event as CustomEvent<{ scale?: number }>).detail?.scale;
+    if (typeof detailScale === "number") {
+      emitIfChanged(detailScale);
+      return;
+    }
+    notifyIfChanged();
+  };
+  window.addEventListener(UI_SCALE_EVENT, onEvent);
+  const obs = new MutationObserver(notifyIfChanged);
+  obs.observe(document.documentElement, {
+    attributes: true,
+    attributeFilter: ["style"],
+  });
+  return () => {
+    window.removeEventListener(UI_SCALE_EVENT, onEvent);
+    obs.disconnect();
+  };
 }
 
 export function readTerminalTheme(): XTermThemeShape {

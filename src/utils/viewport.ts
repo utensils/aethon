@@ -11,10 +11,16 @@ export function writeUiViewportVars(scale: number) {
 }
 
 export function applyUiScale(scale: number) {
+  const previous = readZoom();
   const root = document.documentElement;
   root.style.setProperty("--app-ui-scale", String(scale));
   writeUiViewportVars(scale);
   root.style.zoom = String(scale);
+  if (Math.abs(scale - previous) >= 0.0001) {
+    window.dispatchEvent(
+      new CustomEvent("aethon:ui-scale-change", { detail: { scale } }),
+    );
+  }
 }
 
 export function readZoom(): number {
