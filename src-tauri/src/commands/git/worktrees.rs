@@ -3,6 +3,8 @@ use std::time::UNIX_EPOCH;
 
 use crate::env;
 
+use super::common::read_only_git_command;
+
 /// One worktree row as reported by `git worktree list --porcelain`.
 /// `serde(rename_all = "camelCase")` matches the TS `GitWorktreeRecord`
 /// shape — without it, `is_main` would serialize as `is_main` and the
@@ -45,7 +47,7 @@ pub async fn git_worktrees(project_path: String) -> Result<Vec<Worktree>, String
     if !dir.is_dir() {
         return Ok(Vec::new());
     }
-    let output = env::command("git")
+    let output = read_only_git_command()
         .arg("-C")
         .arg(&dir)
         .args(["worktree", "list", "--porcelain"])
@@ -151,7 +153,7 @@ pub async fn git_worktree_add(
             .map_err(|e| format!("create worktree parent {}: {e}", parent.display()))?;
     }
     // Detect whether the branch exists so we know whether to pass `-b`.
-    let exists = env::command("git")
+    let exists = read_only_git_command()
         .arg("-C")
         .arg(&dir)
         .args(["rev-parse", "--verify", "--quiet"])
@@ -366,7 +368,7 @@ pub async fn git_branch_list(project_path: String) -> Result<Vec<BranchInfo>, St
     if !dir.is_dir() {
         return Ok(Vec::new());
     }
-    let output = env::command("git")
+    let output = read_only_git_command()
         .arg("-C")
         .arg(&dir)
         .args([

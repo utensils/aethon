@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use crate::env;
+use super::common::read_only_tokio_gh_command;
 
 /// Compact view of a single GitHub issue, surfaced on the dashboard.
 /// camelCase serde so the TS side reads it as-is.
@@ -109,7 +109,7 @@ pub async fn gh_issue_list(project_path: String, limit: Option<u32>) -> Vec<GhIs
     let limit = limit.unwrap_or(30).clamp(1, 100);
     let limit_str = limit.to_string();
     tokio::time::timeout(Duration::from_secs(5), async {
-        let out = env::tokio_command("gh")
+        let out = read_only_tokio_gh_command()
             .args([
                 "issue",
                 "list",
@@ -148,7 +148,7 @@ pub async fn gh_issue_view(project_path: String, number: i64) -> Result<GhIssueD
         return Err("issue number must be positive".into());
     }
     let out = tokio::time::timeout(Duration::from_secs(5), async {
-        env::tokio_command("gh")
+        read_only_tokio_gh_command()
             .args([
                 "issue",
                 "view",

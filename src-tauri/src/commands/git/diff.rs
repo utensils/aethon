@@ -15,8 +15,7 @@
 
 use std::path::{Path, PathBuf};
 
-use crate::env;
-
+use super::common::{fail_if_index_locked, read_only_git_command};
 use super::status::resolve_repo_and_active_root;
 
 /// One contiguous change in a file relative to HEAD, in **new-file** line
@@ -64,6 +63,7 @@ pub async fn git_file_diff_hunks(
     let Some((_repo_root, active_root)) = resolve_repo_and_active_root(&dir)? else {
         return Ok(None);
     };
+    fail_if_index_locked(&active_root)?;
     let Some(rel) = rel_to_active(&active_root, &path) else {
         return Ok(Some(Vec::new()));
     };
@@ -72,7 +72,7 @@ pub async fn git_file_diff_hunks(
     // header alone tells us the kind + line range. `HEAD` compares the
     // working tree (staged + unstaged) against the last commit, matching
     // VS Code's default dirty-diff baseline.
-    let output = env::command("git")
+    let output = read_only_git_command()
         .arg("-C")
         .arg(&active_root)
         .args(["diff", "--no-color", "-U0", "HEAD", "--", &rel])
@@ -105,10 +105,11 @@ pub async fn git_diff_stat(root: String) -> Result<Option<DiffStat>, String> {
     let Some((_repo_root, active_root)) = resolve_repo_and_active_root(&dir)? else {
         return Ok(None);
     };
+    fail_if_index_locked(&active_root)?;
     // `--numstat` prints `adds<TAB>dels<TAB>path` per file (binary files
     // report `-`); summing the columns gives the working-tree-vs-HEAD
     // totals. `-- .` scopes to the active root for subdirectory-opened repos.
-    let output = env::command("git")
+    let output = read_only_git_command()
         .arg("-C")
         .arg(&active_root)
         .args(["diff", "--no-color", "--numstat", "HEAD", "--", "."])
@@ -158,7 +159,7 @@ pub async fn git_show_head(root: String, path: String) -> Result<Option<String>,
     // `HEAD:./<rel>` resolves the blob relative to the cwd (`-C` target),
     // so we don't have to translate into repo-root coordinates.
     let spec = format!("HEAD:./{rel}");
-    let output = env::command("git")
+    let output = read_only_git_command()
         .arg("-C")
         .arg(&active_root)
         .args(["show", &spec])

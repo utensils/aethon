@@ -249,6 +249,32 @@ describe("useVcsStatus", () => {
     expect(warm.loading).toBe(true); // reconcile in flight
   });
 
+  it("preserves the current slice when a read-only git refresh sees index.lock", async () => {
+    invokeMock.mockImplementation((cmd: string) =>
+      cmd === "git_status"
+        ? Promise.resolve({ branch: "main", ahead: 0, behind: 0, dirty: false })
+        : Promise.resolve(cmd === "git_file_status" ? [] : null),
+    );
+    branchMock.mockResolvedValue(null);
+    checksMock.mockResolvedValue(null);
+    const h = makeSetState();
+    renderHook(() =>
+      useVcsStatus({ activeRoot: "/repo", setState: h.setState }),
+    );
+    await waitFor(() => expect(h.vcs()?.loading).toBe(false));
+    expect(h.vcs()?.branch).toBe("main");
+
+    invokeMock.mockRejectedValue(
+      "git index locked; skipping read-only refresh",
+    );
+    emitGitStateChanged("/repo");
+    await new Promise((r) => setTimeout(r, 30));
+
+    expect(h.vcs()?.branch).toBe("main");
+    expect(h.vcs()?.loading).toBe(false);
+    expect(branchMock).toHaveBeenCalledTimes(1);
+  });
+
   it("treats a 'none' CI conclusion as no CI signal", async () => {
     invokeMock.mockImplementation((cmd: string) =>
       cmd === "git_status"

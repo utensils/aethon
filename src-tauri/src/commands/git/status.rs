@@ -7,6 +7,8 @@ use tauri::State;
 
 use crate::env;
 
+use super::common::{fail_if_index_locked, read_only_git_command};
+
 const FETCH_TIMEOUT: Duration = Duration::from_secs(120);
 const FETCH_DEDUP_WINDOW: Duration = Duration::from_secs(30);
 
@@ -80,7 +82,7 @@ async fn git_fetch_all_inner(project_path: String, state: &GitFetchState) -> Res
 }
 
 fn is_inside_work_tree(dir: &Path) -> bool {
-    let inside = env::command("git")
+    let inside = read_only_git_command()
         .arg("-C")
         .arg(dir)
         .args(["rev-parse", "--is-inside-work-tree"])
@@ -92,7 +94,7 @@ fn is_inside_work_tree(dir: &Path) -> bool {
 }
 
 fn git_common_dir(dir: &Path) -> Option<PathBuf> {
-    let out = env::command("git")
+    let out = read_only_git_command()
         .arg("-C")
         .arg(dir)
         .args(["rev-parse", "--path-format=absolute", "--git-common-dir"])
@@ -142,7 +144,7 @@ pub async fn git_status(path: String) -> Result<Option<GitStatus>, String> {
     }
     // Quick presence check — `git rev-parse --is-inside-work-tree`.
     // Saves spawning the porcelain pass on a non-git directory.
-    let inside = env::command("git")
+    let inside = read_only_git_command()
         .arg("-C")
         .arg(&dir)
         .args(["rev-parse", "--is-inside-work-tree"])
@@ -154,9 +156,10 @@ pub async fn git_status(path: String) -> Result<Option<GitStatus>, String> {
     if !inside_ok {
         return Ok(None);
     }
+    fail_if_index_locked(&dir)?;
     // Branch: prefer the symbolic name. Falls back to a short SHA on
     // detached HEAD so the chip still says something useful.
-    let branch_out = env::command("git")
+    let branch_out = read_only_git_command()
         .arg("-C")
         .arg(&dir)
         .args(["symbolic-ref", "--short", "HEAD"])
@@ -166,7 +169,7 @@ pub async fn git_status(path: String) -> Result<Option<GitStatus>, String> {
         Some(o) if o.status.success() => {
             Some(String::from_utf8_lossy(&o.stdout).trim().to_string())
         }
-        _ => env::command("git")
+        _ => read_only_git_command()
             .arg("-C")
             .arg(&dir)
             .args(["rev-parse", "--short", "HEAD"])
@@ -181,7 +184,7 @@ pub async fn git_status(path: String) -> Result<Option<GitStatus>, String> {
     //   …
     // The header line is parsed for ahead/behind (when an upstream is
     // configured). Any subsequent line means the worktree is dirty.
-    let porcelain = env::command("git")
+    let porcelain = read_only_git_command()
         .arg("-C")
         .arg(&dir)
         .args(["status", "--porcelain=v1", "--branch"])
@@ -252,7 +255,8 @@ pub async fn git_working_context(cwd: String) -> Result<Option<GitWorkingContext
     if !is_inside_work_tree(&dir) {
         return Ok(None);
     }
-    let repo_root = env::command("git")
+    fail_if_index_locked(&dir)?;
+    let repo_root = read_only_git_command()
         .arg("-C")
         .arg(&dir)
         .args(["rev-parse", "--show-toplevel"])
@@ -290,7 +294,7 @@ pub async fn git_working_context(cwd: String) -> Result<Option<GitWorkingContext
 /// Resolve an absolute git path for `flag` (e.g. `--git-dir`,
 /// `--git-common-dir`), canonicalized so the worktree comparison is stable.
 fn git_rev_parse_abs_path(dir: &Path, flag: &str) -> Option<PathBuf> {
-    let out = env::command("git")
+    let out = read_only_git_command()
         .arg("-C")
         .arg(dir)
         .args(["rev-parse", "--path-format=absolute", flag])
@@ -308,7 +312,7 @@ fn git_rev_parse_abs_path(dir: &Path, flag: &str) -> Option<PathBuf> {
 /// Symbolic branch name, falling back to a short SHA on detached HEAD so the
 /// prompt still says something useful. Mirrors [`git_status`]'s branch read.
 fn read_head_branch(dir: &Path) -> Option<String> {
-    let symbolic = env::command("git")
+    let symbolic = read_only_git_command()
         .arg("-C")
         .arg(dir)
         .args(["symbolic-ref", "--short", "HEAD"])
@@ -318,7 +322,7 @@ fn read_head_branch(dir: &Path) -> Option<String> {
         Some(o) if o.status.success() => {
             Some(String::from_utf8_lossy(&o.stdout).trim().to_string())
         }
-        _ => env::command("git")
+        _ => read_only_git_command()
             .arg("-C")
             .arg(dir)
             .args(["rev-parse", "--short", "HEAD"])
@@ -333,7 +337,7 @@ fn read_head_branch(dir: &Path) -> Option<String> {
 /// The `## ` header carries the optional `[ahead N, behind M]` tail; every
 /// other non-empty line is a tracked/untracked change.
 fn read_branch_porcelain_counts(dir: &Path) -> (u32, u32, u32) {
-    let porcelain = env::command("git")
+    let porcelain = read_only_git_command()
         .arg("-C")
         .arg(dir)
         .args(["status", "--porcelain=v1", "--branch"])
@@ -387,12 +391,13 @@ pub async fn git_file_status(root: String) -> Result<Option<Vec<GitFileStatusEnt
     let Some((repo_root, active_root)) = resolve_repo_and_active_root(&dir)? else {
         return Ok(None);
     };
+    fail_if_index_locked(&active_root)?;
 
     // `--porcelain=v1 -z` gives a stable, NUL-delimited format whose paths
     // are not quoted, so spaces and unusual characters do not need a fragile
     // line parser. `-- .` scopes the result to the active root when the user
     // opened a repository subdirectory as the project.
-    let porcelain = env::command("git")
+    let porcelain = read_only_git_command()
         .arg("-C")
         .arg(&active_root)
         .args([
@@ -430,7 +435,7 @@ pub async fn git_file_status(root: String) -> Result<Option<Vec<GitFileStatusEnt
 pub(crate) fn resolve_repo_and_active_root(
     dir: &Path,
 ) -> Result<Option<(PathBuf, PathBuf)>, String> {
-    let inside = env::command("git")
+    let inside = read_only_git_command()
         .arg("-C")
         .arg(dir)
         .args(["rev-parse", "--is-inside-work-tree"])
@@ -443,7 +448,7 @@ pub(crate) fn resolve_repo_and_active_root(
         return Ok(None);
     }
 
-    let top_level = env::command("git")
+    let top_level = read_only_git_command()
         .arg("-C")
         .arg(dir)
         .args(["rev-parse", "--show-toplevel"])
@@ -480,12 +485,13 @@ pub async fn git_ignored_paths(root: String) -> Result<Option<Vec<String>>, Stri
     let Some((_repo_root, active_root)) = resolve_repo_and_active_root(&dir)? else {
         return Ok(None);
     };
+    fail_if_index_locked(&active_root)?;
 
     // `--others --ignored --exclude-standard` lists only ignored entries; `-z`
     // keeps paths unquoted + NUL-delimited; `-- .` scopes to the active root
     // so a subdirectory-opened repo reports its own ignores, output relative
     // to that root.
-    let output = env::command("git")
+    let output = read_only_git_command()
         .arg("-C")
         .arg(&active_root)
         .args([
@@ -643,6 +649,27 @@ mod tests {
         let state = GitFetchState::default();
         assert!(state.reserve_attempt(key.clone()));
         assert!(!state.reserve_attempt(key));
+    }
+
+    #[tokio::test]
+    async fn git_status_skips_refresh_when_index_lock_exists() {
+        if env::resolve_program("git").is_none() {
+            return;
+        }
+        let tmp = tempfile::tempdir().unwrap();
+        let init = env::command("git")
+            .arg("init")
+            .arg(tmp.path())
+            .output()
+            .unwrap();
+        assert!(init.status.success());
+        std::fs::File::create(tmp.path().join(".git").join("index.lock")).unwrap();
+
+        let result = git_status(tmp.path().to_string_lossy().to_string()).await;
+        assert_eq!(
+            result.err().as_deref(),
+            Some(super::super::common::GIT_INDEX_LOCKED_MESSAGE)
+        );
     }
 
     #[test]

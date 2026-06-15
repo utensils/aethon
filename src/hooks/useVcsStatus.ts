@@ -29,6 +29,7 @@ import {
   hydrateVcsSliceCache,
   putCachedVcsSlice,
 } from "../vcsSliceCache";
+import { isGitIndexLockedError } from "../utils/gitErrors";
 
 type GitFileStatusKind =
   | "modified"
@@ -109,6 +110,7 @@ export interface UseVcsStatusContext {
 }
 
 const POLL_INTERVAL_MS = 20_000;
+const GIT_REFRESH_LOCKED = Symbol("git-refresh-locked");
 /** Keep the panel tidy + the IPC payload small; the count is exact even
  *  when the file list is truncated. */
 const MAX_FILES = 200;
@@ -130,6 +132,13 @@ const EMPTY_CHANGES: VcsChanges = {
 interface DiffStat {
   insertions: number;
   deletions: number;
+}
+
+type GitPollResult<T> = T | null | typeof GIT_REFRESH_LOCKED;
+
+function catchGitPollError<T>(err: unknown): GitPollResult<T> {
+  if (isGitIndexLockedError(err)) return GIT_REFRESH_LOCKED;
+  return null;
 }
 
 function emptySlice(root: string | null, loading: boolean): VcsSlice {
@@ -285,13 +294,27 @@ export function useVcsStatus({ activeRoot, setState }: UseVcsStatusContext): voi
         // run together; PR/CI gate on having a branch.
         const [statusRes, filesRes, statRes] = await Promise.all([
           invoke<GitStatus | null>("git_status", { path: root }).catch(
-            () => null,
+            catchGitPollError<GitStatus>,
           ),
           invoke<GitFileStatusEntry[] | null>("git_file_status", {
             root,
-          }).catch(() => null),
-          invoke<DiffStat | null>("git_diff_stat", { root }).catch(() => null),
+          }).catch(catchGitPollError<GitFileStatusEntry[]>),
+          invoke<DiffStat | null>("git_diff_stat", { root }).catch(
+            catchGitPollError<DiffStat>,
+          ),
         ]);
+        if (
+          statusRes === GIT_REFRESH_LOCKED ||
+          filesRes === GIT_REFRESH_LOCKED ||
+          statRes === GIT_REFRESH_LOCKED
+        ) {
+          setState((s) => {
+            const prev = (s.vcs as VcsSlice | undefined) ?? null;
+            if (!prev || prev.root !== root || !prev.loading) return s;
+            return { ...s, vcs: { ...prev, loading: false } };
+          });
+          return;
+        }
 
         const branch = statusRes?.branch ?? null;
         // Spread so we never mutate the shared EMPTY_CHANGES constant.

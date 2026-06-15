@@ -54,6 +54,7 @@ import { useEditorViewSettings } from "./useEditorViewSettings";
 import { useEditorExternalChange } from "./useEditorExternalChange";
 import { monacoOptionsFor } from "./viewSettings";
 import { handleEditorLinkOpen } from "./link-openers";
+import { isGitIndexLockedError } from "../../../utils/gitErrors";
 
 /** Read the shared `--scrollbar-size` token (px) so Monaco's scrollbar
  *  matches the terminal + WebKit scrollbars. Falls back to 4px. */
@@ -120,6 +121,7 @@ export function EditorCanvas({
   const gutterRef = useRef<monaco.editor.IEditorDecorationsCollection | null>(
     null,
   );
+  const gutterKeyRef = useRef<string>("");
   const currentTabIdRef = useRef<string>("");
   const projectPathRef = useRef<string>(projectPath);
   // Stable reference to the live onEvent callback. The renderer
@@ -522,12 +524,18 @@ export function EditorCanvas({
       gutterRef.current ??
       (gutterRef.current = ed.createDecorationsCollection());
     if (!showMonaco || !tabId || !editorMeta?.filePath || !projectPath) {
+      gutterKeyRef.current = "";
       collection.clear();
       return;
     }
     const path = editorMeta.filePath;
     const root = projectPath;
     const forTabId = tabId;
+    const gutterKey = `${root}\0${path}\0${forTabId}`;
+    if (gutterKeyRef.current !== gutterKey) {
+      gutterKeyRef.current = gutterKey;
+      collection.clear();
+    }
     let cancelled = false;
     void invoke<DiffHunk[] | null>("git_file_diff_hunks", { root, path })
       .then((hunks) => {
@@ -545,8 +553,8 @@ export function EditorCanvas({
         );
         collection.set(decorations);
       })
-      .catch(() => {
-        if (!cancelled) collection.clear();
+      .catch((err) => {
+        if (!cancelled && !isGitIndexLockedError(err)) collection.clear();
       });
     return () => {
       cancelled = true;
