@@ -484,6 +484,7 @@ export function useChat(ctx: UseChatContext): UseChatActions {
           id: crypto.randomUUID(),
           role: "user" as const,
           text: trimmed,
+          createdAt: Date.now(),
         };
         appendMessage(slashUserMessage, slashTabId);
         persistLocalChatMessage(slashUserMessage, slashTabId);
@@ -569,6 +570,7 @@ export function useChat(ctx: UseChatContext): UseChatActions {
       text: displayText,
       ...(attachments.length > 0 ? { attachments } : {}),
       delivery,
+      createdAt: Date.now(),
     };
     appendMessage(userMessage, tabId);
     updateTab(tabId, (tab) => ({

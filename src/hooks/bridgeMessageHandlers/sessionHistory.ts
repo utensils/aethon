@@ -73,7 +73,18 @@ function isLivePendingMessage(
   latestRestoredTime: number | undefined,
 ): boolean {
   if (message.role === "user") {
-    return message.delivery === "sent" || message.delivery === "steered";
+    if (message.delivery !== "sent" && message.delivery !== "steered") {
+      return false;
+    }
+    const createdAt = messageCreatedAt(message);
+    if (
+      typeof createdAt === "number" &&
+      typeof latestRestoredTime === "number" &&
+      createdAt < latestRestoredTime
+    ) {
+      return false;
+    }
+    return true;
   }
   if (!currentlyWaiting) return false;
   if (message.role !== "agent") return false;

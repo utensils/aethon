@@ -917,4 +917,43 @@ describe("handleSessionHistory", () => {
     expect(out.messages).toHaveLength(1);
     expect(out.messages[0]).toMatchObject({ id: "restored-user" });
   });
+
+  it("orders an older initial prompt before newer restored transcript rows", () => {
+    const { ctx, mocks } = buildHandlerFixture();
+    handleSessionHistory(
+      {
+        type: "session_history",
+        tabId: "tab-1",
+        messages: [
+          {
+            id: "restored-final",
+            role: "agent",
+            text: "Done. PR #281 was merged.",
+            createdAt: 3_000,
+          },
+        ],
+      },
+      ctx,
+    );
+    const [, updater] = mocks.updateTab.mock.calls[0];
+    const tab = makeEmptyTab("tab-1", "Tab 1");
+    const out = updater({
+      ...tab,
+      waiting: true,
+      messages: [
+        {
+          id: "initial-prompt",
+          role: "user",
+          text: "Please work on GitHub issue #279",
+          delivery: "sent",
+          createdAt: 1_000,
+        },
+      ],
+    });
+
+    expect(out.messages.map((m: ChatMessage) => m.id)).toEqual([
+      "initial-prompt",
+      "restored-final",
+    ]);
+  });
 });
