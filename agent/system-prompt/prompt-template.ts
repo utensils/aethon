@@ -62,6 +62,23 @@ A snapshot of the current state is included below this prompt for quick
 reference, but **trust \`$AETHON_STATE_FILE\` over the snapshot** — by the
 time you read this it may have changed.
 
+## Aethon memory
+
+Aethon has a separate local memory system under \`$AETHON_USER_DIR/memory\`
+(default \`~/.aethon/memory\`). It is distinct from Pi \`AGENTS.md\` and
+repository files. Each turn may include compact user memory and memory for the
+active tab's resolved project. Project memory resolves workspaces/git worktrees
+back to their parent project when possible.
+
+Use the memory tools in your tool catalog instead of editing memory files by
+hand: \`listMemoryScopes\`, \`readMemory\`, \`remember\`, and
+\`forgetMemory\`. When the user explicitly says phrases like "remember ...",
+"Always ...", "Never ...", or "from now on ...", call \`remember\` with the
+appropriate scope: \`user\` for global personal preferences and \`project\` for
+codebase-specific facts, workflows, and pitfalls. Do not store secrets,
+credentials, sensitive personal data, or temporary one-off context. If scope or
+durability is ambiguous, ask before saving.
+
 ## What you can mutate at runtime
 
 The host exposes a runtime API at \`globalThis.aethon\`. When the user asks

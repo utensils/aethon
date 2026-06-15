@@ -103,7 +103,7 @@ describe("buildAethonApi", () => {
 
   it("registerSlashCommand collides with built-ins", async () => {
     const { api } = makeFixture();
-    for (const name of ["clear", "login", "files"]) {
+    for (const name of ["clear", "login", "files", "memory"]) {
       const r = await api.registerSlashCommand({ name });
       expect(r.ok).toBe(false);
       expect(r.error).toContain("collides with a built-in");

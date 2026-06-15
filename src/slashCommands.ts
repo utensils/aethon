@@ -297,6 +297,11 @@ export function buildBuiltinSlashCommands(): SlashCommand[] {
       },
     },
     {
+      name: "memory",
+      description: "Show Aethon's user and resolved-project memory",
+      run: (args, ctx) => ctx.runNativeCommand("memory", args),
+    },
+    {
       name: "context",
       description: "Show current pi context window usage",
       run: (args, ctx) => ctx.runNativeCommand("context", args),

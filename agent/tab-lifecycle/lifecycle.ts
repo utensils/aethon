@@ -21,6 +21,7 @@ import { buildA2uiTools } from "../a2ui-tools";
 import { createAethonBashToolDefinition } from "../bash-tool";
 import { buildDashboardTools } from "../dashboard-tools";
 import { buildSubagentTaskTool } from "../subagents/task-tool";
+import { buildMemoryTools } from "../memory/tools";
 import {
   buildDevshellSpawnHook,
   ensurePrepared as ensureDevshellPrepared,
@@ -170,6 +171,7 @@ export async function ensureTab(
       ...buildA2uiTools(),
       ...buildShellTools(),
       ...buildDashboardTools(),
+      ...buildMemoryTools(state, tabId),
       buildSubagentTaskTool(state, deps, tabId),
     ],
     ...(options.initialModel ? { model: options.initialModel } : {}),

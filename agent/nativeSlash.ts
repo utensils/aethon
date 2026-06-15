@@ -9,6 +9,7 @@ import {
   writeSessionLabel,
 } from "./session-history";
 import { ensureTab, modelKey, tabSessionDir } from "./tab-lifecycle";
+import { formatMemorySummary } from "./memory/tools";
 
 interface NativeContextUsage {
   tokens: number | null;
@@ -147,6 +148,15 @@ export async function handleNativeSlashCommand(
   const tab = await ensureTab(state, deps, tabId);
   const command = name.toLowerCase();
   switch (command) {
+    case "memory": {
+      deps.send({
+        type: "native_slash_result",
+        tabId,
+        command,
+        message: await formatMemorySummary(state, tabId),
+      });
+      return;
+    }
     case "context": {
       const usage = (
         tab.session as {
