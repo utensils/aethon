@@ -112,17 +112,17 @@ export function applyTerminalUiScale(
 export function observeTerminalUiScale(onScale: (scale: number) => void): () => void {
   if (typeof window === "undefined") return () => {};
   let lastScale = readAppUiScale();
-  const notifyIfChanged = () => {
-    const nextScale = readAppUiScale();
+  const emitIfChanged = (nextScale: number) => {
+    if (!Number.isFinite(nextScale) || nextScale <= 0) return;
     if (Math.abs(nextScale - lastScale) < 0.0001) return;
     lastScale = nextScale;
     onScale(nextScale);
   };
+  const notifyIfChanged = () => emitIfChanged(readAppUiScale());
   const onEvent = (event: Event) => {
     const detailScale = (event as CustomEvent<{ scale?: number }>).detail?.scale;
-    if (typeof detailScale === "number" && Number.isFinite(detailScale)) {
-      lastScale = detailScale;
-      onScale(detailScale);
+    if (typeof detailScale === "number") {
+      emitIfChanged(detailScale);
       return;
     }
     notifyIfChanged();
