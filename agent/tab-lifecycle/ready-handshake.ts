@@ -17,6 +17,7 @@ import { defaultModelKey } from "./models";
 import { refreshPiSlashCommands } from "./slash-commands";
 import type { TabLifecycleDeps } from "./utils";
 import { modelKey } from "./utils";
+import { supportsCodexFastMode } from "../codex-fast-mode";
 
 export function emitReady(
   state: AethonAgentState,
@@ -30,6 +31,8 @@ export function emitReady(
   deps.send({
     type: "ready",
     model: defaultModelKey(state),
+    thinkingLevel: commandSourceTab?.session.thinkingLevel,
+    codexFastMode: state.codexFastMode,
     projectRoot: state.projectRoot,
     currentProjectCwd: state.currentProjectCwd,
     userDir: state.userDir,
@@ -38,6 +41,12 @@ export function emitReady(
     tabs: [...state.tabs.values()].map((t) => ({
       id: t.id,
       model: t.session.model ? modelKey(t.session.model) : "",
+      thinkingLevel: t.session.thinkingLevel,
+      thinkingLevels:
+        (
+          t.session as { getAvailableThinkingLevels?: () => string[] }
+        ).getAvailableThinkingLevels?.() ?? [],
+      codexFastModeSupported: supportsCodexFastMode(t.session.model),
       cwd: state.tabProjectCwds.get(t.id),
       authProfileId: state.tabAuthProfileIds.get(t.id),
       contextUsage: contextUsageSnapshot(state, t.id, t),
@@ -63,9 +72,7 @@ export function emitReady(
         code: m.code,
       }),
     ),
-    extensionHighlightGrammars: [
-      ...state.extensionHighlightGrammars.values(),
-    ],
+    extensionHighlightGrammars: [...state.extensionHighlightGrammars.values()],
     extensionsList: [...state.loadedExtensions.entries()].map(
       ([name, source]) => ({
         name,

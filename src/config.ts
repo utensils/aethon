@@ -54,6 +54,8 @@ export interface AethonConfig {
     model: string | null;
     /** Optional Aethon-owned provider/SDK request timeout override. */
     providerTimeoutSeconds: number | null;
+    /** Request Codex Fast mode (priority service tier) for supported Codex models. */
+    codexFastMode: boolean;
     /** Floor applied to model-supplied bash tool timeouts. */
     bashTimeoutFloorSeconds: number;
     /** Default inline subagent wall-clock ceiling. */
@@ -138,6 +140,7 @@ const DEFAULTS: AethonConfig = {
   agent: {
     model: null,
     providerTimeoutSeconds: null,
+    codexFastMode: false,
     bashTimeoutFloorSeconds: DEFAULT_AGENT_TIMEOUT_SECONDS,
     subagentTimeoutSeconds: DEFAULT_AGENT_TIMEOUT_SECONDS,
   },
@@ -223,6 +226,7 @@ export function getConfig(): Promise<AethonConfig> {
           providerTimeoutSeconds: normalizeOptionalTimeoutSeconds(
             obj?.agent?.providerTimeoutSeconds,
           ),
+          codexFastMode: obj?.agent?.codexFastMode === true,
           bashTimeoutFloorSeconds: normalizeTimeoutSeconds(
             obj?.agent?.bashTimeoutFloorSeconds,
           ),
@@ -272,8 +276,7 @@ export function getConfig(): Promise<AethonConfig> {
                 : DEFAULTS.voice.holdHotkey,
         },
         updates: {
-          channel:
-            obj?.updates?.channel === "nightly" ? "nightly" : "stable",
+          channel: obj?.updates?.channel === "nightly" ? "nightly" : "stable",
           disableAutoCheck: obj?.updates?.disableAutoCheck === true,
         },
         devshell: {
@@ -295,7 +298,8 @@ export function getConfig(): Promise<AethonConfig> {
             obj.guardrails.softPromptAnchor.trim().length > 0
               ? obj.guardrails.softPromptAnchor
               : null,
-          hardEnforceProjectRoot: obj?.guardrails?.hardEnforceProjectRoot === true,
+          hardEnforceProjectRoot:
+            obj?.guardrails?.hardEnforceProjectRoot === true,
         },
       };
     } catch (err) {
@@ -343,9 +347,7 @@ function normalizeShareMode(value: unknown): ShareMode {
     : "private";
 }
 
-function normalizeDevshellEnabled(
-  value: unknown,
-): "auto" | "always" | "never" {
+function normalizeDevshellEnabled(value: unknown): "auto" | "always" | "never" {
   if (value === "always" || value === "never") return value;
   return "auto";
 }
@@ -368,5 +370,7 @@ function normalizeOptionalTimeoutSeconds(value: unknown): number | null {
 }
 
 function normalizeTimeoutSeconds(value: unknown): number {
-  return normalizeOptionalTimeoutSeconds(value) ?? DEFAULT_AGENT_TIMEOUT_SECONDS;
+  return (
+    normalizeOptionalTimeoutSeconds(value) ?? DEFAULT_AGENT_TIMEOUT_SECONDS
+  );
 }

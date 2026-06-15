@@ -168,6 +168,8 @@ export interface ModelDescriptor {
   id: string;
   label: string;
   provider: string;
+  thinkingLevels?: string[];
+  codexFastModeSupported?: boolean;
 }
 
 export interface A2UIEventMatch {
@@ -327,6 +329,7 @@ export interface AethonAgentStateOptions {
   statePayloadWarnKb: number;
   statePayloadHardKb: number;
   providerTimeoutMs?: number;
+  codexFastMode?: boolean;
   bashTimeoutFloorSeconds?: number;
   subagentTimeoutSeconds?: number;
 }
@@ -362,6 +365,8 @@ export class AethonAgentState {
   readonly statePayloadHardKb: number;
   /** Optional Aethon-owned provider request timeout override, in ms. */
   providerTimeoutMs: number | undefined;
+  /** Whether to request Codex's priority service tier for supported models. */
+  codexFastMode: boolean;
   /** Floor applied to model-supplied bash tool timeouts, in seconds. */
   bashTimeoutFloorSeconds: number;
   /** Default wall-clock ceiling for inline subagent runs, in seconds. */
@@ -577,6 +582,7 @@ export class AethonAgentState {
     this.statePayloadWarnKb = opts.statePayloadWarnKb;
     this.statePayloadHardKb = opts.statePayloadHardKb;
     this.providerTimeoutMs = opts.providerTimeoutMs;
+    this.codexFastMode = opts.codexFastMode ?? false;
     this.bashTimeoutFloorSeconds =
       opts.bashTimeoutFloorSeconds ?? DEFAULT_AGENT_TIMEOUT_SECONDS;
     this.subagentTimeoutSeconds =

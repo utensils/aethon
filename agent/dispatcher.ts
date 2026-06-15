@@ -7,7 +7,13 @@ import { createInterface } from "node:readline";
 import type { AethonApi } from "./aethon-api";
 import type { AethonAgentState, AethonExtensionApi } from "./state";
 import { handleA2UIEvent } from "./a2uiEvents";
-import { handleChat, handleSetModel, handleStop } from "./chat";
+import {
+  handleChat,
+  handleSetCodexFastMode,
+  handleSetModel,
+  handleSetThinkingLevel,
+  handleStop,
+} from "./chat";
 import type { DispatcherDeps, InboundMessage } from "./dispatcherTypes";
 import { emitGlobalReady, maybeExitForReload } from "./dispatcherTypes";
 import { handleSetExtensionDisabled } from "./extensionControl";
@@ -31,7 +37,13 @@ import {
 } from "./tabs";
 
 export type { DispatcherDeps, InboundMessage } from "./dispatcherTypes";
-export { handleChat, handleSetModel, handleStop } from "./chat";
+export {
+  handleChat,
+  handleSetCodexFastMode,
+  handleSetModel,
+  handleSetThinkingLevel,
+  handleStop,
+} from "./chat";
 export {
   exportTargetForSlashCommand,
   formatContextUsageMessage,
@@ -84,6 +96,12 @@ export async function dispatchInboundMessage(
         break;
       case "set_model":
         await handleSetModel(state, deps, msg);
+        break;
+      case "set_thinking_level":
+        await handleSetThinkingLevel(state, deps, msg);
+        break;
+      case "set_codex_fast_mode":
+        handleSetCodexFastMode(state, deps, msg);
         break;
       case "stop":
         handleStop(state, deps, msg);

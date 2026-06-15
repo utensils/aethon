@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
 import type { Api, Model } from "@mariozechner/pi-ai";
 import type { AethonAgentState, AethonExtensionApi } from "./state";
 import type { DispatcherDeps, InboundMessage } from "./dispatcherTypes";
@@ -32,12 +33,15 @@ export async function handleTabOpen(
   if (typeof authProfileId === "string" && authProfileId.length > 0) {
     state.tabAuthProfileIds.set(tabId, authProfileId);
   }
-  const modelId = (msg as { model?: unknown }).model;
+  const modelRequest = parseModelAndThinking(
+    (msg as { model?: unknown }).model,
+    (msg as { thinkingLevel?: unknown }).thinkingLevel,
+  );
   let initialModel: Model<Api> | undefined;
-  if (typeof modelId === "string" && modelId.length > 0) {
-    const [provider, ...rest] = modelId.split("/");
+  if (modelRequest.modelId) {
+    const [provider, ...rest] = modelRequest.modelId.split("/");
     initialModel =
-      modelRegistryForModelId(state, tabId, modelId).find(
+      modelRegistryForModelId(state, tabId, modelRequest.modelId).find(
         provider,
         rest.join("/"),
       ) ?? undefined;
@@ -95,10 +99,62 @@ export async function handleTabOpen(
       });
     }
   }
-  await ensureTab(state, deps, tabId, { initialModel, cwdOverride });
+  const tab = await ensureTab(state, deps, tabId, {
+    initialModel,
+    cwdOverride,
+    thinkingLevel: modelRequest.thinkingLevel,
+  });
+  if (modelRequest.thinkingLevel) {
+    tab.session.setThinkingLevel(modelRequest.thinkingLevel);
+  }
   if (restoreHistory) {
     deps.send({ type: "session_history", tabId, messages: restoredMessages });
   }
+}
+
+const THINKING_LEVELS = new Set<ThinkingLevel>([
+  "off",
+  "minimal",
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+]);
+
+function normalizeThinkingLevel(value: unknown): ThinkingLevel | undefined {
+  return typeof value === "string" &&
+    THINKING_LEVELS.has(value as ThinkingLevel)
+    ? (value as ThinkingLevel)
+    : undefined;
+}
+
+function parseModelAndThinking(
+  rawModel: unknown,
+  rawLevel: unknown,
+): { modelId?: string; thinkingLevel?: ThinkingLevel } {
+  const explicitLevel = normalizeThinkingLevel(rawLevel);
+  if (typeof rawModel !== "string" || rawModel.length === 0) {
+    return explicitLevel ? { thinkingLevel: explicitLevel } : {};
+  }
+  const idx = rawModel.lastIndexOf(":");
+  if (idx <= 0) {
+    return {
+      modelId: rawModel,
+      ...(explicitLevel ? { thinkingLevel: explicitLevel } : {}),
+    };
+  }
+  const modelId = rawModel.slice(0, idx);
+  const suffix = normalizeThinkingLevel(rawModel.slice(idx + 1));
+  if (!modelId.startsWith("openai-codex/") || !suffix) {
+    return {
+      modelId: rawModel,
+      ...(explicitLevel ? { thinkingLevel: explicitLevel } : {}),
+    };
+  }
+  return {
+    modelId,
+    thinkingLevel: explicitLevel ?? suffix,
+  };
 }
 
 export function handleTabClose(

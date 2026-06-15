@@ -56,6 +56,6 @@ export function ensurePickerHasModel(
   deps.send({
     type: "state_patch",
     path: "/sidebar/models",
-    value: state.cachedModels.map((m) => ({ id: m.id, label: m.label })),
+    value: state.cachedModels,
   });
 }

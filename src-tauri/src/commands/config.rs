@@ -336,6 +336,9 @@ pub fn write_config(config: serde_json::Value, app: AppHandle) -> Result<(), Str
         .and_then(|n| {
             helpers::normalize_optional_timeout_seconds(Some(n.min(u32::MAX as u64) as u32))
         });
+    let codex_fast_mode = agent
+        .and_then(|m| m.get("codexFastMode"))
+        .and_then(|v| v.as_bool());
     let bash_timeout_floor_seconds = agent
         .and_then(|m| m.get("bashTimeoutFloorSeconds"))
         .and_then(|v| v.as_u64())
@@ -479,6 +482,7 @@ pub fn write_config(config: serde_json::Value, app: AppHandle) -> Result<(), Str
             "provider_timeout_seconds",
             provider_timeout_seconds,
         );
+        set_or_clear_bool(agent_table, "codex_fast_mode", codex_fast_mode);
         set_or_clear_int(
             agent_table,
             "bash_timeout_floor_seconds",

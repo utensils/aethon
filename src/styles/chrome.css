@@ -1911,8 +1911,38 @@ body.ae-resizing-sidebar .a2ui-layout {
   transition: transform 120ms ease;
 }
 
+.a2ui-model-picker-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .a2ui-model-picker .a2ui-dropdown-trigger {
   max-width: min(44ch, calc(var(--app-viewport-width) - 32px));
+}
+
+.a2ui-model-picker-reasoning {
+  height: 26px;
+  padding: 0 6px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  color: var(--text-muted);
+  background: var(--pill-bg, var(--bg-elev, rgba(255, 255, 255, 0.03)));
+  font-size: var(--chrome-text-compact);
+}
+
+.a2ui-model-picker-fast {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 26px;
+  padding: 0 8px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  color: var(--text-muted);
+  background: var(--pill-bg, var(--bg-elev, rgba(255, 255, 255, 0.03)));
+  font-size: var(--chrome-text-compact);
+  white-space: nowrap;
 }
 
 /* Custom-id input mode: styled to match the dropdown trigger pill so the
@@ -7417,7 +7447,8 @@ button.a2ui-gh-stat:hover {
     background var(--motion-fast) var(--ease-out),
     border-color var(--motion-fast) var(--ease-out);
 }
-.a2ui-project-dashboard-workspace:hover .a2ui-project-dashboard-workspace-remove,
+.a2ui-project-dashboard-workspace:hover
+  .a2ui-project-dashboard-workspace-remove,
 .a2ui-project-dashboard-workspace-remove:focus-visible {
   opacity: 1;
   transform: scale(1);

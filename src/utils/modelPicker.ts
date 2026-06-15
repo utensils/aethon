@@ -18,7 +18,9 @@ export function recomputeModelPicker(
   model: string,
 ): Record<string, unknown> {
   const items = (
-    (sidebar?.models as { id: string; label: string }[] | undefined) ?? []
-  ).map((m) => ({ id: m.id, label: m.label, active: m.id === model }));
+    (sidebar?.models as
+      | ({ id: string; label: string } & Record<string, unknown>)[]
+      | undefined) ?? []
+  ).map((m) => ({ ...m, active: m.id === model }));
   return { ...(sidebar ?? {}), models: items };
 }

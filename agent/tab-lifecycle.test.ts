@@ -14,6 +14,7 @@ import {
   extractToolContent,
   handleSessionEvent,
   inferToolResultLanguage,
+  ensurePickerHasModel,
   modelDescriptor,
   modelKey,
   refreshPiSlashCommands,
@@ -74,6 +75,33 @@ describe("modelKey + modelDescriptor", () => {
       id: "anthropic/claude-haiku-4-5",
       label: "Haiku",
       provider: "anthropic",
+    });
+  });
+});
+
+describe("ensurePickerHasModel", () => {
+  it("patches dynamically added picker models with reasoning and Fast metadata", () => {
+    const { state, deps, sent } = makeFixture();
+    const model = {
+      provider: "openai-codex",
+      id: "gpt-5.5",
+      name: "GPT-5.5 Codex",
+      reasoning: true,
+    };
+
+    ensurePickerHasModel(state, deps, model as never);
+
+    expect(sent).toContainEqual({
+      type: "state_patch",
+      path: "/sidebar/models",
+      value: [
+        expect.objectContaining({
+          id: "openai-codex/gpt-5.5",
+          label: "GPT-5.5 Codex",
+          thinkingLevels: expect.arrayContaining(["medium"]),
+          codexFastModeSupported: true,
+        }),
+      ],
     });
   });
 });
@@ -344,9 +372,9 @@ describe("resolveTabCwd", () => {
       tabProjectCwds: new Map([["t1", "/projects/stale"]]),
       currentProjectCwd: "/projects/other-project",
     };
-    expect(
-      resolveTabCwd("t1", { cwdOverride: "/projects/mine" }, state),
-    ).toBe("/projects/mine");
+    expect(resolveTabCwd("t1", { cwdOverride: "/projects/mine" }, state)).toBe(
+      "/projects/mine",
+    );
   });
 
   it("a tab's recorded cwd outranks the active project's cwd", () => {

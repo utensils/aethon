@@ -5,6 +5,7 @@ export const MAX_AGENT_TIMEOUT_SECONDS = 24 * 60 * 60;
 
 export interface AethonRuntimeConfig {
   providerTimeoutMs?: number;
+  codexFastMode: boolean;
   bashTimeoutFloorSeconds: number;
   subagentTimeoutSeconds: number;
 }
@@ -13,9 +14,8 @@ export function runtimeConfigFromEnv(
   env: NodeJS.ProcessEnv = process.env,
 ): AethonRuntimeConfig {
   return {
-    providerTimeoutMs: optionalSecondsToMs(
-      env.AETHON_PROVIDER_TIMEOUT_SECONDS,
-    ),
+    providerTimeoutMs: optionalSecondsToMs(env.AETHON_PROVIDER_TIMEOUT_SECONDS),
+    codexFastMode: env.AETHON_CODEX_FAST_MODE === "1",
     bashTimeoutFloorSeconds: normalizeTimeoutSeconds(
       env.AETHON_BASH_TIMEOUT_FLOOR_SECONDS,
     ),
@@ -29,6 +29,7 @@ export function runtimeConfigFromConfig(config: unknown): AethonRuntimeConfig {
   if (!isRecord(config)) {
     return {
       providerTimeoutMs: undefined,
+      codexFastMode: false,
       bashTimeoutFloorSeconds: DEFAULT_AGENT_TIMEOUT_SECONDS,
       subagentTimeoutSeconds: DEFAULT_AGENT_TIMEOUT_SECONDS,
     };
@@ -36,6 +37,7 @@ export function runtimeConfigFromConfig(config: unknown): AethonRuntimeConfig {
   const agent = isRecord(config.agent) ? config.agent : {};
   return {
     providerTimeoutMs: optionalSecondsToMs(agent.providerTimeoutSeconds),
+    codexFastMode: agent.codexFastMode === true,
     bashTimeoutFloorSeconds: normalizeTimeoutSeconds(
       agent.bashTimeoutFloorSeconds,
     ),
@@ -50,6 +52,7 @@ export function applyRuntimeConfig(
   config: AethonRuntimeConfig,
 ): void {
   state.providerTimeoutMs = config.providerTimeoutMs;
+  state.codexFastMode = config.codexFastMode;
   state.bashTimeoutFloorSeconds = config.bashTimeoutFloorSeconds;
   state.subagentTimeoutSeconds = config.subagentTimeoutSeconds;
 }

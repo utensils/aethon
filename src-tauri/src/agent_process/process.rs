@@ -472,6 +472,7 @@ fn route_payload_key_without_mutation(payload: &serde_json::Value) -> String {
                 | "local_chat_message"
                 | "native_slash_command"
                 | "set_model"
+                | "set_thinking_level"
                 | "stop"
                 | "tab_close"
                 | "tab_open"
@@ -666,6 +667,19 @@ mod tests {
     }
 
     #[test]
+    fn tab_scoped_control_payloads_route_to_tab_worker() {
+        for ty in ["set_model", "set_thinking_level", "stop", "tab_open"] {
+            assert_eq!(
+                route_payload_key_without_mutation(&serde_json::json!({
+                    "type": ty,
+                    "tabId": "tab-a",
+                })),
+                tab_agent_key("tab-a")
+            );
+        }
+    }
+
+    #[test]
     fn default_and_unscoped_payloads_route_to_global_worker() {
         assert_eq!(
             route_payload_key_without_mutation(&serde_json::json!({
@@ -692,6 +706,7 @@ mod tests {
             "native_slash_command",
             "a2ui_event",
             "set_model",
+            "set_thinking_level",
             "tab_open",
             "report",
         ] {

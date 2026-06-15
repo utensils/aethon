@@ -52,6 +52,54 @@ describe("newTab restore handling", () => {
     ]);
   });
 
+  it("passes the selected default reasoning level to new bridge tabs", async () => {
+    const invokeMock = vi.mocked(invoke);
+    invokeMock.mockResolvedValue(null);
+    let state: Record<string, unknown> = {
+      tabs: [],
+      defaultThinkingLevel: "high",
+    };
+    const stateRef = ref(state);
+    const setState = vi.fn((updater: unknown) => {
+      if (typeof updater !== "function") return;
+      state = (
+        updater as (prev: Record<string, unknown>) => Record<string, unknown>
+      )(state);
+      stateRef.current = state;
+    });
+    const pending = ref(new Map<string, Promise<unknown>>());
+    const newTab = useNewTab({
+      setState,
+      stateRef,
+      projectsRef: ref<ProjectsState>({
+        activeId: null,
+        activeWorkspaceId: null,
+        activeHostId: null,
+        projects: [],
+        workspacesByProject: {},
+      }),
+      piDefaultModelRef: ref("openai-codex/gpt-5.5"),
+      pendingTabOpens: pending,
+      appendSystem: vi.fn(),
+      dispatchTerminalReplay: vi.fn(),
+    });
+
+    newTab("tab-1", "Project");
+    await pending.current.get("tab-1");
+
+    expect(
+      (state.tabs as Array<{ thinkingLevel?: string }>)[0].thinkingLevel,
+    ).toBe("high");
+    expect(invokeMock).toHaveBeenCalledWith("agent_command", {
+      payload: JSON.stringify({
+        type: "tab_open",
+        tabId: "tab-1",
+        model: "openai-codex/gpt-5.5",
+        thinkingLevel: "high",
+      }),
+    });
+  });
+
   it("prepares the devshell before opening a cwd-backed agent tab", async () => {
     const invokeMock = vi.mocked(invoke);
     invokeMock.mockResolvedValue(null);

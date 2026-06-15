@@ -1,4 +1,5 @@
 import type { Api, ImageContent, Model } from "@mariozechner/pi-ai";
+import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
 import type { AethonAgentState, TabRecord } from "./state";
 import type { DispatcherDeps, InboundMessage } from "./dispatcherTypes";
 import { maybeExitForReload } from "./dispatcherTypes";
@@ -16,6 +17,7 @@ import {
 import { detectSubagentMention } from "./subagents/steer";
 import { getSubagentsForCwd } from "./subagents";
 import { emitContextUsage } from "./context-usage";
+import { supportsCodexFastMode } from "./codex-fast-mode";
 import {
   FileReferenceError,
   expandFileReferencesInPrompt,
@@ -55,10 +57,13 @@ export async function handleChat(
   if (explicitSubagent) {
     state.pendingExplicitSubagent.set(tabId, explicitSubagent);
   }
-  const modelId =
+  const requestedModel = parseModelAndThinking(
     typeof msg.model === "string" && msg.model.length > 0
       ? msg.model
-      : undefined;
+      : undefined,
+    msg.thinkingLevel,
+  );
+  const modelId = requestedModel.modelId;
   const authServicesRefreshed = refreshAuthServicesForTab(state, tabId, {
     modelId,
   });
@@ -75,11 +80,20 @@ export async function handleChat(
     state,
     deps,
     tabId,
-    cwdOverride || initialModel ? { cwdOverride, initialModel } : {},
+    cwdOverride || initialModel || requestedModel.thinkingLevel
+      ? {
+          cwdOverride,
+          initialModel,
+          thinkingLevel: requestedModel.thinkingLevel,
+        }
+      : {},
   );
   chatLog.info(`tab ready tabId=${tabId}`);
   if (authServicesRefreshed) {
     refreshTabSessionModelFromAuthServices(state, tabId);
+  }
+  if (requestedModel.thinkingLevel) {
+    tab.session.setThinkingLevel(requestedModel.thinkingLevel);
   }
   const wantsSteer = msg.mode === "steer";
   const images = normalizeImages(msg.images);
@@ -225,8 +239,9 @@ export async function handleSetModel(
     deps.send({ type: "error", tabId, message: "set_model: missing id" });
     return;
   }
+  const requestedModel = parseModelAndThinking(msg.id, msg.thinkingLevel);
   const authServicesRefreshed = refreshAuthServicesForTab(state, tabId, {
-    modelId: msg.id,
+    modelId: requestedModel.modelId,
   });
   const tab = await ensureTab(state, deps, tabId);
   if (authServicesRefreshed) {
@@ -240,19 +255,26 @@ export async function handleSetModel(
     });
     return;
   }
-  const [provider, ...rest] = msg.id.split("/");
+  const modelId = requestedModel.modelId ?? msg.id;
+  const [provider, ...rest] = modelId.split("/");
   const id = rest.join("/");
-  const next = modelRegistryForModelId(state, tabId, msg.id).find(provider, id);
+  const next = modelRegistryForModelId(state, tabId, modelId).find(
+    provider,
+    id,
+  );
   if (!next) {
     deps.send({
       type: "error",
       tabId,
-      message: `set_model: unknown model ${msg.id}`,
+      message: `set_model: unknown model ${modelId}`,
     });
     return;
   }
   try {
     await tab.session.setModel(next);
+    if (requestedModel.thinkingLevel) {
+      tab.session.setThinkingLevel(requestedModel.thinkingLevel);
+    }
     await state.resourceLoader.reload();
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -265,8 +287,126 @@ export async function handleSetModel(
   }
   deps.scheduleStateFileWrite();
   ensurePickerHasModel(state, deps, next);
-  deps.send({ type: "model_changed", tabId, model: msg.id });
+  deps.send(modelStatePayload("model_changed", state, tabId, tab, modelId));
   emitContextUsage(state, deps, tabId, tab);
+}
+
+export async function handleSetThinkingLevel(
+  state: AethonAgentState,
+  deps: DispatcherDeps,
+  msg: InboundMessage,
+): Promise<void> {
+  const tabId = msg.tabId ?? "default";
+  const level = normalizeThinkingLevel(msg.thinkingLevel ?? msg.value);
+  if (!level) {
+    deps.send({
+      type: "error",
+      tabId,
+      message: "set_thinking_level: missing or invalid level",
+    });
+    return;
+  }
+  const tab = await ensureTab(state, deps, tabId);
+  if (tab.promptInFlight) {
+    deps.send({
+      type: "notice",
+      tabId,
+      message:
+        "agent busy — stop the current prompt before switching reasoning",
+    });
+    return;
+  }
+  try {
+    tab.session.setThinkingLevel(level);
+    state.settingsManager.setDefaultThinkingLevel(level);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    deps.send({
+      type: "error",
+      tabId,
+      message: `set_thinking_level: ${message}`,
+    });
+    return;
+  }
+  deps.scheduleStateFileWrite();
+  deps.send(modelStatePayload("thinking_level_changed", state, tabId, tab));
+}
+
+export function handleSetCodexFastMode(
+  state: AethonAgentState,
+  deps: DispatcherDeps,
+  msg: InboundMessage,
+): void {
+  state.codexFastMode = msg.codexFastMode === true || msg.value === true;
+  deps.scheduleStateFileWrite();
+  for (const [tabId, tab] of state.tabs) {
+    deps.send(modelStatePayload("codex_fast_mode_changed", state, tabId, tab));
+  }
+}
+
+export function modelStatePayload(
+  type: "model_changed" | "thinking_level_changed" | "codex_fast_mode_changed",
+  state: AethonAgentState,
+  tabId: string,
+  tab: TabRecord,
+  modelOverride?: string,
+): Record<string, unknown> {
+  const session = tab.session as TabRecord["session"] & {
+    getAvailableThinkingLevels?: () => string[];
+    thinkingLevel?: string;
+  };
+  return {
+    type,
+    tabId,
+    model:
+      modelOverride ??
+      (session.model ? `${session.model.provider}/${session.model.id}` : ""),
+    thinkingLevel: session.thinkingLevel,
+    thinkingLevels: session.getAvailableThinkingLevels?.() ?? [],
+    codexFastMode: state.codexFastMode,
+    codexFastModeSupported: supportsCodexFastMode(session.model),
+  };
+}
+
+const THINKING_LEVELS = new Set<ThinkingLevel>([
+  "off",
+  "minimal",
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+]);
+
+function normalizeThinkingLevel(value: unknown): ThinkingLevel | undefined {
+  return typeof value === "string" &&
+    THINKING_LEVELS.has(value as ThinkingLevel)
+    ? (value as ThinkingLevel)
+    : undefined;
+}
+
+function parseModelAndThinking(
+  rawModel: string | undefined,
+  rawLevel: unknown,
+): { modelId?: string; thinkingLevel?: ThinkingLevel } {
+  const explicitLevel = normalizeThinkingLevel(rawLevel);
+  if (!rawModel) return explicitLevel ? { thinkingLevel: explicitLevel } : {};
+  const idx = rawModel.lastIndexOf(":");
+  if (idx <= 0)
+    return {
+      modelId: rawModel,
+      ...(explicitLevel ? { thinkingLevel: explicitLevel } : {}),
+    };
+  const modelId = rawModel.slice(0, idx);
+  const suffix = normalizeThinkingLevel(rawModel.slice(idx + 1));
+  if (!modelId.startsWith("openai-codex/") || !suffix)
+    return {
+      modelId: rawModel,
+      ...(explicitLevel ? { thinkingLevel: explicitLevel } : {}),
+    };
+  return {
+    modelId,
+    thinkingLevel: explicitLevel ?? suffix,
+  };
 }
 
 export function handleStop(

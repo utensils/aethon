@@ -20,7 +20,13 @@ export const handleSectionedSelect: EventRouteHandler = async (
   { eventType, data },
   ctx,
 ) => {
-  if (eventType !== "select") return false;
+  if (
+    eventType !== "select" &&
+    eventType !== "thinking-level" &&
+    eventType !== "codex-fast-mode"
+  ) {
+    return false;
+  }
 
   const selected = data as { sectionId?: string; itemId?: string } | undefined;
   if (selected?.itemId === "toggle-terminal") {
@@ -37,6 +43,20 @@ export const handleSectionedSelect: EventRouteHandler = async (
   }
   if (selected?.itemId === "clear-chat") {
     ctx.clearChat();
+    return true;
+  }
+  if (eventType === "thinking-level") {
+    const level = (data as { level?: unknown } | undefined)?.level;
+    if (typeof level === "string" && level.length > 0) {
+      await ctx.setThinkingLevel(level);
+      return true;
+    }
+    return true;
+  }
+  if (eventType === "codex-fast-mode") {
+    const enabled =
+      (data as { enabled?: unknown } | undefined)?.enabled === true;
+    await ctx.setCodexFastMode(enabled);
     return true;
   }
   if (selected?.sectionId === "models" && selected.itemId) {

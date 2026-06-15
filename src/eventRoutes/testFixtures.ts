@@ -63,6 +63,8 @@ export interface RouteFixture {
     toggleTerminal: Mock;
     clearChat: Mock;
     setModel: Mock;
+    setThinkingLevel: Mock;
+    setCodexFastMode: Mock;
     setTheme: Mock;
     activateLayoutById: Mock;
     openProjectFromPicker: Mock;
@@ -151,6 +153,8 @@ export function buildRouteFixture(
   const toggleTerminal = vi.fn();
   const clearChat = vi.fn();
   const setModel = vi.fn(() => Promise.resolve());
+  const setThinkingLevel = vi.fn(() => Promise.resolve());
+  const setCodexFastMode = vi.fn(() => Promise.resolve());
   const setTheme = vi.fn();
   const activateLayoutById = vi.fn();
   const openProjectFromPicker = vi.fn(() =>
@@ -217,6 +221,8 @@ export function buildRouteFixture(
     toggleTerminal,
     clearChat,
     setModel,
+    setThinkingLevel,
+    setCodexFastMode,
     setTheme,
     activateLayoutById,
     openProjectFromPicker,
@@ -301,6 +307,8 @@ export function buildRouteFixture(
       toggleTerminal,
       clearChat,
       setModel,
+      setThinkingLevel,
+      setCodexFastMode,
       setTheme,
       activateLayoutById,
       openProjectFromPicker,

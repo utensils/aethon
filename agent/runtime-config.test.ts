@@ -18,6 +18,7 @@ describe("runtimeConfigFromEnv", () => {
       }),
     ).toEqual({
       providerTimeoutMs: 12000,
+      codexFastMode: false,
       bashTimeoutFloorSeconds: 30,
       subagentTimeoutSeconds: 60,
     });
@@ -32,6 +33,7 @@ describe("runtimeConfigFromEnv", () => {
       }),
     ).toEqual({
       providerTimeoutMs: 1000,
+      codexFastMode: false,
       bashTimeoutFloorSeconds: 1,
       subagentTimeoutSeconds: 1,
     });
@@ -40,6 +42,7 @@ describe("runtimeConfigFromEnv", () => {
   it("keeps provider unset and uses defaults for invalid values", () => {
     expect(runtimeConfigFromEnv({})).toEqual({
       providerTimeoutMs: undefined,
+      codexFastMode: false,
       bashTimeoutFloorSeconds: 300,
       subagentTimeoutSeconds: 300,
     });
@@ -52,12 +55,14 @@ describe("runtimeConfigFromConfig", () => {
       runtimeConfigFromConfig({
         agent: {
           providerTimeoutSeconds: 10,
+          codexFastMode: true,
           bashTimeoutFloorSeconds: 20,
           subagentTimeoutSeconds: 30,
         },
       }),
     ).toEqual({
       providerTimeoutMs: 10000,
+      codexFastMode: true,
       bashTimeoutFloorSeconds: 20,
       subagentTimeoutSeconds: 30,
     });
@@ -88,6 +93,7 @@ describe("applyProviderTimeoutOverride", () => {
     });
     applyRuntimeConfig(state, {
       providerTimeoutMs: undefined,
+      codexFastMode: false,
       bashTimeoutFloorSeconds: 300,
       subagentTimeoutSeconds: 300,
     });
