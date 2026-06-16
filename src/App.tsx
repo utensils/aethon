@@ -774,6 +774,7 @@ export default function App() {
     hangWarnActiveRef,
     hangWarnNotifId,
     autoRestartAgentRef,
+    shellInheritEnvRef,
     updateTab,
     newTab,
     newShellTab,

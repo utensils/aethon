@@ -26,6 +26,7 @@ export interface UseOsEdgesContext {
 
   // Live config refs (from useBootConfig).
   autoRestartAgentRef: MutableRefObject<boolean>;
+  shellInheritEnvRef: MutableRefObject<boolean>;
 
   // Tab actions (from useTabs).
   updateTab: (tabId: string, mutator: (tab: Tab) => Tab) => void;

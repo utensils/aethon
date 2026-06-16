@@ -1,7 +1,12 @@
+// @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { createShellOutputCoalescer } from "./shellStreams";
+import {
+  createShellOutputCoalescer,
+  subscribeShellStreams,
+} from "./shellStreams";
 import { TERMINAL_REPLAY_MAX } from "../useTabs";
 import type { Tab } from "../../types/tab";
+import { clearTauriMocks, installTauriMocks } from "../../test/tauriMocks";
 
 function makeTab(buffer = ""): Tab {
   return {
@@ -89,5 +94,120 @@ describe("createShellOutputCoalescer", () => {
 });
 
 function makeTabWithBuffer(buffer: string): Tab {
-  return { id: "x", label: "x", kind: "shell", terminalBuffer: buffer } as unknown as Tab;
+  return {
+    id: "x",
+    label: "x",
+    kind: "shell",
+    terminalBuffer: buffer,
+  } as unknown as Tab;
 }
+
+describe("subscribeShellStreams", () => {
+  let harness: ReturnType<typeof installTauriMocks>;
+
+  beforeEach(() => {
+    harness = installTauriMocks();
+  });
+
+  afterEach(() => {
+    clearTauriMocks();
+  });
+
+  test("respawns a live shell tab when its PTY exits", async () => {
+    let tab: Tab = {
+      ...makeTab(),
+      shell: {
+        cwd: "/repo/app",
+        command: "",
+        args: [],
+        shareMode: "read",
+        shellState: "running",
+      },
+    };
+    let state: Record<string, unknown> = { tabs: [tab] };
+    const stateRef = { current: state };
+    const updateTab = vi.fn((tabId: string, mutator: (t: Tab) => Tab) => {
+      expect(tabId).toBe("shell-1");
+      tab = mutator(tab);
+      state = { tabs: [tab] };
+      stateRef.current = state;
+    });
+    const appendSystem = vi.fn();
+
+    subscribeShellStreams({
+      updateTab,
+      stateRef,
+      appendSystem,
+      shellInheritEnvRef: { current: false },
+    });
+    await Promise.resolve();
+
+    expect(harness.fireEvent("shell-exit", { tabId: "shell-1", code: 0 })).toBe(
+      1,
+    );
+    expect(tab.shell?.shellState).toBe("starting");
+
+    await vi.waitFor(() => {
+      expect(harness.invoke).toHaveBeenCalledWith("shell_open", {
+        args: {
+          tabId: "shell-1",
+          cwd: "/repo/app",
+          shareMode: "read",
+          inheritEnv: false,
+        },
+      });
+    });
+
+    expect(tab.shell?.shellState).toBe("running");
+    expect(tab.shell?.exitCode).toBeUndefined();
+    expect(appendSystem).not.toHaveBeenCalled();
+  });
+
+  test("marks the shell as failed when respawn cannot reopen it", async () => {
+    let tab: Tab = {
+      ...makeTab(),
+      shell: {
+        cwd: "/repo/app",
+        command: "",
+        args: [],
+        shareMode: "private",
+        shellState: "running",
+      },
+    };
+    let state: Record<string, unknown> = { tabs: [tab] };
+    const stateRef = { current: state };
+    const updateTab = vi.fn((tabId: string, mutator: (t: Tab) => Tab) => {
+      expect(tabId).toBe("shell-1");
+      tab = mutator(tab);
+      state = { tabs: [tab] };
+      stateRef.current = state;
+    });
+    const appendSystem = vi.fn();
+    harness.invoke.mockImplementation((command: string) =>
+      command === "shell_open"
+        ? Promise.reject(new Error("spawn failed"))
+        : Promise.resolve(undefined),
+    );
+
+    subscribeShellStreams({
+      updateTab,
+      stateRef,
+      appendSystem,
+      shellInheritEnvRef: { current: true },
+    });
+    await Promise.resolve();
+
+    harness.fireEvent("shell-exit", { tabId: "shell-1", code: 0 });
+
+    await vi.waitFor(() => {
+      expect(appendSystem).toHaveBeenCalledWith(
+        "Shell tab exited and could not be restarted: Error: spawn failed",
+      );
+    });
+
+    expect(tab.shell).toMatchObject({
+      shellState: "exited",
+      exitCode: -1,
+    });
+  });
+});

@@ -103,7 +103,6 @@ function shouldPersistTab(tab: Tab): boolean {
 }
 
 function restoreShellTab(tab: Tab, restartShellTabs: boolean): Tab {
-  if (tab.shell?.shellState === "exited") return tab;
   if (!restartShellTabs) {
     const shell = tab.shell ? { ...tab.shell } : undefined;
     if (shell) delete shell.restartOnMount;
@@ -117,6 +116,9 @@ function restoreShellTab(tab: Tab, restartShellTabs: boolean): Tab {
           }
         : shell,
     };
+  }
+  if (tab.shell?.shellState === "exited" && tab.shell.exitCode === -1) {
+    return tab;
   }
   return {
     ...tab,
