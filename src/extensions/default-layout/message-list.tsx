@@ -762,6 +762,12 @@ function VirtualMessageList({
     // Scroll to the true bottom of the scroller — this includes the footer's
     // live subtree / typing indicator, which sit below the last data row.
     virtuosoRef.current?.scrollTo({ top: Number.MAX_SAFE_INTEGER });
+    const pinDomScroller = () => {
+      const el = scrollerElRef.current;
+      if (el) el.scrollTop = el.scrollHeight;
+    };
+    pinDomScroller();
+    window.requestAnimationFrame(pinDomScroller);
   }, []);
 
   const markUserScrollIntent = useCallback((event: Event) => {
