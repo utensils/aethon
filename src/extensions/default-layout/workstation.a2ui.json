@@ -211,7 +211,7 @@
               "type": "chat-input",
               "props": {
                 "value": { "$ref": "/draft" },
-                "placeholder": "Message Aethon… (@agent to delegate, @file for context, / for commands)",
+                "placeholder": "Message Aethon… (@<subagent> to delegate, @file for context, / for commands)",
                 "disabled": { "$ref": "/waiting" },
                 "queueCount": { "$ref": "/queueCount" },
                 "commands": { "$ref": "/slashCommands" },
