@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import type { MutableRefObject } from "react";
 import { onAgentTurnComplete } from "../utils/agentTurnEvents";
+import { isConversationActive } from "../utils/conversationMode";
 import { speakVoice } from "../services/voice";
 import { capSpokenText } from "../utils/voice";
 
@@ -22,6 +23,8 @@ export function useSpeakReplies(
 ): void {
   useEffect(() => {
     return onAgentTurnComplete(({ tabId, text }) => {
+      // The conversation voice mode owns synthesis while it runs.
+      if (isConversationActive()) return;
       const state = stateRef.current;
       const voice = (state.voice as VoiceSettingsSlice | undefined) ?? {};
       if (!voice.speakAgentReplies) return;

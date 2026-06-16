@@ -95,6 +95,9 @@ export interface AethonConfig {
     /** Upper bound on how many characters of a reply are spoken, so a long
      *  diff or log dump isn't read out in full. */
     speakMaxChars: number;
+    /** In conversation voice mode, auto-reopen the mic after the agent
+     *  finishes speaking (hands-free) instead of waiting for a tap. */
+    conversationContinuous: boolean;
   };
   updates: {
     /** Release channel the auto-updater follows. `"stable"` (default)
@@ -168,6 +171,7 @@ const DEFAULTS: AethonConfig = {
         : null,
     speakAgentReplies: false,
     speakMaxChars: 600,
+    conversationContinuous: false,
   },
   updates: { channel: "stable", disableAutoCheck: false },
   devshell: {
@@ -288,6 +292,7 @@ export function getConfig(): Promise<AethonConfig> {
             Number.isFinite(obj.voice.speakMaxChars)
               ? Math.min(5000, Math.max(50, Math.round(obj.voice.speakMaxChars)))
               : DEFAULTS.voice.speakMaxChars,
+          conversationContinuous: obj?.voice?.conversationContinuous === true,
         },
         updates: {
           channel: obj?.updates?.channel === "nightly" ? "nightly" : "stable",

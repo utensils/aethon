@@ -1,11 +1,12 @@
 import type { A2UIPayload, ChatAttachment, ChatMessage } from "../types/a2ui";
 
-/** The text of the last agent message that actually has spoken content.
- *  Returns "" for a tool-only / thinking-only / empty turn, which callers
- *  (e.g. speak-agent-replies) treat as "nothing to say". */
+/** The spoken text of the *current* turn's reply. Walks back only to the last
+ *  user message so a tool-only / thinking-only / empty turn returns "" instead
+ *  of replaying an earlier turn's reply (callers treat "" as "nothing to say"). */
 export function lastAgentText(messages: ChatMessage[]): string {
   for (let i = messages.length - 1; i >= 0; i--) {
     const message = messages[i];
+    if (message.role === "user") break;
     if (
       message.role === "agent" &&
       typeof message.text === "string" &&

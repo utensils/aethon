@@ -106,6 +106,7 @@ pub struct VoiceConfig {
     pub hold_hotkey: Option<String>,
     pub speak_agent_replies: Option<bool>,
     pub speak_max_chars: Option<u32>,
+    pub conversation_continuous: Option<bool>,
 }
 
 #[derive(Default, Deserialize)]
@@ -433,6 +434,7 @@ pub fn parse_config_toml(input: &str) -> serde_json::Value {
             "holdHotkey": cfg.voice.hold_hotkey.or_else(|| default_voice_hold_hotkey().map(str::to_string)),
             "speakAgentReplies": cfg.voice.speak_agent_replies.unwrap_or(false),
             "speakMaxChars": cfg.voice.speak_max_chars.unwrap_or(600),
+            "conversationContinuous": cfg.voice.conversation_continuous.unwrap_or(false),
         },
         "extensions": {
             "stateWarnKb": state_warn_kb,
@@ -694,6 +696,7 @@ mod tests {
         assert_eq!(v["voice"]["holdHotkey"], serde_json::Value::Null);
         assert_eq!(v["voice"]["speakAgentReplies"], false);
         assert_eq!(v["voice"]["speakMaxChars"], 600);
+        assert_eq!(v["voice"]["conversationContinuous"], false);
     }
 
     #[test]

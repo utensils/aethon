@@ -3,11 +3,46 @@ import {
   MAX_A2UI_BYTES,
   MAX_TEXT_BYTES,
   coerceChatMessages,
+  lastAgentText,
   stripImageDataUrls,
   trimMessage,
   truncateToEntry,
 } from "./messages";
 import type { ChatMessage } from "../types/a2ui";
+
+describe("lastAgentText", () => {
+  it("returns the final agent text of the current turn", () => {
+    const messages: ChatMessage[] = [
+      { id: "u1", role: "user", text: "question" },
+      { id: "a1", role: "agent", text: "the answer" },
+    ];
+    expect(lastAgentText(messages)).toBe("the answer");
+  });
+
+  it("returns empty for a tool-only turn even after an earlier reply", () => {
+    const messages: ChatMessage[] = [
+      { id: "u1", role: "user", text: "first" },
+      { id: "a1", role: "agent", text: "old reply" },
+      { id: "u2", role: "user", text: "second" },
+      {
+        id: "a2",
+        role: "agent",
+        a2ui: { components: [{ id: "t", type: "tool-card", children: [] }] },
+      },
+    ];
+    // Must not replay "old reply" — the current turn produced no spoken text.
+    expect(lastAgentText(messages)).toBe("");
+  });
+
+  it("ignores thinking-only and empty agent messages", () => {
+    const messages: ChatMessage[] = [
+      { id: "u1", role: "user", text: "q" },
+      { id: "a1", role: "agent", thinking: "hmm" },
+      { id: "a2", role: "agent", text: "   " },
+    ];
+    expect(lastAgentText(messages)).toBe("");
+  });
+});
 
 describe("truncateToEntry", () => {
   const messages: ChatMessage[] = [

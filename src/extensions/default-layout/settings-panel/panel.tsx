@@ -507,6 +507,20 @@ export function SettingsPanel({ state, onEvent }: BuiltinComponentProps) {
                   }
                 />
               </Field>
+              <Field label="Hands-free conversation (auto-reopen mic)">
+                <input
+                  type="checkbox"
+                  checked={eff.voice.conversationContinuous}
+                  onChange={(e) =>
+                    update({
+                      voice: {
+                        ...eff.voice,
+                        conversationContinuous: e.target.checked,
+                      },
+                    })
+                  }
+                />
+              </Field>
               <VoiceProviders />
             </Section>
 

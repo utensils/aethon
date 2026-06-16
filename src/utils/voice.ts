@@ -1,6 +1,9 @@
 import type { VoiceDownloadProgress, VoiceProviderInfo } from "../types/voice";
 
 export const PLATFORM_VOICE_PROVIDER_ID = "voice-platform-system";
+/** Must match the Rust `LFM2_ID` constant. The conversation voice mode and
+ *  text-to-speech both require this provider (it owns ASR + TTS). */
+export const LFM2_VOICE_PROVIDER_ID = "voice-lfm2-audio-llamacpp";
 
 /** Trim spoken text to at most `maxChars`, preferring a clean break: the last
  *  sentence boundary inside the cap (if past the halfway point), otherwise the

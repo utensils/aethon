@@ -48,6 +48,7 @@ const baseConfig: AethonConfig = {
     holdHotkey: "AltRight",
     speakAgentReplies: false,
     speakMaxChars: 600,
+    conversationContinuous: false,
   },
   updates: { channel: "nightly", disableAutoCheck: false },
   devshell: {

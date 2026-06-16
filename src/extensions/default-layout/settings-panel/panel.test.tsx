@@ -39,6 +39,7 @@ vi.mock("../../../config", () => ({
         holdHotkey: "AltRight",
         speakAgentReplies: false,
         speakMaxChars: 600,
+        conversationContinuous: false,
       },
       updates: { channel: "stable", disableAutoCheck: false },
       devshell: {
