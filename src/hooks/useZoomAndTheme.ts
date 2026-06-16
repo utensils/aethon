@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { writeState } from "../persist";
 import { applyUiScale, readZoom, writeUiViewportVars } from "../utils/viewport";
+import { mirrorBootTheme } from "../themeBootstrap";
 
 export const ZOOM_MIN = 0.7;
 export const ZOOM_MAX = 1.6;
@@ -80,6 +81,7 @@ export function useZoomAndTheme(
     root.classList.add("ae-theme-switching");
     window.setTimeout(() => root.classList.remove("ae-theme-switching"), 320);
     root.dataset.theme = id;
+    mirrorBootTheme(id);
     writeState("theme", id).catch(() => {
       /* ignore */
     });

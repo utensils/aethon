@@ -53,6 +53,7 @@ export interface HandlerFixture {
     knownTabIds: Mock;
     scopedDiscoveredSessions: Mock;
     recentSessionItems: Mock;
+    markStartupChromeReady: Mock;
   };
   /** Apply every queued setState reducer in order against the supplied
    *  seed. Returns the resulting state for assertion. */
@@ -111,6 +112,7 @@ export function buildHandlerFixture(
     (d: DiscoveredSession[]) => d,
   );
   const recentSessionItems = vi.fn(() => []);
+  const markStartupChromeReady = vi.fn();
 
   const ctx: BridgeMessageContext = {
     setState,
@@ -161,6 +163,7 @@ export function buildHandlerFixture(
 
     routeShellWrite,
     startTaskInProject,
+    markStartupChromeReady,
 
     ackMutation,
     hangWarnNotifId: (tabId: string) => `ae-hang-warn:${tabId}`,
@@ -219,6 +222,7 @@ export function buildHandlerFixture(
       knownTabIds,
       scopedDiscoveredSessions,
       recentSessionItems,
+      markStartupChromeReady,
     },
     applySetState,
   };

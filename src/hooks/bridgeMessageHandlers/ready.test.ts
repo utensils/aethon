@@ -398,6 +398,7 @@ describe("handleReady", () => {
       "default",
       "/tmp/p1",
     );
+    expect(mocks.markStartupChromeReady).not.toHaveBeenCalled();
   });
 
   it("does not re-announce the active project when ready already reports that cwd", () => {
@@ -423,6 +424,18 @@ describe("handleReady", () => {
     );
 
     expect(mocks.announceProjectToBridge).not.toHaveBeenCalled();
+    expect(mocks.markStartupChromeReady).toHaveBeenCalledTimes(1);
+  });
+
+  it("marks startup chrome ready when no project reannounce is needed", () => {
+    const { ctx, mocks } = buildHandlerFixture({
+      state: { activeTabId: "default", tabs: [] },
+    });
+
+    handleReady({ type: "ready", model: "claude", tabs: [] }, ctx);
+
+    expect(mocks.announceProjectToBridge).not.toHaveBeenCalled();
+    expect(mocks.markStartupChromeReady).toHaveBeenCalledTimes(1);
   });
 
   it("re-announces the active workspace cwd, not the project root", () => {
