@@ -172,6 +172,7 @@ describe("subscribeShellStreams", () => {
         args: [],
         shareMode: "private",
         shellState: "running",
+        restartOnMount: true,
       },
     };
     let state: Record<string, unknown> = { tabs: [tab] };
@@ -209,5 +210,6 @@ describe("subscribeShellStreams", () => {
       shellState: "exited",
       exitCode: -1,
     });
+    expect(tab.shell?.restartOnMount).toBeUndefined();
   });
 });

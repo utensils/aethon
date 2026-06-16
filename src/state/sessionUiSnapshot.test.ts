@@ -173,9 +173,9 @@ describe("sessionUiSnapshot", () => {
     expect(loaded?.tabs).toMatchObject([
       { id: "empty-active", label: "Empty Active", messages: [] },
     ]);
-    expect(loaded?.buckets?.["project-1::workspace::wt-1"]?.tabs).toMatchObject([
-      { id: "empty-bucket", label: "Empty Bucket", messages: [] },
-    ]);
+    expect(loaded?.buckets?.["project-1::workspace::wt-1"]?.tabs).toMatchObject(
+      [{ id: "empty-bucket", label: "Empty Bucket", messages: [] }],
+    );
   });
 
   it("repairs timestamped message order and drops stale stop notices on restore", () => {
@@ -590,6 +590,7 @@ describe("sessionUiSnapshot", () => {
               shareMode: "private",
               shellState: "exited",
               exitCode: -1,
+              restartOnMount: true,
             },
           },
         ],

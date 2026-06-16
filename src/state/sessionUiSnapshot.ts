@@ -118,7 +118,9 @@ function restoreShellTab(tab: Tab, restartShellTabs: boolean): Tab {
     };
   }
   if (tab.shell?.shellState === "exited" && tab.shell.exitCode === -1) {
-    return tab;
+    const shell = { ...tab.shell };
+    delete shell.restartOnMount;
+    return { ...tab, shell };
   }
   return {
     ...tab,
@@ -359,13 +361,14 @@ function restoreTabRecord(
     messages: normalizeRestoredMessages(
       collapseAmendedAgentMessages(
         dedupeToolResultTextMessages(t.messages),
-      ).map((message): ChatMessage =>
-        message.attachments && message.attachments.length > 0
-          ? {
-              ...message,
-              attachments: durableImageAttachments(message.attachments),
-            }
-          : message,
+      ).map(
+        (message): ChatMessage =>
+          message.attachments && message.attachments.length > 0
+            ? {
+                ...message,
+                attachments: durableImageAttachments(message.attachments),
+              }
+            : message,
       ),
     ),
     draft: t.draft ?? "",
@@ -425,7 +428,9 @@ function parsePersistedBuckets(
     return undefined;
   }
   const out: Record<string, PersistedTabBucket> = {};
-  for (const [rawKey, raw] of Object.entries(value as Record<string, unknown>)) {
+  for (const [rawKey, raw] of Object.entries(
+    value as Record<string, unknown>,
+  )) {
     if (!raw || typeof raw !== "object" || Array.isArray(raw)) continue;
     // Pre-workspace-rename snapshots used "::worktree::" in bucket keys;
     // migrate on read so existing tabs restore into the renamed buckets.

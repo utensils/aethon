@@ -210,13 +210,15 @@ function updateShellState(
 ): void {
   deps.updateTab(tabId, (t) => {
     if (t.kind !== "shell" || !t.shell) return t;
+    const shell = {
+      ...t.shell,
+      shellState,
+      ...(typeof code === "number" ? { exitCode: code } : {}),
+    };
+    if (shellState === "exited" && code === -1) delete shell.restartOnMount;
     return {
       ...t,
-      shell: {
-        ...t.shell,
-        shellState,
-        ...(typeof code === "number" ? { exitCode: code } : {}),
-      },
+      shell,
     };
   });
 }
