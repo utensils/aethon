@@ -59,22 +59,22 @@ export function modelForNewProjectTab(
 }
 
 /** Resolve the cwd a freshly-opened tab should inherit. Active project
- *  wins; falls back to the dev-only `projectRoot` snapshot, then to the
- *  bundled `aethonRoot`. Returns null when nothing is available so the
- *  caller knows to omit `cwd` from the bridge payload. */
+ *  wins; when no project is selected, the host workspace is rooted in
+ *  Aethon's user dir. The dev-only `projectRoot` is only a last-resort
+ *  fallback when the user dir is unavailable. */
 export function cwdForNewTab(
   projects: ProjectsState,
   appState: Record<string, unknown>,
 ): string | null {
   const projectCwd = activeCwd(projects);
   if (projectCwd) return projectCwd;
-  const projectRoot = appState.projectRoot;
-  if (typeof projectRoot === "string" && projectRoot.length > 0) {
-    return projectRoot;
-  }
   const aethonRoot = appState.aethonRoot;
-  return typeof aethonRoot === "string" && aethonRoot.length > 0
-    ? aethonRoot
+  if (typeof aethonRoot === "string" && aethonRoot.length > 0) {
+    return aethonRoot;
+  }
+  const projectRoot = appState.projectRoot;
+  return typeof projectRoot === "string" && projectRoot.length > 0
+    ? projectRoot
     : null;
 }
 
