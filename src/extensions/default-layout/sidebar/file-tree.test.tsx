@@ -49,6 +49,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.restoreAllMocks();
   // Portal-mounted context menus survive React Testing Library's default
   // autocleanup until the component unmounts; call cleanup explicitly so
   // each test starts with an empty document.body.
