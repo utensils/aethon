@@ -5,23 +5,53 @@ pub(super) async fn download_distil_model(
     provider_id: &str,
     cache_path: &Path,
 ) -> Result<(), String> {
-    let known_total = DISTIL_MODEL_FILES
-        .iter()
-        .filter_map(|(_, size)| *size)
-        .sum::<u64>();
+    download_hf_model(
+        app,
+        provider_id,
+        cache_path,
+        "distil-whisper/distil-large-v3",
+        &DISTIL_MODEL_FILES,
+    )
+    .await
+}
+
+pub(super) async fn download_lfm2_model(
+    app: &AppHandle,
+    provider_id: &str,
+    cache_path: &Path,
+) -> Result<(), String> {
+    download_hf_model(
+        app,
+        provider_id,
+        cache_path,
+        LFM2_HF_REPO,
+        &LFM2_MODEL_FILES,
+    )
+    .await
+}
+
+/// Stream a set of files from a Hugging Face repo into `cache_path`, emitting
+/// `voice-download-progress` events and writing each file via a `.part`
+/// tempfile that is renamed into place only once fully downloaded.
+async fn download_hf_model(
+    app: &AppHandle,
+    provider_id: &str,
+    cache_path: &Path,
+    repo: &str,
+    files: &[(&str, Option<u64>)],
+) -> Result<(), String> {
+    let known_total = files.iter().filter_map(|(_, size)| *size).sum::<u64>();
     let mut overall_downloaded = 0_u64;
     let client = reqwest::Client::new();
 
-    for (filename, known_size) in DISTIL_MODEL_FILES {
+    for (filename, known_size) in files.iter().copied() {
         let destination = cache_path.join(filename);
         if destination.is_file() {
             overall_downloaded += destination.metadata().map(|m| m.len()).unwrap_or(0);
             continue;
         }
 
-        let url = format!(
-            "https://huggingface.co/distil-whisper/distil-large-v3/resolve/main/{filename}"
-        );
+        let url = format!("https://huggingface.co/{repo}/resolve/main/{filename}");
         let response = client
             .get(&url)
             .send()

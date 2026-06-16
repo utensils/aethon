@@ -38,6 +38,7 @@ use self::audio::{
 
 mod download;
 mod inference;
+mod lfm2;
 mod mel;
 mod providers;
 mod registry;
@@ -46,6 +47,7 @@ mod types;
 
 use download::*;
 use inference::*;
+use lfm2::*;
 use mel::*;
 use providers::*;
 pub(crate) use registry::*;
@@ -81,6 +83,27 @@ pub(super) const DISTIL_MODEL_FILES: [(&str, Option<u64>); 5] = [
     ("preprocessor_config.json", None),
     ("tokenizer.json", None),
     ("model.safetensors", Some(100_000_000)),
+];
+
+// --- LFM2-Audio (Liquid AI) provider, run via the prebuilt llama.cpp
+// `llama-lfm2-audio` one-shot CLI. End-to-end audio model: ASR (speech-in)
+// today, TTS (speech-out) in a later phase. The Q8_0 GGUF trio lives beside
+// the binary's documented `-m` / `--mmproj` / `-mv` flags. See `lfm2.rs` for
+// the runtime contract distilled from the Phase 0 spike.
+pub(super) const LFM2_ID: &str = "voice-lfm2-audio-llamacpp";
+pub(super) const LFM2_CACHE_DIR: &str = "lfm2-audio-1.5b";
+pub(super) const LFM2_HF_REPO: &str = "LiquidAI/LFM2-Audio-1.5B-GGUF";
+pub(super) const LFM2_READY_MESSAGE: &str = "Ready for offline speech";
+pub(super) const LFM2_LM_FILE: &str = "LFM2-Audio-1.5B-Q8_0.gguf";
+pub(super) const LFM2_ENCODER_FILE: &str = "mmproj-audioencoder-LFM2-Audio-1.5B-Q8_0.gguf";
+pub(super) const LFM2_DECODER_FILE: &str = "audiodecoder-LFM2-Audio-1.5B-Q8_0.gguf";
+// Conservative size floors guard against truncated/partial downloads while
+// tolerating minor upstream re-quantization. Actual Q8_0 sizes (bytes) are
+// LM 1_246_253_280 / encoder 332_716_640 / decoder 375_009_888.
+pub(super) const LFM2_MODEL_FILES: [(&str, Option<u64>); 3] = [
+    (LFM2_LM_FILE, Some(1_000_000_000)),
+    (LFM2_ENCODER_FILE, Some(250_000_000)),
+    (LFM2_DECODER_FILE, Some(250_000_000)),
 ];
 pub(super) const WHISPER_LANGUAGE_CODES: [&str; 99] = [
     "en", "zh", "de", "es", "ru", "ko", "fr", "ja", "pt", "tr", "pl", "ca", "nl", "ar", "sv", "it",
@@ -1367,5 +1390,422 @@ mod tests {
         assert_eq!(provider.status, VoiceProviderStatus::Downloading);
         assert_eq!(provider.status_label, "Downloading model");
         assert!(provider.setup_required);
+    }
+
+    // --- LFM2-Audio provider ---------------------------------------------
+
+    struct FakeLfm2Backend {
+        binary_available: bool,
+        result: Mutex<Result<String, String>>,
+        sleep_for: Duration,
+        calls: AtomicUsize,
+    }
+
+    impl FakeLfm2Backend {
+        fn ready(text: &str) -> Self {
+            Self {
+                binary_available: true,
+                result: Mutex::new(Ok(text.to_string())),
+                sleep_for: Duration::ZERO,
+                calls: AtomicUsize::new(0),
+            }
+        }
+
+        fn binary_missing() -> Self {
+            Self {
+                binary_available: false,
+                result: Mutex::new(Ok("ignored".to_string())),
+                sleep_for: Duration::ZERO,
+                calls: AtomicUsize::new(0),
+            }
+        }
+
+        fn slow(text: &str, sleep_for: Duration) -> Self {
+            Self {
+                binary_available: true,
+                result: Mutex::new(Ok(text.to_string())),
+                sleep_for,
+                calls: AtomicUsize::new(0),
+            }
+        }
+    }
+
+    #[async_trait]
+    impl Lfm2Backend for FakeLfm2Backend {
+        fn binary_available(&self) -> bool {
+            self.binary_available
+        }
+
+        async fn asr(
+            &self,
+            _audio: CapturedAudio,
+            cancel: Arc<AtomicBool>,
+        ) -> Result<String, String> {
+            self.calls.fetch_add(1, Ordering::Relaxed);
+            // Poll the cancel flag while "working" so tests can exercise the
+            // cooperative cancel path the real subprocess wrapper uses.
+            let step = Duration::from_millis(10);
+            let mut remaining = self.sleep_for;
+            while remaining > Duration::ZERO {
+                if cancel.load(Ordering::Relaxed) {
+                    return Err("Transcription cancelled.".to_string());
+                }
+                let nap = step.min(remaining);
+                tokio::time::sleep(nap).await;
+                remaining = remaining.saturating_sub(nap);
+            }
+            self.result.lock().clone()
+        }
+    }
+
+    fn write_complete_lfm2_model(cache_path: &Path) {
+        std::fs::create_dir_all(cache_path).expect("create lfm2 cache");
+        for (filename, min_size) in LFM2_MODEL_FILES {
+            let file = std::fs::File::create(cache_path.join(filename)).expect("create lfm2 file");
+            if let Some(min_size) = min_size {
+                file.set_len(min_size).expect("size lfm2 file");
+            }
+        }
+    }
+
+    fn lfm2_registry(model_root: PathBuf, lfm2: FakeLfm2Backend) -> VoiceProviderRegistry {
+        VoiceProviderRegistry::with_runtime(
+            model_root,
+            Arc::new(FakeRecorder::new(vec![0.1, 0.2, 0.3])),
+            Arc::new(FakeTranscriber::ok("ignored")),
+        )
+        .with_lfm2_backend(Arc::new(lfm2))
+    }
+
+    fn find_lfm2(registry: &VoiceProviderRegistry, db: &VoiceSettings) -> VoiceProviderInfo {
+        registry
+            .list_providers(db)
+            .into_iter()
+            .find(|provider| provider.metadata.id == LFM2_ID)
+            .expect("lfm2 provider present")
+    }
+
+    #[test]
+    fn lfm2_provider_appears_in_default_list() {
+        let (_dir, db_path) = test_db_path();
+        let db = open_test_db(&db_path);
+        let registry = VoiceProviderRegistry::new(PathBuf::from("/tmp/models"));
+
+        assert!(
+            registry
+                .list_providers(&db)
+                .iter()
+                .any(|provider| provider.metadata.id == LFM2_ID)
+        );
+    }
+
+    #[test]
+    fn lfm2_cache_path_uses_provider_specific_directory() {
+        let root = PathBuf::from("/tmp/aethon-test-models");
+        let registry = VoiceProviderRegistry::new(root.clone());
+        assert_eq!(registry.lfm2_cache_path(), root.join(LFM2_CACHE_DIR));
+    }
+
+    #[test]
+    fn lfm2_ready_when_model_and_binary_present() {
+        let (_db_dir, db_path) = test_db_path();
+        let model_dir = tempdir().expect("model dir");
+        write_complete_lfm2_model(&model_dir.path().join(LFM2_CACHE_DIR));
+        let db = open_test_db(&db_path);
+        let registry = lfm2_registry(model_dir.path().to_path_buf(), FakeLfm2Backend::ready("x"));
+
+        let provider = find_lfm2(&registry, &db);
+        assert_eq!(provider.status, VoiceProviderStatus::Ready);
+        assert!(!provider.setup_required);
+        assert!(provider.can_remove_model);
+        assert_eq!(provider.error, None);
+    }
+
+    #[test]
+    fn lfm2_needs_setup_when_model_missing() {
+        let (_db_dir, db_path) = test_db_path();
+        let model_dir = tempdir().expect("model dir");
+        let db = open_test_db(&db_path);
+        let registry = lfm2_registry(model_dir.path().to_path_buf(), FakeLfm2Backend::ready("x"));
+
+        let provider = find_lfm2(&registry, &db);
+        assert_eq!(provider.status, VoiceProviderStatus::NeedsSetup);
+        assert!(provider.setup_required);
+        assert!(!provider.can_remove_model);
+    }
+
+    #[test]
+    fn lfm2_engine_unavailable_when_binary_missing() {
+        let (_db_dir, db_path) = test_db_path();
+        let model_dir = tempdir().expect("model dir");
+        write_complete_lfm2_model(&model_dir.path().join(LFM2_CACHE_DIR));
+        let db = open_test_db(&db_path);
+        let registry = lfm2_registry(
+            model_dir.path().to_path_buf(),
+            FakeLfm2Backend::binary_missing(),
+        );
+
+        let provider = find_lfm2(&registry, &db);
+        assert_eq!(provider.status, VoiceProviderStatus::EngineUnavailable);
+        assert!(!provider.setup_required);
+        assert!(
+            provider
+                .error
+                .as_deref()
+                .is_some_and(|error| error.contains("llama-lfm2-audio"))
+        );
+    }
+
+    #[test]
+    fn lfm2_disabled_reports_unavailable() {
+        let (_db_dir, db_path) = test_db_path();
+        let model_dir = tempdir().expect("model dir");
+        write_complete_lfm2_model(&model_dir.path().join(LFM2_CACHE_DIR));
+        let db = open_test_db(&db_path);
+        db.set_app_setting(&enabled_key(LFM2_ID), "false")
+            .expect("disable lfm2");
+        let registry = lfm2_registry(model_dir.path().to_path_buf(), FakeLfm2Backend::ready("x"));
+
+        let provider = find_lfm2(&registry, &db);
+        assert_eq!(provider.status, VoiceProviderStatus::Unavailable);
+        assert!(!provider.enabled);
+        assert!(!provider.setup_required);
+    }
+
+    #[test]
+    fn lfm2_model_ready_requires_all_files() {
+        let model_dir = tempdir().expect("model dir");
+        let cache_path = model_dir.path().join(LFM2_CACHE_DIR);
+        std::fs::create_dir_all(&cache_path).expect("create cache");
+        // Only the LM file present — encoder + decoder still missing.
+        let lm = std::fs::File::create(cache_path.join(LFM2_LM_FILE)).expect("create lm");
+        lm.set_len(1_000_000_000).expect("size lm");
+
+        assert!(!lfm2_model_ready(&cache_path));
+    }
+
+    #[test]
+    fn resolve_provider_id_accepts_lfm2() {
+        let (_dir, db_path) = test_db_path();
+        let db = open_test_db(&db_path);
+        let registry = VoiceProviderRegistry::new(PathBuf::from("/tmp/models"));
+
+        assert_eq!(
+            registry
+                .resolve_provider_id(&db, Some(LFM2_ID))
+                .expect("lfm2 is a known provider"),
+            LFM2_ID
+        );
+    }
+
+    #[tokio::test]
+    async fn remove_lfm2_model_clears_cache_and_status() {
+        let (_db_dir, db_path) = test_db_path();
+        let model_dir = tempdir().expect("model dir");
+        let cache_path = model_dir.path().join(LFM2_CACHE_DIR);
+        write_complete_lfm2_model(&cache_path);
+        let db = open_test_db(&db_path);
+        db.set_app_setting(&model_status_key(LFM2_ID), "installed")
+            .expect("set model status");
+        drop(db);
+
+        let registry = lfm2_registry(model_dir.path().to_path_buf(), FakeLfm2Backend::ready("x"));
+        let provider = registry
+            .remove_provider_model(&db_path, LFM2_ID)
+            .await
+            .expect("remove lfm2 model");
+
+        assert!(!cache_path.exists());
+        assert_eq!(provider.status, VoiceProviderStatus::NeedsSetup);
+        let db = open_test_db(&db_path);
+        assert_eq!(
+            db.get_app_setting(&model_status_key(LFM2_ID))
+                .expect("get model status"),
+            Some("not-installed".to_string())
+        );
+    }
+
+    #[tokio::test]
+    async fn start_lfm2_recording_rejects_missing_model() {
+        let (_db_dir, db_path) = test_db_path();
+        let model_dir = tempdir().expect("model dir");
+        let registry = lfm2_registry(model_dir.path().to_path_buf(), FakeLfm2Backend::ready("x"));
+
+        let err = registry
+            .start_recording(&db_path, LFM2_ID, None)
+            .await
+            .expect_err("missing model should not record");
+        assert!(err.contains("Download"));
+    }
+
+    #[tokio::test]
+    async fn start_lfm2_recording_rejects_disabled_provider() {
+        let (_db_dir, db_path) = test_db_path();
+        let model_dir = tempdir().expect("model dir");
+        write_complete_lfm2_model(&model_dir.path().join(LFM2_CACHE_DIR));
+        let db = open_test_db(&db_path);
+        db.set_app_setting(&enabled_key(LFM2_ID), "false")
+            .expect("disable provider");
+        drop(db);
+        let registry = lfm2_registry(model_dir.path().to_path_buf(), FakeLfm2Backend::ready("x"));
+
+        let err = registry
+            .start_recording(&db_path, LFM2_ID, None)
+            .await
+            .expect_err("disabled provider should not record");
+        assert!(err.contains("disabled"));
+    }
+
+    #[tokio::test]
+    async fn start_lfm2_recording_rejects_missing_binary() {
+        let (_db_dir, db_path) = test_db_path();
+        let model_dir = tempdir().expect("model dir");
+        write_complete_lfm2_model(&model_dir.path().join(LFM2_CACHE_DIR));
+        let registry = lfm2_registry(
+            model_dir.path().to_path_buf(),
+            FakeLfm2Backend::binary_missing(),
+        );
+
+        let err = registry
+            .start_recording(&db_path, LFM2_ID, None)
+            .await
+            .expect_err("missing binary should not record");
+        assert!(err.contains("llama-lfm2-audio"));
+    }
+
+    #[tokio::test]
+    async fn start_then_stop_lfm2_returns_transcript() {
+        let (_db_dir, db_path) = test_db_path();
+        let model_dir = tempdir().expect("model dir");
+        write_complete_lfm2_model(&model_dir.path().join(LFM2_CACHE_DIR));
+        let registry = lfm2_registry(
+            model_dir.path().to_path_buf(),
+            FakeLfm2Backend::ready("hello from lfm2"),
+        );
+
+        registry
+            .start_recording(&db_path, LFM2_ID, None)
+            .await
+            .expect("recording starts");
+        let transcript = registry
+            .stop_and_transcribe(LFM2_ID)
+            .await
+            .expect("transcribes");
+
+        assert_eq!(transcript, "hello from lfm2");
+    }
+
+    #[tokio::test]
+    async fn cancel_during_lfm2_transcription_returns_early() {
+        let (_db_dir, db_path) = test_db_path();
+        let model_dir = tempdir().expect("model dir");
+        write_complete_lfm2_model(&model_dir.path().join(LFM2_CACHE_DIR));
+        let registry = Arc::new(lfm2_registry(
+            model_dir.path().to_path_buf(),
+            FakeLfm2Backend::slow("would have transcribed", Duration::from_secs(5)),
+        ));
+
+        registry
+            .start_recording(&db_path, LFM2_ID, None)
+            .await
+            .expect("recording starts");
+
+        let stop_registry = Arc::clone(&registry);
+        let stop_handle =
+            tokio::spawn(async move { stop_registry.stop_and_transcribe(LFM2_ID).await });
+        tokio::time::sleep(Duration::from_millis(50)).await;
+
+        let cancel_started = std::time::Instant::now();
+        registry
+            .cancel_recording(LFM2_ID)
+            .await
+            .expect("cancel succeeds");
+
+        let result = stop_handle.await.expect("stop task joined");
+        let elapsed = cancel_started.elapsed();
+        let err = result.expect_err("transcription should be cancelled");
+        assert!(err.contains("cancelled"), "expected cancellation: {err}");
+        assert!(
+            elapsed < Duration::from_secs(2),
+            "expected fast return: {elapsed:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn lfm2_transcription_timeout_returns_clear_error() {
+        let (_db_dir, db_path) = test_db_path();
+        let model_dir = tempdir().expect("model dir");
+        write_complete_lfm2_model(&model_dir.path().join(LFM2_CACHE_DIR));
+        let registry = VoiceProviderRegistry::with_runtime_and_timeout(
+            model_dir.path().to_path_buf(),
+            Arc::new(FakeRecorder::new(vec![0.1, 0.2, 0.3])),
+            Arc::new(FakeTranscriber::ok("ignored")),
+            Duration::from_millis(5),
+        )
+        .with_lfm2_backend(Arc::new(FakeLfm2Backend::slow(
+            "late transcript",
+            Duration::from_millis(80),
+        )));
+
+        registry
+            .start_recording(&db_path, LFM2_ID, None)
+            .await
+            .expect("recording starts");
+        let err = registry
+            .stop_and_transcribe(LFM2_ID)
+            .await
+            .expect_err("slow transcription should time out");
+        assert!(err.contains("timed out"));
+    }
+
+    #[tokio::test]
+    #[ignore = "requires AETHON_LFM2_AUDIO_BIN, the LFM2 model cache, and AETHON_VOICE_SAMPLE_WAV"]
+    async fn ignored_real_lfm2_asr_transcribes_fixture_wav() {
+        let model_root = std::env::var_os("AETHON_LFM2_MODEL_ROOT")
+            .map(PathBuf::from)
+            .unwrap_or_else(VoiceProviderRegistry::default_model_root);
+        let sample_path = std::env::var_os("AETHON_VOICE_SAMPLE_WAV")
+            .map(PathBuf::from)
+            .expect("set AETHON_VOICE_SAMPLE_WAV to a short speech WAV");
+        let audio = read_wav_fixture(&sample_path).expect("read speech wav");
+
+        let backend = Lfm2CliBackend::new(model_root);
+        assert!(
+            backend.binary_available(),
+            "set AETHON_LFM2_AUDIO_BIN to the llama-lfm2-audio binary",
+        );
+        let cancel = Arc::new(AtomicBool::new(false));
+        let transcript = backend
+            .asr(audio, cancel)
+            .await
+            .expect("transcribe fixture");
+        assert!(!transcript.trim().is_empty(), "got empty transcript");
+        println!("LFM2 ASR transcript: {transcript}");
+    }
+
+    #[test]
+    fn parse_asr_stdout_keeps_only_transcript() {
+        let stdout = "load_gguf: Loaded 369 tensors from audiodecoder.gguf\n\
+             main: loading model: lm.gguf\n\
+             encoding audio slice...\n\
+             audio slice encoded in 35 ms\n\
+             decoding audio batch 1/1, n_tokens_batch = 35\n\
+             audio decoded (batch 1/1) in 16 ms\n\
+             \n\
+             The quick brown fox jumps over the lazy dog.\n\
+             \n";
+        assert_eq!(
+            parse_asr_stdout(stdout),
+            "The quick brown fox jumps over the lazy dog."
+        );
+    }
+
+    #[test]
+    fn parse_asr_stdout_joins_multiline_transcript_and_trims_noise() {
+        let stdout = "main: loading model: lm.gguf\n\
+             First sentence.\n\
+             Second sentence.\n\
+             ggml_metal_free: deallocating\n";
+        assert_eq!(parse_asr_stdout(stdout), "First sentence. Second sentence.");
     }
 }

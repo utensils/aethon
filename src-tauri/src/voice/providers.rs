@@ -351,6 +351,177 @@ impl VoiceProvider for DistilWhisperCandleProvider {
     }
 }
 
+#[cfg(target_os = "macos")]
+fn lfm2_accelerator_label() -> &'static str {
+    "Metal via llama.cpp"
+}
+
+#[cfg(not(target_os = "macos"))]
+fn lfm2_accelerator_label() -> &'static str {
+    "CPU via llama.cpp"
+}
+
+pub(super) struct Lfm2AudioProvider;
+
+#[async_trait]
+impl VoiceProvider for Lfm2AudioProvider {
+    fn id(&self) -> &'static str {
+        LFM2_ID
+    }
+
+    fn metadata(&self, registry: &VoiceProviderRegistry) -> VoiceProviderMetadata {
+        let cache_path = registry.lfm2_cache_path();
+        VoiceProviderMetadata {
+            id: self.id().to_string(),
+            name: "LFM2-Audio (Liquid AI)".to_string(),
+            description: "On-device speech recognition powered by Liquid AI's LFM2-Audio 1.5B \
+                          through llama.cpp. Audio stays local after the one-time model download."
+                .to_string(),
+            kind: VoiceProviderKind::LocalModel,
+            recording_mode: VoiceRecordingMode::Native,
+            privacy_label: "Private after download; audio stays local".to_string(),
+            offline: true,
+            download_required: true,
+            model_size_label: Some("About 1.7 GB (Q8_0)".to_string()),
+            cache_path: Some(cache_path.display().to_string()),
+            accelerator_label: Some(lfm2_accelerator_label().to_string()),
+        }
+    }
+
+    fn status(&self, registry: &VoiceProviderRegistry, db: &VoiceSettings) -> VoiceProviderInfo {
+        let enabled = registry.enabled(db, self.id());
+        let metadata = self.metadata(registry);
+        if !enabled {
+            return VoiceProviderInfo {
+                metadata,
+                status: VoiceProviderStatus::Unavailable,
+                status_label: "Disabled".to_string(),
+                enabled: false,
+                selected: false,
+                setup_required: false,
+                can_remove_model: false,
+                error: None,
+            };
+        }
+
+        let cache_path = registry.lfm2_cache_path();
+        let installed = lfm2_model_ready(&cache_path);
+        let downloading = registry.active_downloads.lock().contains(self.id());
+        let binary_available = registry.lfm2.binary_available();
+        let model_status = db
+            .get_app_setting(&model_status_key(self.id()))
+            .ok()
+            .flatten();
+
+        // Precedence: an in-flight download wins; then a missing runtime binary
+        // (an install problem the download can't fix); then installed/ready;
+        // then a recorded download error; otherwise setup is still required.
+        let (status, status_label, setup_required, error) = if downloading {
+            (
+                VoiceProviderStatus::Downloading,
+                "Downloading model".to_string(),
+                true,
+                None,
+            )
+        } else if !binary_available {
+            (
+                VoiceProviderStatus::EngineUnavailable,
+                "Runtime unavailable".to_string(),
+                false,
+                Some(LFM2_BINARY_MISSING.to_string()),
+            )
+        } else if installed {
+            (
+                VoiceProviderStatus::Ready,
+                LFM2_READY_MESSAGE.to_string(),
+                false,
+                None,
+            )
+        } else if model_status
+            .as_deref()
+            .is_some_and(|status| status.starts_with("error:"))
+        {
+            (
+                VoiceProviderStatus::Error,
+                "Download failed".to_string(),
+                true,
+                model_status.map(|s| s.trim_start_matches("error:").to_string()),
+            )
+        } else {
+            (
+                VoiceProviderStatus::NeedsSetup,
+                "Download required".to_string(),
+                true,
+                None,
+            )
+        };
+
+        VoiceProviderInfo {
+            metadata,
+            status,
+            status_label,
+            enabled,
+            selected: registry.selected_provider(db).as_deref() == Some(self.id()),
+            setup_required,
+            can_remove_model: installed,
+            error,
+        }
+    }
+
+    async fn prepare(
+        &self,
+        registry: &VoiceProviderRegistry,
+        app: &AppHandle,
+        db_path: &Path,
+    ) -> Result<VoiceProviderInfo, String> {
+        let cache_path = registry.lfm2_cache_path();
+        tokio::fs::create_dir_all(&cache_path)
+            .await
+            .map_err(|e| format!("Failed to create model cache: {e}"))?;
+        {
+            let mut active_downloads = registry.active_downloads.lock();
+            if !active_downloads.insert(self.id().to_string()) {
+                let db = VoiceSettings::open(db_path).map_err(|e| e.to_string())?;
+                return Ok(self.status(registry, &db));
+            }
+        }
+        let active_download = ActiveDownloadGuard {
+            registry,
+            provider_id: self.id(),
+        };
+        {
+            let db = VoiceSettings::open(db_path).map_err(|e| e.to_string())?;
+            let info = self.status(registry, &db);
+            let _ = app.emit("voice-provider-status", &info);
+        }
+
+        let result = download_lfm2_model(app, self.id(), &cache_path).await;
+        drop(active_download);
+        match result {
+            Ok(()) => {
+                let db = VoiceSettings::open(db_path).map_err(|e| e.to_string())?;
+                db.set_app_setting(&model_status_key(self.id()), "installed")
+                    .map_err(|e| e.to_string())?;
+                let info = self.status(registry, &db);
+                let _ = app.emit("voice-provider-status", &info);
+                Ok(info)
+            }
+            Err(err) => {
+                let db = VoiceSettings::open(db_path).map_err(|e| e.to_string())?;
+                let _ = db.set_app_setting(&model_status_key(self.id()), &format!("error:{err}"));
+                let _ = app.emit(
+                    "voice-error",
+                    VoiceErrorEvent {
+                        provider_id: Some(self.id().to_string()),
+                        message: err.clone(),
+                    },
+                );
+                Err(err)
+            }
+        }
+    }
+}
+
 pub(super) struct ActiveDownloadGuard<'a> {
     registry: &'a VoiceProviderRegistry,
     provider_id: &'static str,
@@ -373,8 +544,10 @@ pub(super) fn model_status_key(provider_id: &str) -> String {
     format!("voice:{provider_id}:model_status")
 }
 
-pub(super) fn distil_model_ready(cache_path: &Path) -> bool {
-    DISTIL_MODEL_FILES.iter().all(|(filename, min_size)| {
+/// A model is "ready" when every required file exists and, where a minimum
+/// size is known, is at least that large (guards against truncated downloads).
+pub(super) fn model_files_ready(cache_path: &Path, files: &[(&str, Option<u64>)]) -> bool {
+    files.iter().all(|(filename, min_size)| {
         let path = cache_path.join(filename);
         if let Some(min_size) = min_size {
             path.metadata().is_ok_and(|m| m.len() >= *min_size)
@@ -382,4 +555,12 @@ pub(super) fn distil_model_ready(cache_path: &Path) -> bool {
             path.is_file()
         }
     })
+}
+
+pub(super) fn distil_model_ready(cache_path: &Path) -> bool {
+    model_files_ready(cache_path, &DISTIL_MODEL_FILES)
+}
+
+pub(super) fn lfm2_model_ready(cache_path: &Path) -> bool {
+    model_files_ready(cache_path, &LFM2_MODEL_FILES)
 }

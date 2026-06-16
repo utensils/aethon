@@ -73,6 +73,7 @@ tokenizers = { version = "0.22", default-features = false, features = [
 ], optional = true }
 rubato = { version = "2", default-features = false, optional = true }
 hound = { version = "3", optional = true }
+tempfile = { version = "3", optional = true }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
@@ -104,6 +105,7 @@ voice = [
   "dep:tokenizers",
   "dep:rubato",
   "dep:hound",
+  "dep:tempfile",
 ]
 
 [dev-dependencies]

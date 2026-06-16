@@ -1,0 +1,273 @@
+//! LFM2-Audio runtime — a thin wrapper over Liquid AI's prebuilt llama.cpp
+//! `llama-lfm2-audio` one-shot CLI.
+//!
+//! Runtime contract (validated by the Phase 0 spike on Apple Silicon):
+//! - ASR: `llama-lfm2-audio -m <lm> --mmproj <encoder> -mv <decoder>
+//!   -sys "Perform ASR." --audio <in.wav>`. The transcript is printed on
+//!   **stdout**, interleaved with stable diagnostic lines (`load_gguf:`,
+//!   `main:`, `encoding audio slice`, `audio decoded`, …) — filter those out.
+//! - The binary is genuinely one-shot (a fresh process per call), which is why
+//!   it sidesteps the upstream "crash after the first ASR+TTS cycle" entirely.
+//! - **Never** pass `--log-disable`: it suppresses the transcript (a log line)
+//!   and breaks audio output writing.
+//! - The runner is system-linked (`@rpath` dylibs + `/usr/lib`), so it is
+//!   resolved next to the app executable (release sidecar), via the
+//!   `AETHON_LFM2_AUDIO_BIN` override (dev), or on `PATH`. Model weights are
+//!   downloaded on demand; the binary is never auto-downloaded-and-executed.
+
+use super::*;
+use std::process::Stdio;
+use tokio::io::AsyncReadExt;
+
+const LFM2_BIN_NAME: &str = "llama-lfm2-audio";
+const LFM2_BIN_ENV: &str = "AETHON_LFM2_AUDIO_BIN";
+pub(super) const LFM2_BINARY_MISSING: &str = "LFM2-Audio runtime not found. The llama-lfm2-audio binary ships with Aethon; \
+     reinstall, or set AETHON_LFM2_AUDIO_BIN to its path.";
+const ASR_SYSTEM_PROMPT: &str = "Perform ASR.";
+const CANCELLED_MESSAGE: &str = "Transcription cancelled.";
+const LFM2_CANCEL_POLL: Duration = Duration::from_millis(100);
+
+/// Resolved on-disk locations of the three GGUF files the runner needs.
+pub(super) struct Lfm2ModelPaths {
+    pub(super) lm: PathBuf,
+    pub(super) encoder: PathBuf,
+    pub(super) decoder: PathBuf,
+}
+
+pub(super) fn lfm2_model_paths(cache_path: &Path) -> Lfm2ModelPaths {
+    Lfm2ModelPaths {
+        lm: cache_path.join(LFM2_LM_FILE),
+        encoder: cache_path.join(LFM2_ENCODER_FILE),
+        decoder: cache_path.join(LFM2_DECODER_FILE),
+    }
+}
+
+/// Locate the `llama-lfm2-audio` binary. Order: explicit dev override, a
+/// sidecar staged next to the running executable (release bundle), then `PATH`
+/// through the shared resolver in `env.rs`.
+pub(super) fn resolve_lfm2_binary() -> Option<PathBuf> {
+    if let Some(raw) = std::env::var_os(LFM2_BIN_ENV) {
+        let path = PathBuf::from(raw);
+        if path.is_file() {
+            return Some(path);
+        }
+    }
+    if let Ok(exe) = std::env::current_exe()
+        && let Some(candidate) = exe.parent().map(|dir| dir.join(LFM2_BIN_NAME))
+        && candidate.is_file()
+    {
+        return Some(candidate);
+    }
+    crate::env::resolve_program(LFM2_BIN_NAME)
+}
+
+/// Audio capabilities are injected through this trait so the registry can
+/// substitute a fake in tests instead of spawning the real binary.
+#[async_trait]
+pub(super) trait Lfm2Backend: Send + Sync {
+    /// Whether the runner binary can be located on this machine. Feeds the
+    /// provider's readiness status without spawning anything.
+    fn binary_available(&self) -> bool;
+
+    /// Transcribe captured audio. `cancel` is polled cooperatively and kills
+    /// the child process if it flips mid-run.
+    async fn asr(&self, audio: CapturedAudio, cancel: Arc<AtomicBool>) -> Result<String, String>;
+}
+
+pub(super) struct Lfm2CliBackend {
+    model_root: PathBuf,
+}
+
+impl Lfm2CliBackend {
+    pub(super) fn new(model_root: PathBuf) -> Self {
+        Self { model_root }
+    }
+
+    fn cache_path(&self) -> PathBuf {
+        self.model_root.join(LFM2_CACHE_DIR)
+    }
+}
+
+#[async_trait]
+impl Lfm2Backend for Lfm2CliBackend {
+    fn binary_available(&self) -> bool {
+        resolve_lfm2_binary().is_some()
+    }
+
+    async fn asr(&self, audio: CapturedAudio, cancel: Arc<AtomicBool>) -> Result<String, String> {
+        let binary = resolve_lfm2_binary().ok_or_else(|| LFM2_BINARY_MISSING.to_string())?;
+        let paths = lfm2_model_paths(&self.cache_path());
+        // Held alive for the duration of the run; the CLI reads it from disk.
+        // Dropped (and deleted) when this scope ends.
+        let input_wav = write_input_wav(&audio)?;
+
+        let mut command = crate::env::tokio_command(binary.to_string_lossy().as_ref());
+        command
+            .arg("-m")
+            .arg(&paths.lm)
+            .arg("--mmproj")
+            .arg(&paths.encoder)
+            .arg("-mv")
+            .arg(&paths.decoder)
+            .arg("-sys")
+            .arg(ASR_SYSTEM_PROMPT)
+            .arg("--audio")
+            .arg(input_wav.path());
+
+        let output = run_cli_capture(command, &cancel).await?;
+        if !output.status.success() {
+            return Err(format!(
+                "LFM2-Audio transcription failed: {}",
+                last_error_line(&output.stderr)
+            ));
+        }
+        Ok(parse_asr_stdout(&output.stdout))
+    }
+}
+
+struct CliOutput {
+    status: std::process::ExitStatus,
+    stdout: String,
+    stderr: String,
+}
+
+/// Spawn a runner command, draining stdout/stderr concurrently (so a full pipe
+/// can't deadlock the child), while polling `cancel` to kill the process early.
+async fn run_cli_capture(
+    mut command: tokio::process::Command,
+    cancel: &Arc<AtomicBool>,
+) -> Result<CliOutput, String> {
+    command
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true);
+    let mut child = command
+        .spawn()
+        .map_err(|e| format!("Failed to launch LFM2-Audio runner: {e}"))?;
+
+    let mut stdout_pipe = child
+        .stdout
+        .take()
+        .ok_or_else(|| "LFM2-Audio runner stdout unavailable".to_string())?;
+    let mut stderr_pipe = child
+        .stderr
+        .take()
+        .ok_or_else(|| "LFM2-Audio runner stderr unavailable".to_string())?;
+    let stdout_task = tokio::spawn(async move {
+        let mut buf = String::new();
+        let _ = stdout_pipe.read_to_string(&mut buf).await;
+        buf
+    });
+    let stderr_task = tokio::spawn(async move {
+        let mut buf = String::new();
+        let _ = stderr_pipe.read_to_string(&mut buf).await;
+        buf
+    });
+
+    let status = loop {
+        if cancel.load(Ordering::Relaxed) {
+            let _ = child.start_kill();
+            let _ = child.wait().await;
+            return Err(CANCELLED_MESSAGE.to_string());
+        }
+        // Re-create the wait future each tick so neither branch holds a
+        // long-lived mutable borrow of `child` (the tokio::select! footgun).
+        match tokio::time::timeout(LFM2_CANCEL_POLL, child.wait()).await {
+            Ok(status) => break status.map_err(|e| format!("LFM2-Audio runner failed: {e}"))?,
+            Err(_) => continue,
+        }
+    };
+
+    let stdout = stdout_task.await.unwrap_or_default();
+    let stderr = stderr_task.await.unwrap_or_default();
+    Ok(CliOutput {
+        status,
+        stdout,
+        stderr,
+    })
+}
+
+/// Write captured 16 kHz mono audio to a temporary 16-bit PCM WAV for the CLI.
+fn write_input_wav(audio: &CapturedAudio) -> Result<tempfile::NamedTempFile, String> {
+    let temp = tempfile::Builder::new()
+        .prefix("aethon-lfm2-asr-")
+        .suffix(".wav")
+        .tempfile()
+        .map_err(|e| format!("Failed to allocate temporary audio file: {e}"))?;
+    let spec = hound::WavSpec {
+        channels: 1,
+        sample_rate: audio.sample_rate,
+        bits_per_sample: 16,
+        sample_format: hound::SampleFormat::Int,
+    };
+    let mut writer = hound::WavWriter::create(temp.path(), spec)
+        .map_err(|e| format!("Failed to open WAV writer: {e}"))?;
+    for &sample in &audio.samples {
+        let scaled = (sample.clamp(-1.0, 1.0) * f32::from(i16::MAX)).round() as i16;
+        writer
+            .write_sample(scaled)
+            .map_err(|e| format!("Failed to write WAV sample: {e}"))?;
+    }
+    writer
+        .finalize()
+        .map_err(|e| format!("Failed to finalize WAV: {e}"))?;
+    Ok(temp)
+}
+
+/// Extract the transcript from runner stdout, dropping the interleaved
+/// llama.cpp/mtmd diagnostic lines. The remaining non-empty lines are the
+/// model's generated text.
+pub(super) fn parse_asr_stdout(stdout: &str) -> String {
+    stdout
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty() && !is_lfm2_diagnostic_line(line))
+        .collect::<Vec<_>>()
+        .join(" ")
+        .trim()
+        .to_string()
+}
+
+fn is_lfm2_diagnostic_line(line: &str) -> bool {
+    const DIAGNOSTIC_PREFIXES: &[&str] = &[
+        "load_gguf:",
+        "main:",
+        "encoding audio slice",
+        "audio slice encoded",
+        "decoding audio batch",
+        "audio decoded",
+        "load_backend",
+        "register_backend",
+        "build:",
+        "llama_",
+        "ggml_",
+        "clip_",
+        "mtmd_",
+        "init_audio:",
+        "init:",
+        "warming up",
+        "<|audio_start|>",
+        "decode_frame:",
+        "decode:",
+    ];
+    DIAGNOSTIC_PREFIXES
+        .iter()
+        .any(|prefix| line.starts_with(prefix))
+}
+
+/// Pick the most informative line out of runner stderr for an error message.
+fn last_error_line(stderr: &str) -> String {
+    let lines: Vec<&str> = stderr
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .collect();
+    lines
+        .iter()
+        .rev()
+        .find(|line| line.starts_with("ERR") || line.contains("error") || line.contains("Error"))
+        .or_else(|| lines.last())
+        .map(|line| line.to_string())
+        .unwrap_or_else(|| "unknown error".to_string())
+}
