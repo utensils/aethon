@@ -88,6 +88,7 @@ export async function installAethonHarness(page: Page): Promise<void> {
       let nextCallbackId = 1;
       let nextListenerId = 1;
       let model = defaultModel;
+      let currentProjectCwd: string | null = projectRoot;
       const promptStateByTab = new Map<
         string,
         { inFlight: boolean; queued: number }
@@ -163,6 +164,7 @@ export async function installAethonHarness(page: Page): Promise<void> {
         model,
         projectRoot,
         userDir: aethonRoot,
+        currentProjectCwd,
         models: [
           { id: defaultModel, label: "GPT-5.5" },
           { id: altModel, label: "qwen3.6:35b-a3b-coding-nvfp4" },
@@ -344,6 +346,7 @@ export async function installAethonHarness(page: Page): Promise<void> {
                     tabId?: string;
                     id?: string;
                     name?: string;
+                    cwd?: string | null;
                     args?: string;
                   })
                 : {};
@@ -359,6 +362,11 @@ export async function installAethonHarness(page: Page): Promise<void> {
                   model,
                 }),
               );
+            }
+            if (payload.type === "set_project") {
+              currentProjectCwd =
+                typeof payload.cwd === "string" ? payload.cwd : null;
+              queueMicrotask(() => emitAgent(ready()));
             }
             if (payload.type === "native_slash_command") {
               queueMicrotask(() =>
