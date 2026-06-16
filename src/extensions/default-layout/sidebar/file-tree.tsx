@@ -13,6 +13,7 @@ import {
   useRef,
   useState,
   type CSSProperties,
+  type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
 } from "react";
 import { invoke } from "@tauri-apps/api/core";
@@ -131,10 +132,13 @@ export function FileTreePanel({
   });
 
   const {
+    cancelRename,
+    commitRename,
     contextMenu,
     createEntry,
     fileTreeMenuItems,
     openContextMenu,
+    renamingPath,
     setContextMenu,
   } = useFileTreeActions({
     onEvent,
@@ -492,8 +496,13 @@ export function FileTreePanel({
                   node.entry.path === activeFilePath
                 }
                 revealed={node.entry.path === revealTarget}
-                onClick={() => onItemClick(node)}
+                renaming={node.entry.path === renamingPath}
+                onClick={() => {
+                  if (node.entry.path !== renamingPath) onItemClick(node);
+                }}
                 onContextMenu={(e) => openContextMenu(e, node)}
+                onCommitRename={(name) => void commitRename(node, name)}
+                onCancelRename={cancelRename}
               />
             );
           })}
@@ -523,8 +532,11 @@ interface FileTreeRowProps {
   /** Transiently set after "Reveal in Files Panel" — scrolls into view
    *  and flashes a highlight. */
   revealed?: boolean;
+  renaming?: boolean;
   onClick: () => void;
   onContextMenu: (e: ReactMouseEvent) => void;
+  onCommitRename: (name: string) => void;
+  onCancelRename: () => void;
 }
 
 function FileTreeRow({
@@ -534,13 +546,46 @@ function FileTreeRow({
   ignored,
   active,
   revealed,
+  renaming,
   onClick,
   onContextMenu,
+  onCommitRename,
+  onCancelRename,
 }: FileTreeRowProps) {
   const rowRef = useRef<HTMLLIElement>(null);
+  const renameInputRef = useRef<HTMLInputElement>(null);
+  const renameFinishedRef = useRef(false);
   useEffect(() => {
     if (revealed) rowRef.current?.scrollIntoView({ block: "center" });
   }, [revealed]);
+
+  useEffect(() => {
+    if (!renaming) return;
+    renameFinishedRef.current = false;
+    const input = renameInputRef.current;
+    if (!input) return;
+    input.focus();
+    input.select();
+  }, [renaming]);
+
+  const finishRename = (mode: "save" | "cancel", value?: string) => {
+    if (renameFinishedRef.current) return;
+    renameFinishedRef.current = true;
+    if (mode === "save") onCommitRename(value ?? node.entry.name);
+    else onCancelRename();
+  };
+
+  const onRenameKeyDown = (event: ReactKeyboardEvent<HTMLInputElement>) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      finishRename("save", event.currentTarget.value);
+      return;
+    }
+    if (event.key === "Escape") {
+      event.preventDefault();
+      finishRename("cancel");
+    }
+  };
   const isDir = node.entry.kind === "dir";
   const statusMeta = decoration ? GIT_STATUS_META[decoration.status] : null;
   const statusTitle = statusMeta
@@ -561,7 +606,9 @@ function FileTreeRow({
       aria-current={active ? "true" : undefined}
       className={`ae-file-tree-row ${isDir ? "is-dir" : "is-file"}${
         active ? " is-active" : ""
-      }${revealed ? " is-revealed" : ""}${ignored ? " is-ignored" : ""}${
+      }${revealed ? " is-revealed" : ""}${renaming ? " is-renaming" : ""}${
+        ignored ? " is-ignored" : ""
+      }${
         decoration
           ? ` has-git-status git-status-${decoration.status} git-status-${decoration.source}`
           : ""
@@ -586,8 +633,22 @@ function FileTreeRow({
         open={isDir && expanded}
         className="ae-file-tree-icon"
       />
-      <span className="ae-file-tree-label">{node.entry.name}</span>
-      {statusMeta && (
+      {renaming ? (
+        <input
+          ref={renameInputRef}
+          className="ae-file-tree-rename-input"
+          aria-label={`Rename ${node.entry.name}`}
+          defaultValue={node.entry.name}
+          spellCheck={false}
+          onClick={(event) => event.stopPropagation()}
+          onContextMenu={(event) => event.stopPropagation()}
+          onKeyDown={onRenameKeyDown}
+          onBlur={(event) => finishRename("save", event.currentTarget.value)}
+        />
+      ) : (
+        <span className="ae-file-tree-label">{node.entry.name}</span>
+      )}
+      {statusMeta && !renaming && (
         <span
           className="ae-file-tree-git-decoration"
           aria-label={statusTitle}

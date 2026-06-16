@@ -580,10 +580,30 @@ body.ae-resizing-sidebar .ae-file-tree-sidebar-resize-handle {
 .ae-file-tree-row.is-dir .ae-file-tree-label {
   color: var(--text);
 }
+.ae-file-tree-row.is-renaming {
+  cursor: text;
+}
 .ae-file-tree-label {
   flex: 1 1 auto;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+.ae-file-tree-rename-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 22px;
+  padding: 1px 5px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm);
+  outline: none;
+  background: var(--bg-elevated);
+  color: var(--text);
+  font: inherit;
+  line-height: 1.2;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+.ae-file-tree-rename-input::selection {
+  background: color-mix(in srgb, var(--accent) 35%, transparent);
 }
 /* Color the whole name by git status (VS Code style). Keyed on the row's
    git-status class regardless of source, so folders carrying a propagated

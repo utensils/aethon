@@ -32,8 +32,14 @@ function useFileTreeActions({
   collapseUnder,
 }: UseFileTreeActionsArgs) {
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
+  const [renamingTarget, setRenamingTarget] = useState<{
+    rootPath: string;
+    node: TreeNode;
+  } | null>(null);
   const activeContextMenu =
     contextMenu?.rootPath === projectPath ? contextMenu : null;
+  const activeRenamingNode =
+    renamingTarget?.rootPath === projectPath ? renamingTarget.node : null;
   const closeContextMenu = useCallback(() => setContextMenu(null), []);
 
   const openContextMenu = useCallback(
@@ -94,41 +100,52 @@ function useFileTreeActions({
     await createEntry(parentPath, "dir");
   }, [activeContextMenu, closeContextMenu, createEntry]);
 
-  const onContextRename = useCallback(async () => {
+  const onContextRename = useCallback(() => {
     if (!activeContextMenu) return;
-    const node = activeContextMenu.node;
+    setRenamingTarget({
+      rootPath: activeContextMenu.rootPath,
+      node: activeContextMenu.node,
+    });
     closeContextMenu();
-    const name = window.prompt("Rename to", node.entry.name);
-    if (!name || name === node.entry.name) return;
-    const dirIdx = Math.max(
-      node.entry.path.lastIndexOf("/"),
-      node.entry.path.lastIndexOf("\\"),
-    );
-    const parentPath =
-      dirIdx >= 0 ? node.entry.path.slice(0, dirIdx) : node.entry.path;
-    const target = `${parentPath}/${name}`;
-    try {
-      await invoke("fs_rename", {
-        root: projectPathRef.current,
-        from: node.entry.path,
-        to: target,
-      });
-      onEvent("file-tree-rename", {
-        from: node.entry.path,
-        to: target,
-        kind: node.entry.kind,
-      });
-      await refreshFolder(parentPath);
-    } catch (err) {
-      window.alert(`Rename failed: ${String(err)}`);
-    }
-  }, [
-    activeContextMenu,
-    closeContextMenu,
-    onEvent,
-    projectPathRef,
-    refreshFolder,
-  ]);
+  }, [activeContextMenu, closeContextMenu]);
+
+  const cancelRename = useCallback(() => {
+    setRenamingTarget(null);
+  }, []);
+
+  const commitRename = useCallback(
+    async (node: TreeNode, name: string) => {
+      setRenamingTarget(null);
+      if (!name.trim() || name === node.entry.name) return;
+      const dirIdx = Math.max(
+        node.entry.path.lastIndexOf("/"),
+        node.entry.path.lastIndexOf("\\"),
+      );
+      const parentPath =
+        dirIdx >= 0 ? node.entry.path.slice(0, dirIdx) : node.entry.path;
+      const separator =
+        node.entry.path.lastIndexOf("\\") > node.entry.path.lastIndexOf("/")
+          ? "\\"
+          : "/";
+      const target = parentPath ? `${parentPath}${separator}${name}` : name;
+      try {
+        await invoke("fs_rename", {
+          root: projectPathRef.current,
+          from: node.entry.path,
+          to: target,
+        });
+        onEvent("file-tree-rename", {
+          from: node.entry.path,
+          to: target,
+          kind: node.entry.kind,
+        });
+        await refreshFolder(parentPath);
+      } catch (err) {
+        window.alert(`Rename failed: ${String(err)}`);
+      }
+    },
+    [onEvent, projectPathRef, refreshFolder],
+  );
 
   const onContextDelete = useCallback(async () => {
     if (!activeContextMenu) return;
@@ -306,10 +323,13 @@ function useFileTreeActions({
   );
 
   return {
+    cancelRename,
+    commitRename,
     contextMenu: activeContextMenu,
     createEntry,
     fileTreeMenuItems,
     openContextMenu,
+    renamingPath: activeRenamingNode?.entry.path ?? null,
     setContextMenu,
   };
 }
