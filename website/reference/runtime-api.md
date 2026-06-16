@@ -65,6 +65,12 @@ separately via `aethon.onEvent({ componentType, descendantId }, handler)`
 | `aethon.shells.read({ tabId, sinceTotal?, maxBytes? })` | Forward-paging read of scrollback bytes. The first call (`sinceTotal` omitted) returns the latest bytes. |
 | `aethon.shells.write({ tabId, text })` | Inject keystrokes. In `read-write` mode this pops an Allow/Deny prompt; in `read-write-trusted` it proceeds without one. |
 
+### Editor
+
+| Call | Purpose |
+|---|---|
+| `aethon.editor.openFile({ path, rootPath? })` | Open or focus a Monaco editor tab. Relative paths resolve against the active agent tab cwd; `rootPath` supplies an alternate validation root. |
+
 ### Project tasks and dashboard data
 
 | Call | Purpose |

@@ -666,6 +666,7 @@ export default function App() {
     updateTab,
     updateActiveTab,
     newTab,
+    newEditorTab,
     dispatchTerminalReplay,
     autoRestoreDiscoveredSessions,
     hydrateThemes,

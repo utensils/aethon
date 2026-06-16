@@ -48,6 +48,8 @@ registers focused tools that call this same runtime API:
 - `emitA2uiCanvas({ components })` / `appendA2uiCanvas({ components })`
   / `patchA2uiCanvas({ path, value })` / `clearA2uiCanvas({})` — call
   `aethon.canvas.*`.
+- `openFileInEditor({ path, rootPath? })` — call
+  `aethon.editor.openFile` to open or focus a Monaco editor tab.
 
 These tools throw on `{ ok: false }`, so failed mutations show up as
 ordinary tool errors.
@@ -632,6 +634,28 @@ The same surface is exposed to event-handler `ctx` as `ctx.shells.*`
 so handlers can read or drive shells without going through the global.
 Tools `listShells` / `readShell` / `writeShell` register automatically;
 the model can use them via the standard tool-use protocol.
+
+### `editor.openFile`
+
+Open or focus a file in the Monaco editor. This is the agent-side
+counterpart to the user's file tree and command-palette file opens.
+
+```ts
+aethon.editor.openFile({
+  path,       // relative paths resolve against the active tab cwd
+  rootPath?,  // optional validation root for files outside that cwd
+});
+// -> { ok: true, data: { filePath, rootPath, tabId? } }
+```
+
+The frontend remains the filesystem authority: it validates the requested
+path with the same project-root checks used by Monaco reads/writes, then
+reuses the shared editor-tab creation path. Absolute paths must still be
+inside `rootPath` when provided, otherwise inside the active tab cwd.
+
+The same action registers as the pi tool `openFileInEditor`, so during a
+normal chat turn the model can open a file for the user without trying to
+execute JavaScript directly.
 
 ### `tasks.start / dashboard.getRepoOverview / dashboard.refresh / dashboard.listIssues / dashboard.getIssue`
 

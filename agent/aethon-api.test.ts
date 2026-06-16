@@ -78,6 +78,7 @@ describe("buildAethonApi", () => {
     expect(typeof api.notify).toBe("function");
     expect(typeof api.canvas).toBe("object");
     expect(typeof api.shells).toBe("object");
+    expect(typeof api.editor).toBe("object");
   });
 
   it("registerComponent accepts the bare and components-wrapped shapes", async () => {

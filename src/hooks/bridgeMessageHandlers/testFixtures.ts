@@ -29,6 +29,7 @@ export interface HandlerFixture {
     updateTab: Mock;
     updateActiveTab: Mock;
     newTab: Mock;
+    newEditorTab: Mock;
     appendMessage: Mock;
     persistLocalChatMessage: Mock;
     recordProjectModel: Mock;
@@ -85,6 +86,7 @@ export function buildHandlerFixture(
   const updateTab = vi.fn();
   const updateActiveTab = vi.fn();
   const newTab = vi.fn();
+  const newEditorTab = vi.fn();
   const appendMessage = vi.fn();
   const persistLocalChatMessage = vi.fn();
   const recordProjectModel = vi.fn();
@@ -133,6 +135,7 @@ export function buildHandlerFixture(
     updateTab,
     updateActiveTab,
     newTab,
+    newEditorTab,
     dispatchTerminalReplay,
     autoRestoreDiscoveredSessions,
 
@@ -198,6 +201,7 @@ export function buildHandlerFixture(
       updateTab,
       updateActiveTab,
       newTab,
+      newEditorTab,
       appendMessage,
       persistLocalChatMessage,
       recordProjectModel,

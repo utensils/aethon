@@ -53,6 +53,7 @@ import type { CanvasApi } from "./canvas";
 import type { RuntimeSnapshot } from "./system-prompt";
 import { buildShellsApi } from "./aethon-api-shells";
 import { buildDashboardApi, buildTasksApi } from "./aethon-api-dashboard";
+import { buildEditorApi } from "./aethon-api-editor";
 
 export interface AethonApiDeps {
   send: (obj: Record<string, unknown>) => void;
@@ -137,6 +138,14 @@ export interface DashboardApi {
   }): Promise<MutationResult>;
 }
 
+/** Agent-side counterpart to the Monaco editor file-open action. */
+export interface EditorApi {
+  /** Open or focus a Monaco editor tab. Relative paths resolve against
+   *  the active tab's working directory. `rootPath` can override that
+   *  root for Aethon-owned files such as `~/.aethon/config.toml`. */
+  openFile(input: { path: string; rootPath?: string }): Promise<MutationResult>;
+}
+
 export interface AethonApi {
   registerComponent: (
     componentType: string,
@@ -186,6 +195,7 @@ export interface AethonApi {
   shells: ShellsApi;
   tasks: TasksApi;
   dashboard: DashboardApi;
+  editor: EditorApi;
 }
 
 /** Build the aethon API and return it. Callers (main.ts) install it on
@@ -423,6 +433,7 @@ export function buildAethonApi(
   const shells = buildShellsApi(state, queryDeps);
   const tasks = buildTasksApi(state, queryDeps);
   const dashboard = buildDashboardApi(state, queryDeps);
+  const editor = buildEditorApi(state, queryDeps);
 
   return {
     registerComponent: _registerComponent,
@@ -477,6 +488,7 @@ export function buildAethonApi(
     shells,
     tasks,
     dashboard,
+    editor,
   };
 }
 
