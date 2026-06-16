@@ -45,3 +45,13 @@ export function stopAndTranscribeVoice(
 export function cancelVoiceRecording(providerId?: string): Promise<void> {
   return invoke("voice_cancel_recording", { providerId: providerId ?? null });
 }
+
+/** Synthesize `text` via the LFM2-Audio provider and play it back. */
+export function speakVoice(text: string): Promise<void> {
+  return invoke("voice_speak", { text });
+}
+
+/** Stop any in-flight speech synthesis + playback. */
+export function stopVoicePlayback(): Promise<void> {
+  return invoke("voice_stop_playback");
+}

@@ -2,12 +2,36 @@ import { describe, expect, it } from "vitest";
 import type { VoiceProviderInfo } from "../types/voice";
 import {
   PLATFORM_VOICE_PROVIDER_ID,
+  capSpokenText,
   chooseVoiceProvider,
   describeSpeechRecognitionError,
   formatVoiceDownloadProgress,
   insertTranscriptAtSelection,
   shouldOpenVoiceSettingsForError,
 } from "./voice";
+
+describe("capSpokenText", () => {
+  it("returns short text untouched (trimmed)", () => {
+    expect(capSpokenText("  hello world  ", 600)).toBe("hello world");
+  });
+
+  it("cuts at a sentence boundary when one is available", () => {
+    const text = "First sentence is here. Second sentence keeps going on and on.";
+    const out = capSpokenText(text, 30);
+    expect(out).toBe("First sentence is here.");
+  });
+
+  it("falls back to a word boundary, never mid-word", () => {
+    // No sentence boundary in the first 24 chars, so it cuts at the last space.
+    const out = capSpokenText("supercalifragilistic expialidocious extra", 24);
+    expect(out).toBe("supercalifragilistic");
+    expect(out.length).toBeLessThanOrEqual(24);
+  });
+
+  it("treats a non-positive cap as no cap", () => {
+    expect(capSpokenText("hello", 0)).toBe("hello");
+  });
+});
 
 function provider(
   overrides: Partial<VoiceProviderInfo> & Pick<VoiceProviderInfo, "id">,

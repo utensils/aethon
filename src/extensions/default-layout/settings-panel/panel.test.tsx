@@ -34,7 +34,12 @@ vi.mock("../../../config", () => ({
         promptBeforeClose: true,
       },
       shortcuts: { newTabKind: "agent" },
-      voice: { toggleHotkey: "mod+shift+m", holdHotkey: "AltRight" },
+      voice: {
+        toggleHotkey: "mod+shift+m",
+        holdHotkey: "AltRight",
+        speakAgentReplies: false,
+        speakMaxChars: 600,
+      },
       updates: { channel: "stable", disableAutoCheck: false },
       devshell: {
         enabled: "auto",

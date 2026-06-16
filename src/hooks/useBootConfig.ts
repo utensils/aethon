@@ -123,6 +123,8 @@ export function useBootConfig(ctx: UseBootConfigContext): UseBootConfigActions {
         ...(prev.voice as object | undefined),
         toggleHotkey: fresh.voice.toggleHotkey,
         holdHotkey: fresh.voice.holdHotkey,
+        speakAgentReplies: fresh.voice.speakAgentReplies,
+        speakMaxChars: fresh.voice.speakMaxChars,
       },
       // Global transcript-visibility defaults, mirrored into state so the
       // renderer's resolver can read them via $ref. Per-tab overrides win.
@@ -216,6 +218,8 @@ export function useBootConfig(ctx: UseBootConfigContext): UseBootConfigActions {
             ...(prev.voice as object | undefined),
             toggleHotkey: config.voice.toggleHotkey,
             holdHotkey: config.voice.holdHotkey,
+            speakAgentReplies: config.voice.speakAgentReplies,
+            speakMaxChars: config.voice.speakMaxChars,
           },
           transcriptVisibility: {
             thinking: config.ui.thinkingVisibility,

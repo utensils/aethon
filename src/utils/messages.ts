@@ -1,5 +1,22 @@
 import type { A2UIPayload, ChatAttachment, ChatMessage } from "../types/a2ui";
 
+/** The text of the last agent message that actually has spoken content.
+ *  Returns "" for a tool-only / thinking-only / empty turn, which callers
+ *  (e.g. speak-agent-replies) treat as "nothing to say". */
+export function lastAgentText(messages: ChatMessage[]): string {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const message = messages[i];
+    if (
+      message.role === "agent" &&
+      typeof message.text === "string" &&
+      message.text.trim().length > 0
+    ) {
+      return message.text;
+    }
+  }
+  return "";
+}
+
 // Persisted-history budget per message text. The in-memory message keeps
 // the full string; only the persisted snapshot is trimmed so localStorage
 // doesn't blow past quota.

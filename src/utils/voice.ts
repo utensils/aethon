@@ -2,6 +2,28 @@ import type { VoiceDownloadProgress, VoiceProviderInfo } from "../types/voice";
 
 export const PLATFORM_VOICE_PROVIDER_ID = "voice-platform-system";
 
+/** Trim spoken text to at most `maxChars`, preferring a clean break: the last
+ *  sentence boundary inside the cap (if past the halfway point), otherwise the
+ *  last word boundary — so a long reply isn't read out in full and never gets
+ *  cut mid-word. */
+export function capSpokenText(text: string, maxChars: number): string {
+  const trimmed = text.trim();
+  if (maxChars <= 0 || trimmed.length <= maxChars) return trimmed;
+
+  const slice = trimmed.slice(0, maxChars);
+  const sentenceEnd = Math.max(
+    slice.lastIndexOf(". "),
+    slice.lastIndexOf("! "),
+    slice.lastIndexOf("? "),
+    slice.lastIndexOf("\n"),
+  );
+  if (sentenceEnd >= maxChars * 0.5) {
+    return slice.slice(0, sentenceEnd + 1).trim();
+  }
+  const wordEnd = slice.lastIndexOf(" ");
+  return (wordEnd > 0 ? slice.slice(0, wordEnd) : slice).trim();
+}
+
 export interface SpeechRecognitionErrorLike {
   error?: string;
   message?: string;

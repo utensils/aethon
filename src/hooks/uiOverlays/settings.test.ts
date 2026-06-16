@@ -43,7 +43,12 @@ const baseConfig: AethonConfig = {
     promptBeforeClose: true,
   },
   shortcuts: { newTabKind: "agent" },
-  voice: { toggleHotkey: "mod+shift+m", holdHotkey: "AltRight" },
+  voice: {
+    toggleHotkey: "mod+shift+m",
+    holdHotkey: "AltRight",
+    speakAgentReplies: false,
+    speakMaxChars: 600,
+  },
   updates: { channel: "nightly", disableAutoCheck: false },
   devshell: {
     enabled: "auto",
