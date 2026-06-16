@@ -74,6 +74,9 @@ describe("chat overflow containment CSS", () => {
     expect(row).toMatch(/min-width:\s*0;/);
     expect(row).toMatch(/max-width:\s*100%;/);
     expect(row).toMatch(/box-sizing:\s*border-box;/);
+    expect(row).toMatch(/overflow-x:\s*clip;/);
+    expect(row).toMatch(/overflow-y:\s*visible;/);
+    expect(row).not.toMatch(/overflow-x:\s*hidden;/);
 
     const canvasRows = cssRuleBody(
       chromeCss,

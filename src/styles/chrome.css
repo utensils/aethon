@@ -3180,7 +3180,10 @@ body.ae-resizing-sidebar .a2ui-layout {
   min-width: 0;
   max-width: 100%;
   box-sizing: border-box;
-  overflow-x: hidden;
+  /* `overflow-x: hidden` computes overflow-y to auto in WebKit, which makes
+     tall measured rows paint their own scrollbar inside the chat scroller. */
+  overflow-x: clip;
+  overflow-y: visible;
 }
 
 .a2ui-canvas-scroller .a2ui-msg-row {
