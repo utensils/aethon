@@ -55,6 +55,7 @@ function makeController(continuous = false) {
 describe("useVoiceConversation", () => {
   beforeEach(() => {
     Object.values(mocks).forEach((m) => m.mockClear());
+    mocks.startVoiceRecording.mockResolvedValue(undefined);
     mocks.stopAndTranscribeVoice.mockResolvedValue("hello agent");
     playback.fn = undefined;
   });
@@ -125,6 +126,27 @@ describe("useVoiceConversation", () => {
     await flush();
     expect(submitText).not.toHaveBeenCalled();
     expect(result.current.phase).toBe("idle");
+  });
+
+  it("ignores a second start while the first is still opening the mic", async () => {
+    let resolveStart: () => void = () => {};
+    mocks.startVoiceRecording.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveStart = resolve;
+        }),
+    );
+    const { result } = makeController(false);
+
+    act(() => result.current.enter()); // first start — hangs in the open window
+    act(() => result.current.primaryAction()); // second tap during the window
+    expect(mocks.startVoiceRecording).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      resolveStart();
+      await Promise.resolve();
+    });
+    expect(result.current.phase).toBe("listening");
   });
 
   it("exit cancels recording/playback and clears the active flag", async () => {

@@ -3854,8 +3854,9 @@ body.ae-resizing-composer * {
   border-radius: var(--radius-md);
   /* Right padding clears the absolute-positioned Send button so text
      doesn't run under it. Bottom padding clears the Send button when
-     the user types multiple lines. */
-  padding: 10px 86px 10px 14px;
+     the user types multiple lines. Right padding reserves room for the
+     full three-button cluster (send + mic + conversation, out to ~108px). */
+  padding: 10px 116px 10px 14px;
   font: inherit;
   outline: none;
   line-height: 1.5;

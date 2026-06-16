@@ -58,6 +58,7 @@ export function useVoiceConversation(
   // which would otherwise close over stale state.
   const phaseRef = useRef<ConversationPhase>("idle");
   const activeRef = useRef(false);
+  const startingRef = useRef(false);
   const tabIdRef = useRef<string | undefined>(undefined);
   const optionsRef = useRef(options);
   // Keep the latest callbacks/config available to async transitions without a
@@ -72,6 +73,10 @@ export function useVoiceConversation(
   }, []);
 
   const startListening = useCallback(async () => {
+    // Guard the start window: phase is still "idle" until the recorder opens,
+    // so without this a second tap would fire another (rejected) start.
+    if (startingRef.current) return;
+    startingRef.current = true;
     setError(null);
     try {
       await startVoiceRecording(LFM2_VOICE_PROVIDER_ID);
@@ -85,6 +90,8 @@ export function useVoiceConversation(
       setError(errorMessage(caught));
       setPhase("idle");
       optionsRef.current.onNeedsSetup?.(LFM2_VOICE_PROVIDER_ID);
+    } finally {
+      startingRef.current = false;
     }
   }, [setPhase]);
 

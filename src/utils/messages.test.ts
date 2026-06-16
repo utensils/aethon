@@ -34,6 +34,16 @@ describe("lastAgentText", () => {
     expect(lastAgentText(messages)).toBe("");
   });
 
+  it("still speaks the reply when a steer message lands after it", () => {
+    const messages: ChatMessage[] = [
+      { id: "u1", role: "user", text: "do the thing" },
+      { id: "a1", role: "agent", text: "Here is the result." },
+      { id: "u2", role: "user", text: "also check X", delivery: "steered" },
+    ];
+    // The steered user bubble is a mid-turn interjection, not a new turn.
+    expect(lastAgentText(messages)).toBe("Here is the result.");
+  });
+
   it("ignores thinking-only and empty agent messages", () => {
     const messages: ChatMessage[] = [
       { id: "u1", role: "user", text: "q" },
