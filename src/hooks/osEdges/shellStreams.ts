@@ -1,9 +1,14 @@
 import { listen } from "@tauri-apps/api/event";
-import type { Tab } from "../../types/tab";
+import { invoke } from "@tauri-apps/api/core";
+import type { MutableRefObject } from "react";
+import type { ShellMeta, Tab } from "../../types/tab";
 import { TERMINAL_REPLAY_MAX } from "../useTabs";
 
 export interface ShellStreamsDeps {
   updateTab: (tabId: string, mutator: (tab: Tab) => Tab) => void;
+  stateRef: MutableRefObject<Record<string, unknown>>;
+  appendSystem: (text: string) => void;
+  shellInheritEnvRef: MutableRefObject<boolean>;
 }
 
 /** How long PTY chunks accumulate before one state flush. The xterm gets
@@ -77,8 +82,9 @@ export function createShellOutputCoalescer(
  *  terminalBuffer (trimmed to TERMINAL_REPLAY_MAX, coalesced to one state
  *  write per SHELL_BUFFER_FLUSH_MS) and dispatches a per-tab DOM event so
  *  the shell-canvas composite writes the chunk to its xterm immediately.
- *  `shell-exit` flips the tab's shellState to "exited" with the exit
- *  code. `shell-title` mirrors OSC 0/1/2 title-set sequences into the tab
+ *  `shell-exit` restarts the same shell tab id when the tab still exists,
+ *  falling back to "exited" only if the respawn fails. `shell-title` mirrors
+ *  OSC 0/1/2 title-set sequences into the tab
  *  label (truncated to 64 chars).
  *
  *  Inactive shell-tab output stays buffered until the user switches
@@ -87,6 +93,7 @@ export function createShellOutputCoalescer(
 export function subscribeShellStreams(deps: ShellStreamsDeps): () => void {
   const { updateTab } = deps;
   const coalescer = createShellOutputCoalescer(updateTab);
+  const restartingTabs = new Set<string>();
 
   const unlistenShellOutput = listen<{ tabId: string; content: string }>(
     "shell-output",
@@ -108,17 +115,7 @@ export function subscribeShellStreams(deps: ShellStreamsDeps): () => void {
       // The final output chunks must land in the replay buffer before the
       // exited state renders (replay/persist read the buffer).
       coalescer.flushTab(tabId);
-      updateTab(tabId, (t) => {
-        if (t.kind !== "shell" || !t.shell) return t;
-        return {
-          ...t,
-          shell: {
-            ...t.shell,
-            shellState: "exited",
-            ...(typeof code === "number" ? { exitCode: code } : {}),
-          },
-        };
-      });
+      void respawnShellTab(deps, restartingTabs, tabId, code);
     },
   );
 
@@ -141,4 +138,87 @@ export function subscribeShellStreams(deps: ShellStreamsDeps): () => void {
     unlistenShellExit.then((fn) => fn());
     unlistenShellTitle.then((fn) => fn());
   };
+}
+
+function liveShellTab(
+  stateRef: MutableRefObject<Record<string, unknown>>,
+  tabId: string,
+): Tab | undefined {
+  const tabs = (stateRef.current.tabs as Tab[] | undefined) ?? [];
+  return tabs.find(
+    (tab) => tab.id === tabId && tab.kind === "shell" && tab.shell,
+  );
+}
+
+function shellOpenArgs(
+  tabId: string,
+  shell: ShellMeta,
+  inheritEnv: boolean,
+): Record<string, unknown> {
+  return {
+    tabId,
+    ...(shell.command ? { command: shell.command } : {}),
+    ...(shell.args.length > 0 ? { args: shell.args } : {}),
+    ...(shell.cwd ? { cwd: shell.cwd } : {}),
+    ...(shell.shareMode !== "private" ? { shareMode: shell.shareMode } : {}),
+    ...(inheritEnv === false ? { inheritEnv: false } : {}),
+  };
+}
+
+async function respawnShellTab(
+  deps: ShellStreamsDeps,
+  restartingTabs: Set<string>,
+  tabId: string,
+  code: number | null,
+): Promise<void> {
+  if (restartingTabs.has(tabId)) return;
+  const tab = liveShellTab(deps.stateRef, tabId);
+  if (!tab?.shell) return;
+
+  restartingTabs.add(tabId);
+  updateShellState(deps, tabId, "starting", code);
+
+  try {
+    await invoke("shell_close", { tabId });
+    const latest = liveShellTab(deps.stateRef, tabId);
+    if (!latest?.shell) return;
+    await invoke("shell_open", {
+      args: shellOpenArgs(tabId, latest.shell, deps.shellInheritEnvRef.current),
+    });
+    deps.updateTab(tabId, (t) => {
+      if (t.kind !== "shell" || !t.shell) return t;
+      const shell = { ...t.shell, shellState: "running" as const };
+      delete shell.exitCode;
+      delete shell.restartOnMount;
+      return { ...t, shell };
+    });
+  } catch (err) {
+    deps.appendSystem(
+      `Shell tab exited and could not be restarted: ${String(err)}`,
+    );
+    updateShellState(deps, tabId, "exited", -1);
+  } finally {
+    restartingTabs.delete(tabId);
+  }
+}
+
+function updateShellState(
+  deps: ShellStreamsDeps,
+  tabId: string,
+  shellState: ShellMeta["shellState"],
+  code: number | null,
+): void {
+  deps.updateTab(tabId, (t) => {
+    if (t.kind !== "shell" || !t.shell) return t;
+    const shell = {
+      ...t.shell,
+      shellState,
+      ...(typeof code === "number" ? { exitCode: code } : {}),
+    };
+    if (shellState === "exited" && code === -1) delete shell.restartOnMount;
+    return {
+      ...t,
+      shell,
+    };
+  });
 }

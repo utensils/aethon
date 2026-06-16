@@ -47,7 +47,12 @@ export type { UseOsEdgesContext } from "./osEdges/types";
 export function useOsEdges(ctx: UseOsEdgesContext): void {
   useEffect(() => {
     const cleanups = [
-      subscribeShellStreams({ updateTab: ctx.updateTab }),
+      subscribeShellStreams({
+        updateTab: ctx.updateTab,
+        stateRef: ctx.stateRef,
+        appendSystem: ctx.appendSystem,
+        shellInheritEnvRef: ctx.shellInheritEnvRef,
+      }),
       subscribeAgentReload({
         bootLayout: ctx.bootLayout,
         activeResponseIdRef: ctx.activeResponseIdRef,

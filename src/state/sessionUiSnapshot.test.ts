@@ -173,9 +173,9 @@ describe("sessionUiSnapshot", () => {
     expect(loaded?.tabs).toMatchObject([
       { id: "empty-active", label: "Empty Active", messages: [] },
     ]);
-    expect(loaded?.buckets?.["project-1::workspace::wt-1"]?.tabs).toMatchObject([
-      { id: "empty-bucket", label: "Empty Bucket", messages: [] },
-    ]);
+    expect(loaded?.buckets?.["project-1::workspace::wt-1"]?.tabs).toMatchObject(
+      [{ id: "empty-bucket", label: "Empty Bucket", messages: [] }],
+    );
   });
 
   it("repairs timestamped message order and drops stale stop notices on restore", () => {
@@ -547,7 +547,7 @@ describe("sessionUiSnapshot", () => {
     });
   });
 
-  it("does not mark exited shell tabs for PTY restore", () => {
+  it("marks cleanly exited shell tabs for PTY restore", () => {
     const parsed = parseSessionUiSnapshot(
       JSON.stringify({
         tabs: [
@@ -566,12 +566,43 @@ describe("sessionUiSnapshot", () => {
         activeTabId: "shell",
         savedAt: 1,
       }),
+      { restartShellTabs: true },
+    );
+
+    expect(parsed?.activeTabId).toBe("__overview__");
+    expect(parsed?.tabs[0].shell).toMatchObject({
+      shellState: "starting",
+      exitCode: 0,
+      restartOnMount: true,
+    });
+  });
+
+  it("does not mark failed shell tabs for PTY restore", () => {
+    const parsed = parseSessionUiSnapshot(
+      JSON.stringify({
+        tabs: [
+          {
+            ...makeEmptyTab("shell", "Shell", null, "shell"),
+            shell: {
+              cwd: "/repo/app",
+              command: "",
+              args: [],
+              shareMode: "private",
+              shellState: "exited",
+              exitCode: -1,
+              restartOnMount: true,
+            },
+          },
+        ],
+        activeTabId: "shell",
+        savedAt: 1,
+      }),
     );
 
     expect(parsed?.activeTabId).toBe("__overview__");
     expect(parsed?.tabs[0].shell).toMatchObject({
       shellState: "exited",
-      exitCode: 0,
+      exitCode: -1,
     });
     expect(parsed?.tabs[0].shell?.restartOnMount).toBeUndefined();
   });
