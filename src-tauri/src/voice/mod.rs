@@ -29,6 +29,8 @@ pub(crate) use self::audio::{
     AudioRecorder, CpalAudioRecorder, LevelTask, RecordingSession, spawn_level_emitter,
     validate_captured_audio,
 };
+// Shared DSP helpers consumed by the playback module.
+use self::audio::{compute_rms, resample};
 #[cfg(test)]
 use self::audio::{
     normalize_interleaved_f32, normalize_interleaved_f64, normalize_interleaved_i16,
@@ -40,6 +42,7 @@ mod download;
 mod inference;
 mod lfm2;
 mod mel;
+mod playback;
 mod providers;
 mod registry;
 mod settings;
@@ -49,6 +52,7 @@ use download::*;
 use inference::*;
 use lfm2::*;
 use mel::*;
+pub(crate) use playback::*;
 use providers::*;
 pub(crate) use registry::*;
 pub(crate) use settings::*;
@@ -1444,17 +1448,46 @@ mod tests {
             self.calls.fetch_add(1, Ordering::Relaxed);
             // Poll the cancel flag while "working" so tests can exercise the
             // cooperative cancel path the real subprocess wrapper uses.
+            self.wait_for_cancel(&cancel, "Transcription cancelled.")
+                .await?;
+            self.result.lock().clone()
+        }
+
+        async fn tts(
+            &self,
+            _text: String,
+            cancel: Arc<AtomicBool>,
+        ) -> Result<CapturedAudio, String> {
+            self.calls.fetch_add(1, Ordering::Relaxed);
+            self.wait_for_cancel(&cancel, "Speech synthesis cancelled.")
+                .await?;
+            // Surface a configured error, otherwise return a short canned clip.
+            self.result.lock().clone().map(|_| CapturedAudio {
+                samples: vec![0.1, -0.1, 0.2, -0.2],
+                sample_rate: 24_000,
+            })
+        }
+    }
+
+    impl FakeLfm2Backend {
+        /// Poll `cancel` over `sleep_for`, returning an `Err` with `message` if
+        /// it flips — mirrors the real subprocess wrapper's cooperative cancel.
+        async fn wait_for_cancel(
+            &self,
+            cancel: &Arc<AtomicBool>,
+            message: &str,
+        ) -> Result<(), String> {
             let step = Duration::from_millis(10);
             let mut remaining = self.sleep_for;
             while remaining > Duration::ZERO {
                 if cancel.load(Ordering::Relaxed) {
-                    return Err("Transcription cancelled.".to_string());
+                    return Err(message.to_string());
                 }
                 let nap = step.min(remaining);
                 tokio::time::sleep(nap).await;
                 remaining = remaining.saturating_sub(nap);
             }
-            self.result.lock().clone()
+            Ok(())
         }
     }
 
@@ -1783,6 +1816,51 @@ mod tests {
         println!("LFM2 ASR transcript: {transcript}");
     }
 
+    #[tokio::test]
+    #[ignore = "requires AETHON_LFM2_AUDIO_BIN and the LFM2 model cache"]
+    async fn ignored_real_lfm2_tts_synthesizes_audio() {
+        let model_root = std::env::var_os("AETHON_LFM2_MODEL_ROOT")
+            .map(PathBuf::from)
+            .unwrap_or_else(VoiceProviderRegistry::default_model_root);
+        let backend = Lfm2CliBackend::new(model_root);
+        assert!(
+            backend.binary_available(),
+            "set AETHON_LFM2_AUDIO_BIN to the llama-lfm2-audio binary",
+        );
+        let cancel = Arc::new(AtomicBool::new(false));
+        let audio = backend
+            .tts(
+                "Hello from Aethon. Phase two is online.".to_string(),
+                cancel,
+            )
+            .await
+            .expect("synthesize speech");
+        assert!(!audio.samples.is_empty(), "got empty audio");
+        assert_eq!(audio.sample_rate, LFM2_TTS_SAMPLE_RATE);
+
+        // Optionally dump the clip for manual listening (AETHON_TTS_OUT=/path.wav).
+        if let Some(out) = std::env::var_os("AETHON_TTS_OUT") {
+            let spec = hound::WavSpec {
+                channels: 1,
+                sample_rate: audio.sample_rate,
+                bits_per_sample: 16,
+                sample_format: hound::SampleFormat::Int,
+            };
+            let mut writer =
+                hound::WavWriter::create(PathBuf::from(out), spec).expect("wav writer");
+            for &sample in &audio.samples {
+                let scaled = (sample.clamp(-1.0, 1.0) * f32::from(i16::MAX)).round() as i16;
+                writer.write_sample(scaled).expect("write sample");
+            }
+            writer.finalize().expect("finalize wav");
+        }
+        println!(
+            "LFM2 TTS produced {} samples @ {} Hz",
+            audio.samples.len(),
+            audio.sample_rate
+        );
+    }
+
     #[test]
     fn parse_asr_stdout_keeps_only_transcript() {
         let stdout = "load_gguf: Loaded 369 tensors from audiodecoder.gguf\n\
@@ -1807,5 +1885,158 @@ mod tests {
              Second sentence.\n\
              ggml_metal_free: deallocating\n";
         assert_eq!(parse_asr_stdout(stdout), "First sentence. Second sentence.");
+    }
+
+    // --- Phase 2: TTS synthesis + playback ------------------------------
+
+    #[tokio::test]
+    async fn synthesize_speech_returns_audio() {
+        let model_dir = tempdir().expect("model dir");
+        write_complete_lfm2_model(&model_dir.path().join(LFM2_CACHE_DIR));
+        let registry = lfm2_registry(model_dir.path().to_path_buf(), FakeLfm2Backend::ready("x"));
+
+        let audio = registry
+            .synthesize_speech("hello".to_string())
+            .await
+            .expect("synthesize");
+        assert!(!audio.samples.is_empty());
+        assert_eq!(audio.sample_rate, 24_000);
+    }
+
+    #[tokio::test]
+    async fn synthesize_speech_rejects_empty_text() {
+        let model_dir = tempdir().expect("model dir");
+        write_complete_lfm2_model(&model_dir.path().join(LFM2_CACHE_DIR));
+        let registry = lfm2_registry(model_dir.path().to_path_buf(), FakeLfm2Backend::ready("x"));
+
+        let err = registry
+            .synthesize_speech("   ".to_string())
+            .await
+            .expect_err("empty text should be rejected");
+        assert!(err.contains("Nothing to speak"));
+    }
+
+    #[tokio::test]
+    async fn synthesize_speech_rejects_missing_model() {
+        let model_dir = tempdir().expect("model dir");
+        let registry = lfm2_registry(model_dir.path().to_path_buf(), FakeLfm2Backend::ready("x"));
+
+        let err = registry
+            .synthesize_speech("hello".to_string())
+            .await
+            .expect_err("missing model should be rejected");
+        assert!(err.contains("Download"));
+    }
+
+    #[tokio::test]
+    async fn synthesize_speech_rejects_missing_binary() {
+        let model_dir = tempdir().expect("model dir");
+        write_complete_lfm2_model(&model_dir.path().join(LFM2_CACHE_DIR));
+        let registry = lfm2_registry(
+            model_dir.path().to_path_buf(),
+            FakeLfm2Backend::binary_missing(),
+        );
+
+        let err = registry
+            .synthesize_speech("hello".to_string())
+            .await
+            .expect_err("missing binary should be rejected");
+        assert!(err.contains("llama-lfm2-audio"));
+    }
+
+    #[tokio::test]
+    async fn cancel_speech_aborts_synthesis() {
+        let model_dir = tempdir().expect("model dir");
+        write_complete_lfm2_model(&model_dir.path().join(LFM2_CACHE_DIR));
+        let registry = Arc::new(lfm2_registry(
+            model_dir.path().to_path_buf(),
+            FakeLfm2Backend::slow("x", Duration::from_secs(5)),
+        ));
+
+        let synth_registry = Arc::clone(&registry);
+        let handle =
+            tokio::spawn(
+                async move { synth_registry.synthesize_speech("hello".to_string()).await },
+            );
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        registry.cancel_speech();
+
+        let err = handle
+            .await
+            .expect("synthesis task joined")
+            .expect_err("synthesis should be cancelled");
+        assert!(err.contains("cancelled"), "expected cancellation: {err}");
+    }
+
+    #[tokio::test]
+    async fn synthesize_speech_times_out() {
+        let model_dir = tempdir().expect("model dir");
+        write_complete_lfm2_model(&model_dir.path().join(LFM2_CACHE_DIR));
+        let registry = VoiceProviderRegistry::with_runtime_and_timeout(
+            model_dir.path().to_path_buf(),
+            Arc::new(FakeRecorder::new(vec![0.1])),
+            Arc::new(FakeTranscriber::ok("ignored")),
+            Duration::from_millis(5),
+        )
+        .with_lfm2_backend(Arc::new(FakeLfm2Backend::slow(
+            "late",
+            Duration::from_millis(80),
+        )));
+
+        let err = registry
+            .synthesize_speech("hello".to_string())
+            .await
+            .expect_err("slow synthesis should time out");
+        assert!(err.contains("timed out"));
+    }
+
+    #[tokio::test]
+    #[ignore = "plays a tone through the default output device"]
+    async fn ignored_real_playback_plays_tone() {
+        let sample_rate = 24_000_u32;
+        let freq = 440.0_f32;
+        let count = sample_rate as usize; // ~1 second
+        let samples: Vec<f32> = (0..count)
+            .map(|i| {
+                0.2 * (2.0 * std::f32::consts::PI * freq * i as f32 / sample_rate as f32).sin()
+            })
+            .collect();
+
+        let player = AudioPlayer::new();
+        player
+            .play_samples(samples, sample_rate, None)
+            .expect("playback should start");
+        // Hold the player (and thus the stream) alive while the tone plays.
+        tokio::time::sleep(Duration::from_millis(1300)).await;
+        player.stop();
+    }
+
+    #[test]
+    fn playback_buffer_drains_then_finishes() {
+        let mut buffer = PlaybackBuffer::new(vec![0.1, 0.2, 0.3]);
+        assert!(!buffer.finished());
+        assert_eq!(buffer.next_sample(), Some(0.1));
+        assert_eq!(buffer.next_sample(), Some(0.2));
+        assert!(!buffer.finished());
+        assert_eq!(buffer.next_sample(), Some(0.3));
+        assert!(buffer.finished());
+        assert_eq!(buffer.next_sample(), None);
+        assert!(buffer.finished());
+    }
+
+    #[test]
+    fn empty_playback_buffer_is_immediately_finished() {
+        let mut buffer = PlaybackBuffer::new(Vec::new());
+        assert!(buffer.finished());
+        assert_eq!(buffer.next_sample(), None);
+    }
+
+    #[test]
+    fn resample_scales_length_with_rate() {
+        let mono = vec![0.0, 0.5, 1.0, 0.5];
+        assert_eq!(resample(&mono, 16_000, 16_000), mono);
+        assert_eq!(resample(&mono, 24_000, 48_000).len(), 8);
+        assert_eq!(resample(&mono, 48_000, 24_000).len(), 2);
+        assert!(resample(&[], 24_000, 48_000).is_empty());
     }
 }

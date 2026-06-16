@@ -24,8 +24,23 @@ const LFM2_BIN_ENV: &str = "AETHON_LFM2_AUDIO_BIN";
 pub(super) const LFM2_BINARY_MISSING: &str = "LFM2-Audio runtime not found. The llama-lfm2-audio binary ships with Aethon; \
      reinstall, or set AETHON_LFM2_AUDIO_BIN to its path.";
 const ASR_SYSTEM_PROMPT: &str = "Perform ASR.";
+// The 1.5B llama.cpp runner only accepts the bare task prompt; appending a
+// voice name (e.g. "Use the UK male voice.") makes it abort with
+// "Failed to init generation params", so voice selection is intentionally
+// not exposed here (see the Phase 0 spike notes).
+const TTS_SYSTEM_PROMPT: &str = "Perform TTS.";
+// The runner defaults to `--predict -1` (unbounded) and the 1.5B model
+// sometimes fails to emit an end token, rambling into a minutes-long clip for
+// a short prompt. Cap generation to a ~60 s ceiling (~13 audio tokens/sec) so
+// a wedged synthesis can't produce a runaway file. Callers further cap the
+// *input* length (see speak-agent-replies).
+const TTS_MAX_TOKENS: u32 = 768;
 const CANCELLED_MESSAGE: &str = "Transcription cancelled.";
+const SYNTHESIS_CANCELLED_MESSAGE: &str = "Speech synthesis cancelled.";
 const LFM2_CANCEL_POLL: Duration = Duration::from_millis(100);
+/// Mimi codec output sample rate, used as a fallback if the WAV header is
+/// somehow missing the rate.
+pub(super) const LFM2_TTS_SAMPLE_RATE: u32 = 24_000;
 
 /// Resolved on-disk locations of the three GGUF files the runner needs.
 pub(super) struct Lfm2ModelPaths {
@@ -72,6 +87,10 @@ pub(super) trait Lfm2Backend: Send + Sync {
     /// Transcribe captured audio. `cancel` is polled cooperatively and kills
     /// the child process if it flips mid-run.
     async fn asr(&self, audio: CapturedAudio, cancel: Arc<AtomicBool>) -> Result<String, String>;
+
+    /// Synthesize speech for `text`, returning 24 kHz mono PCM. `cancel` is
+    /// polled cooperatively and kills the child process if it flips mid-run.
+    async fn tts(&self, text: String, cancel: Arc<AtomicBool>) -> Result<CapturedAudio, String>;
 }
 
 pub(super) struct Lfm2CliBackend {
@@ -114,7 +133,7 @@ impl Lfm2Backend for Lfm2CliBackend {
             .arg("--audio")
             .arg(input_wav.path());
 
-        let output = run_cli_capture(command, &cancel).await?;
+        let output = run_cli_capture(command, &cancel, CANCELLED_MESSAGE).await?;
         if !output.status.success() {
             return Err(format!(
                 "LFM2-Audio transcription failed: {}",
@@ -123,6 +142,95 @@ impl Lfm2Backend for Lfm2CliBackend {
         }
         Ok(parse_asr_stdout(&output.stdout))
     }
+
+    async fn tts(&self, text: String, cancel: Arc<AtomicBool>) -> Result<CapturedAudio, String> {
+        let binary = resolve_lfm2_binary().ok_or_else(|| LFM2_BINARY_MISSING.to_string())?;
+        let paths = lfm2_model_paths(&self.cache_path());
+        // The runner writes the synthesized WAV to this path; held alive (and
+        // cleaned up) for the duration of the call.
+        let output_wav = tempfile::Builder::new()
+            .prefix("aethon-lfm2-tts-")
+            .suffix(".wav")
+            .tempfile()
+            .map_err(|e| format!("Failed to allocate temporary audio file: {e}"))?;
+
+        let mut command = crate::env::tokio_command(binary.to_string_lossy().as_ref());
+        command
+            .arg("-m")
+            .arg(&paths.lm)
+            .arg("--mmproj")
+            .arg(&paths.encoder)
+            .arg("-mv")
+            .arg(&paths.decoder)
+            .arg("-sys")
+            .arg(TTS_SYSTEM_PROMPT)
+            .arg("-p")
+            .arg(&text)
+            .arg("-n")
+            .arg(TTS_MAX_TOKENS.to_string())
+            .arg("--output")
+            .arg(output_wav.path());
+
+        let output = run_cli_capture(command, &cancel, SYNTHESIS_CANCELLED_MESSAGE).await?;
+        if !output.status.success() {
+            return Err(format!(
+                "LFM2-Audio speech synthesis failed: {}",
+                last_error_line(&output.stderr)
+            ));
+        }
+        read_output_wav(output_wav.path())
+    }
+}
+
+/// Read the runner's synthesized WAV back into mono f32 PCM. TTS output is
+/// 16-bit mono at 24 kHz, but stay tolerant of float samples / extra channels.
+fn read_output_wav(path: &Path) -> Result<CapturedAudio, String> {
+    let mut reader =
+        hound::WavReader::open(path).map_err(|e| format!("Failed to open synthesized WAV: {e}"))?;
+    let spec = reader.spec();
+    let channels = usize::from(spec.channels.max(1));
+    let interleaved: Vec<f32> = match (spec.sample_format, spec.bits_per_sample) {
+        (hound::SampleFormat::Float, 32) => reader
+            .samples::<f32>()
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| format!("Failed to read synthesized samples: {e}"))?,
+        (hound::SampleFormat::Int, 16) => reader
+            .samples::<i16>()
+            .map(|sample| sample.map(|value| f32::from(value) / f32::from(i16::MAX)))
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| format!("Failed to read synthesized samples: {e}"))?,
+        (hound::SampleFormat::Int, bits @ (24 | 32)) => {
+            let scale = (1_i64 << (bits - 1)) as f32;
+            reader
+                .samples::<i32>()
+                .map(|sample| sample.map(|value| value as f32 / scale))
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|e| format!("Failed to read synthesized samples: {e}"))?
+        }
+        (format, bits) => {
+            return Err(format!(
+                "Unsupported synthesized WAV format: {format:?} {bits}-bit"
+            ));
+        }
+    };
+
+    let samples = if channels <= 1 {
+        interleaved
+    } else {
+        interleaved
+            .chunks(channels)
+            .map(|frame| frame.iter().sum::<f32>() / frame.len() as f32)
+            .collect()
+    };
+    let sample_rate = if spec.sample_rate == 0 {
+        LFM2_TTS_SAMPLE_RATE
+    } else {
+        spec.sample_rate
+    };
+    Ok(CapturedAudio {
+        samples,
+        sample_rate,
+    })
 }
 
 struct CliOutput {
@@ -136,6 +244,7 @@ struct CliOutput {
 async fn run_cli_capture(
     mut command: tokio::process::Command,
     cancel: &Arc<AtomicBool>,
+    cancelled_message: &str,
 ) -> Result<CliOutput, String> {
     command
         .stdin(Stdio::null())
@@ -169,7 +278,7 @@ async fn run_cli_capture(
         if cancel.load(Ordering::Relaxed) {
             let _ = child.start_kill();
             let _ = child.wait().await;
-            return Err(CANCELLED_MESSAGE.to_string());
+            return Err(cancelled_message.to_string());
         }
         // Re-create the wait future each tick so neither branch holds a
         // long-lived mutable borrow of `child` (the tokio::select! footgun).

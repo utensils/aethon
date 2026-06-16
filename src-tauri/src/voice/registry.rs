@@ -11,6 +11,7 @@ pub struct VoiceProviderRegistry {
     transcription_timeout: Duration,
     active_distil_cancel: Mutex<Option<Arc<AtomicBool>>>,
     active_lfm2_cancel: Mutex<Option<Arc<AtomicBool>>>,
+    active_tts_cancel: Mutex<Option<Arc<AtomicBool>>>,
     pub(super) active_downloads: Mutex<std::collections::HashSet<String>>,
 }
 
@@ -109,6 +110,7 @@ impl VoiceProviderRegistry {
             transcription_timeout,
             active_distil_cancel: Mutex::new(None),
             active_lfm2_cancel: Mutex::new(None),
+            active_tts_cancel: Mutex::new(None),
             active_downloads: Mutex::new(std::collections::HashSet::new()),
         }
     }
@@ -514,6 +516,48 @@ impl VoiceProviderRegistry {
         }
         let _ = self.active_recording.lock().take();
         Ok(())
+    }
+
+    /// Synthesize speech for `text` via the LFM2-Audio runner, returning 24 kHz
+    /// mono PCM. Requires the LFM2 model + binary; cancellable via
+    /// `cancel_speech` and bounded by the shared transcription timeout.
+    pub async fn synthesize_speech(&self, text: String) -> Result<CapturedAudio, String> {
+        if text.trim().is_empty() {
+            return Err("Nothing to speak".to_string());
+        }
+        if !lfm2_model_ready(&self.lfm2_cache_path()) {
+            return Err("Download the LFM2-Audio model before using text-to-speech".to_string());
+        }
+        if !self.lfm2.binary_available() {
+            return Err(LFM2_BINARY_MISSING.to_string());
+        }
+
+        let cancel = Arc::new(AtomicBool::new(false));
+        *self.active_tts_cancel.lock() = Some(Arc::clone(&cancel));
+
+        let timeout = self.transcription_timeout;
+        let lfm2 = Arc::clone(&self.lfm2);
+        let cancel_for_task = Arc::clone(&cancel);
+        let result = tokio::time::timeout(timeout, lfm2.tts(text, cancel_for_task)).await;
+        if result.is_err() {
+            cancel.store(true, Ordering::Relaxed);
+        }
+
+        {
+            let mut active = self.active_tts_cancel.lock();
+            if active.as_ref().is_some_and(|a| Arc::ptr_eq(a, &cancel)) {
+                *active = None;
+            }
+        }
+
+        result.map_err(|_| timeout_error_message(timeout))?
+    }
+
+    /// Signal any in-flight speech synthesis to abort.
+    pub fn cancel_speech(&self) {
+        if let Some(cancel) = self.active_tts_cancel.lock().clone() {
+            cancel.store(true, Ordering::Relaxed);
+        }
     }
 
     fn ensure_known(&self, provider_id: &str) -> Result<(), String> {

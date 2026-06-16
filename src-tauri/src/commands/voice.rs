@@ -8,7 +8,7 @@ use tauri::{AppHandle, State};
 use {serde::Serialize, tauri::Emitter};
 
 #[cfg(feature = "voice")]
-use crate::voice::{VoiceProviderInfo, VoiceProviderRegistry, VoiceSettings};
+use crate::voice::{AudioPlayer, VoiceProviderInfo, VoiceProviderRegistry, VoiceSettings};
 
 #[cfg(feature = "voice")]
 fn open_voice_settings(app: &AppHandle) -> Result<VoiceSettings, String> {
@@ -165,6 +165,29 @@ pub async fn voice_cancel_recording(
     voice.cancel_recording(&provider_id).await
 }
 
+#[cfg(feature = "voice")]
+#[tauri::command]
+pub async fn voice_speak(
+    text: String,
+    app: AppHandle,
+    voice: State<'_, VoiceProviderRegistry>,
+    player: State<'_, AudioPlayer>,
+) -> Result<(), String> {
+    let audio = voice.synthesize_speech(text).await?;
+    player.play_samples(audio.samples, audio.sample_rate, Some(app))
+}
+
+#[cfg(feature = "voice")]
+#[tauri::command]
+pub async fn voice_stop_playback(
+    voice: State<'_, VoiceProviderRegistry>,
+    player: State<'_, AudioPlayer>,
+) -> Result<(), String> {
+    voice.cancel_speech();
+    player.stop();
+    Ok(())
+}
+
 // Shim implementations (compiled when the `voice` feature is disabled).
 // These preserve the JS binding surface — including parameter names — so the
 // frontend's existing invoke args still deserialize cleanly and callers get
@@ -232,5 +255,17 @@ pub async fn voice_stop_and_transcribe(
 pub async fn voice_cancel_recording(
     #[allow(unused_variables)] provider_id: Option<String>,
 ) -> Result<(), String> {
+    Err(VOICE_NOT_BUILT.into())
+}
+
+#[cfg(not(feature = "voice"))]
+#[tauri::command]
+pub async fn voice_speak(#[allow(unused_variables)] text: String) -> Result<(), String> {
+    Err(VOICE_NOT_BUILT.into())
+}
+
+#[cfg(not(feature = "voice"))]
+#[tauri::command]
+pub async fn voice_stop_playback() -> Result<(), String> {
     Err(VOICE_NOT_BUILT.into())
 }
