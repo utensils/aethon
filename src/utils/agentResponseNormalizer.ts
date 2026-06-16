@@ -80,8 +80,9 @@ function likelyStreamingEnvelope(text: string): boolean {
 function formattedCommands(value: unknown): string {
   const text = valueToText(value);
   if (!text) return "";
+  const ellipsis = "...";
   return text.length > MAX_COMMAND_CHARS
-    ? `${text.slice(0, MAX_COMMAND_CHARS - 1)}...`
+    ? `${text.slice(0, MAX_COMMAND_CHARS - ellipsis.length)}${ellipsis}`
     : text;
 }
 

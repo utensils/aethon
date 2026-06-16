@@ -143,6 +143,73 @@ describe("handleEditorQuery", () => {
     });
   });
 
+  it("normalizes trailing root separators before validation and tab matching", async () => {
+    const { ctx, mocks } = buildHandlerFixture({
+      state: {
+        tabs: [
+          {
+            id: "ed-1",
+            kind: "editor",
+            editor: { filePath: "/repo/src/App.tsx", rootPath: "/repo" },
+          },
+        ],
+      },
+    });
+    harness.invoke.mockResolvedValueOnce(true);
+
+    handleEditorQuery(
+      {
+        type: "editor_query",
+        op: "open_file",
+        mutationId: "m4b",
+        args: { path: "src/App.tsx", cwd: "/repo/" },
+      },
+      ctx,
+    );
+
+    await flush();
+    expect(harness.invoke).toHaveBeenCalledWith("fs_exists", {
+      root: "/repo",
+      path: "/repo/src/App.tsx",
+    });
+    expect(mocks.newEditorTab).toHaveBeenCalledWith("/repo/src/App.tsx", {
+      rootPath: "/repo",
+    });
+    expect(mocks.ackMutation).toHaveBeenCalledWith("m4b", true, undefined, {
+      filePath: "/repo/src/App.tsx",
+      rootPath: "/repo",
+      tabId: "ed-1",
+    });
+  });
+
+  it("preserves filesystem roots while normalizing root paths", async () => {
+    const { ctx, mocks } = buildHandlerFixture();
+    harness.invoke.mockResolvedValueOnce(true);
+
+    handleEditorQuery(
+      {
+        type: "editor_query",
+        op: "open_file",
+        mutationId: "m4c",
+        args: { path: "tmp/aethon.log", cwd: "/" },
+      },
+      ctx,
+    );
+
+    await flush();
+    expect(harness.invoke).toHaveBeenCalledWith("fs_exists", {
+      root: "/",
+      path: "/tmp/aethon.log",
+    });
+    expect(mocks.newEditorTab).toHaveBeenCalledWith("/tmp/aethon.log", {
+      rootPath: "/",
+    });
+    expect(mocks.ackMutation).toHaveBeenCalledWith("m4c", true, undefined, {
+      filePath: "/tmp/aethon.log",
+      rootPath: "/",
+    });
+  });
+
   it("acks failure when path is missing", async () => {
     const { ctx, mocks } = buildHandlerFixture();
 

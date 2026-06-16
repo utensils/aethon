@@ -40,6 +40,17 @@ describe("normalizeAgentMessageForDisplay", () => {
     expect(out.text).toContain('[bash({"cmd":"ls"})]');
   });
 
+  it("keeps rendered proposed command payloads inside the command cap", () => {
+    const out = normalizeAgentMessageForDisplay({
+      role: "agent",
+      text: JSON.stringify({ commands: "x".repeat(6000) }),
+    });
+
+    const commandBlock = out.text?.match(/```json\n([\s\S]*)\n```/)?.[1] ?? "";
+    expect(commandBlock).toHaveLength(5000);
+    expect(commandBlock.endsWith("...")).toBe(true);
+  });
+
   it("shows a placeholder for partial streamed pseudo-tool envelopes", () => {
     const out = normalizeAgentMessageForDisplay({
       role: "agent",

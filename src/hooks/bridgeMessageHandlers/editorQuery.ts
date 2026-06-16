@@ -25,6 +25,14 @@ function joinRoot(root: string, relativePath: string): string {
   return `${root.replace(/[\\/]+$/, "")}${separator}${rel}`;
 }
 
+function normalizeRootPath(root: string): string {
+  const trimmed = root.trim();
+  if (/^\/+$/.test(trimmed)) return "/";
+  if (/^\\+$/.test(trimmed)) return "\\";
+  if (/^[A-Za-z]:[\\/]$/.test(trimmed)) return trimmed;
+  return trimmed.replace(/[\\/]+$/, "");
+}
+
 function matchingEditorTabId(
   tabs: unknown,
   filePath: string,
@@ -74,7 +82,7 @@ export const handleEditorQuery: BridgeMessageHandler = (data, ctx) => {
     const cwd = typeof args.cwd === "string" ? args.cwd.trim() : "";
     const explicitRoot =
       typeof args.rootPath === "string" ? args.rootPath.trim() : "";
-    const rootPath = explicitRoot || cwd;
+    const rootPath = normalizeRootPath(explicitRoot || cwd);
     if (!rootPath) {
       throw new Error("editor_query.open_file requires cwd or rootPath");
     }
