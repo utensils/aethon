@@ -100,4 +100,26 @@ describe("HostGroup", () => {
     fireEvent.click(screen.getByText("halcyon"));
     expect(onSelectHost).toHaveBeenCalledTimes(1);
   });
+
+  it("marks the host row as current when the host workspace is selected", () => {
+    render(
+      <HostGroup
+        host={localHost}
+        selected
+        expanded
+        collapsible
+        onToggleExpand={vi.fn()}
+        onSelectHost={vi.fn()}
+      />,
+    );
+
+    const header = screen.getByText("halcyon").closest(".ae-host-group-header");
+    expect(header?.classList.contains("ae-host-group-header--selected")).toBe(
+      true,
+    );
+    expect(header?.getAttribute("aria-current")).toBe("page");
+    expect(header?.closest(".ae-host-group")?.classList).toContain(
+      "ae-host-group--selected",
+    );
+  });
 });
