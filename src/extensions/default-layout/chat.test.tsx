@@ -6,6 +6,7 @@ import {
   fireEvent,
   render,
   screen,
+  waitFor,
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -957,14 +958,23 @@ describe("ChatInput", () => {
   });
 });
 
-describe("ChatInput @file completion", () => {
+describe("ChatInput @ completion", () => {
   const WALK = ["/proj/src/App.tsx", "/proj/src/main.tsx", "/proj/README.md"];
+  const KIMI = {
+    scope: "user",
+    name: "kimi",
+    filePath: "/agents/kimi.md",
+    content:
+      "---\ndescription: Reviews code with Moonshot Kimi.\nmodel: openrouter/moonshotai/kimi-k2.7-code\n---\nYou review code.\n",
+  };
 
   beforeEach(() => {
     invokeMock.mockImplementation((cmd: string) =>
       cmd === "fs_walk_project"
         ? Promise.resolve(WALK)
-        : Promise.reject(new Error(`invoke not mocked: ${cmd}`)),
+        : cmd === "subagents_list"
+          ? Promise.resolve([])
+          : Promise.reject(new Error(`invoke not mocked: ${cmd}`)),
     );
   });
 
@@ -989,6 +999,66 @@ describe("ChatInput @file completion", () => {
     expect(invokeMock).toHaveBeenCalledWith("fs_walk_project", {
       root: "/proj",
     });
+  });
+
+  it("offers leading subagent suggestions and inserts one on Tab", async () => {
+    invokeMock.mockImplementation((cmd: string) =>
+      cmd === "fs_walk_project"
+        ? Promise.resolve(WALK)
+        : cmd === "subagents_list"
+          ? Promise.resolve([KIMI])
+          : Promise.reject(new Error(`invoke not mocked: ${cmd}`)),
+    );
+    const { input } = renderWithProject();
+
+    fireEvent.change(input, { target: { value: "@ki" } });
+
+    expect(await screen.findByText("@kimi")).toBeTruthy();
+    expect(screen.getByText("Reviews code with Moonshot Kimi.")).toBeTruthy();
+    expect(invokeMock).toHaveBeenCalledWith("subagents_list", {
+      projectRoot: "/proj",
+    });
+
+    fireEvent.keyDown(input, { key: "Tab" });
+    expect((input as HTMLTextAreaElement).value).toBe("@kimi ");
+  });
+
+  it("does not offer subagents for mid-draft @tokens", async () => {
+    invokeMock.mockImplementation((cmd: string) =>
+      cmd === "fs_walk_project"
+        ? Promise.resolve(WALK)
+        : cmd === "subagents_list"
+          ? Promise.resolve([KIMI])
+          : Promise.reject(new Error(`invoke not mocked: ${cmd}`)),
+    );
+    const { input } = renderWithProject();
+
+    fireEvent.change(input, { target: { value: "hello @ki" } });
+
+    await waitFor(() =>
+      expect(invokeMock).toHaveBeenCalledWith("subagents_list", {
+        projectRoot: "/proj",
+      }),
+    );
+    expect(screen.queryByText("@kimi")).toBeNull();
+  });
+
+  it("completes an exact leading subagent on Enter before submitting", async () => {
+    invokeMock.mockImplementation((cmd: string) =>
+      cmd === "fs_walk_project"
+        ? Promise.resolve(WALK)
+        : cmd === "subagents_list"
+          ? Promise.resolve([KIMI])
+          : Promise.reject(new Error(`invoke not mocked: ${cmd}`)),
+    );
+    const { input, onEvent } = renderWithProject();
+
+    fireEvent.change(input, { target: { value: "@kimi" } });
+    await screen.findByText("@kimi");
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    expect((input as HTMLTextAreaElement).value).toBe("@kimi ");
+    expect(onEvent).not.toHaveBeenCalledWith("submit", expect.any(Object));
   });
 
   it("inserts the highlighted file on Tab", async () => {

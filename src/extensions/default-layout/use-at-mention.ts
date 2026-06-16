@@ -2,23 +2,27 @@ import { useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import {
   findActiveAtToken,
-  matchAtFiles,
+  isLeadingAtToken,
+  matchAtMentions,
   type AtFileMatch,
   type AtMention,
+  type AtSubagentMatch,
+  subagentSuggestionsFromFiles,
 } from "./at-mention";
+import type { SubagentFile } from "../../subagents";
 
 /**
- * Live `@file` completion state for a composer. Modeled on
+ * Live `@` completion state for a composer. Modeled on
  * `useSlashMatching`: the caller feeds the draft + cursor + the root the
  * prompt will resolve against (`atMentionRoot(state)` for the chat
  * composer, the targeted project/workspace path for the task launcher),
  * and gets back the current match (or null) plus highlight/dismiss
  * controls.
  *
- * The file list comes from `fs_walk_project` — the same backend as the
- * Cmd+P quick-open. A walk fires each time an `@token` becomes active
- * (cheap: capped + excluded-dirs pruned Rust walk), while the previous
- * list keeps serving matches so suggestions never flicker out mid-typing.
+ * File matches come from `fs_walk_project` and agent matches come from
+ * `subagents_list`. A walk fires each time an `@token` becomes active, while
+ * the previous lists keep serving matches so suggestions never flicker out
+ * mid-typing.
  */
 export function useAtMention({
   value,
@@ -36,6 +40,7 @@ export function useAtMention({
     [enabled, value, cursor],
   );
   const [files, setFiles] = useState<AtFileMatch[]>([]);
+  const [subagents, setSubagents] = useState<AtSubagentMatch[]>([]);
   const [dismissedDraft, setDismissedDraft] = useState<string | null>(null);
 
   useEffect(() => {
@@ -47,24 +52,33 @@ export function useAtMention({
 
   const tokenActive = token !== null;
   useEffect(() => {
-    if (!tokenActive || !root) return;
+    if (!tokenActive) return;
     let cancelled = false;
-    invoke<string[]>("fs_walk_project", { root })
-      .then((paths) => {
-        if (cancelled) return;
-        const normalized = root.replace(/\/+$/, "");
-        setFiles(
-          paths.map((path) => ({
-            path,
-            rel: path.startsWith(normalized + "/")
-              ? path.slice(normalized.length + 1)
-              : path,
-          })),
-        );
+    if (root) {
+      invoke<string[]>("fs_walk_project", { root })
+        .then((paths) => {
+          if (cancelled) return;
+          const normalized = root.replace(/\/+$/, "");
+          setFiles(
+            paths.map((path) => ({
+              path,
+              rel: path.startsWith(normalized + "/")
+                ? path.slice(normalized.length + 1)
+                : path,
+            })),
+          );
+        })
+        .catch(() => {
+          // Walk failed (project gone, permission) — degrade to no file rows.
+          if (!cancelled) setFiles([]);
+        });
+    }
+    invoke<SubagentFile[]>("subagents_list", { projectRoot: root ?? null })
+      .then((raw) => {
+        if (!cancelled) setSubagents(subagentSuggestionsFromFiles(raw));
       })
       .catch(() => {
-        // Walk failed (project gone, permission) — degrade to no picker.
-        if (!cancelled) setFiles([]);
+        if (!cancelled) setSubagents([]);
       });
     return () => {
       cancelled = true;
@@ -74,9 +88,14 @@ export function useAtMention({
   const atMatch: AtMention | null = useMemo(() => {
     if (!token) return null;
     if (dismissedDraft !== null && value === dismissedDraft) return null;
-    const matches = matchAtFiles(token.query, files);
+    const matches = matchAtMentions({
+      query: token.query,
+      files: root ? files : [],
+      subagents,
+      includeAgents: isLeadingAtToken(value, token),
+    });
     return matches.length > 0 ? { ...token, matches } : null;
-  }, [token, files, value, dismissedDraft]);
+  }, [token, root, files, subagents, value, dismissedDraft]);
 
   const [highlightIdx, setHighlightIdx] = useState(0);
   useEffect(() => {

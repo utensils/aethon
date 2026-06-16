@@ -27,8 +27,8 @@ import { SlashPicker } from "./slash-picker";
 import { AtPicker } from "./at-picker";
 import {
   atMentionRoot,
-  formatAtInsertion,
-  type AtFileMatch,
+  formatAtMentionInsertion,
+  type AtMentionMatch,
 } from "./at-mention";
 import { useAtMention } from "./use-at-mention";
 import { useComposerResize } from "./use-composer-resize";
@@ -222,11 +222,11 @@ export function ChatInput({
     commitDraft(text);
   };
 
-  // Replace the active `@token` with the chosen file reference and park
+  // Replace the active `@token` with the chosen mention and park
   // the caret after the trailing space so typing continues naturally.
-  const insertAtFile = (m: AtFileMatch) => {
+  const insertAtMention = (m: AtMentionMatch) => {
     if (!atMatch) return;
-    const insertion = formatAtInsertion(m.rel);
+    const insertion = formatAtMentionInsertion(m);
     const next =
       value.slice(0, atMatch.start) + insertion + value.slice(atMatch.end);
     const nextCursor = atMatch.start + insertion.length;
@@ -341,18 +341,19 @@ export function ChatInput({
       if (e.key === "Tab") {
         e.preventDefault();
         const match = list[atHighlightIdx] ?? list[0];
-        if (match) insertAtFile(match);
+        if (match) insertAtMention(match);
         return;
       }
       if (e.key === "Enter" && !e.shiftKey) {
-        // A hand-typed exact reference sends the message — same bypass
-        // the slash picker gives an exactly-typed command. Partial
-        // tokens complete instead of submitting.
-        const exact = list.some((m) => m.rel === atMatch.query);
-        if (!exact) {
+        const match = list[atHighlightIdx] ?? list[0];
+        // Exact file references submit like before. Agent mentions complete
+        // first so `@kimi` becomes `@kimi ` before a later Enter sends.
+        const exactFile = list.some(
+          (m) => m.kind === "file" && m.rel === atMatch.query,
+        );
+        if (match?.kind === "agent" || !exactFile) {
           e.preventDefault();
-          const match = list[atHighlightIdx] ?? list[0];
-          if (match) insertAtFile(match);
+          if (match) insertAtMention(match);
           return;
         }
       }
@@ -419,7 +420,7 @@ export function ChatInput({
         atMatch={atMatch}
         highlightIdx={atHighlightIdx}
         setHighlightIdx={setAtHighlightIdx}
-        onInsert={insertAtFile}
+        onInsert={insertAtMention}
       />
       {busy && (
         <div className="a2ui-chat-input-hint">
