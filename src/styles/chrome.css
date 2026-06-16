@@ -147,6 +147,22 @@ body {
   overflow: hidden;
 }
 
+.ae-boot-curtain {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  place-items: center;
+  background: var(--gradient-app-backdrop, var(--bg));
+}
+
+.ae-boot-curtain img {
+  width: 56px;
+  max-width: 18vw;
+  height: auto;
+  opacity: 0.9;
+}
+
 .a2ui-renderer {
   display: flex;
   flex-direction: column;

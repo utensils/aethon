@@ -20,6 +20,8 @@ export interface AppRootProps {
   settingsOpen: boolean;
   searchOpen: boolean;
   authProfilesOpen: boolean;
+  chromeReady: boolean;
+  startupLogoUrl: string;
   /** Optional banner row rendered above the layout. Sits in flow as the
    *  first flex child of `.app` so it pushes the rest of the chrome
    *  down instead of floating over it. */
@@ -45,6 +47,8 @@ export function AppRoot({
   settingsOpen,
   searchOpen,
   authProfilesOpen,
+  chromeReady,
+  startupLogoUrl,
   topBanner,
 }: AppRootProps) {
   return (
@@ -52,15 +56,21 @@ export function AppRoot({
       {/* `data-platform="mac"` gates the overlay-titlebar chrome (traffic-
           light clearance + drag regions) so non-mac builds render unchanged. */}
       <div className="app" {...(isMacOS() ? { "data-platform": "mac" } : {})}>
-        {topBanner}
-        <A2UIRenderer
-          payload={layout}
-          state={renderState}
-          onStateChange={setState}
-          onEvent={onEvent}
-          tabId={activeTabId}
-        />
-        {notificationsOpen && (
+        {chromeReady ? topBanner : null}
+        {chromeReady ? (
+          <A2UIRenderer
+            payload={layout}
+            state={renderState}
+            onStateChange={setState}
+            onEvent={onEvent}
+            tabId={activeTabId}
+          />
+        ) : (
+          <div className="ae-boot-curtain" aria-hidden="true">
+            <img src={startupLogoUrl} alt="" />
+          </div>
+        )}
+        {chromeReady && notificationsOpen && (
           <RegistryComponent
             type="notification-stack"
             state={renderState}
@@ -68,7 +78,7 @@ export function AppRoot({
             tabId={activeTabId}
           />
         )}
-        {paletteOpen && (
+        {chromeReady && paletteOpen && (
           <RegistryComponent
             type="command-palette"
             state={renderState}
@@ -76,7 +86,7 @@ export function AppRoot({
             tabId={activeTabId}
           />
         )}
-        {settingsOpen && (
+        {chromeReady && settingsOpen && (
           <RegistryComponent
             type="settings-panel"
             state={renderState}
@@ -84,7 +94,7 @@ export function AppRoot({
             tabId={activeTabId}
           />
         )}
-        {searchOpen && (
+        {chromeReady && searchOpen && (
           <RegistryComponent
             type="search-panel"
             state={renderState}
@@ -92,7 +102,7 @@ export function AppRoot({
             tabId={activeTabId}
           />
         )}
-        {authProfilesOpen && (
+        {chromeReady && authProfilesOpen && (
           <RegistryComponent
             type="auth-profile-panel"
             state={renderState}

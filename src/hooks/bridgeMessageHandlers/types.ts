@@ -180,6 +180,10 @@ export interface BridgeMessageContext {
   }) => Promise<void>;
 
   // ─── Hook-owned ────────────────────────────────────────────────────
+  /** Startup/reload paint gate. The first bridge ready can still represent
+   *  a stale project cwd; callers mark chrome paintable only after ready has
+   *  the active project's extension/layout surface. */
+  markStartupChromeReady: () => void;
   /** Ack a mutation back to the bridge. Provided by useBridgeMessages so
    *  handlers don't have to know about the IPC channel. */
   ackMutation: (

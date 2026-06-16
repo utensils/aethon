@@ -522,5 +522,7 @@ export const handleReady: BridgeMessageHandler = (data, ctx) => {
     : (priorActiveTabCwd ?? projectActivePath);
   if (activePath && currentProjectCwd !== activePath) {
     ctx.announceProjectToBridge(priorActiveTabId, activePath);
+    return;
   }
+  ctx.markStartupChromeReady();
 };

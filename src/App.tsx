@@ -108,6 +108,7 @@ export default function App() {
   // by calling window.aethon.setLayout(payload), or register a new extension via
   // window.aethon.registerExtension(extension) and switch to its layout.
   const [layout, setLayout] = useState<A2UIPayload>(BOOT_LAYOUT);
+  const [startupChromeReady, setStartupChromeReady] = useState(false);
 
   const {
     stateRef,
@@ -132,6 +133,7 @@ export default function App() {
   // settings save path's re-prime helper.
   // ---------------------------------------------------------------------
   const {
+    bootConfigReady,
     defaultShareModeRef,
     notifyOnCompletionRef,
     notifyMinDurationMsRef,
@@ -639,6 +641,7 @@ export default function App() {
   useAppBridgeMessages({
     bootLayout: BOOT_LAYOUT,
     onBootError: (err) => {
+      setStartupChromeReady(true);
       appendMessage({
         id: crypto.randomUUID(),
         role: "agent",
@@ -687,6 +690,7 @@ export default function App() {
     syncRecentSessionsToState,
     routeShellWrite,
     startTaskInProject,
+    markStartupChromeReady: () => setStartupChromeReady(true),
   });
 
   // Global keyboard shortcuts. Lives in useKeyboardShortcuts which
@@ -920,6 +924,7 @@ export default function App() {
     searchOpen,
     authProfilesOpen,
   } = useDerivedRenderState({ state, buildSidebarHistory, hostInfo });
+  const chromeReady = bootConfigReady && startupChromeReady;
 
   return (
     <AppRoot
@@ -934,6 +939,8 @@ export default function App() {
       settingsOpen={settingsOpen}
       searchOpen={searchOpen}
       authProfilesOpen={authProfilesOpen}
+      chromeReady={chromeReady}
+      startupLogoUrl={logoUrl}
       topBanner={
         <UpdateBanner
           state={updaterState}
