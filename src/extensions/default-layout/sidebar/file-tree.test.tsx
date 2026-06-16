@@ -622,6 +622,64 @@ describe("FileTreePanel", () => {
     ).toBeTruthy();
   });
 
+  it("renames files inline from the context menu", async () => {
+    invokeMock.mockImplementation((cmd: string, args?: { path?: string }) => {
+      if (cmd === "fs_list_dir" && args?.path === "/projects/aethon") {
+        return Promise.resolve([
+          {
+            name: "README.md",
+            path: "/projects/aethon/README.md",
+            kind: "file",
+          },
+        ]);
+      }
+      if (cmd === "git_file_status" || cmd === "git_ignored_paths") {
+        return Promise.resolve([]);
+      }
+      return Promise.resolve(undefined);
+    });
+    const promptSpy = vi.spyOn(window, "prompt").mockReturnValue("ignored");
+    const onEvent = vi.fn();
+    render(<FileTreePanel {...panelProps({ onEvent })} />);
+
+    const row = await waitFor(() => screen.getByText("README.md"));
+    const rootListCallCount = () =>
+      invokeMock.mock.calls.filter(
+        ([cmd, args]) =>
+          cmd === "fs_list_dir" &&
+          (args as { path?: string } | undefined)?.path === "/projects/aethon",
+      ).length;
+    const listCallsBeforeRename = rootListCallCount();
+    fireEvent.contextMenu(row.closest("li") as Element);
+    fireEvent.click(screen.getByRole("menuitem", { name: /Rename…/ }));
+
+    expect(promptSpy).not.toHaveBeenCalled();
+    const input = await screen.findByRole<HTMLInputElement>("textbox", {
+      name: /Rename README\.md/,
+    });
+    expect(input.value).toBe("README.md");
+    expect(document.activeElement).toBe(input);
+
+    fireEvent.change(input, { target: { value: "CHANGELOG.md" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    await waitFor(() => {
+      expect(invokeMock).toHaveBeenCalledWith("fs_rename", {
+        root: "/projects/aethon",
+        from: "/projects/aethon/README.md",
+        to: "/projects/aethon/CHANGELOG.md",
+      });
+    });
+    expect(onEvent).toHaveBeenCalledWith("file-tree-rename", {
+      from: "/projects/aethon/README.md",
+      to: "/projects/aethon/CHANGELOG.md",
+      kind: "file",
+    });
+    await waitFor(() => {
+      expect(rootListCallCount()).toBeGreaterThan(listCallsBeforeRename);
+    });
+  });
+
   it("closes an open context menu when the project changes", async () => {
     invokeMock.mockImplementation((cmd: string, args?: { path?: string }) => {
       if (cmd === "fs_list_dir" && args?.path === "/projects/aethon") {
