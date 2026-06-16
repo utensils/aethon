@@ -3,7 +3,7 @@ import type {
   ExtensionFailure,
   ExtensionFailureSource,
 } from "./state";
-import { emitReady } from "./tab-lifecycle";
+import { emitReady, refreshCachedModels } from "./tab-lifecycle";
 import { refreshPersistedTabs } from "./extension-loader";
 
 const WORKER_MODE =
@@ -83,6 +83,7 @@ export async function emitGlobalReady(
   deps: { send: (obj: Record<string, unknown>) => void },
 ): Promise<void> {
   if (WORKER_MODE) return;
+  await refreshCachedModels(state);
   state.discoveredTabs = await refreshPersistedTabs(state);
   emitReady(state, deps);
 }

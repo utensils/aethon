@@ -141,6 +141,9 @@ export function Sidebar({
   // When host groups are on, the projects section is rendered nested
   // inside the active host's group; everything else stays top-level.
   const groupHosts = useHostGroups && hosts.length > 0;
+  const hostWorkspaceSelected =
+    groupHosts &&
+    (state.project === null || state.project === undefined);
   const projectsSection = groupHosts
     ? allSections.find((s) => s.id === "projects")
     : undefined;
@@ -232,6 +235,7 @@ export function Sidebar({
                 <HostGroup
                   key={host.id}
                   host={host}
+                  selected={host.active && hostWorkspaceSelected}
                   collapsible={showsProjects}
                   expanded={showsProjects && !collapsed}
                   onToggleExpand={() => toggleHostCollapsed(host.id)}

@@ -591,6 +591,8 @@ describe("ChatInput", () => {
       ],
     });
 
+    const scroller = screen.getByTestId("virtuoso-mock");
+    setScrollTop(scroller, 0);
     const before = virtuosoMockState.scrollToCalls.length;
     // Content grew (e.g. a streamed token) → totalListHeightChanged fires.
     act(() => virtuosoMockState.totalListHeightChanged?.(2000));
@@ -599,6 +601,7 @@ describe("ChatInput", () => {
     expect(virtuosoMockState.scrollToCalls).toContainEqual({
       top: Number.MAX_SAFE_INTEGER,
     });
+    expect(scroller.scrollTop).toBe(scroller.scrollHeight);
   });
 
   it("does NOT re-pin on content growth after the user scrolled away", () => {
@@ -677,6 +680,7 @@ describe("ChatInput", () => {
     expect(virtuosoMockState.scrollToCalls).toContainEqual({
       top: Number.MAX_SAFE_INTEGER,
     });
+    expect(scroller.scrollTop).toBe(scroller.scrollHeight);
     expect(
       screen.queryByRole("button", { name: "Scroll to latest message" }),
     ).toBeNull();

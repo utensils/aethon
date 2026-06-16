@@ -85,6 +85,12 @@ export interface BridgeMessageContext {
       scrollToMatch?: string;
     },
   ) => void;
+  /** Open (or focus) a Monaco editor tab. Used by the agent-side
+   *  `openFileInEditor` tool via `editor_query`. */
+  newEditorTab: (
+    filePath: string,
+    opts?: { rootPath?: string; diff?: boolean },
+  ) => void;
   dispatchTerminalReplay: (buffer: string) => void;
   autoRestoreDiscoveredSessions: (
     discovered: DiscoveredSession[],

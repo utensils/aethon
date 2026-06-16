@@ -36,7 +36,7 @@ afterEach(() => {
 
 describe("TaskLauncher", () => {
   it("renders prompt placeholder with the project name", () => {
-    const html = renderToStaticMarkup(
+    render(
       <TaskLauncher
         component={launcher({
           project: { id: "p1", label: "claudex", path: "/c" },
@@ -45,7 +45,11 @@ describe("TaskLauncher", () => {
         onEvent={() => {}}
       />,
     );
-    expect(html).toContain("Start a task in claudex…");
+    const input = screen.getByLabelText("Task prompt");
+    expect(input.getAttribute("placeholder")).toBe(
+      "Start a task in claudex… use @<subagent> or @path",
+    );
+    expect(input.getAttribute("placeholder")).not.toContain("@agent");
   });
 
   it("renders nothing when no project is set", () => {
@@ -123,7 +127,7 @@ describe("TaskLauncher", () => {
     expect((prompt as HTMLTextAreaElement).value).toBe("@src/App.tsx ");
   });
 
-  it("offers leading @agent completions rooted at the project", async () => {
+  it("offers leading subagent completions rooted at the project", async () => {
     invoke.mockImplementation((cmd: string) =>
       cmd === "fs_walk_project"
         ? Promise.resolve([])

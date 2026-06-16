@@ -784,6 +784,7 @@ body.ae-resizing-sidebar .a2ui-layout {
 /* Host header — the root node. Machine glyph + name + this-mac/remote
    badge. Reads heavier than a project row so the tiers are legible. */
 .ae-host-group-header {
+  position: relative;
   display: flex;
   align-items: center;
   gap: var(--ae-sb-row-gap);
@@ -796,6 +797,21 @@ body.ae-resizing-sidebar .a2ui-layout {
 }
 .ae-host-group-header:hover {
   background: var(--bg-hover);
+}
+.ae-host-group-header--selected,
+.ae-host-group-header--selected:hover {
+  background: var(--bg-selected);
+  color: var(--text);
+}
+.ae-host-group-header--selected::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 6px;
+  bottom: 6px;
+  width: 2px;
+  border-radius: var(--radius-pill);
+  background: var(--accent);
 }
 .ae-host-glyph-wrap {
   display: inline-flex;
@@ -821,6 +837,16 @@ body.ae-resizing-sidebar .a2ui-layout {
 }
 .ae-host-group--active .ae-host-name {
   color: var(--text);
+}
+.ae-host-group--selected .ae-host-glyph-wrap {
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-radius: var(--radius-xs);
+  box-shadow: inset 0 0 0 1px var(--accent-soft);
+}
+.ae-host-group--selected .ae-host-name {
+  color: var(--accent);
+  font-weight: 700;
 }
 .ae-host-badge {
   flex-shrink: 0;

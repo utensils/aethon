@@ -8,6 +8,25 @@ import {
 } from "./slots";
 import workstationPayload from "./workstation.a2ui.json";
 
+interface LayoutComponent {
+  id?: string;
+  props?: Record<string, unknown>;
+  children?: LayoutComponent[];
+}
+
+function findWorkstationComponent(id: string): LayoutComponent | null {
+  const stack = [
+    ...((workstationPayload as { components?: LayoutComponent[] }).components ??
+      []),
+  ];
+  while (stack.length > 0) {
+    const node = stack.shift()!;
+    if (node.id === id) return node;
+    stack.push(...(node.children ?? []));
+  }
+  return null;
+}
+
 describe("layout-slot catalogue", () => {
   it("ships every documented canonical slot", () => {
     // Lock the canonical list so a future rename is a deliberate
@@ -56,6 +75,15 @@ describe("inspectLayoutSlotCoverage — built-in layouts", () => {
     expect([...r.filledSlots].sort()).toEqual([...SLOT_NAMES].sort());
     // workstation uses {$ref} for `areas` so the inspector tags it.
     expect(r.dynamicAreas).toBe(true);
+  });
+
+  it("workstation composer placeholder describes subagent mention syntax", () => {
+    const chatInput = findWorkstationComponent("chat-input");
+    const placeholder = chatInput?.props?.placeholder;
+    expect(placeholder).toBe(
+      "Message Aethon… (@<subagent> to delegate, @file for context, / for commands)",
+    );
+    expect(String(placeholder)).not.toContain("@agent");
   });
 
   // Sibling layouts (editorial / command-deck / live-layout) were

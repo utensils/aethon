@@ -121,20 +121,26 @@ describe("cwdForNewTab", () => {
       ],
     };
 
-    expect(cwdForNewTab(projects, { projectRoot: "/fallback" })).toBe(
-      "/repo/aethon",
-    );
-  });
-
-  it("falls back to the dev project root when no project is selected", () => {
     expect(
-      cwdForNewTab(emptyProjectsState(), { projectRoot: "/repo/aethon" }),
+      cwdForNewTab(projects, {
+        aethonRoot: "/Users/me/.aethon",
+        projectRoot: "/fallback",
+      }),
     ).toBe("/repo/aethon");
   });
 
-  it("falls back to the Aethon user dir in release when no project is selected", () => {
+  it("falls back to the Aethon user dir when no project is selected", () => {
     expect(
-      cwdForNewTab(emptyProjectsState(), { aethonRoot: "/Users/me/.aethon" }),
+      cwdForNewTab(emptyProjectsState(), {
+        aethonRoot: "/Users/me/.aethon",
+        projectRoot: "/repo/aethon",
+      }),
     ).toBe("/Users/me/.aethon");
+  });
+
+  it("falls back to the dev project root when the user dir is unavailable", () => {
+    expect(
+      cwdForNewTab(emptyProjectsState(), { projectRoot: "/repo/aethon" }),
+    ).toBe("/repo/aethon");
   });
 });

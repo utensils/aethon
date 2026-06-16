@@ -6,6 +6,7 @@ import {
   coerceChatMessages,
   dedupeToolResultTextMessages,
 } from "../../utils/messages";
+import { normalizeAgentMessage } from "../../utils/agentResponseNormalizer";
 import { toolCardIdentityFromId } from "../../utils/toolCardIdentity";
 import type { A2UIComponent, ChatMessage } from "../../types/a2ui";
 import type { Tab } from "../../types/tab";
@@ -359,9 +360,9 @@ function mergePendingLocalPrompts(
 export const handleSessionHistory: BridgeMessageHandler = (data, ctx) => {
   const tabId = (data.tabId as string | undefined) ?? "default";
   const messages = dedupeToolResultTextMessages(
-    coerceChatMessages(data.messages).filter(
-      (message) => !isStopNotice(message),
-    ),
+    coerceChatMessages(data.messages)
+      .map(normalizeAgentMessage)
+      .filter((message) => !isStopNotice(message)),
   );
   const session = ctx.allDiscoveredSessionsRef.current.find(
     (s) => s.tabId === tabId,

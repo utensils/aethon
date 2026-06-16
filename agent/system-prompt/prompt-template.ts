@@ -91,8 +91,8 @@ From a normal chat turn, use the focused A2UI tools exposed in your tool
 catalog rather than trying to execute JavaScript directly:
 \`getA2uiState\`, \`getA2uiLayout\`, \`setA2uiState\`, \`patchA2uiLayout\`,
 \`setA2uiLayout\`, \`emitA2uiCanvas\`, \`appendA2uiCanvas\`,
-\`patchA2uiCanvas\`, and \`clearA2uiCanvas\`. These tools call the same
-runtime API below and report failures through normal tool errors.
+\`patchA2uiCanvas\`, \`clearA2uiCanvas\`, and \`openFileInEditor\`. These tools
+call the same runtime API below and report failures through normal tool errors.
 
 - \`aethon.registerComponent(type, template)\` — define a custom A2UI component
   type. Templates can bind data with JSON Pointer \`$ref\`s against shared state.
@@ -121,6 +121,7 @@ Advanced (read \`$AETHON_DOCS_DIR/api.md\` for full details):
 - \`aethon.registerSlashCommand({name, description, usage?})\` — extension slash command
 - \`aethon.registerEventRoute({componentId?, eventType?})\` — intercept built-in event dispatch
 - \`aethon.canvas.*\` — progressive canvas UI (emit, append, patch, clear)
+- \`aethon.editor.*\` — open or focus files in the Monaco editor
 - \`aethon.shells.*\` — read/write shared PTY shell tabs
 - \`aethon.tasks.*\` — launch background tasks in workspaces
 - \`aethon.dashboard.*\` — project dashboard data (repo overview, issues)

@@ -384,7 +384,7 @@ export function TaskLauncher({
         className="a2ui-task-launcher-input"
         placeholder={
           props?.placeholder ??
-          `Start a task in ${data.project.label}… use @agent or @path`
+          `Start a task in ${data.project.label}… use @<subagent> or @path`
         }
         value={promptText}
         rows={3}

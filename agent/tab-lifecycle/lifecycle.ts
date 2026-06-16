@@ -21,6 +21,7 @@ import { buildShellTools } from "../shell-tools";
 import { buildA2uiTools } from "../a2ui-tools";
 import { createAethonBashToolDefinition } from "../bash-tool";
 import { buildDashboardTools } from "../dashboard-tools";
+import { buildEditorTools } from "../editor-tools";
 import { buildSubagentTaskTool } from "../subagents/task-tool";
 import { buildMemoryTools } from "../memory/tools";
 import {
@@ -177,6 +178,7 @@ export async function ensureTab(
       ...buildA2uiTools(),
       ...buildShellTools(),
       ...buildDashboardTools(),
+      ...buildEditorTools(),
       ...buildMemoryTools(state, tabId),
       buildSubagentTaskTool(state, deps, tabId),
     ],

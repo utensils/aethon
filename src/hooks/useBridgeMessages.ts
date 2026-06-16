@@ -44,6 +44,8 @@ export interface UseBridgeMessagesActions {
 
 const DEFAULT_HANG_WARN_MS = 30_000;
 const hangWarnNotifId = (tabId: string) => `ae-hang-warn:${tabId}`;
+const BRIDGE_DRAIN_BUDGET_MS = 8;
+const BRIDGE_DRAIN_MAX_MESSAGES = 80;
 
 export type BridgeDispatchDecision =
   | { kind: "handle" }
@@ -100,6 +102,86 @@ function activeTabIdsFromState(state: Record<string, unknown>): Set<string> {
   return ids;
 }
 
+type InputPendingNavigator = Navigator & {
+  scheduling?: {
+    isInputPending?: (options?: { includeContinuous?: boolean }) => boolean;
+  };
+};
+
+function hasPendingInput(): boolean {
+  if (typeof navigator === "undefined") return false;
+  return (
+    (navigator as InputPendingNavigator).scheduling?.isInputPending?.({
+      includeContinuous: true,
+    }) === true
+  );
+}
+
+function nowMs(): number {
+  return typeof performance !== "undefined" ? performance.now() : Date.now();
+}
+
+export function createBridgePayloadPump(
+  processPayload: (payload: string) => void,
+) {
+  let queue: string[] = [];
+  let head = 0;
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  let disposed = false;
+
+  const compact = () => {
+    if (head < 256 || head * 2 < queue.length) return;
+    queue = queue.slice(head);
+    head = 0;
+  };
+
+  const schedule = () => {
+    if (disposed || timer !== null) return;
+    timer = setTimeout(drain, 0);
+  };
+
+  const drain = () => {
+    timer = null;
+    if (disposed) return;
+
+    const started = nowMs();
+    let count = 0;
+    while (head < queue.length) {
+      processPayload(queue[head]);
+      head += 1;
+      count += 1;
+
+      if (
+        count >= BRIDGE_DRAIN_MAX_MESSAGES ||
+        nowMs() - started >= BRIDGE_DRAIN_BUDGET_MS ||
+        hasPendingInput()
+      ) {
+        break;
+      }
+    }
+
+    compact();
+    if (head < queue.length) schedule();
+  };
+
+  return {
+    enqueue(payload: string) {
+      if (disposed) return;
+      queue.push(payload);
+      schedule();
+    },
+    dispose() {
+      disposed = true;
+      queue = [];
+      head = 0;
+      if (timer !== null) {
+        clearTimeout(timer);
+        timer = null;
+      }
+    },
+  };
+}
+
 export function useBridgeMessages(
   options: UseBridgeMessagesOptions,
 ): UseBridgeMessagesActions {
@@ -154,9 +236,9 @@ export function useBridgeMessages(
       }
     })();
 
-    const unlistenResponse = listen<string>("agent-response", (event) => {
+    const processPayload = (payload: string) => {
       try {
-        const data = JSON.parse(event.payload) as BridgeMessage;
+        const data = JSON.parse(payload) as BridgeMessage;
         const type = data.type;
         if (typeof type !== "string") return;
         const handler = bridgeMessageHandlers[type];
@@ -182,9 +264,15 @@ export function useBridgeMessages(
       } catch {
         // Non-JSON line from the bridge — ignore.
       }
+    };
+
+    const pump = createBridgePayloadPump(processPayload);
+    const unlistenResponse = listen<string>("agent-response", (event) => {
+      pump.enqueue(event.payload);
     });
 
     return () => {
+      pump.dispose();
       unlistenResponse.then((fn) => fn());
     };
     // Boot effect runs once. Subsequent option changes are picked up via

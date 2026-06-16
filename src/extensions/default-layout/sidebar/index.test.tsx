@@ -504,10 +504,12 @@ describe("Sidebar host groups", () => {
     hosts = [
       { id: "local:abc", label: "halcyon", hint: "this mac", active: true },
     ],
+    state = {},
   }: {
     onEvent?: SidebarOnEventMock;
     projectItem?: Record<string, unknown>;
     hosts?: Record<string, unknown>[];
+    state?: Record<string, unknown>;
   } = {}) {
     render(
       <Sidebar
@@ -524,7 +526,7 @@ describe("Sidebar host groups", () => {
             },
           ],
         })}
-        state={{ sidebar: { hosts, projects: [projectItem] } }}
+        state={{ ...state, sidebar: { hosts, projects: [projectItem] } }}
         onEvent={onEvent}
         renderChildWithState={() => null}
       />,
@@ -539,6 +541,27 @@ describe("Sidebar host groups", () => {
     // The project nests inside the active host's group body.
     const project = screen.getByText("aethon").closest("li");
     expect(project?.closest(".ae-host-group-body")).toBeTruthy();
+  });
+
+  it("marks the active host as current when the host workspace owns the sidebar selection", () => {
+    renderWithHost({ state: { project: null } });
+    const header = screen.getByText("halcyon").closest(".ae-host-group-header");
+    expect(header?.classList.contains("ae-host-group-header--selected")).toBe(
+      true,
+    );
+    expect(header?.getAttribute("aria-current")).toBe("page");
+  });
+
+  it("does not mark the active host as current when a project is selected", () => {
+    renderWithHost({
+      state: { project: { id: "project:aethon", label: "aethon" } },
+      projectItem: { id: "project:aethon", label: "aethon", active: true },
+    });
+    const header = screen.getByText("halcyon").closest(".ae-host-group-header");
+    expect(header?.classList.contains("ae-host-group-header--selected")).toBe(
+      false,
+    );
+    expect(header?.getAttribute("aria-current")).toBeNull();
   });
 
   it("switches the active host when a host header is clicked", () => {

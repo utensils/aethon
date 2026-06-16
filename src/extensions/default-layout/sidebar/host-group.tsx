@@ -26,6 +26,9 @@ export interface HostGroupItem {
 
 export interface HostGroupProps {
   host: HostGroupItem;
+  /** True when the host row itself owns the current canvas, not merely
+   *  the host whose nested projects are visible. */
+  selected?: boolean;
   /** Whether the group body (its projects) is shown. Only meaningful for
    *  the active host today; inactive hosts render header-only until
    *  selected. */
@@ -62,6 +65,7 @@ function HostGlyph() {
 
 export function HostGroup({
   host,
+  selected = false,
   expanded,
   collapsible,
   onToggleExpand,
@@ -74,14 +78,21 @@ export function HostGroup({
       className={[
         "ae-host-group",
         host.active ? "ae-host-group--active" : "",
+        selected ? "ae-host-group--selected" : "",
         expanded ? "ae-host-group--expanded" : "",
       ]
         .filter(Boolean)
         .join(" ")}
     >
       <div
-        className="ae-host-group-header"
+        className={[
+          "ae-host-group-header",
+          selected ? "ae-host-group-header--selected" : "",
+        ]
+          .filter(Boolean)
+          .join(" ")}
         title={host.tooltip ?? host.label}
+        aria-current={selected ? "page" : undefined}
         onClick={onSelectHost}
       >
         {collapsible ? (

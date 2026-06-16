@@ -1,5 +1,8 @@
-import { describe, expect, test } from "vitest";
-import { bridgeDispatchDecision } from "./useBridgeMessages";
+import { afterEach, describe, expect, test, vi } from "vitest";
+import {
+  bridgeDispatchDecision,
+  createBridgePayloadPump,
+} from "./useBridgeMessages";
 
 const activeTabs = () => new Set(["tab-active", "tab-two"]);
 
@@ -71,5 +74,46 @@ describe("bridgeDispatchDecision", () => {
     expect(
       bridgeDispatchDecision({ type: "future_type" }, false, activeTabs),
     ).toEqual({ kind: "ignore" });
+  });
+});
+
+describe("createBridgePayloadPump", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  test("drains bridge payloads in bounded chunks so input can run between batches", () => {
+    vi.useFakeTimers();
+    const processed: string[] = [];
+    const pump = createBridgePayloadPump((payload) => {
+      processed.push(payload);
+    });
+
+    for (let i = 0; i < 81; i += 1) {
+      pump.enqueue(`m${i}`);
+    }
+
+    vi.runOnlyPendingTimers();
+    expect(processed).toHaveLength(80);
+    expect(processed[0]).toBe("m0");
+    expect(processed[79]).toBe("m79");
+
+    vi.runOnlyPendingTimers();
+    expect(processed).toHaveLength(81);
+    expect(processed[80]).toBe("m80");
+  });
+
+  test("dispose drops queued payloads and cancels the scheduled drain", () => {
+    vi.useFakeTimers();
+    const processed: string[] = [];
+    const pump = createBridgePayloadPump((payload) => {
+      processed.push(payload);
+    });
+
+    pump.enqueue("late");
+    pump.dispose();
+    vi.runOnlyPendingTimers();
+
+    expect(processed).toEqual([]);
   });
 });

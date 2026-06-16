@@ -20,6 +20,7 @@ import type { BuiltinComponentProps } from "../../components/A2UIRenderer";
 import { resolveString } from "../../utils/dataBinding";
 import { resolvePointer } from "../../utils/jsonPointer";
 import { splitThinkingBlocks } from "../../utils/thinkingBlocks";
+import { normalizeAgentMessageForDisplay } from "../../utils/agentResponseNormalizer";
 import {
   resolveVisibility,
   type ResolvedVisibility,
@@ -331,13 +332,14 @@ export const ChatMessageRow = memo(
     thinkingVisibility?: VisibilityMode;
   }) {
     const [confirmingRollback, setConfirmingRollback] = useState(false);
+    const displayMessage = normalizeAgentMessageForDisplay(message);
     // Rollback / fork are offered on real user/assistant turns that carry a pi
     // entry id (tool-card and system rows are not branch targets). Thinking-only
     // turns count too — they're valid branch points.
     const canBranch =
       Boolean(message.entryId) &&
       (message.role === "user" || message.role === "agent") &&
-      (Boolean(message.text) || Boolean(message.thinking)) &&
+      (Boolean(displayMessage.text) || Boolean(displayMessage.thinking)) &&
       Boolean(onEvent);
     const isCanvas = className === "a2ui-canvas-message";
     const roleClass = isCanvas ? "a2ui-canvas-role" : "a2ui-chat-role";
@@ -353,7 +355,7 @@ export const ChatMessageRow = memo(
       isLatest &&
       message.role === "agent" &&
       state.waiting === true &&
-      hasFencedCodeMarker(message.text);
+      hasFencedCodeMarker(displayMessage.text);
     return (
       <div
         className={`${className} ${message.role}${showRole ? "" : " ae-msg-cont"}`}
@@ -386,18 +388,18 @@ export const ChatMessageRow = memo(
             )}
           </span>
         )}
-        {message.thinking && thinkingVisibility !== "hide" && (
+        {displayMessage.thinking && thinkingVisibility !== "hide" && (
           <ThinkingBlock
-            complete={Boolean(message.text)}
+            complete={Boolean(displayMessage.text)}
             collapsed={thinkingVisibility === "collapse"}
           >
-            {message.thinking}
+            {displayMessage.thinking}
           </ThinkingBlock>
         )}
-        {message.text && (
+        {displayMessage.text && (
           <div className={textClass}>
             <MemoMarkdownWithThinking
-              text={message.text}
+              text={displayMessage.text}
               streamingFences={streamingFences}
               thinkingVisibility={thinkingVisibility}
             />
@@ -762,6 +764,12 @@ function VirtualMessageList({
     // Scroll to the true bottom of the scroller — this includes the footer's
     // live subtree / typing indicator, which sit below the last data row.
     virtuosoRef.current?.scrollTo({ top: Number.MAX_SAFE_INTEGER });
+    const pinDomScroller = () => {
+      const el = scrollerElRef.current;
+      if (el) el.scrollTop = el.scrollHeight;
+    };
+    pinDomScroller();
+    window.requestAnimationFrame(pinDomScroller);
   }, []);
 
   const markUserScrollIntent = useCallback((event: Event) => {

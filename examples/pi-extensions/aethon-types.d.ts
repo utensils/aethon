@@ -93,6 +93,16 @@ interface AethonCanvasApi {
   ): Promise<{ ok: boolean; error?: string }>;
 }
 
+interface AethonEditorApi {
+  /** Open or focus a file in the Monaco editor. */
+  openFile(input: {
+    /** Relative paths resolve against the active tab cwd. */
+    path: string;
+    /** Optional alternate validation root for files outside the active cwd. */
+    rootPath?: string;
+  }): Promise<{ ok: boolean; error?: string; data?: unknown }>;
+}
+
 interface AethonEventCtx {
   setState(path: string, value: unknown): void;
   registerComponent(componentType: string, template: unknown): void;
@@ -192,6 +202,12 @@ declare global {
          * setState uses (active turn → last-known active tab).
          */
         canvas: AethonCanvasApi;
+
+        /**
+         * Agent-side Monaco editor actions. `openFile` validates through
+         * the frontend filesystem boundary before opening/focusing a tab.
+         */
+        editor: AethonEditorApi;
       }
     | undefined;
 }

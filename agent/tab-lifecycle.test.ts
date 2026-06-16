@@ -17,6 +17,7 @@ import {
   ensurePickerHasModel,
   modelDescriptor,
   modelKey,
+  refreshCachedModels,
   refreshPiSlashCommands,
   installAethonRetryClassifier,
   resolveTabCwd,
@@ -131,6 +132,49 @@ describe("buildPickerModels", () => {
     expect(buildPickerModels(state, claude as never).map(modelKey)).toEqual([
       "anthropic/claude-sonnet-4-5",
       "openai-codex/gpt-5.1-codex",
+    ]);
+  });
+});
+
+describe("refreshCachedModels", () => {
+  it("reloads settings and registry before rebuilding the picker cache", async () => {
+    const { state } = makeFixture();
+    const current = {
+      id: "old",
+      provider: "ollama",
+      name: "Old active",
+    };
+    const refreshed = {
+      id: "new",
+      provider: "ollama",
+      name: "New available",
+    };
+    let registryModels = [current];
+    const reload = vi.fn(async () => {});
+    const refresh = vi.fn(() => {
+      registryModels = [refreshed];
+    });
+    state.tabs.set("default", fakeRec("ollama/old"));
+    state.cachedModels = [
+      { id: "stale/model", label: "Stale", provider: "stale" },
+    ];
+    state.modelRegistry = {
+      getAll: () => registryModels,
+      getAvailable: () => registryModels,
+      refresh,
+    } as unknown as AethonAgentState["modelRegistry"];
+    state.settingsManager = {
+      getEnabledModels: () => ["ollama/*"],
+      reload,
+    } as unknown as AethonAgentState["settingsManager"];
+
+    await refreshCachedModels(state);
+
+    expect(reload).toHaveBeenCalledOnce();
+    expect(refresh).toHaveBeenCalledOnce();
+    expect(state.cachedModels.map((model) => model.id)).toEqual([
+      "ollama/old",
+      "ollama/new",
     ]);
   });
 });
