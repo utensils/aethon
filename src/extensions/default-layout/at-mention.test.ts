@@ -4,12 +4,46 @@ import {
   atMentionRoot,
   findActiveAtToken,
   formatAtInsertion,
+  formatAtMentionInsertion,
+  isLeadingAtToken,
+  matchAtMentions,
+  matchAtSubagents,
   matchAtFiles,
+  subagentSuggestionsFromFiles,
   type AtFileMatch,
+  type AtSubagentMatch,
 } from "./at-mention";
+import type { SubagentFile } from "../../subagents";
 
 function files(...rels: string[]): AtFileMatch[] {
   return rels.map((rel) => ({ rel, path: `/proj/${rel}` }));
+}
+
+function agent(
+  name: string,
+  description = `${name} helper`,
+  extra: Partial<AtSubagentMatch> = {},
+): AtSubagentMatch {
+  return {
+    kind: "agent",
+    name,
+    description,
+    surface: "inline",
+    ...extra,
+  };
+}
+
+function subagentFile(
+  scope: SubagentFile["scope"],
+  name: string,
+  description: string,
+): SubagentFile {
+  return {
+    scope,
+    name,
+    filePath: `/agents/${name}.md`,
+    content: `---\ndescription: ${description}\n---\nYou help.\n`,
+  };
 }
 
 describe("findActiveAtToken", () => {
@@ -88,7 +122,10 @@ describe("matchAtFiles", () => {
 
   it("returns the walk ordering for an empty query, capped", () => {
     const many = files(
-      ...Array.from({ length: 30 }, (_, i) => `file-${String(i).padStart(2, "0")}.ts`),
+      ...Array.from(
+        { length: 30 },
+        (_, i) => `file-${String(i).padStart(2, "0")}.ts`,
+      ),
     );
     const result = matchAtFiles("", many);
     expect(result).toHaveLength(AT_MATCH_LIMIT);
@@ -107,6 +144,61 @@ describe("matchAtFiles", () => {
   });
 });
 
+describe("subagent mention matching", () => {
+  it("detects when the active token is the leading message token", () => {
+    const leading = findActiveAtToken("   @kimi review", 8);
+    expect(leading).not.toBeNull();
+    expect(isLeadingAtToken("   @kimi review", leading!)).toBe(true);
+
+    const later = findActiveAtToken("hello @kimi", 11);
+    expect(later).not.toBeNull();
+    expect(isLeadingAtToken("hello @kimi", later!)).toBe(false);
+  });
+
+  it("ranks matching subagents by name and description", () => {
+    const result = matchAtSubagents("ki", [
+      agent("reviewer", "checks diffs"),
+      agent("kimi", "moonshot code model"),
+    ]);
+    expect(result.map((m) => m.name)).toEqual(["kimi"]);
+  });
+
+  it("does not suggest agents for file-shaped tokens", () => {
+    expect(matchAtSubagents("reviewer.md", [agent("reviewer")])).toEqual([]);
+    expect(matchAtSubagents("reviewer/check", [agent("reviewer")])).toEqual([]);
+  });
+
+  it("shows agents first only for leading tokens and keeps files elsewhere", () => {
+    const leading = matchAtMentions({
+      query: "ki",
+      files: files("src/kitchen.ts"),
+      subagents: [agent("kimi", "review code")],
+      includeAgents: true,
+    });
+    expect(leading.map((m) => m.kind)).toEqual(["agent", "file"]);
+
+    const midDraft = matchAtMentions({
+      query: "ki",
+      files: files("src/kitchen.ts"),
+      subagents: [agent("kimi", "review code")],
+      includeAgents: false,
+    });
+    expect(midDraft.map((m) => m.kind)).toEqual(["file"]);
+  });
+
+  it("merges user and project subagents with project winning by name", () => {
+    const result = subagentSuggestionsFromFiles([
+      subagentFile("user", "reviewer", "user reviewer"),
+      subagentFile("project", "reviewer", "project reviewer"),
+      subagentFile("user", "kimi", "moonshot model"),
+    ]);
+    expect(result.map((m) => [m.name, m.description])).toEqual([
+      ["kimi", "moonshot model"],
+      ["reviewer", "project reviewer"],
+    ]);
+  });
+});
+
 describe("formatAtInsertion", () => {
   it("inserts plain paths with a trailing space", () => {
     expect(formatAtInsertion("src/App.tsx")).toBe("@src/App.tsx ");
@@ -118,6 +210,22 @@ describe("formatAtInsertion", () => {
 
   it("escapes quotes and backslashes inside quoted paths", () => {
     expect(formatAtInsertion('we"ird file.md')).toBe('@"we\\"ird file.md" ');
+  });
+});
+
+describe("formatAtMentionInsertion", () => {
+  it("formats agent mentions with a trailing space", () => {
+    expect(formatAtMentionInsertion(agent("kimi"))).toBe("@kimi ");
+  });
+
+  it("delegates file suggestions to the file reference formatter", () => {
+    expect(
+      formatAtMentionInsertion({
+        kind: "file",
+        rel: "docs/my file.md",
+        path: "/proj/docs/my file.md",
+      }),
+    ).toBe('@"docs/my file.md" ');
   });
 });
 

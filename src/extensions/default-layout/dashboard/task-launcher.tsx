@@ -25,7 +25,7 @@ import { saveClipboardImageAttachment } from "../../../utils/imageAttachments";
 import { ImageAttachmentImage } from "../image-attachment-image";
 import { ImageLightbox } from "../image-lightbox";
 import { AtPicker } from "../at-picker";
-import { formatAtInsertion, type AtFileMatch } from "../at-mention";
+import { formatAtMentionInsertion, type AtMentionMatch } from "../at-mention";
 import { useAtMention } from "../use-at-mention";
 
 interface ProjectLite {
@@ -101,7 +101,8 @@ export function TaskLauncher({
       project: resolveOrInline<ProjectLite>(props?.project, state),
       otherProjects:
         resolveOrInline<ProjectLite[]>(props?.otherProjects, state) ?? [],
-      workspaces: resolveOrInline<WorkspaceLite[]>(props?.workspaces, state) ?? [],
+      workspaces:
+        resolveOrInline<WorkspaceLite[]>(props?.workspaces, state) ?? [],
       activeWorkspaceId:
         resolveOrInline<string>(props?.activeWorkspaceId, state) ?? null,
     }),
@@ -131,7 +132,10 @@ export function TaskLauncher({
         (m): m is { id: unknown; label?: unknown } =>
           typeof m === "object" && m !== null,
       )
-      .map((m) => ({ id: String(m.id ?? ""), label: String(m.label ?? m.id ?? "") }))
+      .map((m) => ({
+        id: String(m.id ?? ""),
+        label: String(m.label ?? m.id ?? ""),
+      }))
       .filter((m) => m.id.length > 0);
   }, [state]);
   const defaultModelId = useMemo(() => {
@@ -198,7 +202,7 @@ export function TaskLauncher({
     el.style.height = `${next}px`;
   }, [promptText]);
 
-  // `@file` completion — same picker as the chat composer, rooted at
+  // `@` completion — same picker as the chat composer, rooted at
   // whatever the task will actually run against: the selected existing
   // workspace, else the project root (a "+ New workspace" forks from the
   // project, so its files are the right suggestions too).
@@ -220,10 +224,10 @@ export function TaskLauncher({
     enabled: !submitting,
   });
 
-  const insertAtFile = useCallback(
-    (m: AtFileMatch) => {
+  const insertAtMention = useCallback(
+    (m: AtMentionMatch) => {
       if (!atMatch) return;
-      const insertion = formatAtInsertion(m.rel);
+      const insertion = formatAtMentionInsertion(m);
       const next =
         promptText.slice(0, atMatch.start) +
         insertion +
@@ -305,16 +309,19 @@ export function TaskLauncher({
       if (e.key === "Tab") {
         e.preventDefault();
         const match = list[atHighlightIdx] ?? list[0];
-        if (match) insertAtFile(match);
+        if (match) insertAtMention(match);
         return;
       }
       if (e.key === "Enter" && !e.shiftKey) {
-        // A hand-typed exact reference submits; partial tokens complete.
-        const exact = list.some((m) => m.rel === atMatch.query);
-        if (!exact) {
+        const match = list[atHighlightIdx] ?? list[0];
+        // A hand-typed exact file reference submits; partial tokens and agent
+        // mentions complete first.
+        const exactFile = list.some(
+          (m) => m.kind === "file" && m.rel === atMatch.query,
+        );
+        if (match?.kind === "agent" || !exactFile) {
           e.preventDefault();
-          const match = list[atHighlightIdx] ?? list[0];
-          if (match) insertAtFile(match);
+          if (match) insertAtMention(match);
           return;
         }
       }
@@ -377,7 +384,7 @@ export function TaskLauncher({
         className="a2ui-task-launcher-input"
         placeholder={
           props?.placeholder ??
-          `Start a task in ${data.project.label}… use @path for file context`
+          `Start a task in ${data.project.label}… use @agent or @path`
         }
         value={promptText}
         rows={3}
@@ -397,7 +404,7 @@ export function TaskLauncher({
         atMatch={atMatch}
         highlightIdx={atHighlightIdx}
         setHighlightIdx={setAtHighlightIdx}
-        onInsert={insertAtFile}
+        onInsert={insertAtMention}
       />
       {attachments.length > 0 && (
         <div className="a2ui-task-launcher-attachments">
@@ -649,9 +656,7 @@ function ChipMenu({
             />
           )}
           {filtered.length === 0 ? (
-            <div className="a2ui-task-launcher-chip-menu-empty">
-              no matches
-            </div>
+            <div className="a2ui-task-launcher-chip-menu-empty">no matches</div>
           ) : (
             filtered.map((item) => (
               <button

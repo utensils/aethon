@@ -1,7 +1,7 @@
 import type { Dispatch, RefObject, SetStateAction } from "react";
 import { createPortal } from "react-dom";
 import { FileIcon } from "../../components/file-icon";
-import type { AtFileMatch, AtMention } from "./at-mention";
+import type { AtMention, AtMentionMatch } from "./at-mention";
 import { usePickerAnchor } from "./use-picker-anchor";
 
 interface AtPickerProps {
@@ -9,14 +9,14 @@ interface AtPickerProps {
   atMatch: AtMention | null;
   highlightIdx: number;
   setHighlightIdx: Dispatch<SetStateAction<number>>;
-  onInsert: (match: AtFileMatch) => void;
+  onInsert: (match: AtMentionMatch) => void;
 }
 
 /**
- * `@file` completion menu. Shares the slash picker's chrome (portal +
+ * `@` completion menu. Shares the slash picker's chrome (portal +
  * fixed anchor + `.a2ui-slash-menu` styling) so the two composer
- * popovers look and behave identically; rows render basename-first with
- * the directory dimmed, like quick-open.
+ * popovers look and behave identically. File rows render basename-first
+ * like quick-open; agent rows render as lightweight delegates.
  */
 export function AtPicker({
   anchorRef,
@@ -33,7 +33,7 @@ export function AtPicker({
     <div
       className="a2ui-slash-menu"
       role="listbox"
-      aria-label="File suggestions"
+      aria-label="Mention suggestions"
       style={{
         position: "fixed",
         left: `${menuAnchor.left}px`,
@@ -42,12 +42,10 @@ export function AtPicker({
       }}
     >
       {atMatch.matches.map((m, i) => {
-        const slash = m.rel.lastIndexOf("/");
-        const base = slash >= 0 ? m.rel.slice(slash + 1) : m.rel;
-        const dir = slash >= 0 ? m.rel.slice(0, slash) : "";
+        const key = m.kind === "agent" ? `agent:${m.name}` : `file:${m.rel}`;
         return (
           <div
-            key={m.rel}
+            key={key}
             role="option"
             aria-selected={i === highlightIdx}
             className={
@@ -61,13 +59,53 @@ export function AtPicker({
             }}
             onMouseEnter={() => setHighlightIdx(i)}
           >
-            <FileIcon path={m.rel} isDir={false} size={14} />
-            <span className="a2ui-at-item-name">{base}</span>
-            {dir && <span className="a2ui-at-item-dir">{dir}</span>}
+            {m.kind === "agent" ? (
+              <AgentRow match={m} />
+            ) : (
+              <FileRow match={m} />
+            )}
           </div>
         );
       })}
     </div>,
     document.body,
+  );
+}
+
+function AgentRow({
+  match,
+}: {
+  match: Extract<AtMentionMatch, { kind: "agent" }>;
+}) {
+  const meta =
+    match.surface === "tab" ? "tab" : match.model ? match.model : "agent";
+  return (
+    <>
+      <span className="a2ui-at-agent-mark" aria-hidden="true">
+        @
+      </span>
+      <span className="a2ui-at-item-main">
+        <span className="a2ui-at-item-name">@{match.name}</span>
+        <span className="a2ui-at-item-desc">{match.description}</span>
+      </span>
+      <span className="a2ui-at-item-meta">{meta}</span>
+    </>
+  );
+}
+
+function FileRow({
+  match,
+}: {
+  match: Extract<AtMentionMatch, { kind: "file" }>;
+}) {
+  const slash = match.rel.lastIndexOf("/");
+  const base = slash >= 0 ? match.rel.slice(slash + 1) : match.rel;
+  const dir = slash >= 0 ? match.rel.slice(0, slash) : "";
+  return (
+    <>
+      <FileIcon path={match.rel} isDir={false} size={14} />
+      <span className="a2ui-at-item-name">{base}</span>
+      {dir && <span className="a2ui-at-item-dir">{dir}</span>}
+    </>
   );
 }

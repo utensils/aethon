@@ -94,7 +94,13 @@ describe("TaskLauncher", () => {
   });
 
   it("offers @file completions rooted at the project and inserts on Tab", async () => {
-    invoke.mockResolvedValue(["/repo/aethon/src/App.tsx"]);
+    invoke.mockImplementation((cmd: string) =>
+      cmd === "fs_walk_project"
+        ? Promise.resolve(["/repo/aethon/src/App.tsx"])
+        : cmd === "subagents_list"
+          ? Promise.resolve([])
+          : Promise.reject(new Error(`invoke not mocked: ${cmd}`)),
+    );
     render(
       <TaskLauncher
         component={launcher({
@@ -115,6 +121,44 @@ describe("TaskLauncher", () => {
 
     fireEvent.keyDown(prompt, { key: "Tab" });
     expect((prompt as HTMLTextAreaElement).value).toBe("@src/App.tsx ");
+  });
+
+  it("offers leading @agent completions rooted at the project", async () => {
+    invoke.mockImplementation((cmd: string) =>
+      cmd === "fs_walk_project"
+        ? Promise.resolve([])
+        : cmd === "subagents_list"
+          ? Promise.resolve([
+              {
+                scope: "project",
+                name: "kimi",
+                filePath: "/repo/aethon/.aethon/agents/kimi.md",
+                content:
+                  "---\ndescription: Reviews code with Kimi.\nsurface: tab\n---\nYou review code.\n",
+              },
+            ])
+          : Promise.reject(new Error(`invoke not mocked: ${cmd}`)),
+    );
+    render(
+      <TaskLauncher
+        component={launcher({
+          project: { id: "p1", label: "aethon", path: "/repo/aethon" },
+        })}
+        state={{}}
+        onEvent={vi.fn()}
+      />,
+    );
+
+    const prompt = screen.getByLabelText("Task prompt");
+    fireEvent.change(prompt, { target: { value: "@ki" } });
+
+    await screen.findByText("@kimi");
+    expect(invoke).toHaveBeenCalledWith("subagents_list", {
+      projectRoot: "/repo/aethon",
+    });
+
+    fireEvent.keyDown(prompt, { key: "Tab" });
+    expect((prompt as HTMLTextAreaElement).value).toBe("@kimi ");
   });
 
   it("allows a new workspace session with an automatic branch", async () => {

@@ -3745,8 +3745,7 @@ body.ae-resizing-composer * {
   color: var(--text-dim);
 }
 
-/* @file completion rows — same menu chrome as the slash picker, but
-   single-line file rows: icon, basename, dimmed directory. */
+/* @ mention rows — same menu chrome as the slash picker. */
 .a2ui-at-item {
   flex-wrap: nowrap;
   align-items: center;
@@ -3760,6 +3759,48 @@ body.ae-resizing-composer * {
 .a2ui-at-item-name {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   color: var(--text);
+  white-space: nowrap;
+}
+
+.a2ui-at-agent-mark {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 6px;
+  background: var(--accent-hover-tint);
+  color: var(--accent);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: var(--chrome-text-compact);
+  font-weight: 700;
+}
+
+.a2ui-at-item-main {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.a2ui-at-item-desc {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-dim);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.a2ui-at-item-meta {
+  flex: none;
+  max-width: 38%;
+  overflow: hidden;
+  color: var(--text-dim);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: var(--chrome-text-muted);
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 

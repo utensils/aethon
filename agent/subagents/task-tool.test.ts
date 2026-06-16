@@ -11,12 +11,26 @@ const fakeModel = { provider: "ollama", id: "llama3.3", name: "Llama 3.3" };
 
 // Hoisted handle so the vi.mock factory and the tests share the same scripting
 // surface for the fake pi session.
+interface MockSessionHandle {
+  subscribers: Array<(e: Record<string, unknown>) => void>;
+  scriptedEvents: Array<Record<string, unknown>>;
+  promptImpl: null | ((session: MockSessionHandle) => Promise<void>);
+  lastConfig: Record<string, unknown> | undefined;
+  lastPrompt: string | undefined;
+  disposeSpy: ReturnType<typeof vi.fn>;
+  abortSpy: ReturnType<typeof vi.fn>;
+}
+
 interface MockHandle {
   subscribers: Array<(e: Record<string, unknown>) => void>;
   scriptedEvents: Array<Record<string, unknown>>;
-  promptImpl: null | (() => Promise<void>);
+  promptImpl: null | ((session: MockSessionHandle) => Promise<void>);
   lastConfig: Record<string, unknown> | undefined;
   lastPrompt: string | undefined;
+  sessions: MockSessionHandle[];
+  nextSessions: Array<
+    Partial<Pick<MockSessionHandle, "scriptedEvents" | "promptImpl">>
+  >;
   createAgentSession: ReturnType<typeof vi.fn>;
   disposeSpy: ReturnType<typeof vi.fn>;
   abortSpy: ReturnType<typeof vi.fn>;
@@ -28,6 +42,8 @@ const h = vi.hoisted<MockHandle>(() => ({
   promptImpl: null,
   lastConfig: undefined,
   lastPrompt: undefined,
+  sessions: [],
+  nextSessions: [],
   createAgentSession: vi.fn(),
   disposeSpy: vi.fn(),
   abortSpy: vi.fn(),
@@ -35,28 +51,41 @@ const h = vi.hoisted<MockHandle>(() => ({
 
 vi.mock("@mariozechner/pi-coding-agent", () => {
   const createAgentSession = vi.fn((config: Record<string, unknown>) => {
+    const next = h.nextSessions.shift() ?? {};
+    const handle: MockSessionHandle = {
+      subscribers: [],
+      scriptedEvents: next.scriptedEvents ?? [...h.scriptedEvents],
+      promptImpl: next.promptImpl ?? h.promptImpl,
+      lastConfig: config,
+      lastPrompt: undefined,
+      disposeSpy: vi.fn(),
+      abortSpy: vi.fn(() => Promise.resolve()),
+    };
+    h.sessions.push(handle);
+    h.subscribers = handle.subscribers;
     h.lastConfig = config;
-    h.disposeSpy = vi.fn();
-    h.abortSpy = vi.fn(() => Promise.resolve());
+    h.disposeSpy = handle.disposeSpy;
+    h.abortSpy = handle.abortSpy;
     const session = {
       model: config.model,
       subscribe(fn: (e: Record<string, unknown>) => void) {
-        h.subscribers.push(fn);
+        handle.subscribers.push(fn);
         return () => {
-          const i = h.subscribers.indexOf(fn);
-          if (i >= 0) h.subscribers.splice(i, 1);
+          const i = handle.subscribers.indexOf(fn);
+          if (i >= 0) handle.subscribers.splice(i, 1);
         };
       },
       prompt(prompt: string): Promise<void> {
+        handle.lastPrompt = prompt;
         h.lastPrompt = prompt;
-        if (h.promptImpl) return h.promptImpl();
-        for (const ev of h.scriptedEvents) {
-          for (const s of [...h.subscribers]) s(ev);
+        if (handle.promptImpl) return handle.promptImpl(handle);
+        for (const ev of handle.scriptedEvents) {
+          for (const s of [...handle.subscribers]) s(ev);
         }
         return Promise.resolve();
       },
-      abort: h.abortSpy,
-      dispose: h.disposeSpy,
+      abort: handle.abortSpy,
+      dispose: handle.disposeSpy,
     };
     return Promise.resolve({ session });
   });
@@ -137,12 +166,23 @@ const successEvents = [
   },
 ];
 
+function emitSessionEvents(
+  session: MockSessionHandle,
+  events: Array<Record<string, unknown>>,
+) {
+  for (const event of events) {
+    for (const subscriber of [...session.subscribers]) subscriber(event);
+  }
+}
+
 beforeEach(() => {
   h.subscribers = [];
   h.scriptedEvents = [...successEvents];
   h.promptImpl = null;
   h.lastConfig = undefined;
   h.lastPrompt = undefined;
+  h.sessions = [];
+  h.nextSessions = [];
   h.createAgentSession.mockClear();
 });
 
@@ -185,6 +225,104 @@ describe("buildSubagentTaskTool", () => {
     expect(phases).toContain("text");
     expect(phases).toContain("done");
     expect(h.disposeSpy).toHaveBeenCalled();
+  });
+
+  it("keeps concurrent inline subagent runs isolated by call id", async () => {
+    let releaseA!: () => void;
+    let releaseB!: () => void;
+    h.nextSessions = [
+      {
+        promptImpl: (session) =>
+          new Promise<void>((resolve) => {
+            releaseA = () => {
+              emitSessionEvents(session, [
+                {
+                  type: "message_update",
+                  assistantMessageEvent: {
+                    type: "text_delta",
+                    delta: "A done",
+                  },
+                },
+                {
+                  type: "agent_end",
+                  messages: [
+                    { role: "assistant", content: [], stopReason: "stop" },
+                  ],
+                },
+              ]);
+              resolve();
+            };
+          }),
+      },
+      {
+        promptImpl: (session) =>
+          new Promise<void>((resolve) => {
+            releaseB = () => {
+              emitSessionEvents(session, [
+                {
+                  type: "message_update",
+                  assistantMessageEvent: {
+                    type: "text_delta",
+                    delta: "B done",
+                  },
+                },
+                {
+                  type: "agent_end",
+                  messages: [
+                    { role: "assistant", content: [], stopReason: "stop" },
+                  ],
+                },
+              ]);
+              resolve();
+            };
+          }),
+      },
+    ];
+    const { state } = makeState({ name: "reviewer", model: "ollama/llama3.3" });
+    const send = vi.fn();
+    const tool = buildSubagentTaskTool(state, { send }, "default");
+
+    const first = execOf(tool)("call-a", {
+      subagent_type: "reviewer",
+      prompt: "first task",
+    });
+    const second = execOf(tool)("call-b", {
+      subagent_type: "reviewer",
+      prompt: "second task",
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(h.sessions).toHaveLength(2);
+    expect(h.sessions[0]?.lastPrompt).toContain("first task");
+    expect(h.sessions[1]?.lastPrompt).toContain("second task");
+
+    releaseB();
+    await expect(second).resolves.toMatchObject({
+      content: [{ type: "text", text: "B done" }],
+      details: { subagent: "reviewer" },
+    });
+    expect(h.sessions[1]?.disposeSpy).toHaveBeenCalledTimes(1);
+    expect(h.sessions[0]?.disposeSpy).not.toHaveBeenCalled();
+
+    releaseA();
+    await expect(first).resolves.toMatchObject({
+      content: [{ type: "text", text: "A done" }],
+      details: { subagent: "reviewer" },
+    });
+    expect(h.sessions[0]?.disposeSpy).toHaveBeenCalledTimes(1);
+
+    const progress = send.mock.calls
+      .map(
+        (c) => c[0] as { type?: string; parentCallId?: string; phase?: string },
+      )
+      .filter((m) => m.type === "subagent_progress");
+    expect(
+      progress.filter((m) => m.parentCallId === "call-a").map((m) => m.phase),
+    ).toEqual(["start", "text", "done"]);
+    expect(
+      progress.filter((m) => m.parentCallId === "call-b").map((m) => m.phase),
+    ).toEqual(["start", "text", "done"]);
   });
 
   it("expands @file references before sending the task to an inline subagent", async () => {

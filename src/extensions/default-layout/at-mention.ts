@@ -1,5 +1,5 @@
 /**
- * Pure helpers for the composer's `@file` completion.
+ * Pure helpers for the composer's `@` completion.
  *
  * The agent bridge already parses `@path` / `@"path with spaces"` tokens
  * out of the prompt and inlines the referenced files as deterministic
@@ -8,11 +8,17 @@
  * `@`-boundary rule (an email's `@` never starts a reference) and the
  * same quoting/escaping rules for paths containing whitespace.
  *
- * IO-free by design — the file list comes from the `useAtMention` hook.
+ * IO-free by design — files and subagents come from the `useAtMention` hook.
  */
 
 import { fuzzyScore } from "./palette-items";
 import { activeWorkspaceCwd } from "../../utils/activeWorkspaceRoot";
+import {
+  isSafeSubagentName,
+  parseSubagentContent,
+  type SubagentFile,
+  type SubagentSurface,
+} from "../../subagents";
 
 export interface AtFileMatch {
   /** Project-relative path — what gets inserted after the `@`. */
@@ -20,6 +26,20 @@ export interface AtFileMatch {
   /** Absolute path on disk (kept for icon resolution / open actions). */
   path: string;
 }
+
+export interface AtSubagentMatch {
+  kind: "agent";
+  name: string;
+  description: string;
+  model?: string;
+  surface: SubagentSurface;
+}
+
+export interface AtFileSuggestion extends AtFileMatch {
+  kind: "file";
+}
+
+export type AtMentionMatch = AtSubagentMatch | AtFileSuggestion;
 
 export interface AtToken {
   /** Text between the `@` and the cursor, leading quote stripped. */
@@ -31,11 +51,13 @@ export interface AtToken {
 }
 
 export interface AtMention extends AtToken {
-  matches: AtFileMatch[];
+  matches: AtMentionMatch[];
 }
 
 /** Upper bound on rendered suggestions; matches quick-open's feel. */
 export const AT_MATCH_LIMIT = 12;
+
+const AGENT_QUERY_RE = /^[A-Za-z0-9_-]*$/;
 
 /**
  * Find the `@token` the cursor is inside, if any. Mirrors the agent
@@ -105,6 +127,87 @@ export function matchAtFiles(
 }
 
 /**
+ * Merge raw subagent files into effective suggestions. User scope loads first,
+ * project scope second, so project definitions override by name exactly like
+ * the bridge loader.
+ */
+export function subagentSuggestionsFromFiles(
+  files: SubagentFile[],
+): AtSubagentMatch[] {
+  const merged = new Map<string, AtSubagentMatch>();
+  for (const file of files) {
+    const name = file.name.trim().toLowerCase();
+    if (!isSafeSubagentName(name)) continue;
+    const parsed = parseSubagentContent(file.content);
+    if (!parsed.fields) continue;
+    merged.set(name, {
+      kind: "agent",
+      name,
+      description: parsed.fields.description,
+      model: parsed.fields.model,
+      surface: parsed.fields.surface,
+    });
+  }
+  return [...merged.values()].sort((a, b) =>
+    a.name === b.name ? 0 : a.name < b.name ? -1 : 1,
+  );
+}
+
+export function isLeadingAtToken(value: string, token: AtToken): boolean {
+  const firstNonSpace = value.search(/\S/);
+  return firstNonSpace >= 0 && token.start === firstNonSpace;
+}
+
+export function matchAtSubagents(
+  query: string,
+  subagents: AtSubagentMatch[],
+  limit: number = AT_MATCH_LIMIT,
+): AtSubagentMatch[] {
+  if (!AGENT_QUERY_RE.test(query)) return [];
+  if (!query) return subagents.slice(0, limit);
+  const normalized = query.toLowerCase();
+  const scored: { agent: AtSubagentMatch; score: number }[] = [];
+  for (const agent of subagents) {
+    const score = Math.max(
+      fuzzyScore(normalized, agent.name) * 1.2,
+      fuzzyScore(normalized, agent.description),
+    );
+    if (score <= 0) continue;
+    scored.push({ agent, score });
+  }
+  scored.sort(
+    (a, b) =>
+      b.score - a.score ||
+      a.agent.name.length - b.agent.name.length ||
+      (a.agent.name < b.agent.name ? -1 : 1),
+  );
+  return scored.slice(0, limit).map((s) => s.agent);
+}
+
+export function matchAtMentions({
+  query,
+  files,
+  subagents,
+  includeAgents,
+  limit = AT_MATCH_LIMIT,
+}: {
+  query: string;
+  files: AtFileMatch[];
+  subagents: AtSubagentMatch[];
+  includeAgents: boolean;
+  limit?: number;
+}): AtMentionMatch[] {
+  const agentMatches = includeAgents
+    ? matchAtSubagents(query, subagents, limit)
+    : [];
+  const remaining = Math.max(0, limit - agentMatches.length);
+  const fileMatches = matchAtFiles(query, files, remaining).map(
+    (file): AtFileSuggestion => ({ kind: "file", ...file }),
+  );
+  return [...agentMatches, ...fileMatches];
+}
+
+/**
  * Format the text that replaces the `@token`. Plain paths insert as
  * `@rel `; anything the agent's unquoted reader would mis-tokenize
  * (whitespace, quotes, backslashes) gets the quoted form with the same
@@ -115,6 +218,12 @@ export function formatAtInsertion(rel: string): string {
   if (!/[\s"'\\]/.test(rel)) return `@${rel} `;
   const escaped = rel.replace(/[\\"]/g, (ch) => `\\${ch}`);
   return `@"${escaped}" `;
+}
+
+export function formatAtMentionInsertion(match: AtMentionMatch): string {
+  return match.kind === "agent"
+    ? `@${match.name} `
+    : formatAtInsertion(match.rel);
 }
 
 /**
