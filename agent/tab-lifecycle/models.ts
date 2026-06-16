@@ -38,6 +38,41 @@ export function defaultModelKey(state: AethonAgentState): string {
   return def?.session.model ? modelKey(def.session.model) : "";
 }
 
+function currentModelForPicker(
+  state: AethonAgentState,
+): Model<Api> | undefined {
+  const def = state.tabs.get("default")?.session.model;
+  if (def) return def;
+  for (const tab of state.tabs.values()) {
+    if (tab.session.model) return tab.session.model;
+  }
+  return undefined;
+}
+
+export async function refreshCachedModels(
+  state: AethonAgentState,
+): Promise<void> {
+  if (!state.modelRegistry || !state.settingsManager) return;
+  try {
+    await state.settingsManager.reload();
+  } catch (err) {
+    logger
+      .scope("picker")
+      .warn(`settings reload failed: ${(err as Error).message}`);
+  }
+  try {
+    state.modelRegistry.refresh();
+  } catch (err) {
+    logger
+      .scope("picker")
+      .warn(`model registry refresh failed: ${(err as Error).message}`);
+  }
+  state.cachedModels = buildPickerModels(
+    state,
+    currentModelForPicker(state),
+  ).map(modelDescriptor);
+}
+
 /** Ensure the picker contains `model`; if not, prepend it and push the
  *  updated list to the frontend so the picker can highlight it as
  *  active. Without this, models registered dynamically by an extension

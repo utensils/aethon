@@ -39,6 +39,7 @@ export {
   buildPickerModels,
   defaultModelKey,
   ensurePickerHasModel,
+  refreshCachedModels,
 } from "./models";
 export {
   collectPiSlashCommands,
