@@ -1969,6 +1969,45 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn overlapping_synthesis_cancels_previous() {
+        let model_dir = tempdir().expect("model dir");
+        write_complete_lfm2_model(&model_dir.path().join(LFM2_CACHE_DIR));
+        let registry = Arc::new(lfm2_registry(
+            model_dir.path().to_path_buf(),
+            FakeLfm2Backend::slow("x", Duration::from_secs(5)),
+        ));
+
+        let first_registry = Arc::clone(&registry);
+        let first =
+            tokio::spawn(
+                async move { first_registry.synthesize_speech("first".to_string()).await },
+            );
+        tokio::time::sleep(Duration::from_millis(50)).await;
+
+        // A second request must cancel the first so the older runner can't
+        // proceed to playback after the user moved on.
+        let second_registry = Arc::clone(&registry);
+        let second = tokio::spawn(async move {
+            second_registry
+                .synthesize_speech("second".to_string())
+                .await
+        });
+        tokio::time::sleep(Duration::from_millis(50)).await;
+
+        let first_err = first
+            .await
+            .expect("first task joined")
+            .expect_err("first synthesis should be superseded");
+        assert!(
+            first_err.contains("cancelled"),
+            "expected cancellation: {first_err}"
+        );
+
+        registry.cancel_speech();
+        let _ = second.await;
+    }
+
+    #[tokio::test]
     async fn synthesize_speech_times_out() {
         let model_dir = tempdir().expect("model dir");
         write_complete_lfm2_model(&model_dir.path().join(LFM2_CACHE_DIR));
@@ -2006,8 +2045,17 @@ mod tests {
         player
             .play_samples(samples, sample_rate, None)
             .expect("playback should start");
-        // Hold the player (and thus the stream) alive while the tone plays.
-        tokio::time::sleep(Duration::from_millis(1300)).await;
+        assert!(
+            player.is_playing(),
+            "stream should be active during playback"
+        );
+        // Hold the player (and thus the stream) alive while the tone plays, then
+        // confirm the watcher freed the stream on natural completion.
+        tokio::time::sleep(Duration::from_millis(1600)).await;
+        assert!(
+            !player.is_playing(),
+            "stream should be released once the clip drains",
+        );
         player.stop();
     }
 

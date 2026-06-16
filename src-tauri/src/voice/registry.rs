@@ -533,7 +533,15 @@ impl VoiceProviderRegistry {
         }
 
         let cancel = Arc::new(AtomicBool::new(false));
-        *self.active_tts_cancel.lock() = Some(Arc::clone(&cancel));
+        {
+            // A newer request supersedes any in-flight synthesis: cancel the
+            // previous one so its runner process can't finish and start
+            // playback after the user moved on (or hit stop).
+            let mut slot = self.active_tts_cancel.lock();
+            if let Some(previous) = slot.replace(Arc::clone(&cancel)) {
+                previous.store(true, Ordering::Relaxed);
+            }
+        }
 
         let timeout = self.transcription_timeout;
         let lfm2 = Arc::clone(&self.lfm2);

@@ -13,6 +13,7 @@
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use parking_lot::Mutex;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use tauri::{AppHandle, Emitter};
 use tokio::task::AbortHandle;
 
@@ -46,14 +47,18 @@ impl PlaybackBuffer {
 }
 
 pub(crate) struct AudioPlayer {
-    active: Mutex<Option<PlaybackHandle>>,
+    active: Arc<Mutex<Option<PlaybackHandle>>>,
+    generation: AtomicU64,
 }
 
 /// Holds a playing stream and its level/finished watcher. Dropping it stops
 /// playback (drops the `cpal::Stream`) and aborts the watcher (`LevelTask`).
+/// `generation` tags which `play_samples` call owns the slot so the watcher
+/// only clears its own clip on completion.
 struct PlaybackHandle {
     _stream: cpal::Stream,
     _watcher: LevelTask,
+    generation: u64,
 }
 
 impl Default for AudioPlayer {
@@ -65,8 +70,14 @@ impl Default for AudioPlayer {
 impl AudioPlayer {
     pub(crate) fn new() -> Self {
         Self {
-            active: Mutex::new(None),
+            active: Arc::new(Mutex::new(None)),
+            generation: AtomicU64::new(0),
         }
+    }
+
+    #[cfg(test)]
+    pub(super) fn is_playing(&self) -> bool {
+        self.active.lock().is_some()
     }
 
     /// Resample `samples` (recorded at `sample_rate`) to the default output
@@ -112,10 +123,12 @@ impl AudioPlayer {
             .play()
             .map_err(|e| format!("Failed to start audio output stream: {e}"))?;
 
-        let watcher = spawn_playback_watcher(app, buffer);
+        let generation = self.generation.fetch_add(1, Ordering::Relaxed) + 1;
+        let watcher = spawn_playback_watcher(app, buffer, Arc::clone(&self.active), generation);
         *self.active.lock() = Some(PlaybackHandle {
             _stream: stream,
             _watcher: LevelTask(watcher),
+            generation,
         });
         Ok(())
     }
@@ -191,10 +204,15 @@ where
 }
 
 /// Poll the playback buffer at ~20 Hz, emitting `voice://playback-level` for a
-/// speaking meter and a final `voice://playback-finished` once drained.
+/// speaking meter and a final `voice://playback-finished` once drained. On
+/// natural completion it also frees the stream by clearing the active slot —
+/// but only if that slot is still *this* clip (`generation`), so a newer clip
+/// that replaced it is left untouched.
 fn spawn_playback_watcher(
     app: Option<AppHandle>,
     buffer: Arc<Mutex<PlaybackBuffer>>,
+    active: Arc<Mutex<Option<PlaybackHandle>>>,
+    generation: u64,
 ) -> AbortHandle {
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(std::time::Duration::from_millis(50));
@@ -216,6 +234,20 @@ fn spawn_playback_watcher(
                 let _ = app.emit("voice://playback-level", VoiceLevelPayload { level });
             }
             if done {
+                // Free the device by dropping our handle (drops the stream).
+                // Taken under the lock, dropped after release. Aborting our own
+                // watcher this way is harmless — we break immediately after.
+                let _stale = {
+                    let mut slot = active.lock();
+                    if slot
+                        .as_ref()
+                        .is_some_and(|handle| handle.generation == generation)
+                    {
+                        slot.take()
+                    } else {
+                        None
+                    }
+                };
                 if let Some(app) = &app {
                     let _ = app.emit("voice://playback-finished", ());
                 }
