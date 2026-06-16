@@ -311,6 +311,11 @@
                   else
                     echo "==> .secrets/signing.env not present; building unsigned"
                   fi
+                  # Stage the prebuilt LFM2-Audio runner so the bundler can
+                  # ship it. Best-effort: voice is optional, and a missing
+                  # runner only disables that one provider.
+                  ./scripts/stage-lfm2-runner.sh || \
+                    echo "build-app: LFM2-Audio runner not staged (voice provider will be unavailable)"
                   # Tauri's bundler exits non-zero on a missing
                   # TAURI_SIGNING_PRIVATE_KEY even though the .app has
                   # already been written. For local unsigned builds we
@@ -321,6 +326,25 @@
                   bundle=src-tauri/target/release/bundle/macos/Aethon.app
                   if [ $status -ne 0 ] && [ ! -d "$bundle" ]; then
                     exit $status
+                  fi
+                  # Place the runner (binary + @loader_path dylibs) beside the
+                  # executable, where resolve_lfm2_binary finds it. NOTE: for a
+                  # SIGNED + notarized release the nested runner must be signed
+                  # too — re-sign it and the app here. A notarized build that
+                  # adds the runner after `cargo tauri build` notarizes would
+                  # invalidate the ticket, so signed pipelines should validate
+                  # this on a real signed build (see RELEASING.md).
+                  if [ -d src-tauri/binaries/lfm2-audio ] && [ -d "$bundle" ]; then
+                    rm -rf "$bundle/Contents/MacOS/lfm2-audio"
+                    cp -R src-tauri/binaries/lfm2-audio "$bundle/Contents/MacOS/lfm2-audio"
+                    if [ -n "''${APPLE_SIGNING_IDENTITY:-}" ] && [ "$(uname -s)" = "Darwin" ]; then
+                      find "$bundle/Contents/MacOS/lfm2-audio" -type f \
+                        \( -name '*.dylib' -o -name '*.so' -o -name 'llama-lfm2-audio' \) \
+                        -exec codesign --force --options runtime --timestamp \
+                        --sign "$APPLE_SIGNING_IDENTITY" {} + || true
+                      codesign --force --options runtime --timestamp \
+                        --sign "$APPLE_SIGNING_IDENTITY" "$bundle" || true
+                    fi
                   fi
                   # Belt-and-braces: scan the bundle's load commands for any
                   # /nix/store path. dyld rejects those on non-builder Macs

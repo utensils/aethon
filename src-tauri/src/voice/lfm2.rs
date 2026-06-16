@@ -21,6 +21,10 @@ use tokio::io::AsyncReadExt;
 
 const LFM2_BIN_NAME: &str = "llama-lfm2-audio";
 const LFM2_BIN_ENV: &str = "AETHON_LFM2_AUDIO_BIN";
+/// The runner ships as a directory (binary + `@loader_path` dylibs), staged
+/// beside the app executable under this subdirectory by the release bundle and
+/// the dev-app mirror.
+const LFM2_BUNDLE_SUBDIR: &str = "lfm2-audio";
 pub(super) const LFM2_BINARY_MISSING: &str = "LFM2-Audio runtime not found. The llama-lfm2-audio binary ships with Aethon; \
      reinstall, or set AETHON_LFM2_AUDIO_BIN to its path.";
 const ASR_SYSTEM_PROMPT: &str = "Perform ASR.";
@@ -68,12 +72,23 @@ pub(super) fn resolve_lfm2_binary() -> Option<PathBuf> {
         }
     }
     if let Ok(exe) = std::env::current_exe()
-        && let Some(candidate) = exe.parent().map(|dir| dir.join(LFM2_BIN_NAME))
-        && candidate.is_file()
+        && let Some(dir) = exe.parent()
+        && let Some(found) = bundled_lfm2_binary(dir)
     {
-        return Some(candidate);
+        return Some(found);
     }
     crate::env::resolve_program(LFM2_BIN_NAME)
+}
+
+/// Find the staged runner beside the executable: either directly (`<dir>/
+/// llama-lfm2-audio`) or in the bundled `lfm2-audio/` subdir.
+pub(super) fn bundled_lfm2_binary(exe_dir: &Path) -> Option<PathBuf> {
+    [
+        exe_dir.join(LFM2_BIN_NAME),
+        exe_dir.join(LFM2_BUNDLE_SUBDIR).join(LFM2_BIN_NAME),
+    ]
+    .into_iter()
+    .find(|candidate| candidate.is_file())
 }
 
 /// Audio capabilities are injected through this trait so the registry can

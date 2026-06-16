@@ -1631,6 +1631,25 @@ mod tests {
         );
     }
 
+    #[test]
+    fn bundled_lfm2_binary_finds_sibling_runner() {
+        let dir = tempdir().expect("dir");
+        assert!(bundled_lfm2_binary(dir.path()).is_none());
+        let binary = dir.path().join("llama-lfm2-audio");
+        std::fs::write(&binary, b"runner").expect("write binary");
+        assert_eq!(bundled_lfm2_binary(dir.path()), Some(binary));
+    }
+
+    #[test]
+    fn bundled_lfm2_binary_finds_runner_subdir() {
+        let dir = tempdir().expect("dir");
+        let subdir = dir.path().join("lfm2-audio");
+        std::fs::create_dir_all(&subdir).expect("create subdir");
+        let binary = subdir.join("llama-lfm2-audio");
+        std::fs::write(&binary, b"runner").expect("write binary");
+        assert_eq!(bundled_lfm2_binary(dir.path()), Some(binary));
+    }
+
     #[tokio::test]
     async fn remove_lfm2_model_clears_cache_and_status() {
         let (_db_dir, db_path) = test_db_path();

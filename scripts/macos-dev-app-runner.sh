@@ -196,6 +196,14 @@ if [ -n "$host_triple" ] && [ -d "$staged_dir" ]; then
     cp "$staged_dir/pi/package.json" "$resource_pi_dir/package.json"
     echo "▸ Mirrored pi/package.json → Resources/pi/"
   fi
+
+  # The LFM2-Audio runner is a directory (binary + @loader_path dylibs), so it
+  # is mirrored whole next to the executable where resolve_lfm2_binary finds it.
+  if [ -d "$staged_dir/lfm2-audio" ]; then
+    rm -rf "$macos_dir/lfm2-audio"
+    cp -R "$staged_dir/lfm2-audio" "$macos_dir/lfm2-audio"
+    echo "▸ Mirrored lfm2-audio runner → MacOS/lfm2-audio/"
+  fi
 fi
 
 cat >"$contents_dir/Info.plist" <<'PLIST'
