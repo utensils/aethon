@@ -147,6 +147,31 @@ describe("useChat setModel", () => {
     });
   });
 
+  it("timestamps optimistic user prompts so restore hydration can order them", async () => {
+    const { ctx, stateRef } = buildContext();
+    const { result } = renderHook(() => useChat(ctx));
+
+    await act(async () => {
+      await result.current.sendChat("Please work on GitHub issue #279");
+    });
+
+    expect((stateRef.current.tabs as Tab[])[0].messages.at(-1)).toMatchObject({
+      role: "user",
+      text: "Please work on GitHub issue #279",
+      delivery: "sent",
+      createdAt: expect.any(Number),
+    });
+    expect(ctx.persistLocalChatMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        role: "user",
+        text: "Please work on GitHub issue #279",
+        delivery: "sent",
+        createdAt: expect.any(Number),
+      }),
+      "tab-1",
+    );
+  });
+
   it("forwards a restored tab's reasoning level on the first chat", async () => {
     const tab = {
       ...makeEmptyTab("tab-1", "Tab 1"),
