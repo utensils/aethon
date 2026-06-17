@@ -4,6 +4,7 @@ import {
   type AethonAgentStateOptions,
   type TabRecord,
 } from "./state";
+import { SESSION_TITLE_TOOL_NAME } from "./silent-tools";
 import {
   buildPickerModels,
   cancelRunningToolCards,
@@ -862,6 +863,37 @@ describe("handleSessionEvent", () => {
     expect(f.sent.find((m) => m.type === "terminal_output")).toMatchObject({
       content: "\r\n$ ls\r\n",
     });
+  });
+
+  it("keeps session-title tool calls silent in the live transcript", () => {
+    const f = makeFixture();
+    const rec = fakeRec();
+    handleSessionEvent(f.state, f.deps, rec, "tab-1", {
+      type: "message_update",
+      assistantMessageEvent: { type: "text_delta", delta: "Starting" },
+    });
+    handleSessionEvent(f.state, f.deps, rec, "tab-1", {
+      type: "tool_execution_start",
+      toolCallId: "c-title",
+      toolName: SESSION_TITLE_TOOL_NAME,
+      args: { title: "Prompt polish" },
+    });
+    handleSessionEvent(f.state, f.deps, rec, "tab-1", {
+      type: "tool_execution_end",
+      toolCallId: "c-title",
+      toolName: SESSION_TITLE_TOOL_NAME,
+      result: { content: [{ type: "text", text: "ok" }] },
+    });
+    handleSessionEvent(f.state, f.deps, rec, "tab-1", {
+      type: "message_update",
+      assistantMessageEvent: { type: "text_delta", delta: " now." },
+    });
+
+    expect(f.sent.some((m) => m.type === "a2ui")).toBe(false);
+    expect(f.sent.some((m) => m.type === "terminal_output")).toBe(false);
+    const deltas = f.sent.filter((m) => m.type === "response_delta");
+    expect(deltas).toHaveLength(2);
+    expect(deltas[1].messageId).toBe(deltas[0].messageId);
   });
 
   it("tool_execution_update streams task partials into the existing card", () => {

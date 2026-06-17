@@ -48,6 +48,7 @@ import { handleResponseDelta } from "./responseDelta";
 import { handleResponseEnd } from "./responseEnd";
 import { handleSessionForked } from "./sessionForked";
 import { handleSessionHistory } from "./sessionHistory";
+import { handleSessionLabelChanged } from "./sessionLabelChanged";
 import { handleSessionRolledBack } from "./sessionRolledBack";
 import { handleShellQuery } from "./shellQuery";
 import { handleDashboardQuery } from "./dashboardQuery";
@@ -101,6 +102,7 @@ export const bridgeMessageHandlers: Readonly<
   response_end: handleResponseEnd,
   session_forked: handleSessionForked,
   session_history: handleSessionHistory,
+  session_label_changed: handleSessionLabelChanged,
   session_rolled_back: handleSessionRolledBack,
   shell_query: handleShellQuery,
   dashboard_query: handleDashboardQuery,

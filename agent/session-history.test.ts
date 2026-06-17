@@ -12,6 +12,7 @@ import {
   readSessionTranscript,
   writeSessionLabel,
 } from "./session-history";
+import { SESSION_TITLE_TOOL_NAME } from "./silent-tools";
 
 const roots: string[] = [];
 
@@ -224,6 +225,47 @@ describe("parseSessionHistoryLines", () => {
             },
           ],
         },
+      },
+    ]);
+  });
+
+  it("does not restore silent session-title tool calls as visible cards", () => {
+    const restored = parseSessionHistoryLines([
+      JSON.stringify({
+        type: "message",
+        id: "assistant-tool",
+        message: {
+          role: "assistant",
+          content: [
+            { type: "text", text: "I will take a look." },
+            {
+              type: "toolCall",
+              id: "call-title-1",
+              name: SESSION_TITLE_TOOL_NAME,
+              arguments: { title: "Prompt polish" },
+            },
+          ],
+        },
+      }),
+      JSON.stringify({
+        type: "message",
+        id: "result-tool",
+        message: {
+          role: "toolResult",
+          toolCallId: "call-title-1",
+          toolName: SESSION_TITLE_TOOL_NAME,
+          content: [{ type: "text", text: "ok" }],
+          isError: false,
+        },
+      }),
+    ]);
+
+    expect(restored).toEqual([
+      {
+        id: "assistant-tool",
+        entryId: "assistant-tool",
+        role: "agent",
+        text: "I will take a look.",
       },
     ]);
   });

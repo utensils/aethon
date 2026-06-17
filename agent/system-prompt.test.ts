@@ -4,6 +4,7 @@ import {
   buildSubagentsSection,
   type RuntimeSnapshot,
 } from "./system-prompt";
+import { DEFAULT_AETHON_PROMPT } from "./system-prompt/prompt-template";
 
 function snapshot(overrides: Partial<RuntimeSnapshot> = {}): RuntimeSnapshot {
   return {
@@ -120,6 +121,14 @@ describe("buildRuntimeSection failedExtensions", () => {
     );
     expect(out).toContain("cwd `/repo/a`");
     expect(out).toContain("`t2` — model `(none)`, 0 messages");
+  });
+});
+
+describe("DEFAULT_AETHON_PROMPT", () => {
+  it("instructs the agent to title the tab and narrate progress", () => {
+    expect(DEFAULT_AETHON_PROMPT).toContain("setSessionTabTitle");
+    expect(DEFAULT_AETHON_PROMPT).toContain("brief and descriptive");
+    expect(DEFAULT_AETHON_PROMPT).toContain("inform the user");
   });
 });
 

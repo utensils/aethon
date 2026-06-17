@@ -27,7 +27,7 @@ export function renameSessionLabel(
  *  open session. Empty input restores the auto-derived sequential
  *  "Tab N" label using the tab's existing index in the array. */
 export function applyOptimisticTabLabel(
-  ctx: EventRouteContext,
+  ctx: Pick<EventRouteContext, "setState">,
   tabId: string,
   label: string,
 ): void {
