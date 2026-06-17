@@ -30,6 +30,7 @@ function upsertDiscoveredTab(
   const idx = state.discoveredTabs.findIndex((t) => t.tabId === tabId);
   if (idx >= 0) state.discoveredTabs[idx] = entry;
   else state.discoveredTabs.push(entry);
+  state.discoveredTabs.sort((a, b) => b.lastModified - a.lastModified);
   return entry;
 }
 

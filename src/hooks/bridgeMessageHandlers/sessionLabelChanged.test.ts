@@ -65,4 +65,31 @@ describe("handleSessionLabelChanged", () => {
     ]);
     expect(mocks.syncRecentSessionsToState).toHaveBeenCalledOnce();
   });
+
+  it("keeps discovered-session metadata sorted by lastModified", () => {
+    const { ctx } = buildHandlerFixture();
+    ctx.allDiscoveredSessionsRef.current = [
+      { tabId: "tab-2", lastModified: 2, customLabel: "Newer" },
+      { tabId: "tab-1", lastModified: 1, customLabel: "Old" },
+    ];
+
+    handleSessionLabelChanged(
+      {
+        type: "session_label_changed",
+        tabId: "tab-1",
+        label: "Prompt polish",
+        session: {
+          tabId: "tab-1",
+          lastModified: 42,
+          customLabel: "Prompt polish",
+        },
+      },
+      ctx,
+    );
+
+    expect(ctx.allDiscoveredSessionsRef.current.map((s) => s.tabId)).toEqual([
+      "tab-1",
+      "tab-2",
+    ]);
+  });
 });

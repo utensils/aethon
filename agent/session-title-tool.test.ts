@@ -125,6 +125,23 @@ describe("buildSessionTitleTools", () => {
     });
   });
 
+  it("keeps discovered tabs sorted after metadata refresh", async () => {
+    const { state, deps } = await makeFixture();
+    state.discoveredTabs = [
+      { tabId: "tab-2", lastModified: 1, cwd: "/repo/newer" },
+      { tabId: "tab-1", lastModified: 0, cwd: "/repo/old" },
+    ];
+
+    await getTool(state, deps).execute("call-1", {
+      title: "Prompt polish",
+    });
+
+    expect(state.discoveredTabs.map((tab) => tab.tabId)).toEqual([
+      "tab-1",
+      "tab-2",
+    ]);
+  });
+
   it("rejects an empty title", async () => {
     const { state, deps } = await makeFixture();
 

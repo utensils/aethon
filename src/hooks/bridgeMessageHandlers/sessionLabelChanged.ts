@@ -34,10 +34,12 @@ function upsertDiscoveredSession(
   session: DiscoveredSession,
 ): DiscoveredSession[] {
   const idx = list.findIndex((s) => s.tabId === session.tabId);
-  if (idx < 0) return [...list, session];
+  if (idx < 0) {
+    return [...list, session].sort((a, b) => b.lastModified - a.lastModified);
+  }
   const next = [...list];
   next[idx] = session;
-  return next;
+  return next.sort((a, b) => b.lastModified - a.lastModified);
 }
 
 export const handleSessionLabelChanged: BridgeMessageHandler = (
