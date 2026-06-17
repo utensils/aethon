@@ -158,6 +158,18 @@ export function isLeadingAtToken(value: string, token: AtToken): boolean {
   return firstNonSpace >= 0 && token.start === firstNonSpace;
 }
 
+/**
+ * Whether to offer subagent suggestions for this `@token`. Agents surface when
+ * the `@` is the leading token (the delegation prefix) OR the user has typed a
+ * name fragment — so `when done have @glm` mid-message still completes to an
+ * agent, while a bare mid-message `@` (empty query) stays focused on file
+ * references. `matchAtSubagents` self-filters non-agent-shaped queries, so a
+ * path-like token like `@src/foo` never surfaces an agent even when offered.
+ */
+export function shouldOfferAgents(value: string, token: AtToken): boolean {
+  return isLeadingAtToken(value, token) || token.query.length > 0;
+}
+
 export function matchAtSubagents(
   query: string,
   subagents: AtSubagentMatch[],

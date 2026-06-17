@@ -50,9 +50,11 @@ export function buildSubagentsSection(
     "Delegate focused work to one with the `task` tool " +
       '(`task({ subagent_type: "<name>", prompt: "<self-contained task>" })`). ' +
       "Choose the subagent whose description best fits; pass everything it needs " +
-      "in `prompt` (it runs in an isolated session and sees only that). When the " +
-      "user prefixes a message with `@<name>`, delegate to that subagent. Do NOT " +
-      "delegate trivial work you can do directly.",
+      "in `prompt` (it runs in an isolated session and sees only that). When a " +
+      "message includes `@<name>`, hand that work to the named subagent — a " +
+      "message that starts with `@<name>` is entirely for it; a mention later in " +
+      "the message (e.g. \"when done, have @<name> review\") delegates just that " +
+      "part. Do NOT delegate trivial work you can do directly.",
   ];
   for (const s of subagents) {
     const model = s.model ? `, model \`${s.model}\`` : "";
