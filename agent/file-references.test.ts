@@ -163,28 +163,42 @@ describe("expandFileReferencesInPrompt", () => {
     expect(outsideOut.issues).toEqual([expect.stringContaining("outside")]);
   });
 
-  it("does not treat a leading accepted @subagent as a file reference", async () => {
+  it("does not treat a leading @subagent as a file reference", async () => {
     const out = await expandFileReferencesInPrompt(
       "@reviewer check @src/App.tsx",
-      { cwd: root, leadingSubagentName: "reviewer" },
+      { cwd: root, subagentNames: ["reviewer"] },
     );
     expect(out.references.map((ref) => ref.displayPath)).toEqual([
       "src/App.tsx",
     ]);
   });
 
-  it("does not treat a punctuated leading accepted @subagent as a file reference", async () => {
-    const out = await expandFileReferencesInPrompt("@reviewer. please check", {
-      cwd: root,
-      leadingSubagentName: "reviewer",
-    });
-    expect(out.references).toEqual([]);
+  it("exempts a mid-message @subagent without emitting an issue", async () => {
+    const out = await expandFileReferencesInPrompt(
+      "when done, have @reviewer check @src/App.tsx",
+      { cwd: root, subagentNames: ["Reviewer"] },
+    );
+    // The subagent mention is skipped (no "not found" notice); the genuine
+    // file reference alongside it still resolves.
+    expect(out.references.map((ref) => ref.displayPath)).toEqual([
+      "src/App.tsx",
+    ]);
+    expect(out.issues ?? []).toEqual([]);
   });
 
-  it("still treats a path-like leading @name.ext as a file reference", async () => {
-    const out = await expandFileReferencesInPrompt("@reviewer.md check this", {
+  it("does not treat a punctuated @subagent as a file reference", async () => {
+    const out = await expandFileReferencesInPrompt(
+      "please ask @reviewer. then continue",
+      { cwd: root, subagentNames: ["reviewer"] },
+    );
+    expect(out.references).toEqual([]);
+    expect(out.issues ?? []).toEqual([]);
+  });
+
+  it("still treats a path-like @name.ext as a file reference", async () => {
+    const out = await expandFileReferencesInPrompt("read @reviewer.md please", {
       cwd: root,
-      leadingSubagentName: "reviewer",
+      subagentNames: ["reviewer"],
     });
     expect(out.references[0]?.displayPath).toBe("reviewer.md");
   });

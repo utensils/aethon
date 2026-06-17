@@ -147,7 +147,12 @@ async function runSubagentTask(
   // the total-byte cap applies once. Skip the await entirely when there are no
   // refs so non-expanding delegations keep their original microtask timing.
   const expandedBody = hasTaskFileReferences(params)
-    ? (await expandFileReferencesInPrompt(taskBody, { cwd })).prompt
+    ? (
+        await expandFileReferencesInPrompt(taskBody, {
+          cwd,
+          subagentNames: registry.byName.keys(),
+        })
+      ).prompt
     : taskBody;
   const composedPrompt = composePrompt(sub, expandedBody);
   if (sub.surface === "tab") {

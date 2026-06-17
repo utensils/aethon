@@ -49,11 +49,10 @@ export async function handleChat(
   // Resolve against this tab's cwd so the mention matches the tab's project.
   const tabCwdForMention =
     cwdOverride ?? state.tabProjectCwds.get(tabId) ?? state.currentProjectCwd;
+  const tabSubagents = getSubagentsForCwd(state, tabCwdForMention).byName;
   const mention = detectSubagentMention(msg.content);
   const explicitSubagent =
-    mention && getSubagentsForCwd(state, tabCwdForMention).byName.has(mention)
-      ? mention
-      : null;
+    mention && tabSubagents.has(mention) ? mention : null;
   if (explicitSubagent) {
     state.pendingExplicitSubagent.set(tabId, explicitSubagent);
   }
@@ -105,7 +104,9 @@ export async function handleChat(
       // refreshing tabProjectCwds, so falling back to it alone resolves @file
       // refs against a stale cwd when the caller passed a fresh cwd.
       cwd: tabCwdForMention ?? process.cwd(),
-      leadingSubagentName: explicitSubagent,
+      // Exempt every configured subagent name (not just a leading mention) so a
+      // mid-message `@reviewer` is treated as an agent mention, not a file ref.
+      subagentNames: tabSubagents.keys(),
     });
     if (expanded.issues?.length) {
       deps.send({
