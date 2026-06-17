@@ -1,4 +1,6 @@
 import { closeRunningToolCards } from "../../utils/agentBusy";
+import { emitAgentTurnComplete } from "../../utils/agentTurnEvents";
+import { lastAgentText } from "../../utils/messages";
 import type { BridgeMessageHandler } from "./types";
 import { flushResponseDeltas } from "./responseDelta";
 
@@ -11,7 +13,12 @@ export const handleResponseEnd: BridgeMessageHandler = (data, ctx) => {
   // re-flips it to true while popping the head and dispatching the
   // next message — same render commit, so the Send button doesn't
   // flash. When the queue is empty, waiting stays false.
+  // `updateTab` runs its mutator synchronously against the store, so the
+  // final reply text is captured here (deltas were just flushed) and
+  // broadcast below for speak-agent-replies / conversation mode.
+  let finalAgentText = "";
   ctx.updateTab(tabId, (tab) => {
+    finalAgentText = lastAgentText(tab.messages);
     const closedTools = closeRunningToolCards(tab.messages);
     return {
       ...tab,
@@ -19,6 +26,7 @@ export const handleResponseEnd: BridgeMessageHandler = (data, ctx) => {
       ...(closedTools.changed ? { messages: closedTools.messages } : {}),
     };
   });
+  emitAgentTurnComplete({ tabId, text: finalAgentText });
   // Drop the tab from the bucket-independent running set (see promptStarted).
   ctx.setState((prev) => {
     const running = prev.agentRunningTabs as Record<string, true> | undefined;

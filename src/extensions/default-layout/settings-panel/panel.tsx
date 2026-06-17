@@ -476,6 +476,51 @@ export function SettingsPanel({ state, onEvent }: BuiltinComponentProps) {
                   }
                 />
               </Field>
+              <Field label="Speak agent replies aloud (LFM2-Audio)">
+                <input
+                  type="checkbox"
+                  checked={eff.voice.speakAgentReplies}
+                  onChange={(e) =>
+                    update({
+                      voice: {
+                        ...eff.voice,
+                        speakAgentReplies: e.target.checked,
+                      },
+                    })
+                  }
+                />
+              </Field>
+              <Field label="Spoken reply length (characters)">
+                <input
+                  type="number"
+                  className="ae-settings-input"
+                  min={50}
+                  max={5000}
+                  value={eff.voice.speakMaxChars}
+                  onChange={(e) =>
+                    update({
+                      voice: {
+                        ...eff.voice,
+                        speakMaxChars: Number(e.target.value) || 600,
+                      },
+                    })
+                  }
+                />
+              </Field>
+              <Field label="Hands-free conversation (auto-reopen mic)">
+                <input
+                  type="checkbox"
+                  checked={eff.voice.conversationContinuous}
+                  onChange={(e) =>
+                    update({
+                      voice: {
+                        ...eff.voice,
+                        conversationContinuous: e.target.checked,
+                      },
+                    })
+                  }
+                />
+              </Field>
               <VoiceProviders />
             </Section>
 

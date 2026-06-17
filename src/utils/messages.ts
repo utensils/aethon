@@ -1,5 +1,25 @@
 import type { A2UIPayload, ChatAttachment, ChatMessage } from "../types/a2ui";
 
+/** The spoken text of the *current* turn's reply. Walks back to the user
+ *  message that started the turn so a tool-only / thinking-only / empty turn
+ *  returns "" instead of replaying an earlier reply. A *steered* user message
+ *  is a mid-turn interjection (it lands after the agent's text), so it is not
+ *  treated as a turn boundary — the reply before it is still spoken. */
+export function lastAgentText(messages: ChatMessage[]): string {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const message = messages[i];
+    if (message.role === "user" && message.delivery !== "steered") break;
+    if (
+      message.role === "agent" &&
+      typeof message.text === "string" &&
+      message.text.trim().length > 0
+    ) {
+      return message.text;
+    }
+  }
+  return "";
+}
+
 // Persisted-history budget per message text. The in-memory message keeps
 // the full string; only the persisted snapshot is trimmed so localStorage
 // doesn't blow past quota.

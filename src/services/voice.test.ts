@@ -7,8 +7,10 @@ import {
   removeVoiceProviderModel,
   setSelectedVoiceProvider,
   setVoiceProviderEnabled,
+  speakVoice,
   startVoiceRecording,
   stopAndTranscribeVoice,
+  stopVoicePlayback,
 } from "./voice";
 
 describe("voice service", () => {
@@ -28,6 +30,16 @@ describe("voice service", () => {
     await expect(listVoiceProviders()).resolves.toEqual([]);
 
     expect(harness.invoke).toHaveBeenCalledWith("voice_list_providers");
+  });
+
+  it("speaks text and stops playback", async () => {
+    await speakVoice("hello world");
+    await stopVoicePlayback();
+
+    expect(harness.invoke).toHaveBeenNthCalledWith(1, "voice_speak", {
+      text: "hello world",
+    });
+    expect(harness.invoke).toHaveBeenNthCalledWith(2, "voice_stop_playback");
   });
 
   it("serializes selected and enabled provider mutations", async () => {

@@ -290,6 +290,36 @@ version:sync` propagates the version to `tauri.conf.json`,
   resolves endpoints per channel at runtime, so the bundled
   `tauri.conf.json` endpoint only sets the default for the very
   first launch.
+- **LFM2-Audio voice runner.** The LFM2-Audio voice provider shells out
+  to the prebuilt `llama-lfm2-audio` runner (a binary plus its
+  `@loader_path` dylibs). It is **not** committed — `src-tauri/binaries/`
+  is gitignored and the runner is fetched at build time. Staging and
+  bundling go through Tauri's own build inputs so every build path ships
+  it (including the GitHub workflows that build via `tauri-action` →
+  `bun tauri build`, not the devshell `build-app`):
+  - `tauri.conf.json` `build.beforeBuildCommand` runs
+    `scripts/stage-lfm2-runner.sh` before the frontend build. The script
+    downloads the per-platform runner zip from Liquid AI's GGUF repo
+    **pinned to a commit + verified against a checked-in SHA-256**, then
+    unpacks it to `src-tauri/binaries/lfm2-audio/`. Unsupported platforms
+    (e.g. Windows) skip gracefully. Only `macos-aarch64` is built for
+    release/nightly today.
+  - `tauri.conf.json` `bundle.resources` includes `binaries/lfm2-audio`,
+    so Tauri copies it into `Aethon.app/Contents/Resources/lfm2-audio/`
+    and **signs + notarizes it as part of the bundle** before producing
+    the DMG/updater artifacts. `resolve_lfm2_binary`
+    (`src-tauri/src/voice/lfm2.rs`) finds it there at runtime.
+  - `verify-bundle.sh` scans the runner (binary + dylibs) for
+    `/nix/store` install_names alongside the main binary — the upstream
+    runner is system-linked, so a leak means a Nix build was staged by
+    mistake.
+  - In dev, `scripts/macos-dev-app-runner.sh` mirrors the directory into
+    the dev `.app`'s `Resources/`; or point `AETHON_LFM2_AUDIO_BIN` at a
+    runner binary directly.
+  - Bumping the runner: update `hf_rev` and the per-platform SHA-256s in
+    `scripts/stage-lfm2-runner.sh` together.
+  The model GGUFs themselves are downloaded on-demand into
+  `~/.aethon/models/voice/` and are never bundled.
 - **Boot-probation rollback.** Each in-app update first copies the
   installed `.app` bundle to `~/.aethon/updates/previous/<version>/`
   and writes a sentinel to `~/.aethon/boot-probation.json`. If the

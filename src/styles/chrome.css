@@ -3854,8 +3854,9 @@ body.ae-resizing-composer * {
   border-radius: var(--radius-md);
   /* Right padding clears the absolute-positioned Send button so text
      doesn't run under it. Bottom padding clears the Send button when
-     the user types multiple lines. */
-  padding: 10px 86px 10px 14px;
+     the user types multiple lines. Right padding reserves room for the
+     full three-button cluster (send + mic + conversation, out to ~108px). */
+  padding: 10px 116px 10px 14px;
   font: inherit;
   outline: none;
   line-height: 1.5;
@@ -3924,6 +3925,66 @@ body.ae-resizing-composer * {
 .a2ui-chat-input-voice-recording {
   color: var(--danger, #ef4444);
   border-color: color-mix(in srgb, currentColor 60%, transparent);
+}
+/* Conversation-mode toggle sits just left of the dictation mic. */
+.a2ui-chat-input-conversation {
+  right: 78px;
+}
+.a2ui-chat-input-conversation-active {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+/* In-composer conversation HUD (banner above the field). */
+.a2ui-conversation-hud {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  margin-bottom: 6px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm);
+  background: var(--accent-soft);
+  font-size: var(--chrome-text-compact);
+}
+.a2ui-conversation-hud-status {
+  flex: 1 1 auto;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.a2ui-conversation-hud-dot {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-dim);
+}
+.a2ui-conversation-hud-listening,
+.a2ui-conversation-hud-speaking {
+  background: var(--accent);
+}
+.a2ui-conversation-hud-thinking {
+  background: var(--warning, #f59e0b);
+}
+.a2ui-conversation-hud-primary,
+.a2ui-conversation-hud-exit {
+  flex: 0 0 auto;
+  padding: 3px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--bg-active);
+  color: var(--text);
+  cursor: pointer;
+  font-size: inherit;
+}
+.a2ui-conversation-hud-primary {
+  border-color: var(--accent);
+}
+.a2ui-conversation-hud-primary:disabled {
+  opacity: var(--opacity-disabled);
+  cursor: default;
 }
 .a2ui-chat-input-voice-spinner {
   animation: a2ui-voice-spin 0.9s linear infinite;

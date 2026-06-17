@@ -41,3 +41,28 @@ if [[ -n "$leaks" ]]; then
 fi
 
 echo "verify-bundle.sh: OK — no /nix/store paths in $bin"
+
+# Scan the bundled LFM2-Audio runner (binary + @loader_path dylibs), if staged.
+# Bundled via Tauri `resources` → Contents/Resources/lfm2-audio/. The prebuilt
+# runner is system-linked, so a /nix/store hit here means a Nix-built binary
+# was staged by mistake instead of the upstream release.
+runner_dir="$bundle/Contents/Resources/lfm2-audio"
+if [[ -d "$runner_dir" ]]; then
+  runner_leaks=""
+  while IFS= read -r -d '' macho; do
+    hits="$(otool -L "$macho" 2>/dev/null | awk 'NR>1 {print $1}' | grep -E '^/nix/store/' || true)"
+    if [[ -n "$hits" ]]; then
+      runner_leaks+="$macho"$'\n'"$hits"$'\n'
+    fi
+  done < <(find "$runner_dir" -type f \
+    \( -name '*.dylib' -o -name '*.so' -o -name 'llama-lfm2-audio' \) -print0)
+  if [[ -n "$runner_leaks" ]]; then
+    echo "verify-bundle.sh: FAIL — Nix store paths in the LFM2-Audio runner" >&2
+    echo "$runner_leaks" | sed 's/^/  /' >&2
+    echo "" >&2
+    echo "  Stage the upstream prebuilt runner via scripts/stage-lfm2-runner.sh;" >&2
+    echo "  do not bundle a Nix-built llama-lfm2-audio." >&2
+    exit 2
+  fi
+  echo "verify-bundle.sh: OK — no /nix/store paths in the LFM2-Audio runner"
+fi

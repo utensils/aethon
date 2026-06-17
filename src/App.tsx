@@ -8,6 +8,7 @@ import { useAppForwardRefs } from "./app/useAppForwardRefs";
 import type { A2UIPayload } from "./types/a2ui";
 import type { Tab } from "./types/tab";
 import { useZoomAndTheme } from "./hooks/useZoomAndTheme";
+import { useSpeakReplies } from "./hooks/useSpeakReplies";
 import { useShellConsent } from "./hooks/useShellConsent";
 import { useHostInfo } from "./hooks/useHostInfo";
 import { useDevshell, type DevshellEntry } from "./hooks/useDevshell";
@@ -412,6 +413,11 @@ export default function App() {
   // tabBucketsRef so the live set spans every project bucket, not just the
   // active one (tabs are project-scoped).
   useAgentWorkerReconcile(stateRef, tabBucketsRef);
+
+  // Speak the agent's reply aloud on turn completion when enabled (LFM2-Audio
+  // text-to-speech). Listens for the `aethon://agent-turn-complete` signal
+  // emitted by the response_end handler.
+  useSpeakReplies(stateRef);
 
   // Hydrate per-workspace tab buckets restored from disk into tabBucketsRef so
   // switching to a backgrounded workspace after a restart lands on its

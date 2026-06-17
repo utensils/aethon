@@ -135,9 +135,11 @@ pub fn run() {
         .manage(Arc::new(server::ServerState::new()))
         .manage(devshell::DevshellCache::shared());
     #[cfg(feature = "voice")]
-    let builder = builder.manage(voice::VoiceProviderRegistry::new(
-        voice::VoiceProviderRegistry::default_model_root(),
-    ));
+    let builder = builder
+        .manage(voice::VoiceProviderRegistry::new(
+            voice::VoiceProviderRegistry::default_model_root(),
+        ))
+        .manage(voice::AudioPlayer::new());
     let builder = builder
         .on_window_event(|window, event| match event {
             tauri::WindowEvent::Resized(_) | tauri::WindowEvent::Moved(_) => {
@@ -238,6 +240,8 @@ pub fn run() {
             commands::voice::voice_start_recording,
             commands::voice::voice_stop_and_transcribe,
             commands::voice::voice_cancel_recording,
+            commands::voice::voice_speak,
+            commands::voice::voice_stop_playback,
             commands::boot::boot_stage,
             commands::boot::boot_ok,
             commands::devshell::devshell_status,

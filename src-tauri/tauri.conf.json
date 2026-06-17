@@ -5,7 +5,7 @@
   "identifier": "com.utensils.aethon",
   "build": {
     "beforeDevCommand": "bun run dev",
-    "beforeBuildCommand": "bun run build",
+    "beforeBuildCommand": "bash scripts/stage-lfm2-runner.sh && bun run build",
     "devUrl": "http://localhost:1420",
     "frontendDist": "../dist"
   },
@@ -37,6 +37,7 @@
     "longDescription": "Aethon wraps the pi-coding-agent in a Tauri 2 desktop workspace where the agent renders its UI as A2UI components. The agent can mutate the layout in real time — registering sidebar sections, themes, and interactive panels via globalThis.aethon — making the entire window an extension surface, not just the chat.",
     "externalBin": ["binaries/aethon-agent"],
     "resources": {
+      "binaries/lfm2-audio": "lfm2-audio",
       "binaries/pi/package.json": "pi/package.json",
       "../docs/aethon-agent/README.md": "docs/aethon-agent/README.md",
       "../docs/aethon-agent/api.md": "docs/aethon-agent/api.md",

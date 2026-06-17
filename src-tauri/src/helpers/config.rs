@@ -104,6 +104,9 @@ pub struct ShortcutsConfig {
 pub struct VoiceConfig {
     pub toggle_hotkey: Option<String>,
     pub hold_hotkey: Option<String>,
+    pub speak_agent_replies: Option<bool>,
+    pub speak_max_chars: Option<u32>,
+    pub conversation_continuous: Option<bool>,
 }
 
 #[derive(Default, Deserialize)]
@@ -429,6 +432,9 @@ pub fn parse_config_toml(input: &str) -> serde_json::Value {
         "voice": {
             "toggleHotkey": cfg.voice.toggle_hotkey.unwrap_or_else(|| "mod+shift+m".to_string()),
             "holdHotkey": cfg.voice.hold_hotkey.or_else(|| default_voice_hold_hotkey().map(str::to_string)),
+            "speakAgentReplies": cfg.voice.speak_agent_replies.unwrap_or(false),
+            "speakMaxChars": cfg.voice.speak_max_chars.unwrap_or(600),
+            "conversationContinuous": cfg.voice.conversation_continuous.unwrap_or(true),
         },
         "extensions": {
             "stateWarnKb": state_warn_kb,
@@ -688,6 +694,9 @@ mod tests {
         assert_eq!(v["voice"]["holdHotkey"], "AltRight");
         #[cfg(not(target_os = "macos"))]
         assert_eq!(v["voice"]["holdHotkey"], serde_json::Value::Null);
+        assert_eq!(v["voice"]["speakAgentReplies"], false);
+        assert_eq!(v["voice"]["speakMaxChars"], 600);
+        assert_eq!(v["voice"]["conversationContinuous"], true);
     }
 
     #[test]
@@ -696,10 +705,17 @@ mod tests {
             r#"[voice]
 toggle_hotkey = "mod+alt+v"
 hold_hotkey = "AltRight"
+speak_agent_replies = true
+speak_max_chars = 250
+conversation_continuous = false
 "#,
         );
         assert_eq!(v["voice"]["toggleHotkey"], "mod+alt+v");
         assert_eq!(v["voice"]["holdHotkey"], "AltRight");
+        assert_eq!(v["voice"]["speakAgentReplies"], true);
+        assert_eq!(v["voice"]["speakMaxChars"], 250);
+        // Explicit opt-out of hands-free auto-loop.
+        assert_eq!(v["voice"]["conversationContinuous"], false);
     }
 
     #[test]

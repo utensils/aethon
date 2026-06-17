@@ -311,6 +311,11 @@
                   else
                     echo "==> .secrets/signing.env not present; building unsigned"
                   fi
+                  # The LFM2-Audio runner is staged by tauri.conf's
+                  # `beforeBuildCommand` (scripts/stage-lfm2-runner.sh) and
+                  # bundled via `resources`, so Tauri packages + signs it into
+                  # the .app / DMG / updater itself — no post-build copy.
+                  #
                   # Tauri's bundler exits non-zero on a missing
                   # TAURI_SIGNING_PRIVATE_KEY even though the .app has
                   # already been written. For local unsigned builds we

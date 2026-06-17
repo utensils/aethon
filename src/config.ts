@@ -89,6 +89,15 @@ export interface AethonConfig {
   voice: {
     toggleHotkey: string | null;
     holdHotkey: string | null;
+    /** When true, the agent's reply is spoken aloud (via the LFM2-Audio
+     *  provider's text-to-speech) once a turn completes on the active tab. */
+    speakAgentReplies: boolean;
+    /** Upper bound on how many characters of a reply are spoken, so a long
+     *  diff or log dump isn't read out in full. */
+    speakMaxChars: number;
+    /** In conversation voice mode, auto-reopen the mic after the agent
+     *  finishes speaking (hands-free) instead of waiting for a tap. */
+    conversationContinuous: boolean;
   };
   updates: {
     /** Release channel the auto-updater follows. `"stable"` (default)
@@ -160,6 +169,9 @@ const DEFAULTS: AethonConfig = {
       (/Mac/.test(navigator.platform) || /Mac OS X/.test(navigator.userAgent))
         ? "AltRight"
         : null,
+    speakAgentReplies: false,
+    speakMaxChars: 600,
+    conversationContinuous: true,
   },
   updates: { channel: "stable", disableAutoCheck: false },
   devshell: {
@@ -274,6 +286,14 @@ export function getConfig(): Promise<AethonConfig> {
               : obj?.voice?.holdHotkey === null
                 ? null
                 : DEFAULTS.voice.holdHotkey,
+          speakAgentReplies: obj?.voice?.speakAgentReplies === true,
+          speakMaxChars:
+            typeof obj?.voice?.speakMaxChars === "number" &&
+            Number.isFinite(obj.voice.speakMaxChars)
+              ? Math.min(5000, Math.max(50, Math.round(obj.voice.speakMaxChars)))
+              : DEFAULTS.voice.speakMaxChars,
+          conversationContinuous:
+            obj?.voice?.conversationContinuous !== false,
         },
         updates: {
           channel: obj?.updates?.channel === "nightly" ? "nightly" : "stable",

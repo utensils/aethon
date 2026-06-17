@@ -35,11 +35,13 @@ import { useComposerResize } from "./use-composer-resize";
 import { useDraftCommit } from "./use-draft-commit";
 import { useVoiceHotkey } from "../../hooks/useVoiceHotkey";
 import { useVoiceInput } from "../../hooks/useVoiceInput";
+import { useVoiceConversation } from "../../hooks/useVoiceConversation";
 import {
   insertTranscriptAtSelection,
   shouldOpenVoiceSettingsForError,
 } from "../../utils/voice";
 import { VoiceMeter } from "./voice-meter";
+import { ConversationHud } from "./conversation-hud";
 import {
   type ArgMatch,
   type CommandMatch,
@@ -163,8 +165,20 @@ export function ChatInput({
   const voiceState = voice.state;
   const cancelVoice = voice.cancel;
   const voiceConfig = (state.voice as
-    | { toggleHotkey?: string | null; holdHotkey?: string | null }
+    | {
+        toggleHotkey?: string | null;
+        holdHotkey?: string | null;
+        speakMaxChars?: number;
+        conversationContinuous?: boolean;
+      }
     | undefined) ?? { toggleHotkey: "mod+shift+m", holdHotkey: null };
+  const conversation = useVoiceConversation({
+    submitText: (text) => onEvent("submit", { value: text, mode: "normal" }),
+    getActiveTabId: () => state.activeTabId as string | undefined,
+    continuous: voiceConfig.conversationContinuous ?? true,
+    maxSpokenChars: voiceConfig.speakMaxChars ?? 600,
+    onNeedsSetup: (providerId) => onEvent("voice:setup", { providerId }),
+  });
   const settings = state.settings as { open?: boolean } | undefined;
   const palette = state.commandPalette as { open?: boolean } | undefined;
   const search = state.search as { open?: boolean } | undefined;
@@ -438,6 +452,14 @@ export function ChatInput({
           onRemove={(id) => onEvent("attachment:remove", { id })}
         />
       )}
+      {conversation.active && (
+        <ConversationHud
+          phase={conversation.phase}
+          error={conversation.error}
+          onPrimary={conversation.primaryAction}
+          onExit={conversation.exit}
+        />
+      )}
       <div className="a2ui-chat-input-field-wrap">
         <textarea
           ref={textareaRef}
@@ -493,6 +515,28 @@ export function ChatInput({
           ) : (
             <MicIcon />
           )}
+        </button>
+        <button
+          type="button"
+          className={`a2ui-chat-input-voice a2ui-chat-input-conversation ${
+            conversation.active ? "a2ui-chat-input-conversation-active" : ""
+          }`}
+          onClick={() =>
+            conversation.active ? conversation.exit() : conversation.enter()
+          }
+          disabled={busy && !conversation.active}
+          aria-label={
+            conversation.active
+              ? "Exit voice conversation"
+              : "Start voice conversation"
+          }
+          title={
+            conversation.active
+              ? "Exit voice conversation"
+              : "Start voice conversation"
+          }
+        >
+          <ConversationIcon />
         </button>
         {busy ? (
           <button
@@ -657,6 +701,33 @@ function VoiceStatus({
     );
   }
   return null;
+}
+
+function ConversationIcon() {
+  // A speech / conversation glyph (two overlapping bubbles).
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 16 16"
+      fill="none"
+      aria-hidden="true"
+    >
+      <path
+        d="M2 4.5A1.5 1.5 0 0 1 3.5 3h6A1.5 1.5 0 0 1 11 4.5v3A1.5 1.5 0 0 1 9.5 9H6L3.5 11V9A1.5 1.5 0 0 1 2 7.5v-3Z"
+        stroke="currentColor"
+        strokeWidth="1.3"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M6.5 11.5A1.5 1.5 0 0 0 8 13h3l1.5 1.5V13A1.5 1.5 0 0 0 14 11.5V9"
+        stroke="currentColor"
+        strokeWidth="1.3"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
 }
 
 function voiceButtonLabel(state: VoiceView["state"]): string {

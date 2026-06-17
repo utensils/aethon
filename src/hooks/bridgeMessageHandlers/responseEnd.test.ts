@@ -1,7 +1,12 @@
+// @vitest-environment jsdom
 import { describe, expect, it } from "vitest";
 import { handleResponseEnd } from "./responseEnd";
 import { buildHandlerFixture } from "./testFixtures";
 import { makeEmptyTab } from "../../types/tab";
+import {
+  onAgentTurnComplete,
+  type AgentTurnCompleteDetail,
+} from "../../utils/agentTurnEvents";
 
 describe("handleResponseEnd", () => {
   it("clears waiting + status, dismisses hang notification, fires completion", () => {
@@ -84,5 +89,54 @@ describe("handleResponseEnd", () => {
       waiting: true,
     };
     expect(updater(seed).waiting).toBe(false);
+  });
+
+  it("emits agent-turn-complete with the final agent text", () => {
+    const tabId = "default";
+    const { ctx } = buildHandlerFixture({ state: { activeTabId: tabId } });
+    const seed = {
+      ...makeEmptyTab(tabId, "Tab 1"),
+      messages: [
+        { id: "u1", role: "user" as const, text: "hi" },
+        { id: "a1", role: "agent" as const, text: "Hello there." },
+      ],
+    };
+    // The real updateTab runs its mutator synchronously; make the mock do the
+    // same so the handler captures the reply text it just flushed.
+    ctx.updateTab = (_id, mutator) => {
+      mutator(seed);
+    };
+    const events: AgentTurnCompleteDetail[] = [];
+    const off = onAgentTurnComplete((detail) => events.push(detail));
+
+    handleResponseEnd({ type: "response_end", tabId }, ctx);
+    off();
+
+    expect(events).toEqual([{ tabId, text: "Hello there." }]);
+  });
+
+  it("emits empty text for a tool-only turn", () => {
+    const tabId = "default";
+    const { ctx } = buildHandlerFixture({ state: { activeTabId: tabId } });
+    const seed = {
+      ...makeEmptyTab(tabId, "Tab 1"),
+      messages: [
+        {
+          id: "a1",
+          role: "agent" as const,
+          a2ui: { components: [{ id: "t", type: "tool-card", children: [] }] },
+        },
+      ],
+    };
+    ctx.updateTab = (_id, mutator) => {
+      mutator(seed);
+    };
+    const events: AgentTurnCompleteDetail[] = [];
+    const off = onAgentTurnComplete((detail) => events.push(detail));
+
+    handleResponseEnd({ type: "response_end", tabId }, ctx);
+    off();
+
+    expect(events).toEqual([{ tabId, text: "" }]);
   });
 });

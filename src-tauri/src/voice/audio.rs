@@ -78,7 +78,7 @@ pub(crate) trait AudioRecorder: Send + Sync {
 
 pub(crate) struct CpalAudioRecorder;
 
-fn compute_rms(samples: &[f32]) -> f32 {
+pub(super) fn compute_rms(samples: &[f32]) -> f32 {
     if samples.is_empty() {
         return 0.0;
     }
@@ -202,14 +202,16 @@ where
         .collect()
 }
 
-pub(super) fn resample_to_target_rate(samples: &[f32], sample_rate: u32) -> Vec<f32> {
-    if samples.is_empty() || sample_rate == TARGET_SAMPLE_RATE {
+/// Linear-resample mono `samples` from `from_rate` to `to_rate`. Used both for
+/// microphone capture (→ 16 kHz for ASR) and TTS playback (24 kHz → the output
+/// device rate).
+pub(super) fn resample(samples: &[f32], from_rate: u32, to_rate: u32) -> Vec<f32> {
+    if samples.is_empty() || from_rate == to_rate {
         return samples.to_vec();
     }
 
-    let output_len =
-        (samples.len() as u64 * u64::from(TARGET_SAMPLE_RATE) / u64::from(sample_rate)).max(1);
-    let ratio = sample_rate as f64 / TARGET_SAMPLE_RATE as f64;
+    let output_len = (samples.len() as u64 * u64::from(to_rate) / u64::from(from_rate)).max(1);
+    let ratio = from_rate as f64 / to_rate as f64;
     (0..output_len)
         .map(|out_index| {
             let source = out_index as f64 * ratio;
@@ -219,6 +221,10 @@ pub(super) fn resample_to_target_rate(samples: &[f32], sample_rate: u32) -> Vec<
             samples[left] * (1.0 - frac) + samples[right] * frac
         })
         .collect()
+}
+
+pub(super) fn resample_to_target_rate(samples: &[f32], sample_rate: u32) -> Vec<f32> {
+    resample(samples, sample_rate, TARGET_SAMPLE_RATE)
 }
 
 impl AudioRecorder for CpalAudioRecorder {

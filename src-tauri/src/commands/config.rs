@@ -386,6 +386,16 @@ pub fn write_config(config: serde_json::Value, app: AppHandle) -> Result<(), Str
         .and_then(|m| m.get("holdHotkey"))
         .and_then(|v| v.as_str())
         .filter(|s| !s.is_empty());
+    let voice_speak_agent_replies = voice
+        .and_then(|m| m.get("speakAgentReplies"))
+        .and_then(|v| v.as_bool());
+    let voice_speak_max_chars = voice
+        .and_then(|m| m.get("speakMaxChars"))
+        .and_then(|v| v.as_u64())
+        .map(|n| n.clamp(50, 5000) as u32);
+    let voice_conversation_continuous = voice
+        .and_then(|m| m.get("conversationContinuous"))
+        .and_then(|v| v.as_bool());
     let update_channel = updates
         .and_then(|m| m.get("channel"))
         .and_then(|v| v.as_str())
@@ -539,6 +549,17 @@ pub fn write_config(config: serde_json::Value, app: AppHandle) -> Result<(), Str
         let voice_table = ensure_table(&mut doc, "voice");
         set_or_clear_str(voice_table, "toggle_hotkey", voice_toggle_hotkey);
         set_or_clear_str(voice_table, "hold_hotkey", voice_hold_hotkey);
+        set_or_clear_bool(
+            voice_table,
+            "speak_agent_replies",
+            voice_speak_agent_replies,
+        );
+        set_or_clear_int(voice_table, "speak_max_chars", voice_speak_max_chars);
+        set_or_clear_bool(
+            voice_table,
+            "conversation_continuous",
+            voice_conversation_continuous,
+        );
     }
 
     // ── [updates] ──
