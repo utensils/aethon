@@ -137,6 +137,12 @@ export function useBootConfig(ctx: UseBootConfigContext): UseBootConfigActions {
         hardEnforceProjectRoot: fresh.guardrails.hardEnforceProjectRoot,
       },
       codexFastMode: fresh.agent.codexFastMode,
+      ...(fresh.agent.thinkingLevel
+        ? {
+            thinkingLevel: fresh.agent.thinkingLevel,
+            defaultThinkingLevel: fresh.agent.thinkingLevel,
+          }
+        : {}),
     }));
     if (fresh.agent.model) {
       piDefaultModelRef.current = fresh.agent.model;
@@ -231,6 +237,12 @@ export function useBootConfig(ctx: UseBootConfigContext): UseBootConfigActions {
             hardEnforceProjectRoot: config.guardrails.hardEnforceProjectRoot,
           },
           codexFastMode: config.agent.codexFastMode,
+          ...(config.agent.thinkingLevel
+            ? {
+                thinkingLevel: config.agent.thinkingLevel,
+                defaultThinkingLevel: config.agent.thinkingLevel,
+              }
+            : {}),
         }));
 
         // [agent] model: when set, seed the picker default for this

@@ -330,6 +330,10 @@ pub fn write_config(config: serde_json::Value, app: AppHandle) -> Result<(), Str
         .and_then(|m| m.get("model"))
         .and_then(|v| v.as_str())
         .filter(|s| !s.is_empty());
+    let thinking_level = agent
+        .and_then(|m| m.get("thinkingLevel"))
+        .and_then(|v| v.as_str())
+        .and_then(|s| helpers::normalize_thinking_level(Some(s)));
     let provider_timeout_seconds = agent
         .and_then(|m| m.get("providerTimeoutSeconds"))
         .and_then(|v| v.as_u64())
@@ -487,6 +491,7 @@ pub fn write_config(config: serde_json::Value, app: AppHandle) -> Result<(), Str
     {
         let agent_table = ensure_table(&mut doc, "agent");
         set_or_clear_str(agent_table, "model", model);
+        set_or_clear_str(agent_table, "thinking_level", thinking_level);
         set_or_clear_int(
             agent_table,
             "provider_timeout_seconds",

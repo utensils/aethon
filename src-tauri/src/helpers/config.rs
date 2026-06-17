@@ -40,6 +40,9 @@ pub struct UiConfig {
 #[derive(Default, Deserialize)]
 pub struct AgentConfig {
     pub model: Option<String>,
+    /// Default reasoning effort for new sessions on models that expose it.
+    /// Allowed: off/minimal/low/medium/high/xhigh. Unknown values are ignored.
+    pub thinking_level: Option<String>,
     /// Optional Aethon-owned override for the provider/SDK request timeout,
     /// in seconds. Omitted leaves pi's own `retry.provider.timeoutMs` behavior
     /// unchanged. Exposed to the bridge as seconds; the bridge converts to ms.
@@ -352,6 +355,13 @@ pub fn normalize_timeout_seconds(value: Option<u32>) -> u32 {
     normalize_optional_timeout_seconds(value).unwrap_or(AGENT_TIMEOUT_SECONDS_DEFAULT)
 }
 
+pub fn normalize_thinking_level(value: Option<&str>) -> Option<&str> {
+    match value {
+        Some("off" | "minimal" | "low" | "medium" | "high" | "xhigh") => value,
+        _ => None,
+    }
+}
+
 /// Parse a TOML config string into the canonical JSON shape the frontend
 /// consumes. Falls back to defaults on parse error so a malformed user
 /// file never blocks app boot. Returns the same shape regardless of what
@@ -372,6 +382,7 @@ pub fn parse_config_toml(input: &str) -> serde_json::Value {
     let new_tab_kind = normalize_new_tab_kind(cfg.shortcuts.new_tab_kind.as_deref());
     let thinking_visibility = normalize_visibility(cfg.ui.thinking_visibility.as_deref());
     let tool_calls_visibility = normalize_tool_visibility(cfg.ui.tool_calls_visibility.as_deref());
+    let thinking_level = normalize_thinking_level(cfg.agent.thinking_level.as_deref());
     let provider_timeout_seconds =
         normalize_optional_timeout_seconds(cfg.agent.provider_timeout_seconds);
     let codex_fast_mode = cfg.agent.codex_fast_mode.unwrap_or(false);
@@ -412,6 +423,7 @@ pub fn parse_config_toml(input: &str) -> serde_json::Value {
         },
         "agent": {
             "model": cfg.agent.model,
+            "thinkingLevel": thinking_level,
             "providerTimeoutSeconds": provider_timeout_seconds,
             "codexFastMode": codex_fast_mode,
             "bashTimeoutFloorSeconds": bash_timeout_floor_seconds,
@@ -506,6 +518,7 @@ mod tests {
         assert_eq!(v["ui"]["fontSize"], serde_json::Value::Null);
         assert_eq!(v["ui"]["restoreTabs"], serde_json::Value::Null);
         assert_eq!(v["agent"]["model"], serde_json::Value::Null);
+        assert_eq!(v["agent"]["thinkingLevel"], serde_json::Value::Null);
         assert_eq!(
             v["agent"]["providerTimeoutSeconds"],
             serde_json::Value::Null
@@ -539,14 +552,21 @@ mod tests {
     #[test]
     fn parse_config_toml_extracts_agent_section() {
         let v = parse_config_toml(
-            "[agent]\nmodel = \"anthropic/claude-sonnet-4-6\"\nprovider_timeout_seconds = 120\ncodex_fast_mode = true\nbash_timeout_floor_seconds = 45\nsubagent_timeout_seconds = 900\n",
+            "[agent]\nmodel = \"anthropic/claude-sonnet-4-6\"\nthinking_level = \"high\"\nprovider_timeout_seconds = 120\ncodex_fast_mode = true\nbash_timeout_floor_seconds = 45\nsubagent_timeout_seconds = 900\n",
         );
         assert_eq!(v["agent"]["model"], "anthropic/claude-sonnet-4-6");
+        assert_eq!(v["agent"]["thinkingLevel"], "high");
         assert_eq!(v["agent"]["providerTimeoutSeconds"], 120);
         assert_eq!(v["agent"]["codexFastMode"], true);
         assert_eq!(v["agent"]["bashTimeoutFloorSeconds"], 45);
         assert_eq!(v["agent"]["subagentTimeoutSeconds"], 900);
         assert_eq!(v["ui"]["theme"], serde_json::Value::Null);
+    }
+
+    #[test]
+    fn parse_config_toml_ignores_unknown_thinking_level() {
+        let v = parse_config_toml("[agent]\nthinking_level = \"turbo\"\n");
+        assert_eq!(v["agent"]["thinkingLevel"], serde_json::Value::Null);
     }
 
     #[test]
@@ -772,6 +792,12 @@ prompt_before_close = false
             assert!(v["ui"].as_object().unwrap().contains_key("fontSize"));
             assert!(v["ui"].as_object().unwrap().contains_key("restoreTabs"));
             assert!(v["agent"].as_object().unwrap().contains_key("model"));
+            assert!(
+                v["agent"]
+                    .as_object()
+                    .unwrap()
+                    .contains_key("thinkingLevel")
+            );
             assert!(
                 v["agent"]
                     .as_object()
