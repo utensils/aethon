@@ -80,15 +80,26 @@ pub(super) fn resolve_lfm2_binary() -> Option<PathBuf> {
     crate::env::resolve_program(LFM2_BIN_NAME)
 }
 
-/// Find the staged runner beside the executable: either directly (`<dir>/
-/// llama-lfm2-audio`) or in the bundled `lfm2-audio/` subdir.
+/// Find the staged runner relative to the executable. Candidates, in order:
+/// - `<dir>/llama-lfm2-audio` (direct sibling),
+/// - `<dir>/lfm2-audio/llama-lfm2-audio` (subdir beside the exe — dev mirror),
+/// - `<dir>/../Resources/lfm2-audio/llama-lfm2-audio` (macOS .app bundle: the
+///   exe lives in `Contents/MacOS/`, Tauri `resources` land in
+///   `Contents/Resources/`).
 pub(super) fn bundled_lfm2_binary(exe_dir: &Path) -> Option<PathBuf> {
-    [
+    let mut candidates = vec![
         exe_dir.join(LFM2_BIN_NAME),
         exe_dir.join(LFM2_BUNDLE_SUBDIR).join(LFM2_BIN_NAME),
-    ]
-    .into_iter()
-    .find(|candidate| candidate.is_file())
+    ];
+    if let Some(contents) = exe_dir.parent() {
+        candidates.push(
+            contents
+                .join("Resources")
+                .join(LFM2_BUNDLE_SUBDIR)
+                .join(LFM2_BIN_NAME),
+        );
+    }
+    candidates.into_iter().find(|candidate| candidate.is_file())
 }
 
 /// Audio capabilities are injected through this trait so the registry can

@@ -197,12 +197,13 @@ if [ -n "$host_triple" ] && [ -d "$staged_dir" ]; then
     echo "▸ Mirrored pi/package.json → Resources/pi/"
   fi
 
-  # The LFM2-Audio runner is a directory (binary + @loader_path dylibs), so it
-  # is mirrored whole next to the executable where resolve_lfm2_binary finds it.
+  # The LFM2-Audio runner is a directory (binary + @loader_path dylibs),
+  # bundled via Tauri `resources` → Contents/Resources/lfm2-audio/. Mirror it
+  # to the same place so the dev .app resolves it like a release bundle.
   if [ -d "$staged_dir/lfm2-audio" ]; then
-    rm -rf "$macos_dir/lfm2-audio"
-    cp -R "$staged_dir/lfm2-audio" "$macos_dir/lfm2-audio"
-    echo "▸ Mirrored lfm2-audio runner → MacOS/lfm2-audio/"
+    rm -rf "$resources_dir/lfm2-audio"
+    cp -R "$staged_dir/lfm2-audio" "$resources_dir/lfm2-audio"
+    echo "▸ Mirrored lfm2-audio runner → Resources/lfm2-audio/"
   fi
 fi
 

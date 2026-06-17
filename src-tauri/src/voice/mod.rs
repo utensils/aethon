@@ -1650,6 +1650,23 @@ mod tests {
         assert_eq!(bundled_lfm2_binary(dir.path()), Some(binary));
     }
 
+    #[test]
+    fn bundled_lfm2_binary_finds_macos_resources_runner() {
+        // Mirror the .app layout: Contents/MacOS/<exe>, Contents/Resources/.
+        let app = tempdir().expect("dir");
+        let macos = app.path().join("Contents").join("MacOS");
+        let resources = app
+            .path()
+            .join("Contents")
+            .join("Resources")
+            .join("lfm2-audio");
+        std::fs::create_dir_all(&macos).expect("create MacOS");
+        std::fs::create_dir_all(&resources).expect("create Resources");
+        let binary = resources.join("llama-lfm2-audio");
+        std::fs::write(&binary, b"runner").expect("write binary");
+        assert_eq!(bundled_lfm2_binary(&macos), Some(binary));
+    }
+
     #[tokio::test]
     async fn remove_lfm2_model_clears_cache_and_status() {
         let (_db_dir, db_path) = test_db_path();

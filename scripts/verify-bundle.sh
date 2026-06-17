@@ -43,9 +43,10 @@ fi
 echo "verify-bundle.sh: OK — no /nix/store paths in $bin"
 
 # Scan the bundled LFM2-Audio runner (binary + @loader_path dylibs), if staged.
-# The prebuilt runner is system-linked, so a /nix/store hit here means a
-# Nix-built binary was staged by mistake instead of the upstream release.
-runner_dir="$bundle/Contents/MacOS/lfm2-audio"
+# Bundled via Tauri `resources` → Contents/Resources/lfm2-audio/. The prebuilt
+# runner is system-linked, so a /nix/store hit here means a Nix-built binary
+# was staged by mistake instead of the upstream release.
+runner_dir="$bundle/Contents/Resources/lfm2-audio"
 if [[ -d "$runner_dir" ]]; then
   runner_leaks=""
   while IFS= read -r -d '' macho; do
