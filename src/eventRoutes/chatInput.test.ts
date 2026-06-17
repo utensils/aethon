@@ -128,6 +128,48 @@ describe("handleChatInput", () => {
     });
   });
 
+  it("voice:auto-listen live-applies and persists the toggle", async () => {
+    const { ctx, mocks } = buildRouteFixture();
+    const handled = await handleChatInput(
+      {
+        component: { id: "chat-input" },
+        eventType: "voice:auto-listen",
+        data: { value: true },
+      },
+      ctx,
+    );
+
+    expect(handled).toBe(true);
+    // Live: the running conversation reads /voice/conversationContinuous.
+    expect(
+      (ctx.stateRef.current.voice as { conversationContinuous?: boolean })
+        .conversationContinuous,
+    ).toBe(true);
+    // Persisted under the same key the Settings panel writes.
+    expect(mocks.applySettingsPatch).toHaveBeenCalledWith({
+      voice: { conversationContinuous: true },
+    });
+  });
+
+  it("voice:auto-listen coerces a non-true value to off", async () => {
+    const { ctx, mocks } = buildRouteFixture();
+    await handleChatInput(
+      {
+        component: { id: "chat-input" },
+        eventType: "voice:auto-listen",
+        data: { value: false },
+      },
+      ctx,
+    );
+    expect(
+      (ctx.stateRef.current.voice as { conversationContinuous?: boolean })
+        .conversationContinuous,
+    ).toBe(false);
+    expect(mocks.applySettingsPatch).toHaveBeenCalledWith({
+      voice: { conversationContinuous: false },
+    });
+  });
+
   // Wrong-id rejection is no longer the handler's responsibility — the
   // route table dispatches by `type:chat-input`, so a non-chat-input
   // event simply never reaches this handler. See index.test.ts for the
