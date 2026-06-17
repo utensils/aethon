@@ -229,6 +229,18 @@ task({
 });
 ```
 
+For independent fan-out, the main agent uses `task_batch`:
+
+```ts
+task_batch({
+  surface: "inline", // default; use "background" only when requested
+  tasks: [
+    { subagent_type: "kimi", prompt: "<self-contained task>" },
+    { subagent_type: "glm-5-2", prompt: "<self-contained task>" },
+  ],
+});
+```
+
 There are two ways a subagent gets picked:
 
 - **Auto-delegation**: the system-prompt advertisement (generated from
@@ -237,7 +249,10 @@ There are two ways a subagent gets picked:
 - **Explicit invocation**: prefix a chat message with `@<name>` (for
   example `@reviewer`) to force delegation. Detection is case-insensitive;
   Aethon appends a one-shot steer telling the model to call `task`
-  immediately with that subagent's name.
+  immediately with that subagent's name. Multiple leading mentions such as
+  `@kimi and @glm-5-2 peer review` steer the model to `task_batch`. Words
+  like `async`, `background`, `don't wait`, or `separate tabs` request
+  non-focused background task tabs; otherwise fan-out runs inline.
 
 ### Inline vs tab surface
 

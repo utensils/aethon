@@ -83,6 +83,12 @@ export function buildTasksApi(
           ...(typeof input.bridgePrompt === "string" && input.bridgePrompt
             ? { bridgePrompt: input.bridgePrompt }
             : {}),
+          ...(typeof input.activate === "boolean"
+            ? { activate: input.activate }
+            : {}),
+          ...(typeof input.label === "string" && input.label
+            ? { label: input.label }
+            : {}),
         },
         // Workspace-create + tab-open + send can take several seconds on a
         // large repo. 30s is the same ceiling as the shell-write ack

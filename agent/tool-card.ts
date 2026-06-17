@@ -50,6 +50,21 @@ export function summarizeToolArgs(toolName: string, args: unknown): string {
         String(a.subagent_type ?? "subagent"),
         firstLine(a.prompt),
       ]);
+    case "task_batch": {
+      const tasks = Array.isArray(a.tasks) ? a.tasks : [];
+      const names = tasks
+        .map((item) =>
+          item && typeof item === "object"
+            ? String((item as Record<string, unknown>).subagent_type ?? "")
+            : "",
+        )
+        .filter(Boolean)
+        .join(", ");
+      return compactSummary([
+        names || "subagents",
+        String(a.surface ?? "inline"),
+      ]);
+    }
     case "subagent":
       return compactSummary([String(a.agent ?? "agent"), firstLine(a.task)]);
     case "startTask":
@@ -218,7 +233,7 @@ export function toolCardPayload(opts: {
   if (result !== undefined) {
     const extracted = extractToolContent(result);
     if (extracted.text) {
-      if (toolName === "task") {
+      if (toolName === "task" || toolName === "task_batch") {
         children.push({
           id: `${id}-result`,
           type: "subagent-result",

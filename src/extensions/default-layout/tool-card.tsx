@@ -10,7 +10,11 @@ import {
   resolveNumber,
   resolveString,
 } from "../../utils/dataBinding";
-import type { SubagentProgress } from "../../hooks/bridgeMessageHandlers/subagentProgress";
+import type {
+  SubagentProgress,
+  SubagentProgressBatch,
+  SubagentProgressEntry,
+} from "../../hooks/bridgeMessageHandlers/subagentProgress";
 
 const TOOL_LONG_RUN_THRESHOLD_MS = 30 * 1000;
 
@@ -19,11 +23,11 @@ const TOOL_LONG_RUN_THRESHOLD_MS = 30 * 1000;
 function readSubagentProgress(
   state: Record<string, unknown>,
   componentId: string | undefined,
-): SubagentProgress | null {
+): SubagentProgressEntry | null {
   if (!componentId) return null;
   const callId = componentId.replace(/^tool-\d+-/, "");
   const map = state.subagentProgress as
-    | Record<string, SubagentProgress>
+    | Record<string, SubagentProgressEntry>
     | undefined;
   return map?.[callId] ?? null;
 }
@@ -54,6 +58,30 @@ function SubagentActivity({ progress }: { progress: SubagentProgress }) {
           {progress.text}
         </div>
       )}
+    </div>
+  );
+}
+
+function isBatchProgress(
+  progress: SubagentProgressEntry,
+): progress is SubagentProgressBatch {
+  return "kind" in progress && progress.kind === "batch";
+}
+
+function SubagentActivityStack({
+  progress,
+}: {
+  progress: SubagentProgressEntry;
+}) {
+  if (!isBatchProgress(progress)) {
+    return <SubagentActivity progress={progress} />;
+  }
+  return (
+    <div className="ae-subagent-activity-stack">
+      {progress.order.map((id) => {
+        const item = progress.items[id];
+        return item ? <SubagentActivity key={id} progress={item} /> : null;
+      })}
     </div>
   );
 }
@@ -157,7 +185,9 @@ export function ToolCard({
   const isError = props.isError ? resolveBoolean(props.isError, state) : false;
   const toolName = props.toolName ? resolveString(props.toolName, state) : "";
   const subagentProgress =
-    toolName === "task" ? readSubagentProgress(state, component.id) : null;
+    toolName === "task" || toolName === "task_batch"
+      ? readSubagentProgress(state, component.id)
+      : null;
   const status = props.status ? resolveString(props.status, state) : undefined;
   const isCancelled = status === "cancelled";
   const running = startedAt !== undefined && endedAt === undefined;
@@ -216,7 +246,9 @@ export function ToolCard({
         )}
       </summary>
       <div className="ae-tool-card-body">
-        {subagentProgress && <SubagentActivity progress={subagentProgress} />}
+        {subagentProgress && (
+          <SubagentActivityStack progress={subagentProgress} />
+        )}
         {hasChildren ? (
           renderChildren?.()
         ) : subagentProgress ? null : (

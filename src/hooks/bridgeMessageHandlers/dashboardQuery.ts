@@ -44,7 +44,7 @@ export const handleDashboardQuery: BridgeMessageHandler = (data, ctx) => {
       if (!project) {
         throw new Error(`unknown project path: ${projectPath}`);
       }
-      await ctx.startTaskInProject({
+      const launched = await ctx.startTaskInProject({
         projectId: project.id,
         prompt,
         newWorkspace: args.newWorkspace === true,
@@ -56,8 +56,14 @@ export const handleDashboardQuery: BridgeMessageHandler = (data, ctx) => {
         ...(typeof args.bridgePrompt === "string" && args.bridgePrompt.length > 0
           ? { bridgePrompt: args.bridgePrompt }
           : {}),
+        ...(typeof args.activate === "boolean"
+          ? { activate: args.activate }
+          : {}),
+        ...(typeof args.label === "string" && args.label.length > 0
+          ? { label: args.label }
+          : {}),
       });
-      return { ok: true, projectId: project.id };
+      return { ok: true, projectId: project.id, ...(launched ?? {}) };
     }
 
     if (op === "get_repo_overview") {

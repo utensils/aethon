@@ -81,6 +81,7 @@ export interface UseChatContext {
   slashContext: () => SlashCommandContext;
   persistLocalChatMessage: (msg: ChatMessage, tabId: string) => void;
   recordProjectModel: (model: string, tabId?: string) => void;
+  findTabById?: (tabId: string) => Tab | undefined;
   /** pi's boot/default model, used as the new-tab fallback. Cleared when
    *  the user resets to "(pi default)" so the next new session sends no
    *  explicit model and the agent picks its env-driven default. */
@@ -166,6 +167,7 @@ export function useChat(ctx: UseChatContext): UseChatActions {
     slashContext,
     persistLocalChatMessage,
     recordProjectModel,
+    findTabById,
     piDefaultModelRef,
   } = ctx;
 
@@ -533,9 +535,11 @@ export function useChat(ctx: UseChatContext): UseChatActions {
     const bridgeText = options?.bridgeText?.trim() || displayText;
     const mode = options?.mode === "steer" ? "steer" : "normal";
     const tabId = explicitTabId ?? activeTabId ?? "default";
-    const targetTab = ((stateRef.current.tabs as Tab[] | undefined) ?? []).find(
-      (tab) => tab.id === tabId,
-    );
+    const targetTab =
+      findTabById?.(tabId) ??
+      ((stateRef.current.tabs as Tab[] | undefined) ?? []).find(
+        (tab) => tab.id === tabId,
+      );
     const wasBusy =
       isAgentTabInFlight(targetTab) ||
       ((targetTab === undefined || tabId === activeTabId) &&

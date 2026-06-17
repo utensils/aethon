@@ -386,7 +386,7 @@ export function handleSessionEvent(
         emitBashResult(deps, streamed.delta, tabId);
         addLiveContextUsageEstimate(rec, streamed.delta);
         emitContextUsageThrottled(state, deps, tabId, rec);
-      } else if (ev.toolName === "task") {
+      } else if (ev.toolName === "task" || ev.toolName === "task_batch") {
         let cached = rec.toolArgsCache.get(ev.toolCallId);
         if (!cached) {
           cached = {

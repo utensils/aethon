@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { ExtensionRegistry } from "./extensions/ExtensionRegistry";
 import { defaultLayoutExtension } from "./extensions/default-layout";
@@ -48,6 +48,10 @@ import {
 import { useDerivedRenderState } from "./hooks/useDerivedRenderState";
 import { useTabBucketHydration } from "./hooks/useTabBucketHydration";
 import { useTaskLauncher } from "./hooks/useTaskLauncher";
+import {
+  findTabAcrossBuckets,
+  updateTabAcrossBuckets,
+} from "./hooks/tabRouting";
 import { useAppEventRouting } from "./hooks/useAppEventRouting";
 import { useAppStateRefs } from "./hooks/useAppStateRefs";
 import { useProjectModelRecorder } from "./hooks/useProjectModelRecorder";
@@ -424,6 +428,21 @@ export default function App() {
   // last-active tab rather than the empty landing card.
   useTabBucketHydration(state.persistedTabBuckets, tabBucketsRef);
 
+  const updateTabRouted = useCallback(
+    (tabId: string, mutator: (tab: Tab) => Tab) => {
+      updateTabAcrossBuckets(
+        { setState, stateRef, projectsRef, tabBucketsRef },
+        tabId,
+        mutator,
+      );
+    },
+    [projectsRef, setState, stateRef, tabBucketsRef],
+  );
+  const findTabRouted = useCallback(
+    (tabId: string) => findTabAcrossBuckets(stateRef, tabBucketsRef, tabId),
+    [stateRef, tabBucketsRef],
+  );
+
   // ---------------------------------------------------------------------
   // Toast stack + OS completion notification. Owned by useNotifications.
   // pushNotification's eviction path resolves any pending consent prompt
@@ -512,7 +531,7 @@ export default function App() {
   } = useChat({
     setState,
     stateRef,
-    updateTab,
+    updateTab: updateTabRouted,
     updateActiveTab,
     pendingTabOpens,
     slashCommandsRef,
@@ -521,6 +540,7 @@ export default function App() {
     persistLocalChatMessage,
     recordProjectModel,
     piDefaultModelRef,
+    findTabById: findTabRouted,
   });
 
   // All forward-ref slots — used by earlier hooks to call through to
@@ -550,7 +570,7 @@ export default function App() {
   useQueuedDispatch({
     tabs: (state.tabs as Tab[] | undefined) ?? [],
     sendChat,
-    updateTab,
+    updateTab: updateTabRouted,
   });
 
   // Dashboard task launch orchestrator. Shared by the per-project
@@ -564,6 +584,10 @@ export default function App() {
     newTab,
     pendingTabOpens,
     sendChat,
+    setState,
+    stateRef,
+    tabBucketsRef,
+    piDefaultModelRef,
   });
 
   // Updater (Cmd menu / tray "Check for Updates" + agent-driven path).
@@ -669,7 +693,7 @@ export default function App() {
     turnStartedAtRef,
     lastExtensionStateKeysRef,
     pendingTabOpens,
-    updateTab,
+    updateTab: updateTabRouted,
     updateActiveTab,
     newTab,
     newEditorTab,

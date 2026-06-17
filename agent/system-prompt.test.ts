@@ -149,6 +149,7 @@ describe("buildSubagentsSection", () => {
     ]);
     expect(out).toContain("Available subagents");
     expect(out).toContain("`task`");
+    expect(out).toContain("`task_batch`");
     expect(out).toContain("@<name>");
     expect(out).toContain("`reviewer`");
     expect(out).toContain("ollama/llama3.3");
@@ -156,14 +157,14 @@ describe("buildSubagentsSection", () => {
     expect(out).toContain("opens its own tab");
   });
 
-  it("advertises @<name> handoff for mentions anywhere in a message", () => {
+  it("advertises batch handoff for leading mentions and partial delegation for non-leading mentions", () => {
     const out = buildSubagentsSection([
       { name: "reviewer", description: "Reviews diffs", surface: "inline" },
     ]);
-    // Handoff is triggered by a mention *in* a message, not just a prefix, so
-    // mid-message mentions like "when done, have @reviewer check it" delegate.
-    expect(out).toContain("a message includes `@<name>`");
-    expect(out).not.toContain("prefixes a message");
+    expect(out).toContain("Multiple leading mentions");
+    expect(out).toContain('surface: "inline"');
+    expect(out).toContain('surface: "background"');
+    expect(out).toContain("Non-leading mentions");
   });
 
   it("is not rendered by buildRuntimeSection (advertisement is per-turn)", () => {

@@ -75,7 +75,7 @@ separately via `aethon.onEvent({ componentType, descendantId }, handler)`
 
 | Call | Purpose |
 |---|---|
-| `aethon.tasks.start({ projectPath, prompt, newWorkspace?, branch?, baseBranch? })` | Start a dashboard task: optionally create a workspace, open an agent tab at the target cwd, and send the first prompt. |
+| `aethon.tasks.start({ projectPath, prompt, newWorkspace?, branch?, baseBranch?, model?, activate?, label? })` | Start a dashboard task: optionally create a workspace, open an agent tab at the target cwd, and send the first prompt. Set `activate: false` to launch without focusing/switching. |
 | `aethon.dashboard.getRepoOverview({ projectPath })` | Read the cached GitHub/repo overview used by the project dashboard. |
 | `aethon.dashboard.refresh({ projectPath? })` | Refresh dashboard data. |
 | `aethon.dashboard.listIssues({ projectPath, limit? })` | Return cached open issues for a project. |

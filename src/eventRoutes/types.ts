@@ -179,7 +179,10 @@ export interface EventRouteContext {
     workspaceId?: string;
     /** Model the launched session should use (task-launcher model chip). */
     model?: string;
-  }) => Promise<void>;
+    bridgePrompt?: string;
+    activate?: boolean;
+    label?: string;
+  }) => Promise<unknown>;
   removeWorkspaceById: (
     workspaceId: string,
     opts?: { confirmed?: boolean },
