@@ -9,12 +9,13 @@
  * and returns its final text to the caller as the tool result.
  *
  * Three requested surfaces:
- *  - `inline` (default): the subagent runs here, streaming live progress into
+ *  - `inline`: the subagent runs here, streaming live progress into
  *    the outer tool card (via `onUpdate`) and a richer `subagent_progress`
  *    sidecar stream. Its summary becomes the tool result.
  *  - `background`: the subagent is launched as its own non-focused agent tab
  *    via `aethon.tasks.start`; the tool result just confirms the launch.
- *  - `auto`: the subagent definition decides (`inline` or focused `tab`).
+ *  - `auto` (the `task` default): the subagent definition decides (`inline` or
+ *    focused `tab`). `task_batch` defaults to inline fan-out.
  *
  * The subagent never receives the `task` tool itself, so it can't recurse.
  */

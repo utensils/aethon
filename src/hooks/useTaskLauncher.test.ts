@@ -341,6 +341,60 @@ describe("useTaskLauncher", () => {
     });
   });
 
+  it("does not count an active-bucket snapshot twice when naming background tabs", async () => {
+    vi.mocked(invoke).mockResolvedValue(null);
+    const existing = makeEmptyTab("existing", "Existing", "p1", "agent");
+    const stateRef = ref<Record<string, unknown>>({
+      activeTabId: "existing",
+      tabs: [existing],
+    });
+    const setState = vi.fn((arg: unknown) => {
+      stateRef.current =
+        typeof arg === "function"
+          ? (arg as (prev: Record<string, unknown>) => Record<string, unknown>)(
+              stateRef.current,
+            )
+          : (arg as Record<string, unknown>);
+    });
+    const projects = makeProjects();
+    projects.activeId = "p1";
+    const tabBucketsRef = ref(
+      new Map<string, TabBucket>([
+        ["p1", { tabs: [existing], activeTabId: "existing" }],
+      ]),
+    );
+    const sendChat = vi.fn(() => Promise.resolve());
+    const { result } = renderHook(() =>
+      useTaskLauncher({
+        projectsRef: ref(projects),
+        pushNotificationRef: ref((_: NotificationInput) => {}),
+        setActiveProjectById: vi.fn(() => true),
+        createWorkspaceWithParams: vi.fn(),
+        activateWorkspace: vi.fn(),
+        newTab: vi.fn(),
+        pendingTabOpens: ref(new Map()),
+        sendChat,
+        setState,
+        stateRef,
+        tabBucketsRef,
+        piDefaultModelRef: ref("openai/gpt-5"),
+      }),
+    );
+
+    await act(async () => {
+      await result.current({
+        projectId: "p1",
+        prompt: "background review",
+        activate: false,
+      });
+    });
+
+    const created = (stateRef.current.tabs as Tab[]).find(
+      (tab) => tab.id !== "existing",
+    );
+    expect(created?.label).toBe("Tab 2");
+  });
+
   it("adds an inactive task tab to a stashed workspace bucket", async () => {
     vi.mocked(invoke).mockResolvedValue(null);
     const stateRef = ref<Record<string, unknown>>({

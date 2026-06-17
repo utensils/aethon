@@ -104,14 +104,17 @@ function mirrorPersistedBuckets(
 function countKnownTabs(
   stateRef: MutableRefObject<Record<string, unknown>>,
   tabBucketsRef: MutableRefObject<Map<string, TabBucket>>,
+  activeBucketKey: string,
 ): number {
-  const activeCount = ((stateRef.current.tabs as Tab[] | undefined) ?? [])
-    .length;
-  let hiddenCount = 0;
-  for (const bucket of tabBucketsRef.current.values()) {
-    hiddenCount += bucket.tabs.length;
+  const ids = new Set<string>();
+  for (const tab of (stateRef.current.tabs as Tab[] | undefined) ?? []) {
+    ids.add(tab.id);
   }
-  return activeCount + hiddenCount;
+  for (const [bucketKey, bucket] of tabBucketsRef.current.entries()) {
+    if (bucketKey === activeBucketKey) continue;
+    for (const tab of bucket.tabs) ids.add(tab.id);
+  }
+  return ids.size;
 }
 
 export function useTaskLauncher({
@@ -223,7 +226,8 @@ export function useTaskLauncher({
         const tab: Tab = {
           ...makeEmptyTab(
             tabId,
-            opts.label ?? `Tab ${countKnownTabs(stateRef, tabBucketsRef) + 1}`,
+            opts.label ??
+              `Tab ${countKnownTabs(stateRef, tabBucketsRef, activeBucketKey) + 1}`,
             opts.projectId,
           ),
           model: inheritedModel,
