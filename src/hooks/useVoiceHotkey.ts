@@ -131,19 +131,18 @@ export function createVoiceHotkeyHandlers(
 
       if (toggleHotkey && matchesToggle(e, toggleHotkey)) {
         e.preventDefault();
-        // A live conversation owns the mic; don't let the dictation toggle
-        // open a second recording on the same device.
-        if (getConversation()?.active) return;
         if (v.state === "recording") {
           v.stop();
         } else if (v.state === "starting" || v.state === "transcribing") {
           v.cancel();
-        } else if (!isInputBlocked()) {
+        } else if (!isInputBlocked() && !getConversation()?.active) {
           // idle, setup-required, or error — try start (only when no overlay
           // owns input focus). Mirrors the mic button's catchall: from
           // setup-required, start() re-runs the provider check (now
           // succeeding after the user granted perms); from error it clears
-          // the error and re-attempts.
+          // the error and re-attempts. Suppressed while a conversation owns
+          // the mic so the toggle can't open a second recording — but stop/
+          // cancel above stay reachable as a mic-off escape hatch.
           void v.start();
         }
         return;

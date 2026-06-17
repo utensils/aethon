@@ -171,6 +171,32 @@ describe("voice hotkeys", () => {
     expect(convo.beginHold).not.toHaveBeenCalled();
   });
 
+  it("keeps the toggle as a mic-off escape hatch for live dictation under a conversation", () => {
+    // A dictation recording already running when the HUD opens must stay
+    // stoppable — only the idle start path is suppressed.
+    const recording = voice("recording");
+    const stopHandlers = createVoiceHotkeyHandlers(
+      () => recording,
+      "mod+shift+m",
+      null,
+      () => false,
+      () => conversation(true),
+    );
+    stopHandlers.onKeyDown(keyEvent({}));
+    expect(recording.stop).toHaveBeenCalledTimes(1);
+
+    const transcribing = voice("transcribing");
+    const cancelHandlers = createVoiceHotkeyHandlers(
+      () => transcribing,
+      "mod+shift+m",
+      null,
+      () => false,
+      () => conversation(true),
+    );
+    cancelHandlers.onKeyDown(keyEvent({}));
+    expect(transcribing.cancel).toHaveBeenCalledTimes(1);
+  });
+
   it("does not start while input is blocked", () => {
     const current = voice("idle");
     const handlers = createVoiceHotkeyHandlers(
