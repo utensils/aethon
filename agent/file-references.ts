@@ -35,8 +35,15 @@ export interface FileReferenceExpansion {
 export interface FileReferenceExpansionOptions {
   /** Active tab/project/workspace cwd. All relative refs resolve under here. */
   cwd: string;
-  /** Leading explicit subagent name, if one was accepted for this turn. */
-  leadingSubagentName?: string | null;
+  /**
+   * Canonical names of the subagents configured for this cwd. Any `@<name>`
+   * token matching one (anywhere in the message, not just the leading prefix)
+   * is treated as a subagent mention and skipped — never expanded as a file
+   * reference. Names are matched case-insensitively after stripping trailing
+   * punctuation, so `@reviewer.` is exempt while the path-like `@reviewer.md`
+   * is not.
+   */
+  subagentNames?: Iterable<string> | null;
   maxRefs?: number;
   maxFileBytes?: number;
   maxTotalBytes?: number;
@@ -112,8 +119,11 @@ export async function expandFileReferencesInPrompt(
     return { prompt: content, references: [] };
   }
 
+  const subagentNames = options.subagentNames
+    ? new Set([...options.subagentNames].map((name) => name.toLowerCase()))
+    : undefined;
   const parsed = parseFileReferences(content).filter((ref) =>
-    shouldConsiderReference(ref, content, options.leadingSubagentName),
+    shouldConsiderReference(ref, subagentNames),
   );
   if (parsed.length === 0) return { prompt: content, references: [] };
 
@@ -223,18 +233,14 @@ function readUnquoted(
 
 function shouldConsiderReference(
   ref: ParsedFileReference,
-  content: string,
-  leadingSubagentName: string | null | undefined,
+  subagentNames: ReadonlySet<string> | undefined,
 ): boolean {
-  const mentionValue = stripReferencePunctuation(ref.value);
-  if (
-    leadingSubagentName &&
-    mentionValue.toLowerCase() === leadingSubagentName.toLowerCase()
-  ) {
-    const trimmedStart = content.length - content.trimStart().length;
-    if (ref.start === trimmedStart) return false;
-  }
-  return true;
+  if (!subagentNames || subagentNames.size === 0) return true;
+  // A `@<name>` matching a configured subagent is an agent mention, not a file
+  // — skip it wherever it appears so mid-message mentions (e.g. "when done,
+  // have @reviewer check it") never surface a spurious "not found" notice.
+  const mentionValue = stripReferencePunctuation(ref.value).toLowerCase();
+  return !subagentNames.has(mentionValue);
 }
 
 type ResolvedReferenceTarget = {
