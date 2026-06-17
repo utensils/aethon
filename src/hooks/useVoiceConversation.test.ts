@@ -28,10 +28,9 @@ vi.mock("../services/voice", () => ({
 }));
 
 vi.mock("@tauri-apps/api/event", () => ({
-  listen: (name: string, cb: (e?: unknown) => void) => {
-    if (name === "voice://playback-finished") ev.fn = cb as () => void;
-    if (name === "voice://level")
-      ev.level = cb as (e: { payload: { level: number } }) => void;
+  listen: (name: string, cb: (e: { payload: { level: number } }) => void) => {
+    if (name === "voice://playback-finished") ev.fn = () => cb({ payload: { level: 0 } });
+    if (name === "voice://level") ev.level = cb;
     return Promise.resolve(() => {});
   },
 }));
