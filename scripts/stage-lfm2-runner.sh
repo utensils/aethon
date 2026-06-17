@@ -82,3 +82,24 @@ mkdir -p "$dest"
 cp -R "$tmp/unzipped/$inner/." "$dest/"
 chmod +x "$bin"
 echo "stage-lfm2-runner: staged + verified runner → $dest"
+
+# Code-sign every nested Mach-O (the runner binary + its @loader_path dylibs)
+# with the Developer ID + hardened runtime + secure timestamp. Tauri signs the
+# app and its externalBin sidecars, but NOT executables dropped into
+# `resources`, and Apple notarization rejects any unsigned nested Mach-O. We
+# sign here (in beforeBuildCommand, after tauri-action has imported the cert)
+# so the files are already signed when Tauri copies them into Resources and
+# seals the outer bundle. Only runs on macOS when a signing identity is set;
+# local/unsigned builds skip.
+if [ "$os" = "Darwin" ] && [ -n "${APPLE_SIGNING_IDENTITY:-}" ]; then
+  echo "stage-lfm2-runner: code-signing nested runner binaries"
+  signed=0
+  while IFS= read -r macho; do
+    if file -b "$macho" | grep -q "Mach-O"; then
+      codesign --force --options runtime --timestamp \
+        --sign "$APPLE_SIGNING_IDENTITY" "$macho"
+      signed=$((signed + 1))
+    fi
+  done < <(find "$dest" -type f)
+  echo "stage-lfm2-runner: signed $signed nested Mach-O file(s)"
+fi
