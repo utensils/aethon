@@ -519,11 +519,24 @@ impl VoiceProviderRegistry {
     }
 
     /// Synthesize speech for `text` via the LFM2-Audio runner, returning 24 kHz
-    /// mono PCM. Requires the LFM2 model + binary; cancellable via
-    /// `cancel_speech` and bounded by the shared transcription timeout.
-    pub async fn synthesize_speech(&self, text: String) -> Result<CapturedAudio, String> {
+    /// mono PCM. Requires the LFM2 provider to be enabled with its model +
+    /// binary present; cancellable via `cancel_speech` and bounded by the
+    /// shared transcription timeout.
+    pub async fn synthesize_speech(
+        &self,
+        db_path: &Path,
+        text: String,
+    ) -> Result<CapturedAudio, String> {
         if text.trim().is_empty() {
             return Err("Nothing to speak".to_string());
+        }
+        {
+            // Honor the same enable toggle the recording path enforces, so a
+            // disabled provider never speaks (TTS used to bypass this).
+            let db = VoiceSettings::open(db_path).map_err(|e| e.to_string())?;
+            if !self.enabled(&db, LFM2_ID) {
+                return Err("LFM2-Audio voice output is disabled".to_string());
+            }
         }
         if !lfm2_model_ready(&self.lfm2_cache_path()) {
             return Err("Download the LFM2-Audio model before using text-to-speech".to_string());

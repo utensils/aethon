@@ -173,7 +173,8 @@ pub async fn voice_speak(
     voice: State<'_, VoiceProviderRegistry>,
     player: State<'_, AudioPlayer>,
 ) -> Result<(), String> {
-    let audio = voice.synthesize_speech(text).await?;
+    let state_path = crate::commands::config::aethon_state_path(&app, "voice.json")?;
+    let audio = voice.synthesize_speech(&state_path, text).await?;
     player.play_samples(audio.samples, audio.sample_rate, Some(app))
 }
 
