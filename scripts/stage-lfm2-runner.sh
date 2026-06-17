@@ -86,18 +86,59 @@ echo "stage-lfm2-runner: staged + verified runner → $dest"
 # Code-sign every nested Mach-O (the runner binary + its @loader_path dylibs)
 # with the Developer ID + hardened runtime + secure timestamp. Tauri signs the
 # app and its externalBin sidecars, but NOT executables dropped into
-# `resources`, and Apple notarization rejects any unsigned nested Mach-O. We
-# sign here (in beforeBuildCommand, after tauri-action has imported the cert)
-# so the files are already signed when Tauri copies them into Resources and
-# seals the outer bundle. Only runs on macOS when a signing identity is set;
-# local/unsigned builds skip.
-if [ "$os" = "Darwin" ] && [ -n "${APPLE_SIGNING_IDENTITY:-}" ]; then
+# `resources`, and Apple notarization rejects any unsigned nested Mach-O (the
+# upstream runner ships only ad-hoc-signed).
+#
+# We must sign here, in beforeBuildCommand: Tauri imports the cert into its own
+# temporary keychain only at the later signing phase (and deletes it after), so
+# no signing keychain exists yet. The signing env vars ARE available though, so
+# we set up our own keychain, import the cert, and sign — mirroring Tauri's own
+# keychain dance. The nested signatures are embedded in the files, so they
+# survive Tauri copying them into Resources and sealing the outer bundle
+# (inside-out order). Local/unsigned builds (no APPLE_CERTIFICATE) skip this.
+if [ "$os" = "Darwin" ] && [ -n "${APPLE_CERTIFICATE:-}" ] \
+  && [ -n "${APPLE_CERTIFICATE_PASSWORD:-}" ] && [ -n "${APPLE_SIGNING_IDENTITY:-}" ]; then
   echo "stage-lfm2-runner: code-signing nested runner binaries"
+  sign_tmp="$(mktemp -d)"
+  keychain="$sign_tmp/lfm2-signing.keychain-db"
+  kc_pass="lfm2-$$-stage"
+  # Capture the user's keychain search list as an array (each path a separate
+  # element, so paths survive verbatim) to restore it afterwards. Matters for
+  # local signed build-app runs; CI runners are ephemeral.
+  orig_keychains=()
+  while IFS= read -r kc_line; do
+    kc_clean="$(printf '%s' "$kc_line" | sed -E 's/^[[:space:]]*"?//; s/"?[[:space:]]*$//')"
+    [ -n "$kc_clean" ] && orig_keychains+=("$kc_clean")
+  done < <(security list-keychains -d user)
+  cleanup_keychain() {
+    if [ "${#orig_keychains[@]}" -gt 0 ]; then
+      security list-keychains -d user -s "${orig_keychains[@]}" >/dev/null 2>&1 || true
+    fi
+    security delete-keychain "$keychain" >/dev/null 2>&1 || true
+    rm -rf "$sign_tmp" "$tmp"
+  }
+  # Replaces the earlier download-tmp trap; fold its cleanup in here.
+  trap cleanup_keychain EXIT
+
+  echo "$APPLE_CERTIFICATE" | base64 --decode > "$sign_tmp/cert.p12"
+  security create-keychain -p "$kc_pass" "$keychain"
+  security set-keychain-settings -lut 21600 "$keychain"
+  security unlock-keychain -p "$kc_pass" "$keychain"
+  security import "$sign_tmp/cert.p12" -P "$APPLE_CERTIFICATE_PASSWORD" \
+    -T /usr/bin/codesign -k "$keychain"
+  # Let codesign use the imported key without an interactive prompt.
+  security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$kc_pass" \
+    "$keychain" >/dev/null
+  # Prepend our keychain to the search list (mirrors Tauri's own signing dance)
+  # so codesign resolves the identity; the system keychain stays in the list for
+  # Apple intermediate-cert chain trust.
+  security list-keychains -d user -s "$keychain" "${orig_keychains[@]}" >/dev/null
+
   signed=0
   while IFS= read -r macho; do
     if file -b "$macho" | grep -q "Mach-O"; then
       codesign --force --options runtime --timestamp \
-        --sign "$APPLE_SIGNING_IDENTITY" "$macho"
+        --keychain "$keychain" --sign "$APPLE_SIGNING_IDENTITY" "$macho"
       signed=$((signed + 1))
     fi
   done < <(find "$dest" -type f)
