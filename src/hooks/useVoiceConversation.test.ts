@@ -5,8 +5,11 @@ import { useVoiceConversation } from "./useVoiceConversation";
 import { emitAgentTurnComplete } from "../utils/agentTurnEvents";
 import { isConversationActive } from "../utils/conversationMode";
 
-const { mocks, playback } = vi.hoisted(() => ({
-  playback: { fn: undefined as undefined | (() => void) },
+const { mocks, ev } = vi.hoisted(() => ({
+  ev: {
+    fn: undefined as undefined | (() => void),
+    level: undefined as undefined | ((e: { payload: { level: number } }) => void),
+  },
   mocks: {
     startVoiceRecording: vi.fn(() => Promise.resolve()),
     stopAndTranscribeVoice: vi.fn(() => Promise.resolve("hello agent")),
@@ -25,8 +28,10 @@ vi.mock("../services/voice", () => ({
 }));
 
 vi.mock("@tauri-apps/api/event", () => ({
-  listen: (name: string, cb: () => void) => {
-    if (name === "voice://playback-finished") playback.fn = cb;
+  listen: (name: string, cb: (e?: unknown) => void) => {
+    if (name === "voice://playback-finished") ev.fn = cb as () => void;
+    if (name === "voice://level")
+      ev.level = cb as (e: { payload: { level: number } }) => void;
     return Promise.resolve(() => {});
   },
 }));
@@ -57,7 +62,8 @@ describe("useVoiceConversation", () => {
     Object.values(mocks).forEach((m) => m.mockClear());
     mocks.startVoiceRecording.mockResolvedValue(undefined);
     mocks.stopAndTranscribeVoice.mockResolvedValue("hello agent");
-    playback.fn = undefined;
+    ev.fn = undefined;
+    ev.level = undefined;
   });
   afterEach(() => cleanup());
 
@@ -83,7 +89,7 @@ describe("useVoiceConversation", () => {
     expect(mocks.speakVoice).toHaveBeenCalledWith("The reply.");
     expect(result.current.phase).toBe("speaking");
 
-    act(() => playback.fn?.());
+    act(() => ev.fn?.());
     await flush();
     expect(result.current.phase).toBe("idle");
   });
@@ -98,10 +104,54 @@ describe("useVoiceConversation", () => {
     await flush();
     mocks.startVoiceRecording.mockClear();
 
-    act(() => playback.fn?.());
+    act(() => ev.fn?.());
     await flush();
     expect(mocks.startVoiceRecording).toHaveBeenCalledTimes(1);
     expect(result.current.phase).toBe("listening");
+  });
+
+  it("auto-ends the utterance on silence (hands-free, no tap)", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(1000);
+      const { result, submitText } = makeController(true);
+      act(() => result.current.enter());
+      await flush();
+      expect(result.current.phase).toBe("listening");
+
+      // The user speaks...
+      act(() => ev.level?.({ payload: { level: 0.12 } }));
+      // ...then goes quiet for longer than the silence-hang window.
+      vi.setSystemTime(1000 + 1500);
+      act(() => ev.level?.({ payload: { level: 0.0 } }));
+      await flush();
+
+      // VAD finished the turn without any manual "done" action.
+      expect(mocks.stopAndTranscribeVoice).toHaveBeenCalled();
+      expect(submitText).toHaveBeenCalledWith("hello agent");
+      expect(result.current.phase).toBe("thinking");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not auto-end before the user has spoken", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(1000);
+      const { result } = makeController(true);
+      act(() => result.current.enter());
+      await flush();
+
+      // Pure silence (no speech yet) must not end the turn, no matter how long.
+      vi.setSystemTime(1000 + 5000);
+      act(() => ev.level?.({ payload: { level: 0.0 } }));
+      await flush();
+      expect(mocks.stopAndTranscribeVoice).not.toHaveBeenCalled();
+      expect(result.current.phase).toBe("listening");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("ignores a turn-complete for a different tab", async () => {

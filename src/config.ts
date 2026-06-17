@@ -171,7 +171,7 @@ const DEFAULTS: AethonConfig = {
         : null,
     speakAgentReplies: false,
     speakMaxChars: 600,
-    conversationContinuous: false,
+    conversationContinuous: true,
   },
   updates: { channel: "stable", disableAutoCheck: false },
   devshell: {
@@ -292,7 +292,8 @@ export function getConfig(): Promise<AethonConfig> {
             Number.isFinite(obj.voice.speakMaxChars)
               ? Math.min(5000, Math.max(50, Math.round(obj.voice.speakMaxChars)))
               : DEFAULTS.voice.speakMaxChars,
-          conversationContinuous: obj?.voice?.conversationContinuous === true,
+          conversationContinuous:
+            obj?.voice?.conversationContinuous !== false,
         },
         updates: {
           channel: obj?.updates?.channel === "nightly" ? "nightly" : "stable",

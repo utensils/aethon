@@ -175,7 +175,7 @@ export function ChatInput({
   const conversation = useVoiceConversation({
     submitText: (text) => onEvent("submit", { value: text, mode: "normal" }),
     getActiveTabId: () => state.activeTabId as string | undefined,
-    continuous: voiceConfig.conversationContinuous ?? false,
+    continuous: voiceConfig.conversationContinuous ?? true,
     maxSpokenChars: voiceConfig.speakMaxChars ?? 600,
     onNeedsSetup: (providerId) => onEvent("voice:setup", { providerId }),
   });

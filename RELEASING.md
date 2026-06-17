@@ -293,22 +293,33 @@ version:sync` propagates the version to `tauri.conf.json`,
 - **LFM2-Audio voice runner.** The LFM2-Audio voice provider shells out
   to the prebuilt `llama-lfm2-audio` runner (a binary plus its
   `@loader_path` dylibs). It is **not** committed — `src-tauri/binaries/`
-  is gitignored and the runner is fetched at build time by
-  `scripts/stage-lfm2-runner.sh` (per-platform zip from Liquid AI's GGUF
-  repo). `build-app` stages it, then copies the directory into
-  `Aethon.app/Contents/MacOS/lfm2-audio/`, where `resolve_lfm2_binary`
-  (`src-tauri/src/voice/lfm2.rs`) finds it. `verify-bundle.sh` scans the
-  runner for `/nix/store` install_names alongside the main binary — the
-  upstream runner is system-linked, so a leak means a Nix build was
-  staged by mistake. In dev, `scripts/macos-dev-app-runner.sh` mirrors the
-  same directory into the dev `.app`; or point `AETHON_LFM2_AUDIO_BIN` at
-  a runner binary directly. **Signed/notarized caveat:** the nested runner
-  must be signed and present before notarization. `build-app` re-signs the
-  runner + app when `APPLE_SIGNING_IDENTITY` is set, but because it adds
-  the runner after `cargo tauri build` runs, a fully notarized release
-  must be validated on a signed build (the unsigned local path is verified
-  by `verify-bundle.sh`). The model GGUFs themselves are downloaded
-  on-demand into `~/.aethon/models/voice/` and are never bundled.
+  is gitignored and the runner is fetched at build time. Staging and
+  bundling go through Tauri's own build inputs so every build path ships
+  it (including the GitHub workflows that build via `tauri-action` →
+  `bun tauri build`, not the devshell `build-app`):
+  - `tauri.conf.json` `build.beforeBuildCommand` runs
+    `scripts/stage-lfm2-runner.sh` before the frontend build. The script
+    downloads the per-platform runner zip from Liquid AI's GGUF repo
+    **pinned to a commit + verified against a checked-in SHA-256**, then
+    unpacks it to `src-tauri/binaries/lfm2-audio/`. Unsupported platforms
+    (e.g. Windows) skip gracefully. Only `macos-aarch64` is built for
+    release/nightly today.
+  - `tauri.conf.json` `bundle.resources` includes `binaries/lfm2-audio`,
+    so Tauri copies it into `Aethon.app/Contents/Resources/lfm2-audio/`
+    and **signs + notarizes it as part of the bundle** before producing
+    the DMG/updater artifacts. `resolve_lfm2_binary`
+    (`src-tauri/src/voice/lfm2.rs`) finds it there at runtime.
+  - `verify-bundle.sh` scans the runner (binary + dylibs) for
+    `/nix/store` install_names alongside the main binary — the upstream
+    runner is system-linked, so a leak means a Nix build was staged by
+    mistake.
+  - In dev, `scripts/macos-dev-app-runner.sh` mirrors the directory into
+    the dev `.app`'s `Resources/`; or point `AETHON_LFM2_AUDIO_BIN` at a
+    runner binary directly.
+  - Bumping the runner: update `hf_rev` and the per-platform SHA-256s in
+    `scripts/stage-lfm2-runner.sh` together.
+  The model GGUFs themselves are downloaded on-demand into
+  `~/.aethon/models/voice/` and are never bundled.
 - **Boot-probation rollback.** Each in-app update first copies the
   installed `.app` bundle to `~/.aethon/updates/previous/<version>/`
   and writes a sentinel to `~/.aethon/boot-probation.json`. If the

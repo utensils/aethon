@@ -1,8 +1,8 @@
 import type { ConversationPhase } from "../../hooks/useVoiceConversation";
 
 const STATUS_LABEL: Record<ConversationPhase, string> = {
-  idle: "Tap speak, then talk",
-  listening: "Listening…",
+  idle: "Paused — tap to talk",
+  listening: "Listening… (pause when done)",
   transcribing: "Transcribing…",
   thinking: "Thinking…",
   speaking: "Speaking…",

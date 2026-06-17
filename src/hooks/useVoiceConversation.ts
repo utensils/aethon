@@ -25,7 +25,8 @@ export interface UseVoiceConversationOptions {
   submitText: (text: string) => void;
   /** The tab the conversation is bound to, captured at submit time. */
   getActiveTabId: () => string | undefined;
-  /** Auto-reopen the mic after the agent finishes speaking. */
+  /** Hands-free: auto-reopen the mic after the agent finishes speaking so the
+   *  user never taps to start the next turn. */
   continuous: boolean;
   /** Cap on spoken reply length (shared with speak-agent-replies). */
   maxSpokenChars: number;
@@ -47,6 +48,21 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+// Voice-activity detection thresholds (over the recorder's ~30 Hz
+// `voice://level` RMS, where typical speech is ~0.05–0.15). Speech must first
+// be detected, then a sustained silence ends the utterance — so the user never
+// taps "done". Hysteresis (speech > silence) avoids flapping on word gaps.
+const VAD_SPEECH_LEVEL = 0.05;
+const VAD_SILENCE_LEVEL = 0.03;
+const VAD_SILENCE_HANG_MS = 1100;
+// Hard ceiling so a noisy room (level never dipping below silence) still ends
+// the turn rather than recording forever.
+const VAD_MAX_UTTERANCE_MS = 30_000;
+
+interface VoiceLevel {
+  level: number;
+}
+
 export function useVoiceConversation(
   options: UseVoiceConversationOptions,
 ): VoiceConversationController {
@@ -60,6 +76,11 @@ export function useVoiceConversation(
   const activeRef = useRef(false);
   const startingRef = useRef(false);
   const tabIdRef = useRef<string | undefined>(undefined);
+  // VAD bookkeeping for the current listening window.
+  const vadSpokeRef = useRef(false);
+  const lastSpeechAtRef = useRef(0);
+  const listenStartAtRef = useRef(0);
+  const finishRef = useRef<() => void>(() => {});
   const optionsRef = useRef(options);
   // Keep the latest callbacks/config available to async transitions without a
   // render-phase ref write (mirrors the voiceInputBlockedRef pattern).
@@ -85,6 +106,11 @@ export function useVoiceConversation(
         await cancelVoiceRecording(LFM2_VOICE_PROVIDER_ID).catch(() => {});
         return;
       }
+      // Arm VAD for this listening window (the level listener drives end-of-
+      // utterance, so no manual "done" tap is needed).
+      vadSpokeRef.current = false;
+      lastSpeechAtRef.current = 0;
+      listenStartAtRef.current = Date.now();
       setPhase("listening");
     } catch (caught) {
       setError(errorMessage(caught));
@@ -201,6 +227,46 @@ export function useVoiceConversation(
       unlisten?.();
     };
   }, [goIdleOrContinue]);
+
+  // Keep the latest finishListening reachable from the VAD listener without
+  // re-subscribing the event on every render.
+  useEffect(() => {
+    finishRef.current = () => void finishListening();
+  });
+
+  // Voice-activity detection: end the utterance automatically once the user
+  // stops talking. Drives a fluid, hands-free conversation — the mic closes on
+  // silence instead of a manual tap. Subscribed once; gated on the listening
+  // phase so dictation levels are ignored.
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    let cancelled = false;
+    void listen<VoiceLevel>("voice://level", ({ payload }) => {
+      if (!activeRef.current || phaseRef.current !== "listening") return;
+      const now = Date.now();
+      const level = payload?.level ?? 0;
+      if (level >= VAD_SPEECH_LEVEL) {
+        vadSpokeRef.current = true;
+        lastSpeechAtRef.current = now;
+        return;
+      }
+      if (!vadSpokeRef.current) return; // wait for speech before arming silence
+      const silentLongEnough =
+        level < VAD_SILENCE_LEVEL &&
+        now - lastSpeechAtRef.current >= VAD_SILENCE_HANG_MS;
+      const tooLong = now - listenStartAtRef.current >= VAD_MAX_UTTERANCE_MS;
+      if (silentLongEnough || tooLong) {
+        finishRef.current();
+      }
+    }).then((fn) => {
+      if (cancelled) fn();
+      else unlisten = fn;
+    });
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
+  }, []);
 
   // Tear down recording/playback if we unmount mid-conversation.
   useEffect(() => {
