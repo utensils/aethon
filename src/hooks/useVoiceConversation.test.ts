@@ -210,4 +210,75 @@ describe("useVoiceConversation", () => {
     expect(result.current.active).toBe(false);
     expect(isConversationActive()).toBe(false);
   });
+
+  it("push-to-talk hold keeps the mic open through silence until release", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(1000);
+      const { result, submitText } = makeController(true);
+      act(() => result.current.enter());
+      await flush();
+      expect(result.current.phase).toBe("listening");
+
+      // The user presses and holds the push-to-talk key.
+      act(() => result.current.beginHold());
+
+      // They speak, then pause well past the silence-hang window — VAD must NOT
+      // end the utterance because the key is held.
+      act(() => ev.level?.({ payload: { level: 0.12 } }));
+      vi.setSystemTime(1000 + 5000);
+      act(() => ev.level?.({ payload: { level: 0.0 } }));
+      await flush();
+      expect(mocks.stopAndTranscribeVoice).not.toHaveBeenCalled();
+      expect(result.current.phase).toBe("listening");
+
+      // Releasing ends the utterance and sends it.
+      act(() => result.current.endHold());
+      await flush();
+      expect(mocks.stopAndTranscribeVoice).toHaveBeenCalled();
+      expect(submitText).toHaveBeenCalledWith("hello agent");
+      expect(result.current.phase).toBe("thinking");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("push-to-talk from an idle turn re-opens the mic", async () => {
+    const { result } = makeController(false);
+    act(() => result.current.enter());
+    await flush();
+    act(() => result.current.primaryAction()); // finish → submit → thinking
+    await flush();
+    // An empty reply drops a non-continuous conversation back to idle.
+    act(() => emitAgentTurnComplete({ tabId: "t1", text: "" }));
+    await flush();
+    expect(result.current.phase).toBe("idle");
+
+    mocks.startVoiceRecording.mockClear();
+    act(() => result.current.beginHold());
+    await flush();
+    expect(mocks.startVoiceRecording).toHaveBeenCalledTimes(1);
+    expect(result.current.phase).toBe("listening");
+  });
+
+  it("a release without a held press never sends", async () => {
+    const { result, submitText } = makeController(true);
+    act(() => result.current.enter());
+    await flush();
+    expect(result.current.phase).toBe("listening");
+
+    act(() => result.current.endHold());
+    await flush();
+    expect(mocks.stopAndTranscribeVoice).not.toHaveBeenCalled();
+    expect(submitText).not.toHaveBeenCalled();
+    expect(result.current.phase).toBe("listening");
+  });
+
+  it("push-to-talk is inert when no conversation is active", async () => {
+    const { result } = makeController(false);
+    act(() => result.current.beginHold());
+    await flush();
+    expect(mocks.startVoiceRecording).not.toHaveBeenCalled();
+    expect(result.current.phase).toBe("idle");
+  });
 });

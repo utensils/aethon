@@ -42,6 +42,11 @@ export interface VoiceConversationController {
   exit: () => void;
   /** Context-aware tap: start speaking / finish speaking / interrupt. */
   primaryAction: () => void;
+  /** Push-to-talk press: open/keep the mic and suppress VAD auto-end so the
+   *  user controls when the utterance ends (held key). No-op unless active. */
+  beginHold: () => void;
+  /** Push-to-talk release: end the held utterance and send it to the agent. */
+  endHold: () => void;
 }
 
 function errorMessage(error: unknown): string {
@@ -80,6 +85,9 @@ export function useVoiceConversation(
   const vadSpokeRef = useRef(false);
   const lastSpeechAtRef = useRef(0);
   const listenStartAtRef = useRef(0);
+  // True while the user holds the push-to-talk key: VAD never auto-ends the
+  // utterance, so the release is the sole end-of-message signal.
+  const manualHoldRef = useRef(false);
   const finishRef = useRef<() => void>(() => {});
   const optionsRef = useRef(options);
   // Keep the latest callbacks/config available to async transitions without a
@@ -113,6 +121,8 @@ export function useVoiceConversation(
       listenStartAtRef.current = Date.now();
       setPhase("listening");
     } catch (caught) {
+      // A failed open must not leave VAD suppressed for the next window.
+      manualHoldRef.current = false;
       setError(errorMessage(caught));
       setPhase("idle");
       optionsRef.current.onNeedsSetup?.(LFM2_VOICE_PROVIDER_ID);
@@ -166,6 +176,7 @@ export function useVoiceConversation(
 
   const exit = useCallback(() => {
     activeRef.current = false;
+    manualHoldRef.current = false;
     setActive(false);
     setConversationActive(false);
     void cancelVoiceRecording(LFM2_VOICE_PROVIDER_ID).catch(() => {});
@@ -190,6 +201,30 @@ export function useVoiceConversation(
         break; // mid-flight; ignore taps
     }
   }, [finishListening, interrupt, startListening]);
+
+  // Push-to-talk press. Opens the mic if idle and suppresses VAD so the held
+  // key — not silence — decides when the utterance ends. While the agent is
+  // thinking/speaking, or mid-transcription, the press is ignored (tap the HUD
+  // to interrupt); we only arm the hold when we actually reach listening.
+  const beginHold = useCallback(() => {
+    if (!activeRef.current) return;
+    if (phaseRef.current === "idle") {
+      manualHoldRef.current = true;
+      void startListening();
+    } else if (phaseRef.current === "listening") {
+      manualHoldRef.current = true;
+    }
+  }, [startListening]);
+
+  // Push-to-talk release. Drops the VAD suppression and ends the utterance,
+  // sending whatever was captured (finishListening is a no-op off "listening").
+  const endHold = useCallback(() => {
+    if (!manualHoldRef.current) return;
+    manualHoldRef.current = false;
+    if (phaseRef.current === "listening") {
+      void finishListening();
+    }
+  }, [finishListening]);
 
   // Speak the agent's reply once the turn completes, then continue/idle.
   useEffect(() => {
@@ -250,6 +285,9 @@ export function useVoiceConversation(
         lastSpeechAtRef.current = now;
         return;
       }
+      // While the user holds the push-to-talk key, they own the end-of-message
+      // signal — never auto-close on silence or the ceiling.
+      if (manualHoldRef.current) return;
       if (!vadSpokeRef.current) return; // wait for speech before arming silence
       const silentLongEnough =
         level < VAD_SILENCE_LEVEL &&
@@ -268,6 +306,17 @@ export function useVoiceConversation(
     };
   }, []);
 
+  // If focus leaves while the push-to-talk key is held, the keyup never
+  // arrives — drop the suppression so VAD resumes and the mic can't stay
+  // wedged open. The conversation itself deliberately keeps running across blur.
+  useEffect(() => {
+    const onBlur = () => {
+      manualHoldRef.current = false;
+    };
+    window.addEventListener("blur", onBlur);
+    return () => window.removeEventListener("blur", onBlur);
+  }, []);
+
   // Tear down recording/playback if we unmount mid-conversation.
   useEffect(() => {
     return () => {
@@ -279,5 +328,5 @@ export function useVoiceConversation(
     };
   }, []);
 
-  return { active, phase, error, enter, exit, primaryAction };
+  return { active, phase, error, enter, exit, primaryAction, beginHold, endHold };
 }
