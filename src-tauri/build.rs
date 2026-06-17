@@ -75,12 +75,32 @@ fn main() {
             // panicking here aborts the build script before it can.
             panic!("aethon-agent sidecar build failed: {msg}");
         }
+        // The LFM2-Audio voice runner is staged into binaries/lfm2-audio by
+        // tauri.conf's `beforeBuildCommand` for actual bundling, but
+        // `bundle.resources` validation inside tauri_build::build() requires
+        // the path to exist for *any* cargo build (clippy/test included).
+        // Ensure at least an empty directory so those commands don't fail; a
+        // real `tauri build` repopulates it before the bundler copies it.
+        ensure_lfm2_resource_dir(&project_root);
         tauri_build::build();
     } else {
         println!(
             "cargo:warning=skipping aethon-agent sidecar build; repository-level agent inputs are absent"
         );
         println!("cargo:warning=skipping tauri bundle metadata generation for crate packaging");
+    }
+}
+
+/// Ensure `src-tauri/binaries/lfm2-audio/` exists so the `bundle.resources`
+/// entry validates during plain cargo builds. No network; the real runner is
+/// staged by `scripts/stage-lfm2-runner.sh` (run from `beforeBuildCommand`).
+fn ensure_lfm2_resource_dir(project_root: &Path) {
+    let dir = project_root
+        .join("src-tauri")
+        .join("binaries")
+        .join("lfm2-audio");
+    if let Err(e) = std::fs::create_dir_all(&dir) {
+        println!("cargo:warning=could not create {}: {e}", dir.display());
     }
 }
 
