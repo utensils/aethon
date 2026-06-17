@@ -1,5 +1,14 @@
 import { useEffect, useLayoutEffect, useRef } from "react";
 import type { VoiceInputController } from "./useVoiceInput";
+import type { VoiceConversationController } from "./useVoiceConversation";
+
+/** The slice of the conversation controller the hold hotkey drives. When a
+ * conversation is active the hold key is its push-to-talk: press suppresses
+ * VAD, release ends the utterance — so the same key never also fires dictation. */
+export type ConversationHotkeyHandle = Pick<
+  VoiceConversationController,
+  "active" | "beginHold" | "endHold"
+>;
 
 // Re-export so existing call sites (KeyboardSettings, tests) keep working.
 export {
@@ -92,12 +101,18 @@ export function createVoiceHotkeyHandlers(
    * or settings panel is open). Stop/cancel/release actions still run so an
    * in-flight recording can always be ended. */
   isInputBlocked: () => boolean = () => false,
+  /** When a voice conversation is active, the hold key is its push-to-talk
+   * instead of a dictation trigger. Null/absent → dictation only. */
+  getConversation: () => ConversationHotkeyHandle | null = () => null,
 ): {
   onKeyDown: (e: KeyboardEvent) => void;
   onKeyUp: (e: KeyboardEvent) => void;
   onBlur: () => void;
 } {
   let holdActive = false;
+  // Which subsystem the current hold drives, captured at keydown so the matching
+  // keyup ends the same one even if the conversation flips mid-press.
+  let holdTarget: "voice" | "conversation" | null = null;
   const holdCode = holdBindingToCode(holdBinding);
 
   return {
@@ -120,12 +135,14 @@ export function createVoiceHotkeyHandlers(
           v.stop();
         } else if (v.state === "starting" || v.state === "transcribing") {
           v.cancel();
-        } else if (!isInputBlocked()) {
+        } else if (!isInputBlocked() && !getConversation()?.active) {
           // idle, setup-required, or error — try start (only when no overlay
           // owns input focus). Mirrors the mic button's catchall: from
           // setup-required, start() re-runs the provider check (now
           // succeeding after the user granted perms); from error it clears
-          // the error and re-attempts.
+          // the error and re-attempts. Suppressed while a conversation owns
+          // the mic so the toggle can't open a second recording — but stop/
+          // cancel above stay reachable as a mic-off escape hatch.
           void v.start();
         }
         return;
@@ -140,20 +157,42 @@ export function createVoiceHotkeyHandlers(
         holdBinding &&
         holdBindingMatchesEvent(holdBinding, e) &&
         !holdActive &&
-        v.state !== "recording" &&
-        v.state !== "starting" &&
-        v.state !== "transcribing" &&
         !isInputBlocked()
       ) {
-        e.preventDefault();
-        holdActive = true;
-        void v.start();
+        // Conversation push-to-talk takes precedence: the held key suppresses
+        // VAD and the release sends, rather than starting a dictation pass.
+        const conversation = getConversation();
+        if (conversation?.active) {
+          e.preventDefault();
+          holdActive = true;
+          holdTarget = "conversation";
+          conversation.beginHold();
+          return;
+        }
+        // Dictation: hold to record, release auto-sends (push-to-talk). Only
+        // start from a settled state so a release/timeout mid-press is clean.
+        if (
+          v.state !== "recording" &&
+          v.state !== "starting" &&
+          v.state !== "transcribing"
+        ) {
+          e.preventDefault();
+          holdActive = true;
+          holdTarget = "voice";
+          void v.start({ autoSend: true });
+        }
       }
     },
 
     onKeyUp(e: KeyboardEvent) {
       if (!holdCode || !holdActive || e.code !== holdCode) return;
       holdActive = false;
+      const target = holdTarget;
+      holdTarget = null;
+      if (target === "conversation") {
+        getConversation()?.endHold();
+        return;
+      }
       const v = getVoice();
       if (v.state === "recording" || v.state === "starting") {
         v.stop();
@@ -167,6 +206,7 @@ export function createVoiceHotkeyHandlers(
     // toggle hotkey, hold-to-talk).
     onBlur() {
       holdActive = false;
+      holdTarget = null;
     },
   };
 }
@@ -184,15 +224,20 @@ export function useVoiceHotkey(
   toggleHotkey: string | null,
   holdHotkey: string | null,
   isInputBlocked: () => boolean = () => false,
+  conversation?: ConversationHotkeyHandle | null,
 ): void {
   const voiceRef = useRef<VoiceInputController>(voice);
+  const conversationRef = useRef<ConversationHotkeyHandle | null>(
+    conversation ?? null,
+  );
 
-  // Keep the ref in sync after every render so event handlers always read
-  // the latest voice state without being re-registered on every state change.
-  // useLayoutEffect (not render-time assignment) satisfies the React Compiler's
-  // requirement that refs are only mutated outside of render.
+  // Keep the refs in sync after every render so event handlers always read
+  // the latest voice/conversation state without being re-registered on every
+  // state change. useLayoutEffect (not render-time assignment) satisfies the
+  // React Compiler's requirement that refs are only mutated outside of render.
   useLayoutEffect(() => {
     voiceRef.current = voice;
+    conversationRef.current = conversation ?? null;
   });
 
   useEffect(() => {
@@ -203,6 +248,7 @@ export function useVoiceHotkey(
       toggleBinding,
       holdBinding,
       isInputBlocked,
+      () => conversationRef.current,
     );
     window.addEventListener("keydown", onKeyDown);
     window.addEventListener("keyup", onKeyUp);

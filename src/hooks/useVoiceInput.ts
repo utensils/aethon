@@ -73,6 +73,14 @@ function isMacPlatform(): boolean {
   return /Mac/.test(navigator.platform) || /Mac OS X/.test(navigator.userAgent);
 }
 
+/** Options for a single recording gesture. */
+export interface VoiceStartOptions {
+  /** Submit the transcript immediately when it resolves (push-to-talk) rather
+   *  than inserting it into the composer for review. Captured at start so the
+   *  intent survives the async transcription. */
+  autoSend?: boolean;
+}
+
 export interface VoiceInputController {
   state: VoiceState;
   elapsedSeconds: number;
@@ -80,13 +88,13 @@ export interface VoiceInputController {
   error: string | null;
   activeProvider: VoiceProviderInfo | null;
   webSpeechSupported: boolean;
-  start: () => Promise<void>;
+  start: (options?: VoiceStartOptions) => Promise<void>;
   stop: () => void;
   cancel: () => void;
 }
 
 export function useVoiceInput(
-  onTranscript: (transcript: string) => void,
+  onTranscript: (transcript: string, options: { autoSend: boolean }) => void,
   onNeedsSetup: (providerId: string) => void,
 ): VoiceInputController {
   const [state, setState] = useState<VoiceState>("idle");
@@ -100,6 +108,9 @@ export function useVoiceInput(
   const nativeRequestIdRef = useRef(0);
   const finalTranscriptRef = useRef("");
   const cancelledRef = useRef(false);
+  // Whether the in-flight recording should auto-send its transcript. Set when
+  // start() is invoked, read when the transcript resolves (async, so a ref).
+  const autoSendRef = useRef(false);
   const platformSpeechDisabled = useMemo(() => isMacPlatform(), []);
 
   const Recognition = useMemo(() => {
@@ -151,6 +162,7 @@ export function useVoiceInput(
       transcribingProviderRef.current = null;
     }
     finalTranscriptRef.current = "";
+    autoSendRef.current = false;
     setInterimTranscript("");
     setError(null);
     setActiveProvider(null);
@@ -159,8 +171,9 @@ export function useVoiceInput(
 
   useEffect(() => cancel, [cancel]);
 
-  const start = useCallback(async () => {
+  const start = useCallback(async (options?: VoiceStartOptions) => {
     nativeRequestIdRef.current += 1;
+    autoSendRef.current = options?.autoSend ?? false;
     setError(null);
     setInterimTranscript("");
     setActiveProvider(null);
@@ -305,7 +318,7 @@ export function useVoiceInput(
       const transcript = finalTranscriptRef.current.trim();
       finalTranscriptRef.current = "";
       setInterimTranscript("");
-      if (transcript) onTranscript(transcript);
+      if (transcript) onTranscript(transcript, { autoSend: autoSendRef.current });
       setState("idle");
     };
     recognitionRef.current = recognition;
@@ -337,7 +350,7 @@ export function useVoiceInput(
             return;
           }
           const normalized = transcript.trim();
-          if (normalized) onTranscript(normalized);
+          if (normalized) onTranscript(normalized, { autoSend: autoSendRef.current });
           setState("idle");
         })
         .catch((err) => {

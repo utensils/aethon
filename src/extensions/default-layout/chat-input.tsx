@@ -3,6 +3,7 @@ import {
   useCallback,
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
   type ChangeEvent,
@@ -87,8 +88,10 @@ export function ChatInput({
     : 0;
   const queuedMessages =
     (state.queuedMessages as QueuedMessage[] | undefined) ?? [];
-  const attachments =
-    (state.draftAttachments as ChatAttachment[] | undefined) ?? [];
+  const attachments = useMemo(
+    () => (state.draftAttachments as ChatAttachment[] | undefined) ?? [],
+    [state.draftAttachments],
+  );
   const canSteerQueuedMessage = queuedMessages.length > 0 || queueCount > 0;
   const sendLabel = props.sendLabel
     ? resolveString(props.sendLabel, state)
@@ -136,8 +139,8 @@ export function ChatInput({
   const inputContainerRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const { composerHeight, startComposerResize } = useComposerResize();
-  const insertTranscript = useCallback(
-    (transcript: string) => {
+  const handleTranscript = useCallback(
+    (transcript: string, options?: { autoSend?: boolean }) => {
       const textarea = textareaRef.current;
       const start = textarea?.selectionStart ?? value.length;
       const end = textarea?.selectionEnd ?? value.length;
@@ -150,6 +153,16 @@ export function ChatInput({
       setValue(next.text);
       commitDraft(next.text);
       setCursor(next.cursor);
+      // Push-to-talk (hold-hotkey release) sends straight away rather than
+      // parking the dictation in the composer for a manual Enter.
+      if (options?.autoSend && next.text.trim().length > 0) {
+        onEvent("submit", {
+          value: next.text,
+          mode: "normal",
+          ...(attachments.length > 0 ? { attachments } : {}),
+        });
+        return;
+      }
       requestAnimationFrame(() => {
         const current = textareaRef.current;
         if (!current) return;
@@ -157,9 +170,9 @@ export function ChatInput({
         current.selectionStart = current.selectionEnd = next.cursor;
       });
     },
-    [commitDraft, setValue, value],
+    [attachments, commitDraft, onEvent, setValue, value],
   );
-  const voice = useVoiceInput(insertTranscript, (providerId) => {
+  const voice = useVoiceInput(handleTranscript, (providerId) => {
     onEvent("voice:setup", { providerId });
   });
   const voiceState = voice.state;
@@ -197,6 +210,7 @@ export function ChatInput({
     voiceConfig.toggleHotkey ?? "mod+shift+m",
     voiceConfig.holdHotkey ?? null,
     isVoiceInputBlocked,
+    conversation,
   );
   const [reducedMotion, setReducedMotion] = useState(() => {
     if (typeof window === "undefined" || !window.matchMedia) return false;

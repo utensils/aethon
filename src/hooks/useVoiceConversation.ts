@@ -42,6 +42,11 @@ export interface VoiceConversationController {
   exit: () => void;
   /** Context-aware tap: start speaking / finish speaking / interrupt. */
   primaryAction: () => void;
+  /** Push-to-talk press: open/keep the mic and suppress VAD auto-end so the
+   *  user controls when the utterance ends (held key). No-op unless active. */
+  beginHold: () => void;
+  /** Push-to-talk release: end the held utterance and send it to the agent. */
+  endHold: () => void;
 }
 
 function errorMessage(error: unknown): string {
@@ -80,6 +85,13 @@ export function useVoiceConversation(
   const vadSpokeRef = useRef(false);
   const lastSpeechAtRef = useRef(0);
   const listenStartAtRef = useRef(0);
+  // True while the user holds the push-to-talk key: VAD never auto-ends the
+  // utterance, so the release is the sole end-of-message signal.
+  const manualHoldRef = useRef(false);
+  // True while a push-to-talk press is opening the mic from idle. Lets a
+  // release that lands before the recorder is ready finish the moment it opens,
+  // instead of stranding the mic in "listening" with no keyup to close it.
+  const holdStartRef = useRef(false);
   const finishRef = useRef<() => void>(() => {});
   const optionsRef = useRef(options);
   // Keep the latest callbacks/config available to async transitions without a
@@ -112,7 +124,19 @@ export function useVoiceConversation(
       lastSpeechAtRef.current = 0;
       listenStartAtRef.current = Date.now();
       setPhase("listening");
+      // If a push-to-talk press opened this window but the key was already
+      // released before the recorder became ready, honor that release now —
+      // otherwise the mic would stay hot with no keyup left to finish it.
+      // Route through finishRef to dodge the startListening↔finishListening
+      // useCallback cycle (same indirection the VAD listener uses).
+      if (holdStartRef.current) {
+        holdStartRef.current = false;
+        if (!manualHoldRef.current) finishRef.current();
+      }
     } catch (caught) {
+      // A failed open must not leave VAD suppressed for the next window.
+      manualHoldRef.current = false;
+      holdStartRef.current = false;
       setError(errorMessage(caught));
       setPhase("idle");
       optionsRef.current.onNeedsSetup?.(LFM2_VOICE_PROVIDER_ID);
@@ -166,6 +190,8 @@ export function useVoiceConversation(
 
   const exit = useCallback(() => {
     activeRef.current = false;
+    manualHoldRef.current = false;
+    holdStartRef.current = false;
     setActive(false);
     setConversationActive(false);
     void cancelVoiceRecording(LFM2_VOICE_PROVIDER_ID).catch(() => {});
@@ -190,6 +216,31 @@ export function useVoiceConversation(
         break; // mid-flight; ignore taps
     }
   }, [finishListening, interrupt, startListening]);
+
+  // Push-to-talk press. Opens the mic if idle and suppresses VAD so the held
+  // key — not silence — decides when the utterance ends. While the agent is
+  // thinking/speaking, or mid-transcription, the press is ignored (tap the HUD
+  // to interrupt); we only arm the hold when we actually reach listening.
+  const beginHold = useCallback(() => {
+    if (!activeRef.current) return;
+    if (phaseRef.current === "idle") {
+      manualHoldRef.current = true;
+      holdStartRef.current = true;
+      void startListening();
+    } else if (phaseRef.current === "listening") {
+      manualHoldRef.current = true;
+    }
+  }, [startListening]);
+
+  // Push-to-talk release. Drops the VAD suppression and ends the utterance,
+  // sending whatever was captured (finishListening is a no-op off "listening").
+  const endHold = useCallback(() => {
+    if (!manualHoldRef.current) return;
+    manualHoldRef.current = false;
+    if (phaseRef.current === "listening") {
+      void finishListening();
+    }
+  }, [finishListening]);
 
   // Speak the agent's reply once the turn completes, then continue/idle.
   useEffect(() => {
@@ -250,6 +301,9 @@ export function useVoiceConversation(
         lastSpeechAtRef.current = now;
         return;
       }
+      // While the user holds the push-to-talk key, they own the end-of-message
+      // signal — never auto-close on silence or the ceiling.
+      if (manualHoldRef.current) return;
       if (!vadSpokeRef.current) return; // wait for speech before arming silence
       const silentLongEnough =
         level < VAD_SILENCE_LEVEL &&
@@ -268,6 +322,23 @@ export function useVoiceConversation(
     };
   }, []);
 
+  // If focus leaves while the push-to-talk key is held, the keyup never
+  // arrives. Release the hold and END the capture — just dropping the
+  // suppression isn't enough: VAD refuses to finish until it has seen speech,
+  // so a blur before the user spoke would otherwise wedge the mic open in the
+  // background. If the mic is open, finish now; if it's still opening, clearing
+  // manualHold lets the deferred open-check (holdStartRef) finish it on open.
+  // The conversation itself deliberately keeps running across blur.
+  useEffect(() => {
+    const onBlur = () => {
+      if (!manualHoldRef.current) return;
+      manualHoldRef.current = false;
+      if (phaseRef.current === "listening") finishRef.current();
+    };
+    window.addEventListener("blur", onBlur);
+    return () => window.removeEventListener("blur", onBlur);
+  }, []);
+
   // Tear down recording/playback if we unmount mid-conversation.
   useEffect(() => {
     return () => {
@@ -279,5 +350,5 @@ export function useVoiceConversation(
     };
   }, []);
 
-  return { active, phase, error, enter, exit, primaryAction };
+  return { active, phase, error, enter, exit, primaryAction, beginHold, endHold };
 }

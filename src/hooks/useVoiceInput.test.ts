@@ -74,7 +74,26 @@ describe("useVoiceInput", () => {
     expect(service.stopAndTranscribeVoice).toHaveBeenCalledWith(
       "voice-platform-system",
     );
-    expect(onTranscript).toHaveBeenCalledWith("hello world");
+    expect(onTranscript).toHaveBeenCalledWith("hello world", {
+      autoSend: false,
+    });
+  });
+
+  it("forwards the autoSend intent captured at start to the transcript", async () => {
+    const onTranscript = vi.fn();
+    const { result } = renderHook(() => useVoiceInput(onTranscript, vi.fn()));
+
+    await act(async () => {
+      await result.current.start({ autoSend: true });
+    });
+    act(() => {
+      result.current.stop();
+    });
+
+    await waitFor(() => expect(result.current.state).toBe("idle"));
+    expect(onTranscript).toHaveBeenCalledWith("hello world", {
+      autoSend: true,
+    });
   });
 
   it("routes setup-required native providers to settings", async () => {

@@ -8,6 +8,21 @@ import {
 } from "./useVoiceHotkey";
 import type { VoiceInputController } from "./useVoiceInput";
 
+// A Mock is structurally assignable to the handle's `() => void` methods, so
+// inference gives us both a valid ConversationHotkeyHandle and spies to assert.
+function conversation(active: boolean) {
+  return { active, beginHold: vi.fn(), endHold: vi.fn() };
+}
+
+const altRightDown = {
+  key: "Alt",
+  code: "AltRight",
+  metaKey: false,
+  shiftKey: false,
+  altKey: true,
+} as const;
+const altRightUp = { ...altRightDown, altKey: false } as const;
+
 function keyEvent(init: KeyboardEventInit): KeyboardEvent {
   return new KeyboardEvent("keydown", {
     key: "m",
@@ -80,7 +95,7 @@ describe("voice hotkeys", () => {
     expect(starting.cancel).toHaveBeenCalledTimes(1);
   });
 
-  it("hold-to-talk starts on keydown and stops on keyup", () => {
+  it("hold-to-talk starts (auto-send) on keydown and stops on keyup", () => {
     const current = voice("idle");
     const handlers = createVoiceHotkeyHandlers(
       () => current,
@@ -88,28 +103,98 @@ describe("voice hotkeys", () => {
       "code:AltRight",
     );
 
-    handlers.onKeyDown(
-      keyEvent({
-        key: "Alt",
-        code: "AltRight",
-        metaKey: false,
-        shiftKey: false,
-        altKey: true,
-      }),
-    );
+    handlers.onKeyDown(keyEvent(altRightDown));
     expect(current.start).toHaveBeenCalledTimes(1);
+    // Release after a hold must submit, not just insert into the composer.
+    expect(current.start).toHaveBeenCalledWith({ autoSend: true });
 
     current.state = "recording";
-    handlers.onKeyUp(
-      keyEvent({
-        key: "Alt",
-        code: "AltRight",
-        metaKey: false,
-        shiftKey: false,
-        altKey: false,
-      }),
-    );
+    handlers.onKeyUp(keyEvent(altRightUp));
     expect(current.stop).toHaveBeenCalledTimes(1);
+  });
+
+  it("routes the hold key to conversation push-to-talk when a conversation is active", () => {
+    const current = voice("idle");
+    const convo = conversation(true);
+    const handlers = createVoiceHotkeyHandlers(
+      () => current,
+      "mod+shift+m",
+      "code:AltRight",
+      () => false,
+      () => convo,
+    );
+
+    handlers.onKeyDown(keyEvent(altRightDown));
+    expect(convo.beginHold).toHaveBeenCalledTimes(1);
+    expect(current.start).not.toHaveBeenCalled();
+
+    handlers.onKeyUp(keyEvent(altRightUp));
+    expect(convo.endHold).toHaveBeenCalledTimes(1);
+    expect(current.stop).not.toHaveBeenCalled();
+  });
+
+  it("ends the same subsystem the press started even if the conversation flips before release", () => {
+    const current = voice("idle");
+    let active = true;
+    const convo = conversation(true);
+    const handlers = createVoiceHotkeyHandlers(
+      () => current,
+      null,
+      "code:AltRight",
+      () => false,
+      () => ({ ...convo, active }),
+    );
+
+    handlers.onKeyDown(keyEvent(altRightDown));
+    expect(convo.beginHold).toHaveBeenCalledTimes(1);
+
+    // Conversation ends mid-hold; the release must still go to endHold, not stop.
+    active = false;
+    handlers.onKeyUp(keyEvent(altRightUp));
+    expect(convo.endHold).toHaveBeenCalledTimes(1);
+    expect(current.stop).not.toHaveBeenCalled();
+  });
+
+  it("suppresses the dictation toggle while a conversation owns the mic", () => {
+    const current = voice("idle");
+    const convo = conversation(true);
+    const handlers = createVoiceHotkeyHandlers(
+      () => current,
+      "mod+shift+m",
+      null,
+      () => false,
+      () => convo,
+    );
+
+    handlers.onKeyDown(keyEvent({}));
+    expect(current.start).not.toHaveBeenCalled();
+    expect(convo.beginHold).not.toHaveBeenCalled();
+  });
+
+  it("keeps the toggle as a mic-off escape hatch for live dictation under a conversation", () => {
+    // A dictation recording already running when the HUD opens must stay
+    // stoppable — only the idle start path is suppressed.
+    const recording = voice("recording");
+    const stopHandlers = createVoiceHotkeyHandlers(
+      () => recording,
+      "mod+shift+m",
+      null,
+      () => false,
+      () => conversation(true),
+    );
+    stopHandlers.onKeyDown(keyEvent({}));
+    expect(recording.stop).toHaveBeenCalledTimes(1);
+
+    const transcribing = voice("transcribing");
+    const cancelHandlers = createVoiceHotkeyHandlers(
+      () => transcribing,
+      "mod+shift+m",
+      null,
+      () => false,
+      () => conversation(true),
+    );
+    cancelHandlers.onKeyDown(keyEvent({}));
+    expect(transcribing.cancel).toHaveBeenCalledTimes(1);
   });
 
   it("does not start while input is blocked", () => {
