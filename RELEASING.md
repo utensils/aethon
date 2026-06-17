@@ -318,8 +318,8 @@ version:sync` propagates the version to `tauri.conf.json`,
     runner binary directly.
   - Bumping the runner: update `hf_rev` and the per-platform SHA-256s in
     `scripts/stage-lfm2-runner.sh` together.
-  The model GGUFs themselves are downloaded on-demand into
-  `~/.aethon/models/voice/` and are never bundled.
+    The model GGUFs themselves are downloaded on-demand into
+    `~/.aethon/models/voice/` and are never bundled.
 - **Boot-probation rollback.** Each in-app update first copies the
   installed `.app` bundle to `~/.aethon/updates/previous/<version>/`
   and writes a sentinel to `~/.aethon/boot-probation.json`. If the

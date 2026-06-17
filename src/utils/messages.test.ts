@@ -44,6 +44,17 @@ describe("lastAgentText", () => {
     expect(lastAgentText(messages)).toBe("Here is the result.");
   });
 
+  it("still speaks the reply when a queued follow-up is already appended", () => {
+    const messages: ChatMessage[] = [
+      { id: "u1", role: "user", text: "do the thing" },
+      { id: "a1", role: "agent", text: "Done." },
+      { id: "u2", role: "user", text: "next thing", delivery: "queued" },
+    ];
+    // A queued follow-up can land before this turn's response_end fires; it
+    // must not suppress speaking the reply that just completed.
+    expect(lastAgentText(messages)).toBe("Done.");
+  });
+
   it("ignores thinking-only and empty agent messages", () => {
     const messages: ChatMessage[] = [
       { id: "u1", role: "user", text: "q" },

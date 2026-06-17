@@ -91,9 +91,10 @@ pub(super) const DISTIL_MODEL_FILES: [(&str, Option<u64>); 5] = [
 
 // --- LFM2-Audio (Liquid AI) provider, run via the prebuilt llama.cpp
 // `llama-lfm2-audio` one-shot CLI. End-to-end audio model: ASR (speech-in)
-// today, TTS (speech-out) in a later phase. The Q8_0 GGUF trio lives beside
-// the binary's documented `-m` / `--mmproj` / `-mv` flags. See `lfm2.rs` for
-// the runtime contract distilled from the Phase 0 spike.
+// and TTS (speech-out, see `playback.rs` + `voice_speak`) are both wired up.
+// The Q8_0 GGUF trio lives beside the binary's documented `-m` / `--mmproj`
+// / `-mv` flags. See `lfm2.rs` for the runtime contract distilled from the
+// Phase 0 spike.
 pub(super) const LFM2_ID: &str = "voice-lfm2-audio-llamacpp";
 pub(super) const LFM2_CACHE_DIR: &str = "lfm2-audio-1.5b";
 pub(super) const LFM2_HF_REPO: &str = "LiquidAI/LFM2-Audio-1.5B-GGUF";
@@ -1929,10 +1930,11 @@ mod tests {
     async fn synthesize_speech_returns_audio() {
         let model_dir = tempdir().expect("model dir");
         write_complete_lfm2_model(&model_dir.path().join(LFM2_CACHE_DIR));
+        let (_db_dir, db_path) = test_db_path();
         let registry = lfm2_registry(model_dir.path().to_path_buf(), FakeLfm2Backend::ready("x"));
 
         let audio = registry
-            .synthesize_speech("hello".to_string())
+            .synthesize_speech(&db_path, "hello".to_string())
             .await
             .expect("synthesize");
         assert!(!audio.samples.is_empty());
@@ -1943,10 +1945,11 @@ mod tests {
     async fn synthesize_speech_rejects_empty_text() {
         let model_dir = tempdir().expect("model dir");
         write_complete_lfm2_model(&model_dir.path().join(LFM2_CACHE_DIR));
+        let (_db_dir, db_path) = test_db_path();
         let registry = lfm2_registry(model_dir.path().to_path_buf(), FakeLfm2Backend::ready("x"));
 
         let err = registry
-            .synthesize_speech("   ".to_string())
+            .synthesize_speech(&db_path, "   ".to_string())
             .await
             .expect_err("empty text should be rejected");
         assert!(err.contains("Nothing to speak"));
@@ -1955,10 +1958,11 @@ mod tests {
     #[tokio::test]
     async fn synthesize_speech_rejects_missing_model() {
         let model_dir = tempdir().expect("model dir");
+        let (_db_dir, db_path) = test_db_path();
         let registry = lfm2_registry(model_dir.path().to_path_buf(), FakeLfm2Backend::ready("x"));
 
         let err = registry
-            .synthesize_speech("hello".to_string())
+            .synthesize_speech(&db_path, "hello".to_string())
             .await
             .expect_err("missing model should be rejected");
         assert!(err.contains("Download"));
@@ -1972,28 +1976,50 @@ mod tests {
             model_dir.path().to_path_buf(),
             FakeLfm2Backend::binary_missing(),
         );
+        let (_db_dir, db_path) = test_db_path();
 
         let err = registry
-            .synthesize_speech("hello".to_string())
+            .synthesize_speech(&db_path, "hello".to_string())
             .await
             .expect_err("missing binary should be rejected");
         assert!(err.contains("llama-lfm2-audio"));
     }
 
     #[tokio::test]
+    async fn synthesize_speech_rejects_when_disabled() {
+        let model_dir = tempdir().expect("model dir");
+        write_complete_lfm2_model(&model_dir.path().join(LFM2_CACHE_DIR));
+        let (_db_dir, db_path) = test_db_path();
+        let db = open_test_db(&db_path);
+        db.set_app_setting(&enabled_key(LFM2_ID), "false")
+            .expect("disable provider");
+        drop(db);
+        let registry = lfm2_registry(model_dir.path().to_path_buf(), FakeLfm2Backend::ready("x"));
+
+        let err = registry
+            .synthesize_speech(&db_path, "hello".to_string())
+            .await
+            .expect_err("disabled provider should not speak");
+        assert!(err.contains("disabled"));
+    }
+
+    #[tokio::test]
     async fn cancel_speech_aborts_synthesis() {
         let model_dir = tempdir().expect("model dir");
         write_complete_lfm2_model(&model_dir.path().join(LFM2_CACHE_DIR));
+        let (_db_dir, db_path) = test_db_path();
         let registry = Arc::new(lfm2_registry(
             model_dir.path().to_path_buf(),
             FakeLfm2Backend::slow("x", Duration::from_secs(5)),
         ));
 
         let synth_registry = Arc::clone(&registry);
-        let handle =
-            tokio::spawn(
-                async move { synth_registry.synthesize_speech("hello".to_string()).await },
-            );
+        let synth_db = db_path.clone();
+        let handle = tokio::spawn(async move {
+            synth_registry
+                .synthesize_speech(&synth_db, "hello".to_string())
+                .await
+        });
         tokio::time::sleep(Duration::from_millis(50)).await;
         registry.cancel_speech();
 
@@ -2008,24 +2034,28 @@ mod tests {
     async fn overlapping_synthesis_cancels_previous() {
         let model_dir = tempdir().expect("model dir");
         write_complete_lfm2_model(&model_dir.path().join(LFM2_CACHE_DIR));
+        let (_db_dir, db_path) = test_db_path();
         let registry = Arc::new(lfm2_registry(
             model_dir.path().to_path_buf(),
             FakeLfm2Backend::slow("x", Duration::from_secs(5)),
         ));
 
         let first_registry = Arc::clone(&registry);
-        let first =
-            tokio::spawn(
-                async move { first_registry.synthesize_speech("first".to_string()).await },
-            );
+        let first_db = db_path.clone();
+        let first = tokio::spawn(async move {
+            first_registry
+                .synthesize_speech(&first_db, "first".to_string())
+                .await
+        });
         tokio::time::sleep(Duration::from_millis(50)).await;
 
         // A second request must cancel the first so the older runner can't
         // proceed to playback after the user moved on.
         let second_registry = Arc::clone(&registry);
+        let second_db = db_path.clone();
         let second = tokio::spawn(async move {
             second_registry
-                .synthesize_speech("second".to_string())
+                .synthesize_speech(&second_db, "second".to_string())
                 .await
         });
         tokio::time::sleep(Duration::from_millis(50)).await;
@@ -2057,9 +2087,10 @@ mod tests {
             "late",
             Duration::from_millis(80),
         )));
+        let (_db_dir, db_path) = test_db_path();
 
         let err = registry
-            .synthesize_speech("hello".to_string())
+            .synthesize_speech(&db_path, "hello".to_string())
             .await
             .expect_err("slow synthesis should time out");
         assert!(err.contains("timed out"));

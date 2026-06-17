@@ -59,7 +59,16 @@ url="https://huggingface.co/$hf_repo/resolve/$hf_rev/$runner"
 echo "stage-lfm2-runner: downloading $runner @ ${hf_rev:0:12} ..."
 curl -fL --retry 3 -o "$tmp/runner.zip" "$url"
 
-actual="$(shasum -a 256 "$tmp/runner.zip" | awk '{print $1}')"
+# Prefer coreutils sha256sum (ubiquitous on Linux CI); fall back to shasum
+# (default on macOS). One of the two is present on every target platform.
+if command -v sha256sum >/dev/null 2>&1; then
+  actual="$(sha256sum "$tmp/runner.zip" | awk '{print $1}')"
+elif command -v shasum >/dev/null 2>&1; then
+  actual="$(shasum -a 256 "$tmp/runner.zip" | awk '{print $1}')"
+else
+  echo "stage-lfm2-runner: neither sha256sum nor shasum found; cannot verify download" >&2
+  exit 1
+fi
 if [ "$actual" != "$sha256" ]; then
   echo "stage-lfm2-runner: checksum mismatch for $runner" >&2
   echo "  expected $sha256" >&2
