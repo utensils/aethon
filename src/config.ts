@@ -52,6 +52,8 @@ export interface AethonConfig {
   };
   agent: {
     model: string | null;
+    /** Default reasoning effort for new sessions on models that expose it. */
+    thinkingLevel: string | null;
     /** Optional Aethon-owned provider/SDK request timeout override. */
     providerTimeoutSeconds: number | null;
     /** Request Codex Fast mode (priority service tier) for supported Codex models. */
@@ -148,6 +150,7 @@ const DEFAULTS: AethonConfig = {
   },
   agent: {
     model: null,
+    thinkingLevel: null,
     providerTimeoutSeconds: null,
     codexFastMode: false,
     bashTimeoutFloorSeconds: DEFAULT_AGENT_TIMEOUT_SECONDS,
@@ -237,6 +240,7 @@ export function getConfig(): Promise<AethonConfig> {
         },
         agent: {
           model: typeof obj?.agent?.model === "string" ? obj.agent.model : null,
+          thinkingLevel: normalizeThinkingLevel(obj?.agent?.thinkingLevel),
           providerTimeoutSeconds: normalizeOptionalTimeoutSeconds(
             obj?.agent?.providerTimeoutSeconds,
           ),
@@ -292,7 +296,10 @@ export function getConfig(): Promise<AethonConfig> {
           speakMaxChars:
             typeof obj?.voice?.speakMaxChars === "number" &&
             Number.isFinite(obj.voice.speakMaxChars)
-              ? Math.min(5000, Math.max(50, Math.round(obj.voice.speakMaxChars)))
+              ? Math.min(
+                  5000,
+                  Math.max(50, Math.round(obj.voice.speakMaxChars)),
+                )
               : DEFAULTS.voice.speakMaxChars,
           // Opt-in: only an explicit `true` enables auto-listen; absent or
           // false → off (matches the Rust default).
@@ -335,6 +342,17 @@ export function getConfig(): Promise<AethonConfig> {
 
 function normalizeTheme(t: unknown): string | null {
   return typeof t === "string" && t.length > 0 ? t : null;
+}
+
+function normalizeThinkingLevel(value: unknown): string | null {
+  return value === "off" ||
+    value === "minimal" ||
+    value === "low" ||
+    value === "medium" ||
+    value === "high" ||
+    value === "xhigh"
+    ? value
+    : null;
 }
 
 /** Mirrors `normalize_visibility` in helpers.rs — unknown/missing → "show". */

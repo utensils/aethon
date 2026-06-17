@@ -828,50 +828,75 @@ describe("useChat setModel", () => {
     );
   });
 
-  it("records reasoning defaults when no agent tab is active", async () => {
-    const { ctx, stateRef } = buildContext({
-      activeTabId: undefined,
-      tabs: [],
-    });
-    const { result } = renderHook(() => useChat(ctx));
+  it("records and persists reasoning defaults when no agent tab is active", async () => {
+    vi.useFakeTimers();
+    try {
+      const { ctx, stateRef } = buildContext({
+        activeTabId: undefined,
+        tabs: [],
+      });
+      const { result } = renderHook(() => useChat(ctx));
 
-    await act(async () => {
-      await result.current.setThinkingLevel("high");
-    });
+      await act(async () => {
+        await result.current.setThinkingLevel("high");
+      });
 
-    expect(invoke).not.toHaveBeenCalledWith("agent_command", expect.anything());
-    expect(stateRef.current.thinkingLevel).toBe("high");
-    expect(stateRef.current.defaultThinkingLevel).toBe("high");
-    expect(stateRef.current.status).toBe("reasoning default: high");
+      expect(invoke).not.toHaveBeenCalledWith(
+        "agent_command",
+        expect.anything(),
+      );
+      expect(stateRef.current.thinkingLevel).toBe("high");
+      expect(stateRef.current.defaultThinkingLevel).toBe("high");
+      expect(stateRef.current.status).toBe("reasoning default: high");
+
+      await vi.advanceTimersByTimeAsync(450);
+      const write = invoke.mock.calls.find((c) => c[0] === "write_config");
+      expect(write).toBeTruthy();
+      expect(
+        (write?.[1] as { config: { agent: { thinkingLevel: string } } }).config
+          .agent.thinkingLevel,
+      ).toBe("high");
+    } finally {
+      vi.clearAllTimers();
+      vi.useRealTimers();
+    }
   });
 
   it("rolls back optimistic reasoning changes when the bridge command fails", async () => {
-    const tab = {
-      ...makeEmptyTab("tab-1", "Tab 1"),
-      model: "openai-codex/gpt-5.5",
-      thinkingLevel: "medium",
-    };
-    const { ctx, stateRef } = buildContext({
-      model: "openai-codex/gpt-5.5",
-      thinkingLevel: "medium",
-      defaultThinkingLevel: "medium",
-      tabs: [tab],
-    });
-    invoke.mockImplementation((cmd) =>
-      cmd === "agent_command"
-        ? Promise.reject(new Error("offline"))
-        : Promise.resolve(),
-    );
-    const { result } = renderHook(() => useChat(ctx));
+    vi.useFakeTimers();
+    try {
+      const tab = {
+        ...makeEmptyTab("tab-1", "Tab 1"),
+        model: "openai-codex/gpt-5.5",
+        thinkingLevel: "medium",
+      };
+      const { ctx, stateRef } = buildContext({
+        model: "openai-codex/gpt-5.5",
+        thinkingLevel: "medium",
+        defaultThinkingLevel: "medium",
+        tabs: [tab],
+      });
+      invoke.mockImplementation((cmd) =>
+        cmd === "agent_command"
+          ? Promise.reject(new Error("offline"))
+          : Promise.resolve(),
+      );
+      const { result } = renderHook(() => useChat(ctx));
 
-    await act(async () => {
-      await result.current.setThinkingLevel("xhigh");
-    });
+      await act(async () => {
+        await result.current.setThinkingLevel("xhigh");
+      });
 
-    expect(stateRef.current.thinkingLevel).toBe("medium");
-    expect(stateRef.current.defaultThinkingLevel).toBe("medium");
-    expect((stateRef.current.tabs as Tab[])[0].thinkingLevel).toBe("medium");
-    expect(stateRef.current.status).toBe("reasoning switch failed");
+      expect(stateRef.current.thinkingLevel).toBe("medium");
+      // The live session rolls back, but the user's chosen default remains for
+      // new tabs (same persistence semantics as model selection).
+      expect(stateRef.current.defaultThinkingLevel).toBe("xhigh");
+      expect((stateRef.current.tabs as Tab[])[0].thinkingLevel).toBe("medium");
+      expect(stateRef.current.status).toBe("reasoning switch failed");
+    } finally {
+      vi.clearAllTimers();
+      vi.useRealTimers();
+    }
   });
 
   it("does not apply reasoning changes while the active prompt is busy", async () => {
@@ -901,6 +926,39 @@ describe("useChat setModel", () => {
     expect(stateRef.current.status).toBe(
       "agent busy — stop the current prompt before switching reasoning",
     );
+  });
+
+  it("persists active-session reasoning choices to [agent] thinking_level", async () => {
+    vi.useFakeTimers();
+    try {
+      const tab = {
+        ...makeEmptyTab("tab-1", "Tab 1"),
+        model: "openai-codex/gpt-5.5",
+        thinkingLevel: "medium",
+      };
+      const { ctx } = buildContext({
+        model: "openai-codex/gpt-5.5",
+        thinkingLevel: "medium",
+        defaultThinkingLevel: "medium",
+        tabs: [tab],
+      });
+      const { result } = renderHook(() => useChat(ctx));
+
+      await act(async () => {
+        await result.current.setThinkingLevel("high");
+      });
+      await vi.advanceTimersByTimeAsync(450);
+
+      const write = invoke.mock.calls.find((c) => c[0] === "write_config");
+      expect(write).toBeTruthy();
+      expect(
+        (write?.[1] as { config: { agent: { thinkingLevel: string } } }).config
+          .agent.thinkingLevel,
+      ).toBe("high");
+    } finally {
+      vi.clearAllTimers();
+      vi.useRealTimers();
+    }
   });
 
   it("rolls back optimistic Codex Fast mode changes when persistence fails", async () => {
@@ -1007,6 +1065,7 @@ describe("useChat setModel", () => {
           .agent.model,
       ).toBeNull();
     } finally {
+      vi.clearAllTimers();
       vi.useRealTimers();
     }
   });
@@ -1029,6 +1088,7 @@ describe("useChat setModel", () => {
           .model,
       ).toBe("openai/gpt-5.5");
     } finally {
+      vi.clearAllTimers();
       vi.useRealTimers();
     }
   });

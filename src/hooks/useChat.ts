@@ -180,19 +180,20 @@ export function useChat(ctx: UseChatContext): UseChatActions {
   // completion notification gate.
   const turnStartedAtRef = useRef<Map<string, number>>(new Map());
 
-  // Debounced persistence of the chosen default model to [agent] model.
-  // Clicking through several models in the header picker would otherwise
-  // do a disk read + full TOML rewrite per click; we coalesce to a single
-  // trailing write that captures the latest id.
-  const defaultModelTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+  // Debounced persistence of header-selected agent defaults to [agent].
+  // Clicking through models / reasoning levels would otherwise do a disk read +
+  // full TOML rewrite per click; coalesce to a single trailing write.
+  const agentDefaultsTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
-  const pendingDefaultModelRef = useRef<string | null>(null);
+  const pendingAgentDefaultsRef = useRef<
+    Partial<{ model: string | null; thinkingLevel: string | null }>
+  >({});
 
-  async function flushDefaultModelWrite() {
-    const model = pendingDefaultModelRef.current;
-    if (model === null) return;
-    pendingDefaultModelRef.current = null;
+  async function flushAgentDefaultsWrite() {
+    const patch = pendingAgentDefaultsRef.current;
+    if (Object.keys(patch).length === 0) return;
+    pendingAgentDefaultsRef.current = {};
     let live: AethonConfig | null = null;
     try {
       live = await getConfig();
@@ -205,7 +206,7 @@ export function useChat(ctx: UseChatContext): UseChatActions {
     // (uiOverlays/settings.ts) so unrelated sections survive the round-trip.
     const merged = {
       ui: { ...(live?.ui ?? {}) },
-      agent: { ...(live?.agent ?? {}), model: model || null },
+      agent: { ...(live?.agent ?? {}), ...patch },
       shell: { ...(live?.shell ?? {}) },
       shortcuts: { ...(live?.shortcuts ?? {}) },
       voice: { ...(live?.voice ?? {}) },
@@ -216,22 +217,35 @@ export function useChat(ctx: UseChatContext): UseChatActions {
     try {
       await invoke("write_config", { config: merged });
       // Drop the read-once cache so an open Settings panel + the next
-      // getConfig() reflect the header-chosen model.
+      // getConfig() reflect the header-chosen defaults.
       clearConfigCache();
     } catch (err) {
-      console.warn("persist default model failed:", err);
+      console.warn("persist agent defaults failed:", err);
     }
   }
 
-  function persistDefaultModel(model: string) {
-    pendingDefaultModelRef.current = model;
-    if (defaultModelTimerRef.current) {
-      clearTimeout(defaultModelTimerRef.current);
+  function persistAgentDefaults(
+    patch: Partial<{ model: string | null; thinkingLevel: string | null }>,
+  ) {
+    pendingAgentDefaultsRef.current = {
+      ...pendingAgentDefaultsRef.current,
+      ...patch,
+    };
+    if (agentDefaultsTimerRef.current) {
+      clearTimeout(agentDefaultsTimerRef.current);
     }
-    defaultModelTimerRef.current = setTimeout(() => {
-      defaultModelTimerRef.current = null;
-      void flushDefaultModelWrite();
+    agentDefaultsTimerRef.current = setTimeout(() => {
+      agentDefaultsTimerRef.current = null;
+      void flushAgentDefaultsWrite();
     }, 400);
+  }
+
+  function persistDefaultModel(model: string) {
+    persistAgentDefaults({ model: model || null });
+  }
+
+  function persistDefaultThinkingLevel(level: string) {
+    persistAgentDefaults({ thinkingLevel: level || null });
   }
 
   // Append a chat message, or replace in place if a message with the same
@@ -748,6 +762,9 @@ export function useChat(ctx: UseChatContext): UseChatActions {
       updateTab(activeId, (tab) => ({ ...tab, model: trimmed }));
     }
     persistDefaultModel(trimmed);
+    if (parsed.thinkingLevel) {
+      persistDefaultThinkingLevel(parsed.thinkingLevel);
+    }
 
     // No live session to retarget — the default pick is all that's needed.
     if (!hasActiveAgentTab || !activeId) return;
@@ -797,6 +814,7 @@ export function useChat(ctx: UseChatContext): UseChatActions {
         defaultThinkingLevel: level,
         status: `reasoning default: ${level}`,
       }));
+      persistDefaultThinkingLevel(level);
       return;
     }
     if (stateRef.current.waiting === true || isAgentTabInFlight(activeTab)) {
@@ -812,10 +830,6 @@ export function useChat(ctx: UseChatContext): UseChatActions {
       typeof stateRef.current.thinkingLevel === "string"
         ? stateRef.current.thinkingLevel
         : undefined;
-    const previousDefaultThinkingLevel =
-      typeof stateRef.current.defaultThinkingLevel === "string"
-        ? stateRef.current.defaultThinkingLevel
-        : undefined;
     updateTab(activeId, (tab) => ({ ...tab, thinkingLevel: level }));
     setState((prev) => ({
       ...prev,
@@ -823,6 +837,7 @@ export function useChat(ctx: UseChatContext): UseChatActions {
       defaultThinkingLevel: level,
       status: `reasoning: ${level}`,
     }));
+    persistDefaultThinkingLevel(level);
     try {
       await invoke("agent_command", {
         payload: JSON.stringify({
@@ -851,11 +866,8 @@ export function useChat(ctx: UseChatContext): UseChatActions {
         } else {
           delete next.thinkingLevel;
         }
-        if (previousDefaultThinkingLevel) {
-          next.defaultThinkingLevel = previousDefaultThinkingLevel;
-        } else {
-          delete next.defaultThinkingLevel;
-        }
+        // Keep defaultThinkingLevel as the user's new-session default; only
+        // the active live-session mirror rolls back on bridge failure.
         return next;
       });
       appendMessage(

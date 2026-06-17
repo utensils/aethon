@@ -29,6 +29,7 @@ const baseConfig: AethonConfig = {
   },
   agent: {
     model: "openai/gpt-5.5",
+    thinkingLevel: null,
     providerTimeoutSeconds: null,
     codexFastMode: false,
     bashTimeoutFloorSeconds: 300,
