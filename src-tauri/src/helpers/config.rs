@@ -434,7 +434,7 @@ pub fn parse_config_toml(input: &str) -> serde_json::Value {
             "holdHotkey": cfg.voice.hold_hotkey.or_else(|| default_voice_hold_hotkey().map(str::to_string)),
             "speakAgentReplies": cfg.voice.speak_agent_replies.unwrap_or(false),
             "speakMaxChars": cfg.voice.speak_max_chars.unwrap_or(600),
-            "conversationContinuous": cfg.voice.conversation_continuous.unwrap_or(true),
+            "conversationContinuous": cfg.voice.conversation_continuous.unwrap_or(false),
         },
         "extensions": {
             "stateWarnKb": state_warn_kb,
@@ -696,7 +696,8 @@ mod tests {
         assert_eq!(v["voice"]["holdHotkey"], serde_json::Value::Null);
         assert_eq!(v["voice"]["speakAgentReplies"], false);
         assert_eq!(v["voice"]["speakMaxChars"], 600);
-        assert_eq!(v["voice"]["conversationContinuous"], true);
+        // Auto-listen is opt-in (push-to-talk drives each turn by default).
+        assert_eq!(v["voice"]["conversationContinuous"], false);
     }
 
     #[test]
@@ -715,6 +716,14 @@ conversation_continuous = false
         assert_eq!(v["voice"]["speakAgentReplies"], true);
         assert_eq!(v["voice"]["speakMaxChars"], 250);
         // Explicit opt-out of hands-free auto-loop.
+        assert_eq!(v["voice"]["conversationContinuous"], false);
+    }
+
+    #[test]
+    fn conversation_continuous_defaults_off_when_absent() {
+        // Auto-listen is opt-in: with no [voice] conversation_continuous key,
+        // the hands-free auto-reopen loop must default off (push-to-talk).
+        let v = parse_config_toml("[voice]\ntoggle_hotkey = \"mod+shift+m\"\n");
         assert_eq!(v["voice"]["conversationContinuous"], false);
     }
 

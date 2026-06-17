@@ -171,7 +171,9 @@ const DEFAULTS: AethonConfig = {
         : null,
     speakAgentReplies: false,
     speakMaxChars: 600,
-    conversationContinuous: true,
+    // Auto-listen (hands-free auto-reopen of the mic after the agent speaks)
+    // is opt-in: with push-to-talk the user drives each turn explicitly.
+    conversationContinuous: false,
   },
   updates: { channel: "stable", disableAutoCheck: false },
   devshell: {
@@ -292,8 +294,9 @@ export function getConfig(): Promise<AethonConfig> {
             Number.isFinite(obj.voice.speakMaxChars)
               ? Math.min(5000, Math.max(50, Math.round(obj.voice.speakMaxChars)))
               : DEFAULTS.voice.speakMaxChars,
-          conversationContinuous:
-            obj?.voice?.conversationContinuous !== false,
+          // Opt-in: only an explicit `true` enables auto-listen; absent or
+          // false → off (matches the Rust default).
+          conversationContinuous: obj?.voice?.conversationContinuous === true,
         },
         updates: {
           channel: obj?.updates?.channel === "nightly" ? "nightly" : "stable",

@@ -3986,6 +3986,21 @@ body.ae-resizing-composer * {
   opacity: var(--opacity-disabled);
   cursor: default;
 }
+.a2ui-conversation-hud-auto {
+  flex: 0 0 auto;
+  padding: 3px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: inherit;
+}
+.a2ui-conversation-hud-auto-on {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
 .a2ui-chat-input-voice-spinner {
   animation: a2ui-voice-spin 0.9s linear infinite;
 }

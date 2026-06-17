@@ -101,5 +101,20 @@ export const handleChatInput: EventRouteHandler = async (
     }));
     return true;
   }
+  if (eventType === "voice:auto-listen") {
+    const value = (data as { value?: unknown } | undefined)?.value === true;
+    // Live-apply so the running conversation picks it up immediately (the
+    // hook reads /voice/conversationContinuous), and persist so the choice
+    // sticks — same config key the Settings panel writes.
+    ctx.setState((prev) => ({
+      ...prev,
+      voice: {
+        ...(prev.voice ?? {}),
+        conversationContinuous: value,
+      },
+    }));
+    ctx.applySettingsPatch({ voice: { conversationContinuous: value } });
+    return true;
+  }
   return false;
 };

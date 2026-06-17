@@ -188,7 +188,7 @@ export function ChatInput({
   const conversation = useVoiceConversation({
     submitText: (text) => onEvent("submit", { value: text, mode: "normal" }),
     getActiveTabId: () => state.activeTabId as string | undefined,
-    continuous: voiceConfig.conversationContinuous ?? true,
+    continuous: voiceConfig.conversationContinuous ?? false,
     maxSpokenChars: voiceConfig.speakMaxChars ?? 600,
     onNeedsSetup: (providerId) => onEvent("voice:setup", { providerId }),
   });
@@ -470,7 +470,13 @@ export function ChatInput({
         <ConversationHud
           phase={conversation.phase}
           error={conversation.error}
+          autoListen={voiceConfig.conversationContinuous ?? false}
           onPrimary={conversation.primaryAction}
+          onToggleAutoListen={() =>
+            onEvent("voice:auto-listen", {
+              value: !(voiceConfig.conversationContinuous ?? false),
+            })
+          }
           onExit={conversation.exit}
         />
       )}
