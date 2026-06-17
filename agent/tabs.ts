@@ -9,14 +9,13 @@ import {
   appendLocalChatMessage,
   hasA2ui,
   parseChatAttachments,
-  readSessionMetadata,
   readSessionTranscript,
-  writeSessionLabel,
 } from "./session-history";
 import { ensureTab, tabSessionDir } from "./tab-lifecycle";
 import { unloadProjectExtensions } from "./projectLifecycle";
 import { modelRegistryForModelId } from "./auth-profiles";
 import { clearPendingContextUsageEmit } from "./context-usage";
+import { setSessionLabelForTab } from "./session-label";
 
 export async function handleTabOpen(
   state: AethonAgentState,
@@ -200,23 +199,13 @@ export async function handleSetSessionLabel(
   }
   const label = typeof labelField === "string" ? labelField : "";
   try {
-    await writeSessionLabel(tabSessionDir(state, tabId), label);
+    await setSessionLabelForTab(state, deps, tabId, label);
   } catch (err) {
     deps.send({
       type: "error",
       message: `set_session_label: ${(err as Error).message}`,
     });
     return;
-  }
-  // Refresh the discovered-tabs cache so the next emitReady (which the
-  // frontend triggers by sending `report` after this command finishes)
-  // reflects the new label. Cheap to re-read just the one entry.
-  const refreshed = await readSessionMetadata(tabSessionDir(state, tabId));
-  if (refreshed) {
-    const idx = state.discoveredTabs.findIndex((t) => t.tabId === tabId);
-    const entry = { tabId, ...refreshed };
-    if (idx >= 0) state.discoveredTabs[idx] = entry;
-    else state.discoveredTabs.push(entry);
   }
   await emitGlobalReady(state, deps);
 }

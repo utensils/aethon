@@ -40,6 +40,7 @@ import { cancelAethonRetry, scheduleAethonRetry } from "./retry";
 import type { TabLifecycleDeps } from "./utils";
 import { modelKey } from "./utils";
 import { supportsCodexFastMode } from "../codex-fast-mode";
+import { isSilentTool } from "../silent-tools";
 import {
   addLiveContextUsageEstimate,
   clearLiveContextUsageEstimate,
@@ -320,6 +321,10 @@ export function handleSessionEvent(
         toolName: string;
         args: unknown;
       };
+      if (isSilentTool(ev.toolName)) {
+        rec.toolArgsCache.delete(ev.toolCallId);
+        return;
+      }
       const summary = summarizeToolArgs(ev.toolName, ev.args);
       const startedAt = Date.now();
       const uiId = `tool-${++rec.toolCardSeq}-${ev.toolCallId}`;
@@ -359,6 +364,9 @@ export function handleSessionEvent(
         args: unknown;
         partialResult: unknown;
       };
+      if (isSilentTool(ev.toolName)) {
+        return;
+      }
       if (ev.toolName === "bash") {
         let cached = rec.toolArgsCache.get(ev.toolCallId);
         if (!cached) {
@@ -415,6 +423,10 @@ export function handleSessionEvent(
         result: unknown;
         isError?: boolean;
       };
+      if (isSilentTool(ev.toolName)) {
+        rec.toolArgsCache.delete(ev.toolCallId);
+        return;
+      }
       const cached = rec.toolArgsCache.get(ev.toolCallId);
       const uiId = cached?.uiId ?? `tool-${++rec.toolCardSeq}-${ev.toolCallId}`;
       const payload = toolCardPayload({

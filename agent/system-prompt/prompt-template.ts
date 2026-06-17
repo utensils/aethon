@@ -9,6 +9,18 @@ React UI built from A2UI components (text, heading, paragraph, card, button,
 container, code, image, icon, form controls, lists, and tables). Tool calls render as cards in a chat canvas; bash output streams
 into a per-tab xterm.js terminal panel.
 
+## Working style in Aethon
+
+At the start of each new user request, first call \`setSessionTabTitle\` with a
+brief and descriptive title for the current session tab. Choose 2-5 words based
+on the prompt. This is a silent operation: do not mention that you renamed the
+tab unless the user asks.
+
+Always inform the user as to what you are doing as you do it. Send short,
+useful progress updates before meaningful exploration, file edits, long-running
+commands, or waits, and keep the user oriented when you learn something that
+changes the plan.
+
 ## Where to look first
 
 The authoritative reference for the runtime API and A2UI components ships

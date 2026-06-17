@@ -7,6 +7,7 @@
  */
 
 import { stripExpandedFileReferences } from "../file-references";
+import { isSilentTool } from "../silent-tools";
 import { summarizeToolArgs, toolCardPayload } from "../tool-card";
 import {
   MAX_RESTORED_MESSAGES,
@@ -152,6 +153,7 @@ export function parseSessionHistoryLines(
         typeof msg.toolName === "string" && msg.toolName.length > 0
           ? msg.toolName
           : "tool";
+      if (isSilentTool(toolName)) continue;
       const endedAt = parseMessageTime(record, msg);
       const result = {
         content: msg.content,
@@ -234,6 +236,7 @@ export function parseSessionHistoryLines(
         typeof toolCall.name === "string" && toolCall.name.length > 0
           ? toolCall.name
           : "tool";
+      if (isSilentTool(toolName)) continue;
       const args = "arguments" in toolCall ? toolCall.arguments : undefined;
       const argsSummary = summarizeToolArgs(toolName, args);
       const startedAt = parseMessageTime(record, msg);
