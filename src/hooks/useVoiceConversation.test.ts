@@ -298,6 +298,23 @@ describe("useVoiceConversation", () => {
     expect(result.current.phase).not.toBe("listening");
   });
 
+  it("ends a held utterance when focus is lost (no stuck mic)", async () => {
+    const { result } = makeController(true);
+    act(() => result.current.enter());
+    await flush();
+    expect(result.current.phase).toBe("listening");
+
+    // Holding push-to-talk (VAD suppressed), but the user never spoke.
+    act(() => result.current.beginHold());
+
+    // Focus leaves before any speech — the lost keyup must not wedge the mic.
+    act(() => window.dispatchEvent(new Event("blur")));
+    await flush();
+
+    expect(mocks.stopAndTranscribeVoice).toHaveBeenCalled();
+    expect(result.current.phase).not.toBe("listening");
+  });
+
   it("a release without a held press never sends", async () => {
     const { result, submitText } = makeController(true);
     act(() => result.current.enter());

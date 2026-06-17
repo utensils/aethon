@@ -323,11 +323,17 @@ export function useVoiceConversation(
   }, []);
 
   // If focus leaves while the push-to-talk key is held, the keyup never
-  // arrives — drop the suppression so VAD resumes and the mic can't stay
-  // wedged open. The conversation itself deliberately keeps running across blur.
+  // arrives. Release the hold and END the capture — just dropping the
+  // suppression isn't enough: VAD refuses to finish until it has seen speech,
+  // so a blur before the user spoke would otherwise wedge the mic open in the
+  // background. If the mic is open, finish now; if it's still opening, clearing
+  // manualHold lets the deferred open-check (holdStartRef) finish it on open.
+  // The conversation itself deliberately keeps running across blur.
   useEffect(() => {
     const onBlur = () => {
+      if (!manualHoldRef.current) return;
       manualHoldRef.current = false;
+      if (phaseRef.current === "listening") finishRef.current();
     };
     window.addEventListener("blur", onBlur);
     return () => window.removeEventListener("blur", onBlur);
