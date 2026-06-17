@@ -147,6 +147,16 @@ describe("buildSubagentsSection", () => {
     expect(out).toContain("opens its own tab");
   });
 
+  it("advertises @<name> handoff for mentions anywhere in a message", () => {
+    const out = buildSubagentsSection([
+      { name: "reviewer", description: "Reviews diffs", surface: "inline" },
+    ]);
+    // Handoff is triggered by a mention *in* a message, not just a prefix, so
+    // mid-message mentions like "when done, have @reviewer check it" delegate.
+    expect(out).toContain("a message includes `@<name>`");
+    expect(out).not.toContain("prefixes a message");
+  });
+
   it("is not rendered by buildRuntimeSection (advertisement is per-turn)", () => {
     expect(buildRuntimeSection(snapshot())).not.toContain(
       "Available subagents",

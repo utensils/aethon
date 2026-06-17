@@ -9,6 +9,7 @@ import {
   matchAtMentions,
   matchAtSubagents,
   matchAtFiles,
+  shouldOfferAgents,
   subagentSuggestionsFromFiles,
   type AtFileMatch,
   type AtSubagentMatch,
@@ -153,6 +154,34 @@ describe("subagent mention matching", () => {
     const later = findActiveAtToken("hello @kimi", 11);
     expect(later).not.toBeNull();
     expect(isLeadingAtToken("hello @kimi", later!)).toBe(false);
+  });
+
+  it("offers agents for leading tokens and any non-empty name fragment", () => {
+    const offer = (value: string, cursor: number): boolean => {
+      const token = findActiveAtToken(value, cursor);
+      expect(token).not.toBeNull();
+      return shouldOfferAgents(value, token!);
+    };
+    // Leading `@` (even with no query yet) — the delegation prefix.
+    expect(offer("@", 1)).toBe(true);
+    expect(offer("@ki", 3)).toBe(true);
+    // Mid-message mention with a name fragment still completes to an agent.
+    expect(offer("hello @ki", 9)).toBe(true);
+    // Bare mid-message `@` stays file-focused (no agent clutter).
+    expect(offer("hello @", 7)).toBe(false);
+  });
+
+  it("surfaces a subagent for a mid-message mention via shouldOfferAgents", () => {
+    const value = "when done have @glm";
+    const token = findActiveAtToken(value, value.length);
+    expect(token).not.toBeNull();
+    const matches = matchAtMentions({
+      query: token!.query,
+      files: files("src/glmd.ts"),
+      subagents: [agent("glm-5-2", "zhipu coding model")],
+      includeAgents: shouldOfferAgents(value, token!),
+    });
+    expect(matches[0]).toMatchObject({ kind: "agent", name: "glm-5-2" });
   });
 
   it("ranks matching subagents by name and description", () => {

@@ -2,8 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import {
   findActiveAtToken,
-  isLeadingAtToken,
   matchAtMentions,
+  shouldOfferAgents,
   type AtFileMatch,
   type AtMention,
   type AtSubagentMatch,
@@ -92,7 +92,7 @@ export function useAtMention({
       query: token.query,
       files: root ? files : [],
       subagents,
-      includeAgents: isLeadingAtToken(value, token),
+      includeAgents: shouldOfferAgents(value, token),
     });
     return matches.length > 0 ? { ...token, matches } : null;
   }, [token, root, files, subagents, value, dismissedDraft]);
