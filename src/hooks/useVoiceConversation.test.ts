@@ -261,6 +261,43 @@ describe("useVoiceConversation", () => {
     expect(result.current.phase).toBe("listening");
   });
 
+  it("a release before the mic opens does not strand it recording", async () => {
+    const { result } = makeController(false);
+    // Drive one turn so the conversation settles back to idle.
+    act(() => result.current.enter());
+    await flush();
+    act(() => result.current.primaryAction());
+    await flush();
+    act(() => emitAgentTurnComplete({ tabId: "t1", text: "" }));
+    await flush();
+    expect(result.current.phase).toBe("idle");
+
+    // The next open hangs so we can release while it is still in flight.
+    let resolveStart: () => void = () => {};
+    mocks.startVoiceRecording.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveStart = resolve;
+        }),
+    );
+    mocks.stopAndTranscribeVoice.mockClear();
+    mocks.stopAndTranscribeVoice.mockResolvedValueOnce("");
+
+    act(() => result.current.beginHold()); // idle → start (hanging)
+    act(() => result.current.endHold()); // released before the recorder is ready
+
+    await act(async () => {
+      resolveStart();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    // The deferred open immediately finishes — the mic never stays "listening"
+    // with no keyup left to close it.
+    expect(mocks.stopAndTranscribeVoice).toHaveBeenCalled();
+    expect(result.current.phase).not.toBe("listening");
+  });
+
   it("a release without a held press never sends", async () => {
     const { result, submitText } = makeController(true);
     act(() => result.current.enter());

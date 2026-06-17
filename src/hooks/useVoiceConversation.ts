@@ -88,6 +88,10 @@ export function useVoiceConversation(
   // True while the user holds the push-to-talk key: VAD never auto-ends the
   // utterance, so the release is the sole end-of-message signal.
   const manualHoldRef = useRef(false);
+  // True while a push-to-talk press is opening the mic from idle. Lets a
+  // release that lands before the recorder is ready finish the moment it opens,
+  // instead of stranding the mic in "listening" with no keyup to close it.
+  const holdStartRef = useRef(false);
   const finishRef = useRef<() => void>(() => {});
   const optionsRef = useRef(options);
   // Keep the latest callbacks/config available to async transitions without a
@@ -120,9 +124,19 @@ export function useVoiceConversation(
       lastSpeechAtRef.current = 0;
       listenStartAtRef.current = Date.now();
       setPhase("listening");
+      // If a push-to-talk press opened this window but the key was already
+      // released before the recorder became ready, honor that release now —
+      // otherwise the mic would stay hot with no keyup left to finish it.
+      // Route through finishRef to dodge the startListening↔finishListening
+      // useCallback cycle (same indirection the VAD listener uses).
+      if (holdStartRef.current) {
+        holdStartRef.current = false;
+        if (!manualHoldRef.current) finishRef.current();
+      }
     } catch (caught) {
       // A failed open must not leave VAD suppressed for the next window.
       manualHoldRef.current = false;
+      holdStartRef.current = false;
       setError(errorMessage(caught));
       setPhase("idle");
       optionsRef.current.onNeedsSetup?.(LFM2_VOICE_PROVIDER_ID);
@@ -177,6 +191,7 @@ export function useVoiceConversation(
   const exit = useCallback(() => {
     activeRef.current = false;
     manualHoldRef.current = false;
+    holdStartRef.current = false;
     setActive(false);
     setConversationActive(false);
     void cancelVoiceRecording(LFM2_VOICE_PROVIDER_ID).catch(() => {});
@@ -210,6 +225,7 @@ export function useVoiceConversation(
     if (!activeRef.current) return;
     if (phaseRef.current === "idle") {
       manualHoldRef.current = true;
+      holdStartRef.current = true;
       void startListening();
     } else if (phaseRef.current === "listening") {
       manualHoldRef.current = true;
