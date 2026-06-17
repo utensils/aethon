@@ -13,6 +13,7 @@ import type {
   NotificationKind,
 } from "../../extensions/default-layout/notifications";
 import type { ProjectsState } from "../../projects";
+import type { StartTaskResult } from "../useTaskLauncher";
 
 /** A bridge-to-frontend message. The `type` discriminator routes to a
  *  handler in the registry; other keys are payload-specific and typed
@@ -183,7 +184,9 @@ export interface BridgeMessageContext {
     baseBranch?: string;
     model?: string;
     bridgePrompt?: string;
-  }) => Promise<void>;
+    activate?: boolean;
+    label?: string;
+  }) => Promise<StartTaskResult | void>;
 
   // ─── Hook-owned ────────────────────────────────────────────────────
   /** Startup/reload paint gate. The first bridge ready can still represent

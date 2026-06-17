@@ -19,7 +19,12 @@ export {
   refreshSubagents,
   userAgentsDir,
 } from "./loader";
-export { buildSubagentTaskTool } from "./task-tool";
+export { buildSubagentTaskBatchTool, buildSubagentTaskTool } from "./task-tool";
 export type { SubagentTaskDeps } from "./task-tool";
-export { buildExplicitSubagentSteer, detectSubagentMention } from "./steer";
+export {
+  buildExplicitSubagentSteer,
+  detectBackgroundSubagentIntent,
+  detectLeadingSubagentMentions,
+  detectSubagentMention,
+} from "./steer";
 export { handleSubagentsChanged } from "./changed";

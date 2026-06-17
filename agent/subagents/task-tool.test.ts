@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ToolDefinition } from "@mariozechner/pi-coding-agent";
 import type { AethonAgentState } from "../state";
 import type { Subagent } from "./types";
-import { buildSubagentTaskTool } from "./task-tool";
+import { buildSubagentTaskBatchTool, buildSubagentTaskTool } from "./task-tool";
 
 const fakeModel = { provider: "ollama", id: "llama3.3", name: "Llama 3.3" };
 
@@ -104,7 +104,21 @@ type ExecResult = {
 };
 type Exec = (
   callId: string,
-  params: { subagent_type: string; prompt: string; context?: string },
+  params: {
+    subagent_type: string;
+    prompt: string;
+    context?: string;
+    surface?: "inline" | "background" | "auto";
+  },
+  signal?: AbortSignal,
+  onUpdate?: (p: { content: { type: string; text: string }[] }) => void,
+) => Promise<ExecResult>;
+type BatchExec = (
+  callId: string,
+  params: {
+    tasks: Array<{ subagent_type: string; prompt: string; context?: string }>;
+    surface?: "inline" | "background" | "auto";
+  },
   signal?: AbortSignal,
   onUpdate?: (p: { content: { type: string; text: string }[] }) => void,
 ) => Promise<ExecResult>;
@@ -113,25 +127,46 @@ function execOf(tool: ToolDefinition): Exec {
   return (tool as unknown as { execute: Exec }).execute;
 }
 
+function batchExecOf(tool: ToolDefinition): BatchExec {
+  return (tool as unknown as { execute: BatchExec }).execute;
+}
+
 function makeState(sub: Partial<Subagent> & { name: string }): {
   state: AethonAgentState;
   findSpy: ReturnType<typeof vi.fn>;
 } {
-  const full: Subagent = {
-    name: sub.name,
-    description: sub.description ?? "does things",
-    model: sub.model,
-    tools: sub.tools,
-    surface: sub.surface ?? "inline",
-    timeoutSeconds: sub.timeoutSeconds,
-    systemPrompt: sub.systemPrompt ?? "You are a helper.",
-    scope: "user",
-    filePath: `/agents/${sub.name}.md`,
-  };
+  return makeStateWithSubagents([sub]);
+}
+
+function makeStateWithSubagents(
+  subs: Array<Partial<Subagent> & { name: string }>,
+): {
+  state: AethonAgentState;
+  findSpy: ReturnType<typeof vi.fn>;
+} {
+  const full = subs.map(
+    (sub): Subagent => ({
+      name: sub.name,
+      description: sub.description ?? "does things",
+      model: sub.model,
+      tools: sub.tools,
+      surface: sub.surface ?? "inline",
+      timeoutSeconds: sub.timeoutSeconds,
+      systemPrompt: sub.systemPrompt ?? `You are ${sub.name}.`,
+      scope: "user",
+      filePath: `/agents/${sub.name}.md`,
+    }),
+  );
   const findSpy = vi.fn((_provider: string, _id: string) => fakeModel);
   const state = {
     subagentsByCwd: new Map([
-      ["/proj", { byName: new Map([[full.name, full]]), issues: [] }],
+      [
+        "/proj",
+        {
+          byName: new Map(full.map((sub) => [sub.name, sub])),
+          issues: [],
+        },
+      ],
     ]),
     tabProjectCwds: new Map<string, string>(),
     tabAuthProfileIds: new Map<string, string>(),
@@ -556,6 +591,34 @@ describe("buildSubagentTaskTool", () => {
     expect(h.createAgentSession).not.toHaveBeenCalled();
   });
 
+  it("can force an inline subagent into a background tab", async () => {
+    const start = vi.fn(() =>
+      Promise.resolve({ ok: true, data: { tabId: "t-bg" } }),
+    );
+    (globalThis as { aethon?: unknown }).aethon = { tasks: { start } };
+    const { state } = makeState({
+      name: "builder",
+      model: "ollama/llama3.3",
+      surface: "inline",
+    });
+    const tool = buildSubagentTaskTool(state, { send: vi.fn() }, "default");
+    const result = await execOf(tool)("c", {
+      subagent_type: "builder",
+      prompt: "do it",
+      surface: "background",
+    });
+    expect(start).toHaveBeenCalledWith({
+      projectPath: "/proj",
+      prompt: expect.stringContaining("do it"),
+      model: "ollama/llama3.3",
+      activate: false,
+      label: expect.stringContaining("builder"),
+    });
+    expect(result.details.surface).toBe("background");
+    expect(result.content[0].text).toMatch(/background tab/);
+    expect(h.createAgentSession).not.toHaveBeenCalled();
+  });
+
   it("passes expanded context as a hidden bridge prompt for tab-surface subagents", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "aethon-task-file-ref-tab-"));
     try {
@@ -589,5 +652,200 @@ describe("buildSubagentTaskTool", () => {
     } finally {
       await rm(cwd, { recursive: true, force: true });
     }
+  });
+});
+
+describe("buildSubagentTaskBatchTool", () => {
+  it("runs multiple inline subagents concurrently and returns results in request order", async () => {
+    let releaseA!: () => void;
+    let releaseB!: () => void;
+    h.nextSessions = [
+      {
+        promptImpl: (session) =>
+          new Promise<void>((resolve) => {
+            releaseA = () => {
+              emitSessionEvents(session, [
+                {
+                  type: "message_update",
+                  assistantMessageEvent: {
+                    type: "text_delta",
+                    delta: "A done",
+                  },
+                },
+                {
+                  type: "agent_end",
+                  messages: [
+                    { role: "assistant", content: [], stopReason: "stop" },
+                  ],
+                },
+              ]);
+              resolve();
+            };
+          }),
+      },
+      {
+        promptImpl: (session) =>
+          new Promise<void>((resolve) => {
+            releaseB = () => {
+              emitSessionEvents(session, [
+                {
+                  type: "message_update",
+                  assistantMessageEvent: {
+                    type: "text_delta",
+                    delta: "B done",
+                  },
+                },
+                {
+                  type: "agent_end",
+                  messages: [
+                    { role: "assistant", content: [], stopReason: "stop" },
+                  ],
+                },
+              ]);
+              resolve();
+            };
+          }),
+      },
+    ];
+    const { state } = makeStateWithSubagents([
+      { name: "kimi", model: "ollama/llama3.3" },
+      { name: "glm-5-2", model: "ollama/llama3.3" },
+    ]);
+    const send = vi.fn();
+    const tool = buildSubagentTaskBatchTool(state, { send }, "default");
+
+    const pending = batchExecOf(tool)("batch-call", {
+      tasks: [
+        { subagent_type: "kimi", prompt: "first" },
+        { subagent_type: "glm-5-2", prompt: "second" },
+      ],
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(h.sessions).toHaveLength(2);
+    releaseB();
+    await Promise.resolve();
+    releaseA();
+
+    const result = await pending;
+    expect(result.content[0].text).toMatch(
+      /## kimi[\s\S]*A done[\s\S]*## glm-5-2[\s\S]*B done/,
+    );
+    const progress = send.mock.calls
+      .map((c) => c[0] as Record<string, unknown>)
+      .filter((m) => m.type === "subagent_progress");
+    expect(progress).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          parentCallId: "batch-call",
+          batchItemId: "0:kimi",
+          phase: "start",
+        }),
+        expect.objectContaining({
+          parentCallId: "batch-call",
+          batchItemId: "1:glm-5-2",
+          phase: "start",
+        }),
+      ]),
+    );
+  });
+
+  it("keeps successful batch results when one subagent fails", async () => {
+    h.nextSessions = [
+      { scriptedEvents: successEvents },
+      {
+        scriptedEvents: [
+          {
+            type: "agent_end",
+            messages: [
+              {
+                role: "assistant",
+                stopReason: "error",
+                errorMessage: "model overloaded",
+              },
+            ],
+          },
+        ],
+      },
+    ];
+    const { state } = makeStateWithSubagents([
+      { name: "kimi", model: "ollama/llama3.3" },
+      { name: "glm-5-2", model: "ollama/llama3.3" },
+    ]);
+    const tool = buildSubagentTaskBatchTool(
+      state,
+      { send: vi.fn() },
+      "default",
+    );
+
+    const result = await batchExecOf(tool)("batch-call", {
+      tasks: [
+        { subagent_type: "kimi", prompt: "first" },
+        { subagent_type: "glm-5-2", prompt: "second" },
+      ],
+    });
+
+    expect(result.content[0].text).toContain("## kimi");
+    expect(result.content[0].text).toContain("Found 2 bugs.");
+    expect(result.content[0].text).toContain("## glm-5-2");
+    expect(result.content[0].text).toContain("model overloaded");
+  });
+
+  it("rejects only when every subagent fails", async () => {
+    h.promptImpl = () => Promise.reject(new Error("boom"));
+    const { state } = makeStateWithSubagents([
+      { name: "kimi", model: "ollama/llama3.3" },
+      { name: "glm-5-2", model: "ollama/llama3.3" },
+    ]);
+    const tool = buildSubagentTaskBatchTool(
+      state,
+      { send: vi.fn() },
+      "default",
+    );
+
+    await expect(
+      batchExecOf(tool)("batch-call", {
+        tasks: [
+          { subagent_type: "kimi", prompt: "first" },
+          { subagent_type: "glm-5-2", prompt: "second" },
+        ],
+      }),
+    ).rejects.toThrow(/all subagents failed/i);
+  });
+
+  it("launches batch tasks as non-focused background tabs when requested", async () => {
+    const start = vi.fn(() =>
+      Promise.resolve({ ok: true, data: { tabId: crypto.randomUUID() } }),
+    );
+    (globalThis as { aethon?: unknown }).aethon = { tasks: { start } };
+    const { state } = makeStateWithSubagents([
+      { name: "kimi", model: "ollama/llama3.3" },
+      { name: "glm-5-2", model: "ollama/llama3.3" },
+    ]);
+    const tool = buildSubagentTaskBatchTool(
+      state,
+      { send: vi.fn() },
+      "default",
+    );
+
+    const result = await batchExecOf(tool)("batch-call", {
+      surface: "background",
+      tasks: [
+        { subagent_type: "kimi", prompt: "first" },
+        { subagent_type: "glm-5-2", prompt: "second" },
+      ],
+    });
+
+    expect(start).toHaveBeenCalledTimes(2);
+    expect(start.mock.calls.map((call) => call[0])).toEqual([
+      expect.objectContaining({ activate: false, label: expect.stringContaining("kimi") }),
+      expect.objectContaining({
+        activate: false,
+        label: expect.stringContaining("glm-5-2"),
+      }),
+    ]);
+    expect(h.createAgentSession).not.toHaveBeenCalled();
+    expect(result.content[0].text).toMatch(/## kimi[\s\S]*background tab/);
   });
 });

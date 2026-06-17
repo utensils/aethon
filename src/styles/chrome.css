@@ -9199,6 +9199,11 @@ button.ae-vcs-chip:focus-visible {
 /* --------------------------------------------------------------------------
  * Subagent activity timeline (nested inside a `task` tool card).
  * ------------------------------------------------------------------------ */
+.ae-subagent-activity-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
 .ae-subagent-activity {
   display: flex;
   flex-direction: column;

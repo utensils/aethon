@@ -44,6 +44,7 @@ export interface WorkspaceOperations {
     branch?: string;
     targetPath?: string;
     baseBranch?: string;
+    activate?: boolean;
   }) => Promise<string | null>;
   removeWorkspaceById: (
     workspaceId: string,

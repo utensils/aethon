@@ -70,6 +70,8 @@ describe("startTask tool", () => {
       baseBranch: "main",
       model: "openai/gpt-5",
       bridgePrompt: "hidden context",
+      activate: false,
+      label: "Background task",
     });
     expect(fakeTasks.start).toHaveBeenCalledWith({
       projectPath: "/p",
@@ -79,6 +81,8 @@ describe("startTask tool", () => {
       baseBranch: "main",
       model: "openai/gpt-5",
       bridgePrompt: "hidden context",
+      activate: false,
+      label: "Background task",
     });
   });
 

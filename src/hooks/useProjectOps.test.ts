@@ -1137,6 +1137,66 @@ describe("useProjectOps workspace creation", () => {
     expect(projectsRef.current.projects[0].uiExpanded).toBe(true);
   });
 
+  it("can create workspaces without activating the result", async () => {
+    const harness = installTauriMocks();
+    harness.invoke.mockImplementation((cmd: string) => {
+      if (cmd === "git_worktree_add") {
+        return Promise.resolve({
+          path: "/tmp/aethon/aethon/fix-thing",
+          branch: "fix/thing",
+          head: "def456",
+          isMain: false,
+          locked: false,
+        });
+      }
+      if (cmd === "git_worktrees") {
+        return Promise.resolve([
+          {
+            path: "/projects/aethon",
+            branch: "main",
+            head: "abc123",
+            isMain: true,
+            locked: false,
+          },
+          {
+            path: "/tmp/aethon/aethon/fix-thing",
+            branch: "fix/thing",
+            head: "def456",
+            isMain: false,
+            locked: false,
+          },
+        ]);
+      }
+      return Promise.resolve(undefined);
+    });
+    const initial = makeProjectsState({ activeId: "project-1" });
+    const { result, projectsRef, stateRef } = renderProjectOps(initial);
+    stateRef.current.aethonRoot = "/tmp/aethon";
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    projectsRef.current = initial;
+
+    await act(async () => {
+      const created = await result.current.createWorkspaceWithParams({
+        projectId: "project-1",
+        branch: "fix/thing",
+        activate: false,
+      });
+      expect(created).toBe("/tmp/aethon/aethon/fix-thing");
+    });
+
+    expect(projectsRef.current.activeId).toBe("project-1");
+    expect(projectsRef.current.activeWorkspaceId).toBeNull();
+    expect(projectsRef.current.projects[0].uiExpanded).not.toBe(true);
+    expect(
+      projectsRef.current.workspacesByProject["project-1"]?.some(
+        (workspace) => workspace.path === "/tmp/aethon/aethon/fix-thing",
+      ),
+    ).toBe(true);
+  });
+
   it("auto-generates blank workspace branches under the Aethon user dir", async () => {
     const harness = installTauriMocks();
     harness.invoke.mockImplementation((cmd: string, args) => {

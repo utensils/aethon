@@ -48,13 +48,17 @@ export function buildSubagentsSection(
   const lines: string[] = [
     "# Available subagents",
     "Delegate focused work to one with the `task` tool " +
-      '(`task({ subagent_type: "<name>", prompt: "<self-contained task>" })`). ' +
+      '(`task({ subagent_type: "<name>", prompt: "<self-contained task>" })`) ' +
+      "or to several independent subagents with `task_batch`. " +
       "Choose the subagent whose description best fits; pass everything it needs " +
-      "in `prompt` (it runs in an isolated session and sees only that). When a " +
-      "message includes `@<name>`, hand that work to the named subagent — a " +
-      "message that starts with `@<name>` is entirely for it; a mention later in " +
-      "the message (e.g. \"when done, have @<name> review\") delegates just that " +
-      "part. Do NOT delegate trivial work you can do directly.",
+      "in `prompt` (it runs in an isolated session and sees only that). Multiple " +
+      "leading mentions such as `@a and @b ...` mean the whole prompt should fan " +
+      "out with `task_batch` and `surface: \"inline\"` by default. Use " +
+      '`surface: "background"` only when the user asks for async/background/' +
+      "don't-wait/separate-tabs behavior. Non-leading mentions (e.g. \"when " +
+      "done, have @<name> review\") are guidance to delegate just that part, not " +
+      "an automatic whole-prompt hijack. Do NOT delegate trivial work you can do " +
+      "directly.",
   ];
   for (const s of subagents) {
     const model = s.model ? `, model \`${s.model}\`` : "";

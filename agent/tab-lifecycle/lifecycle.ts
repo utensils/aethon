@@ -23,7 +23,10 @@ import { createAethonBashToolDefinition } from "../bash-tool";
 import { buildDashboardTools } from "../dashboard-tools";
 import { buildEditorTools } from "../editor-tools";
 import { buildSessionTitleTools } from "../session-title-tool";
-import { buildSubagentTaskTool } from "../subagents/task-tool";
+import {
+  buildSubagentTaskBatchTool,
+  buildSubagentTaskTool,
+} from "../subagents/task-tool";
 import { buildMemoryTools } from "../memory/tools";
 import {
   installCodexFastModePayloadHook,
@@ -183,6 +186,7 @@ export async function ensureTab(
       ...buildEditorTools(),
       ...buildMemoryTools(state, tabId),
       buildSubagentTaskTool(state, deps, tabId),
+      buildSubagentTaskBatchTool(state, deps, tabId),
     ],
     ...(options.initialModel ? { model: options.initialModel } : {}),
     ...(options.thinkingLevel ? { thinkingLevel: options.thinkingLevel } : {}),

@@ -1,7 +1,24 @@
-import { useCallback, type MutableRefObject } from "react";
+import {
+  useCallback,
+  type Dispatch,
+  type MutableRefObject,
+  type SetStateAction,
+} from "react";
+import { invoke } from "@tauri-apps/api/core";
 import type { ChatAttachment } from "../types/a2ui";
 import type { ProjectsState } from "../projects";
 import type { NotificationInput } from "./useNotifications";
+import { makeEmptyTab, type Tab } from "../types/tab";
+import { modelForNewProjectTab } from "./tabOps/helpers";
+import {
+  devshellNeedsPreparation,
+  initialDevshellTerminalBuffer,
+} from "./tabOps/devshellTerminal";
+import {
+  projectScopeBucketKey,
+  workspaceIdForCwd,
+} from "./projectOps/tabBuckets";
+import type { TabBucket } from "./projectOps/types";
 
 export interface StartTaskOptions {
   projectId: string;
@@ -11,6 +28,11 @@ export interface StartTaskOptions {
   branch?: string;
   baseBranch?: string;
   workspaceId?: string;
+  /** When false, create the task tab without switching the visible
+   *  project/workspace or focusing the new tab. */
+  activate?: boolean;
+  /** Optional tab label for agent-launched/background tasks. */
+  label?: string;
   /** Model the launched session should use (task-launcher model chip).
    *  Overrides the global default + per-project memory for this launch. */
   model?: string;
@@ -29,6 +51,7 @@ export interface UseTaskLauncherOptions {
     branch?: string;
     targetPath?: string;
     baseBranch?: string;
+    activate?: boolean;
   }) => Promise<string | null>;
   activateWorkspace: (workspaceId: string | null) => void;
   newTab: (
@@ -50,6 +73,48 @@ export interface UseTaskLauncherOptions {
       bridgeText?: string;
     },
   ) => Promise<void>;
+  setState?: Dispatch<SetStateAction<Record<string, unknown>>>;
+  stateRef?: MutableRefObject<Record<string, unknown>>;
+  tabBucketsRef?: MutableRefObject<Map<string, TabBucket>>;
+  piDefaultModelRef?: MutableRefObject<string>;
+}
+
+export interface StartTaskResult {
+  tabId: string;
+  projectId: string;
+  cwd: string;
+  activated: boolean;
+}
+
+function mirrorPersistedBuckets(
+  tabBucketsRef: MutableRefObject<Map<string, TabBucket>>,
+  activeBucketKey: string,
+): Record<string, TabBucket> {
+  const persisted: Record<string, TabBucket> = {};
+  for (const [key, bucket] of tabBucketsRef.current.entries()) {
+    if (key === activeBucketKey) continue;
+    persisted[key] = {
+      tabs: bucket.tabs,
+      activeTabId: bucket.activeTabId,
+    };
+  }
+  return persisted;
+}
+
+function countKnownTabs(
+  stateRef: MutableRefObject<Record<string, unknown>>,
+  tabBucketsRef: MutableRefObject<Map<string, TabBucket>>,
+  activeBucketKey: string,
+): number {
+  const ids = new Set<string>();
+  for (const tab of (stateRef.current.tabs as Tab[] | undefined) ?? []) {
+    ids.add(tab.id);
+  }
+  for (const [bucketKey, bucket] of tabBucketsRef.current.entries()) {
+    if (bucketKey === activeBucketKey) continue;
+    for (const tab of bucket.tabs) ids.add(tab.id);
+  }
+  return ids.size;
 }
 
 export function useTaskLauncher({
@@ -61,9 +126,13 @@ export function useTaskLauncher({
   newTab,
   pendingTabOpens,
   sendChat,
-}: UseTaskLauncherOptions): (opts: StartTaskOptions) => Promise<void> {
+  setState,
+  stateRef,
+  tabBucketsRef,
+  piDefaultModelRef,
+}: UseTaskLauncherOptions): (opts: StartTaskOptions) => Promise<StartTaskResult | void> {
   return useCallback(
-    async (opts: StartTaskOptions): Promise<void> => {
+    async (opts: StartTaskOptions): Promise<StartTaskResult | void> => {
       const project = projectsRef.current.projects.find(
         (p) => p.id === opts.projectId,
       );
@@ -75,16 +144,19 @@ export function useTaskLauncher({
         });
         return;
       }
-      if (projectsRef.current.activeId !== opts.projectId) {
+      const shouldActivate = opts.activate !== false;
+      if (shouldActivate && projectsRef.current.activeId !== opts.projectId) {
         setActiveProjectById(opts.projectId);
       }
       let cwd = project.path;
+      let workspaceIdForBucket: string | null | undefined = null;
       if (opts.newWorkspace) {
         const branch = (opts.branch ?? "").trim();
         const created = await createWorkspaceWithParams({
           projectId: opts.projectId,
           ...(branch ? { branch } : {}),
           baseBranch: opts.baseBranch,
+          activate: shouldActivate,
         });
         if (!created) {
           pushNotificationRef.current({
@@ -101,21 +173,152 @@ export function useTaskLauncher({
           projectsRef.current.workspacesByProject[opts.projectId]?.find(
             (w) => w.path === created,
           );
-        if (createdWorkspace) activateWorkspace(createdWorkspace.id);
+        workspaceIdForBucket = createdWorkspace?.id ?? null;
+        if (shouldActivate && createdWorkspace)
+          activateWorkspace(createdWorkspace.id);
       } else if (opts.workspaceId) {
         const list =
           projectsRef.current.workspacesByProject[opts.projectId] ?? [];
         const wt = list.find((w) => w.id === opts.workspaceId);
         if (wt) {
           cwd = wt.path;
-          activateWorkspace(wt.id);
+          workspaceIdForBucket = wt.id;
+          if (shouldActivate) activateWorkspace(wt.id);
         }
       }
       const tabId = crypto.randomUUID();
-      newTab(tabId, undefined, {
-        cwd,
-        ...(opts.model ? { model: opts.model } : {}),
-      });
+      if (shouldActivate || !setState || !stateRef || !tabBucketsRef) {
+        newTab(tabId, opts.label, {
+          cwd,
+          ...(opts.model ? { model: opts.model } : {}),
+        });
+      } else {
+        const activeBucketKey = projectScopeBucketKey(
+          projectsRef.current.activeId,
+          projectsRef.current.activeWorkspaceId,
+        );
+        const targetWorkspaceId =
+          workspaceIdForBucket ??
+          workspaceIdForCwd(projectsRef.current, cwd, opts.projectId) ??
+          null;
+        const targetBucketKey = projectScopeBucketKey(
+          opts.projectId,
+          targetWorkspaceId,
+        );
+        const inheritedModel = modelForNewProjectTab(
+          stateRef.current,
+          opts.projectId,
+          piDefaultModelRef?.current ?? "",
+          opts.model,
+        );
+        const inheritedThinkingLevel =
+          typeof stateRef.current.defaultThinkingLevel === "string"
+            ? stateRef.current.defaultThinkingLevel
+            : undefined;
+        const initialTerminalBuffer = initialDevshellTerminalBuffer(
+          stateRef.current,
+          cwd,
+        );
+        const preparingDevshell = devshellNeedsPreparation(
+          stateRef.current,
+          cwd,
+        );
+        const tab: Tab = {
+          ...makeEmptyTab(
+            tabId,
+            opts.label ??
+              `Tab ${countKnownTabs(stateRef, tabBucketsRef, activeBucketKey) + 1}`,
+            opts.projectId,
+          ),
+          model: inheritedModel,
+          terminalBuffer: initialTerminalBuffer,
+          waiting: preparingDevshell,
+          ...(inheritedThinkingLevel
+            ? { thinkingLevel: inheritedThinkingLevel }
+            : {}),
+          cwd,
+        };
+        if (targetBucketKey === activeBucketKey) {
+          setState((prev) => {
+            const tabs = ((prev.tabs as Tab[] | undefined) ?? []).slice();
+            tabs.push(tab);
+            return {
+              ...prev,
+              tabs,
+              empty: false,
+              hasTabs: true,
+            };
+          });
+        } else {
+          const existing = tabBucketsRef.current.get(targetBucketKey);
+          const bucket: TabBucket = {
+            tabs: [...(existing?.tabs ?? []), tab],
+            activeTabId: tab.id,
+          };
+          tabBucketsRef.current.set(targetBucketKey, bucket);
+          setState((prev) => ({
+            ...prev,
+            persistedTabBuckets: mirrorPersistedBuckets(
+              tabBucketsRef,
+              activeBucketKey,
+            ),
+          }));
+        }
+        const opening = (async () => {
+          if (cwd) {
+            await invoke("devshell_prepare_for_path", {
+              args: { cwd, includeEnv: false },
+            }).catch(() => undefined);
+            setState((prev) => {
+              const clearWaiting = (candidate: Tab): Tab =>
+                candidate.id === tabId && candidate.waiting === true
+                  ? { ...candidate, waiting: false }
+                  : candidate;
+              const tabs = ((prev.tabs as Tab[] | undefined) ?? []).map(
+                clearWaiting,
+              );
+              const bucket = tabBucketsRef.current.get(targetBucketKey);
+              if (bucket) {
+                tabBucketsRef.current.set(targetBucketKey, {
+                  ...bucket,
+                  tabs: bucket.tabs.map(clearWaiting),
+                });
+              }
+              return {
+                ...prev,
+                tabs,
+                persistedTabBuckets: mirrorPersistedBuckets(
+                  tabBucketsRef,
+                  activeBucketKey,
+                ),
+              };
+            });
+          }
+          return await invoke("agent_command", {
+            payload: JSON.stringify({
+              type: "tab_open",
+              tabId,
+              ...(inheritedModel ? { model: inheritedModel } : {}),
+              ...(inheritedThinkingLevel
+                ? { thinkingLevel: inheritedThinkingLevel }
+                : {}),
+              cwd,
+            }),
+          });
+        })();
+        pendingTabOpens.current.set(tabId, opening);
+        opening
+          .catch((err) => {
+            pushNotificationRef.current({
+              title: "Could not start task",
+              message: `Failed to open background tab: ${err}`,
+              kind: "warning",
+            });
+          })
+          .finally(() => {
+            pendingTabOpens.current.delete(tabId);
+          });
+      }
       const opening = pendingTabOpens.current.get(tabId);
       if (opening) {
         try {
@@ -132,16 +335,21 @@ export function useTaskLauncher({
           ...(opts.bridgePrompt ? { bridgeText: opts.bridgePrompt } : {}),
         });
       }
+      return { tabId, projectId: opts.projectId, cwd, activated: shouldActivate };
     },
     [
       activateWorkspace,
       createWorkspaceWithParams,
       newTab,
       pendingTabOpens,
+      piDefaultModelRef,
       projectsRef,
       pushNotificationRef,
       sendChat,
       setActiveProjectById,
+      setState,
+      stateRef,
+      tabBucketsRef,
     ],
   );
 }

@@ -51,6 +51,8 @@ describe("buildTasksApi", () => {
       newWorkspace: true,
       model: "openai/gpt-5",
       bridgePrompt: "hidden context",
+      activate: false,
+      label: "Background task",
     });
     const msg = sent.at(-1)!;
     expect(msg).toMatchObject({
@@ -62,6 +64,8 @@ describe("buildTasksApi", () => {
         newWorkspace: true,
         model: "openai/gpt-5",
         bridgePrompt: "hidden context",
+        activate: false,
+        label: "Background task",
       },
     });
     // branch/baseBranch were omitted, so they must not appear in args.

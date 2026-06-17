@@ -9,6 +9,32 @@ import {
   getIssueDetail,
   getIssues,
 } from "../../ghIssuesCache";
+import type { Project, ProjectsState } from "../../projects";
+import { normalizeSessionPath } from "../projectOps/tabBuckets";
+
+function resolveTaskProject(
+  projects: ProjectsState,
+  projectPath: string,
+): { project: Project; workspaceId?: string } | null {
+  const target = normalizeSessionPath(projectPath);
+  const project = projects.projects.find(
+    (candidate) => normalizeSessionPath(candidate.path) === target,
+  );
+  if (project) return { project };
+
+  for (const candidate of projects.projects) {
+    const workspace = (
+      projects.workspacesByProject[candidate.id] ?? []
+    ).find((item) => normalizeSessionPath(item.path) === target);
+    if (workspace) {
+      return {
+        project: candidate,
+        ...(workspace.isMain ? {} : { workspaceId: workspace.id }),
+      };
+    }
+  }
+  return null;
+}
 
 /** Bridge proxy for `aethon.tasks.start` + `aethon.dashboard.{getRepoOverview, refresh}`.
  *
@@ -38,15 +64,15 @@ export const handleDashboardQuery: BridgeMessageHandler = (data, ctx) => {
       if (!projectPath || !prompt) {
         throw new Error("start_task requires projectPath + prompt");
       }
-      const project = ctx.projectsRef.current.projects.find(
-        (p) => p.path === projectPath,
-      );
-      if (!project) {
+      const resolved = resolveTaskProject(ctx.projectsRef.current, projectPath);
+      if (!resolved) {
         throw new Error(`unknown project path: ${projectPath}`);
       }
-      await ctx.startTaskInProject({
+      const { project, workspaceId } = resolved;
+      const launched = await ctx.startTaskInProject({
         projectId: project.id,
         prompt,
+        ...(workspaceId ? { workspaceId } : {}),
         newWorkspace: args.newWorkspace === true,
         branch: args.branch as string | undefined,
         baseBranch: args.baseBranch as string | undefined,
@@ -56,8 +82,14 @@ export const handleDashboardQuery: BridgeMessageHandler = (data, ctx) => {
         ...(typeof args.bridgePrompt === "string" && args.bridgePrompt.length > 0
           ? { bridgePrompt: args.bridgePrompt }
           : {}),
+        ...(typeof args.activate === "boolean"
+          ? { activate: args.activate }
+          : {}),
+        ...(typeof args.label === "string" && args.label.length > 0
+          ? { label: args.label }
+          : {}),
       });
-      return { ok: true, projectId: project.id };
+      return { ok: true, projectId: project.id, ...(launched ?? {}) };
     }
 
     if (op === "get_repo_overview") {

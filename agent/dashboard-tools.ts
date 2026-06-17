@@ -26,6 +26,8 @@ interface TasksApi {
     baseBranch?: string;
     model?: string;
     bridgePrompt?: string;
+    activate?: boolean;
+    label?: string;
   }): Promise<{ ok: boolean; error?: string; data?: unknown }>;
 }
 
@@ -95,6 +97,17 @@ const StartTaskParams = Type.Object({
     Type.String({
       description:
         "Optional hidden bridge prompt to send to the launched tab; prompt remains the visible user text.",
+    }),
+  ),
+  activate: Type.Optional(
+    Type.Boolean({
+      description:
+        "Defaults true. Set false to create the task tab without switching the visible project/workspace or focusing it.",
+    }),
+  ),
+  label: Type.Optional(
+    Type.String({
+      description: "Optional label for the launched task tab.",
     }),
   ),
 });
@@ -169,6 +182,10 @@ export function buildDashboardTools(): ToolDefinition[] {
         ...(typeof params.bridgePrompt === "string"
           ? { bridgePrompt: params.bridgePrompt }
           : {}),
+        ...(typeof params.activate === "boolean"
+          ? { activate: params.activate }
+          : {}),
+        ...(typeof params.label === "string" ? { label: params.label } : {}),
       });
       if (!r.ok) fail(r.error ?? "unknown");
       return {

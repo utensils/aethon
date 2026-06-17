@@ -264,9 +264,13 @@ async function main(): Promise<void> {
       // (clearing it prevents the subagent's own turn from re-triggering it).
       if (tabId) {
         const explicit = state.pendingExplicitSubagent.get(tabId);
-        if (explicit && subagents.has(explicit)) {
+        const names =
+          explicit?.names.filter((name) => subagents.has(name)) ?? [];
+        if (explicit && names.length > 0) {
           state.pendingExplicitSubagent.delete(tabId);
-          systemPrompt += `\n\n${buildExplicitSubagentSteer(explicit)}`;
+          systemPrompt += `\n\n${buildExplicitSubagentSteer(names, {
+            surface: explicit.surface,
+          })}`;
         } else if (explicit) {
           state.pendingExplicitSubagent.delete(tabId);
         }

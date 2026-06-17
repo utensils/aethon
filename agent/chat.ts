@@ -14,7 +14,10 @@ import {
   refreshAuthServicesForTab,
   refreshTabSessionModelFromAuthServices,
 } from "./auth-profiles";
-import { detectSubagentMention } from "./subagents/steer";
+import {
+  detectBackgroundSubagentIntent,
+  detectLeadingSubagentMentions,
+} from "./subagents/steer";
 import { getSubagentsForCwd } from "./subagents";
 import { emitContextUsage } from "./context-usage";
 import { supportsCodexFastMode } from "./codex-fast-mode";
@@ -50,11 +53,16 @@ export async function handleChat(
   const tabCwdForMention =
     cwdOverride ?? state.tabProjectCwds.get(tabId) ?? state.currentProjectCwd;
   const tabSubagents = getSubagentsForCwd(state, tabCwdForMention).byName;
-  const mention = detectSubagentMention(msg.content);
-  const explicitSubagent =
-    mention && tabSubagents.has(mention) ? mention : null;
-  if (explicitSubagent) {
-    state.pendingExplicitSubagent.set(tabId, explicitSubagent);
+  const mentions = detectLeadingSubagentMentions(msg.content).filter((name) =>
+    tabSubagents.has(name),
+  );
+  if (mentions.length > 0) {
+    state.pendingExplicitSubagent.set(tabId, {
+      names: [...new Set(mentions)],
+      surface: detectBackgroundSubagentIntent(msg.content)
+        ? "background"
+        : "inline",
+    });
   }
   const requestedModel = parseModelAndThinking(
     typeof msg.model === "string" && msg.model.length > 0
@@ -117,7 +125,7 @@ export async function handleChat(
     }
     content = expanded.prompt;
   } catch (err) {
-    if (explicitSubagent) state.pendingExplicitSubagent.delete(tabId);
+    if (mentions.length > 0) state.pendingExplicitSubagent.delete(tabId);
     const message =
       err instanceof FileReferenceError
         ? err.issues.join("\n")

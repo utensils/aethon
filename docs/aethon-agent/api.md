@@ -674,8 +674,10 @@ aethon.tasks.start({
   baseBranch?: string,        // base to fork from (project default, then origin/main)
   model?: string,             // optional model id for the launched tab
   bridgePrompt?: string,      // hidden bridge prompt; prompt remains visible text
+  activate?: boolean,         // default true; false opens without focusing/switching
+  label?: string,             // optional tab label
 });
-// → { ok: true, data: { projectId } }
+// → { ok: true, data: { projectId, tabId, cwd, activated } }
 //   Workspace-create + new-tab + send first message run as one chain;
 //   the resolved Promise fires after the prompt lands in the new tab.
 //   `bridgePrompt` is extension-trusted hidden context, not user-visible text.

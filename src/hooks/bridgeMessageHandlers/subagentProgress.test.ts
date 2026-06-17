@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   handleSubagentProgress,
+  type SubagentProgressBatch,
   type SubagentProgress,
+  type SubagentProgressEntry,
 } from "./subagentProgress";
 import { buildHandlerFixture } from "./testFixtures";
 import type { BridgeMessageContext } from "./types";
@@ -51,6 +53,55 @@ describe("handleSubagentProgress", () => {
     expect(progress(ctx)?.steps).toEqual([
       { kind: "error", label: "model overloaded" },
     ]);
+  });
+
+  it("groups batch progress by parent call id and subagent item", () => {
+    const { ctx } = buildHandlerFixture();
+    handleSubagentProgress(
+      {
+        type: "subagent_progress",
+        tabId: "t1",
+        parentCallId: "c1",
+        batchItemId: "0:kimi",
+        batchIndex: 0,
+        phase: "start",
+        subagent: "kimi",
+        model: "m1",
+      },
+      ctx,
+    );
+    handleSubagentProgress(
+      {
+        type: "subagent_progress",
+        tabId: "t1",
+        parentCallId: "c1",
+        batchItemId: "1:glm",
+        batchIndex: 1,
+        phase: "text",
+        subagent: "glm",
+        model: "m2",
+        delta: "done",
+      },
+      ctx,
+    );
+
+    const entry = (
+      ctx.stateRef.current.subagentProgress as Record<
+        string,
+        SubagentProgressEntry
+      >
+    ).c1 as SubagentProgressBatch;
+    expect(entry.kind).toBe("batch");
+    expect(entry.order).toEqual(["0:kimi", "1:glm"]);
+    expect(entry.items["0:kimi"]).toMatchObject({
+      subagent: "kimi",
+      model: "m1",
+    });
+    expect(entry.items["1:glm"]).toMatchObject({
+      subagent: "glm",
+      model: "m2",
+      text: "done",
+    });
   });
 
   it("ignores events without a parentCallId", () => {

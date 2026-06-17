@@ -114,6 +114,10 @@ export interface TasksApi {
     model?: string;
     /** Optional hidden bridge prompt; `prompt` remains the visible tab text. */
     bridgePrompt?: string;
+    /** Defaults true. False creates the tab without switching focus. */
+    activate?: boolean;
+    /** Optional label for the launched tab. */
+    label?: string;
   }): Promise<MutationResult>;
 }
 

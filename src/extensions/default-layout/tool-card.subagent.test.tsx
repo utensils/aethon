@@ -58,6 +58,38 @@ describe("ToolCard subagent activity", () => {
     expect(screen.getByText("final summary")).toBeTruthy();
   });
 
+  it("renders multiple subagent activity blocks for batch progress", () => {
+    taskCard({
+      subagentProgress: {
+        "call-abc": {
+          kind: "batch",
+          order: ["0:kimi", "1:glm"],
+          items: {
+            "0:kimi": {
+              subagent: "kimi",
+              model: "m1",
+              steps: [{ kind: "tool", label: "read src/a.ts" }],
+              text: "kimi notes",
+              done: false,
+            },
+            "1:glm": {
+              subagent: "glm",
+              model: "m2",
+              steps: [],
+              text: "glm notes",
+              done: true,
+            },
+          },
+        },
+      },
+    });
+    expect(screen.getAllByText(/kimi/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/glm/).length).toBeGreaterThan(0);
+    expect(screen.getByText("read src/a.ts")).toBeTruthy();
+    expect(screen.getByText("kimi notes")).toBeTruthy();
+    expect(screen.getByText("glm notes")).toBeTruthy();
+  });
+
   it("renders task result output as prose", () => {
     render(
       <SubagentResult

@@ -201,6 +201,7 @@ export async function createWorkspaceWithParams(
     branch?: string;
     targetPath?: string;
     baseBranch?: string;
+    activate?: boolean;
   },
 ): Promise<string | null> {
   const project = deps.lookups.findProject(opts.projectId);
@@ -257,7 +258,11 @@ export async function createWorkspaceWithParams(
       (w) =>
         w.id === pending.id || w.path === created.path || w.path === targetPath,
     );
-    navigateToWorkspace(deps, opts.projectId, live?.id ?? pending.id);
+    if (opts.activate !== false) {
+      navigateToWorkspace(deps, opts.projectId, live?.id ?? pending.id);
+    } else {
+      deps.syncProjectsToState();
+    }
     return live?.path ?? created.path ?? targetPath;
   } catch (err) {
     deps.projectsRef.current = setProjectWorkspaces(
