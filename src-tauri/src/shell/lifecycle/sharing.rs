@@ -218,7 +218,7 @@ mod tests {
     #[test]
     fn write_keystrokes_rejects_private() {
         let reg = registry();
-        let mut child = open_raw(&reg, "wp", "/bin/sleep", vec!["0.05".into()]);
+        let mut child = open_raw(&reg, "wp", "sleep", vec!["0.05".into()]);
         let r = write_keystrokes(&reg, "wp", b"hi");
         assert!(r.is_err());
         assert!(
@@ -233,7 +233,7 @@ mod tests {
     #[test]
     fn write_keystrokes_rejects_read_only() {
         let reg = registry();
-        let mut child = open_raw(&reg, "wr", "/bin/sleep", vec!["0.05".into()]);
+        let mut child = open_raw(&reg, "wr", "sleep", vec!["0.05".into()]);
         force_mode(&reg, "wr", ShareMode::Read);
         let r = write_keystrokes(&reg, "wr", b"hi");
         assert!(r.is_err());
@@ -244,7 +244,7 @@ mod tests {
     #[test]
     fn write_keystrokes_succeeds_for_read_write() {
         let reg = registry();
-        let mut child = open_raw(&reg, "wrw", "/bin/sleep", vec!["0.05".into()]);
+        let mut child = open_raw(&reg, "wrw", "sleep", vec!["0.05".into()]);
         force_mode(&reg, "wrw", ShareMode::ReadWrite);
         // The PTY is already alive — write a benign byte.
         let r = write_keystrokes(&reg, "wrw", b"\x03");
@@ -256,7 +256,7 @@ mod tests {
     #[test]
     fn write_keystrokes_succeeds_for_read_write_trusted() {
         let reg = registry();
-        let mut child = open_raw(&reg, "wrwt", "/bin/sleep", vec!["0.05".into()]);
+        let mut child = open_raw(&reg, "wrwt", "sleep", vec!["0.05".into()]);
         force_mode(&reg, "wrwt", ShareMode::ReadWriteTrusted);
         let r = write_keystrokes(&reg, "wrwt", b"\x03");
         assert!(r.is_ok(), "{:?}", r.err());

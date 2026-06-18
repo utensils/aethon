@@ -16,8 +16,8 @@ function saneViewportSize(value: unknown): value is number {
 }
 
 function viewportSize(axis: "width" | "height"): number {
-  const visual = window.visualViewport?.[axis];
   const inner = axis === "width" ? window.innerWidth : window.innerHeight;
+  const visual = window.visualViewport?.[axis];
   const outer = axis === "width" ? window.outerWidth : window.outerHeight;
   const docClient =
     axis === "width"
@@ -31,8 +31,8 @@ function viewportSize(axis: "width" | "height"): number {
     axis === "width" ? window.screen?.width : window.screen?.height;
 
   for (const value of [
-    visual,
     inner,
+    visual,
     outer,
     docClient,
     bodyClient,

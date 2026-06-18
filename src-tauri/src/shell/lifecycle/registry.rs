@@ -157,7 +157,7 @@ pub(super) mod test_support {
             cwd: String::new(),
             command: command.to_string(),
             // Test slots default to false (direct command), matching how
-            // tests spawn `/bin/echo`, `/bin/sleep`, etc. — they're never
+            // tests spawn `echo`, `sleep`, etc. — they're never
             // interactive shells.
             is_interactive_shell: false,
         };
@@ -194,7 +194,7 @@ mod tests {
     #[test]
     fn echo_round_trip_via_input_command() {
         let reg = registry();
-        let mut child = open_raw(&reg, "t1", "/bin/echo", vec!["hello-aethon".into()]);
+        let mut child = open_raw(&reg, "t1", "echo", vec!["hello-aethon".into()]);
         let status = child.wait().expect("wait");
         assert!(status.success());
         reg.slots.lock().unwrap().remove("t1").unwrap();
@@ -203,7 +203,7 @@ mod tests {
     #[test]
     fn resize_propagates_when_slot_present() {
         let reg = registry();
-        let mut child = open_raw(&reg, "t2", "/bin/sleep", vec!["0.05".into()]);
+        let mut child = open_raw(&reg, "t2", "sleep", vec!["0.05".into()]);
         // Resize via the registry path — must succeed while child is alive.
         {
             let guard = reg.slots.lock().unwrap();
@@ -231,7 +231,7 @@ mod tests {
     #[test]
     fn cleanup_drops_slot() {
         let reg = registry();
-        let mut child = open_raw(&reg, "t3", "/bin/sleep", vec!["0.01".into()]);
+        let mut child = open_raw(&reg, "t3", "sleep", vec!["0.01".into()]);
         let _ = child.wait();
         let mut slot = reg
             .slots
@@ -254,7 +254,7 @@ mod tests {
         let mut children: Vec<Box<dyn portable_pty::Child + Send + Sync>> = Vec::new();
         for i in 0..n_tabs {
             let id = format!("t-concurrent-{i}");
-            children.push(open_raw(&reg, &id, "/bin/sleep", vec!["0.05".into()]));
+            children.push(open_raw(&reg, &id, "sleep", vec!["0.05".into()]));
         }
         assert_eq!(reg.slots.lock().unwrap().len(), n_tabs);
         let start = Instant::now();

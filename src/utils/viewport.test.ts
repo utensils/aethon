@@ -94,6 +94,28 @@ describe("applyUiScale", () => {
 });
 
 describe("writeUiViewportVars", () => {
+  it("preserves window inner dimensions when they are sane", () => {
+    Object.defineProperties(window, {
+      innerWidth: { configurable: true, value: 1280 },
+      innerHeight: { configurable: true, value: 720 },
+      outerWidth: { configurable: true, value: 1440 },
+      outerHeight: { configurable: true, value: 900 },
+      visualViewport: {
+        configurable: true,
+        value: { width: 960, height: 540 },
+      },
+    });
+
+    writeUiViewportVars(1);
+
+    expect(
+      document.documentElement.style.getPropertyValue("--app-viewport-width"),
+    ).toBe("1280px");
+    expect(
+      document.documentElement.style.getPropertyValue("--app-viewport-height"),
+    ).toBe("720px");
+  });
+
   it("falls back when WebKit reports negative viewport dimensions", () => {
     Object.defineProperties(window, {
       innerWidth: { configurable: true, value: -90816 },
