@@ -326,7 +326,7 @@ describe("FileTreePanel", () => {
 
     render(<FileTreePanel {...panelProps()} />);
     await waitFor(() => screen.getByText("src"));
-    for (const label of ["New File", "New Folder", "Refresh"]) {
+    for (const label of ["New File", "New Folder", "Refresh files"]) {
       expect(screen.getByLabelText(label)).toBeTruthy();
     }
     // Expand/Collapse-all live in the header right-click menu, not the toolbar.
@@ -827,6 +827,108 @@ describe("FileTreePanel", () => {
         screen.getByText("src").closest("li")?.getAttribute("aria-expanded"),
       ).toBe("true");
     });
+  });
+
+  it("refreshes expanded folders when an agent turn ends after creating a nested file", async () => {
+    let agentFileCreated = false;
+    invokeMock.mockImplementation((cmd: string, args?: { path?: string }) => {
+      if (cmd === "fs_list_dir" && args?.path === "/projects/aethon") {
+        return Promise.resolve([
+          { name: "src", path: "/projects/aethon/src", kind: "dir" },
+        ]);
+      }
+      if (cmd === "fs_list_dir" && args?.path === "/projects/aethon/src") {
+        return Promise.resolve([
+          {
+            name: "old.ts",
+            path: "/projects/aethon/src/old.ts",
+            kind: "file",
+          },
+          ...(agentFileCreated
+            ? [
+                {
+                  name: "agent-created.ts",
+                  path: "/projects/aethon/src/agent-created.ts",
+                  kind: "file",
+                },
+              ]
+            : []),
+        ]);
+      }
+      if (cmd === "git_file_status" || cmd === "git_ignored_paths") {
+        return Promise.resolve([]);
+      }
+      return Promise.resolve(1);
+    });
+
+    const { rerender } = render(
+      <FileTreePanel
+        {...panelProps({
+          state: {
+            project: { path: "/projects/aethon", name: "aethon" },
+            waiting: true,
+          },
+        })}
+      />,
+    );
+    fireEvent.click(await screen.findByText("src"));
+    await screen.findByText("old.ts");
+
+    agentFileCreated = true;
+    rerender(
+      <FileTreePanel
+        {...panelProps({
+          state: {
+            project: { path: "/projects/aethon", name: "aethon" },
+            waiting: false,
+          },
+        })}
+      />,
+    );
+
+    await screen.findByText("agent-created.ts");
+  });
+
+  it("manual refresh reloads expanded folders, not just the root listing", async () => {
+    let agentFileCreated = false;
+    invokeMock.mockImplementation((cmd: string, args?: { path?: string }) => {
+      if (cmd === "fs_list_dir" && args?.path === "/projects/aethon") {
+        return Promise.resolve([
+          { name: "src", path: "/projects/aethon/src", kind: "dir" },
+        ]);
+      }
+      if (cmd === "fs_list_dir" && args?.path === "/projects/aethon/src") {
+        return Promise.resolve([
+          {
+            name: "old.ts",
+            path: "/projects/aethon/src/old.ts",
+            kind: "file",
+          },
+          ...(agentFileCreated
+            ? [
+                {
+                  name: "agent-created.ts",
+                  path: "/projects/aethon/src/agent-created.ts",
+                  kind: "file",
+                },
+              ]
+            : []),
+        ]);
+      }
+      if (cmd === "git_file_status" || cmd === "git_ignored_paths") {
+        return Promise.resolve([]);
+      }
+      return Promise.resolve(1);
+    });
+
+    render(<FileTreePanel {...panelProps()} />);
+    fireEvent.click(await screen.findByText("src"));
+    await screen.findByText("old.ts");
+
+    agentFileCreated = true;
+    fireEvent.click(screen.getByLabelText("Refresh files"));
+
+    await screen.findByText("agent-created.ts");
   });
 
   it("refreshes git decorations when a git-state-changed event fires for the root", async () => {

@@ -42,6 +42,8 @@ interface TreeNode {
 interface EditorTabShape {
   id?: string;
   kind?: string;
+  cwd?: string;
+  waiting?: boolean;
   editor?: {
     rootPath?: string;
     filePath?: string;
