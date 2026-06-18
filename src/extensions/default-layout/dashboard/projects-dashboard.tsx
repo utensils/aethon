@@ -29,6 +29,7 @@ interface ProjectListItem {
   path: string;
   active?: boolean;
   iconUrl?: string;
+  workspaceBaseBranch?: string;
   gitStatus?: {
     branch?: string;
     dirty?: boolean;
@@ -67,6 +68,13 @@ interface ExtraCard {
   id: string;
   type: string;
   props?: Record<string, unknown>;
+}
+
+interface WorkspaceLite {
+  id: string;
+  label: string;
+  branch?: string;
+  path: string;
 }
 
 function isRef(v: unknown): v is { $ref: string } {
@@ -114,6 +122,18 @@ export function ProjectsDashboard({
     () => resolveArray<ExtraCard>(props?.extraCards, state),
     [props?.extraCards, state],
   );
+  const workspacesByProject = useMemo(() => {
+    const sidebarProjects =
+      (state.sidebar as
+        | { projects?: Array<{ id?: string; workspaces?: WorkspaceLite[] }> }
+        | undefined)?.projects ?? [];
+    const byProject: Record<string, WorkspaceLite[]> = {};
+    for (const project of sidebarProjects) {
+      if (!project.id || !Array.isArray(project.workspaces)) continue;
+      byProject[project.id] = project.workspaces;
+    }
+    return byProject;
+  }, [state.sidebar]);
 
   return (
     <div className="a2ui-projects-dashboard">
@@ -155,6 +175,25 @@ export function ProjectsDashboard({
             New Tab
           </button>
         </div>
+        {projects.length > 0 && (
+          <section className="a2ui-projects-dashboard-section">
+            <RegistryComponent
+              type="task-launcher"
+              state={state}
+              onEvent={(_component, eventType, data) =>
+                onEvent(eventType, data, "projects-dashboard-launcher")
+              }
+              componentProps={{
+                project: projects[0],
+                projects,
+                workspacesByProject,
+                showProjectSelector: true,
+                placeholder:
+                  "Start a task on this host… choose a project, use @<subagent> or @path",
+              }}
+            />
+          </section>
+        )}
         {projects.length > 0 && (
           <section className="a2ui-projects-dashboard-section">
             <h2>Recent projects</h2>
