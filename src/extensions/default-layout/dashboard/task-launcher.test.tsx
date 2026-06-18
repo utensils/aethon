@@ -11,6 +11,7 @@ import {
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { TaskLauncher } from "./task-launcher";
 import type { A2UIComponent } from "../../../types/a2ui";
+import type { VoiceProviderInfo } from "../../../types/voice";
 
 const { invoke } = vi.hoisted(() => ({
   invoke: vi.fn(),
@@ -26,6 +27,32 @@ function launcher(props: Record<string, unknown>): A2UIComponent {
     id: "task-launcher",
     type: "task-launcher",
     props,
+  };
+}
+
+function voiceProvider(
+  overrides: Partial<VoiceProviderInfo> & Pick<VoiceProviderInfo, "id">,
+): VoiceProviderInfo {
+  return {
+    name: overrides.id,
+    description: "",
+    kind: "platform",
+    recordingMode: "native",
+    privacyLabel: "",
+    offline: false,
+    downloadRequired: false,
+    modelSizeLabel: null,
+    cachePath: null,
+    acceleratorLabel: null,
+    status: "ready",
+    statusLabel: "Ready",
+    enabled: true,
+    selected: true,
+    setupRequired: false,
+    canRemoveModel: false,
+    error: null,
+    ...overrides,
+    id: overrides.id,
   };
 }
 
@@ -71,6 +98,67 @@ describe("TaskLauncher", () => {
     );
     expect(html).toContain("aethon");
     expect(html).toContain("Start");
+  });
+
+  it("renders the voice input control on the overview task launcher", () => {
+    render(
+      <TaskLauncher
+        component={launcher({
+          project: { id: "p1", label: "aethon", path: "/a" },
+        })}
+        state={{}}
+        onEvent={() => {}}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "Voice input" })).toBeTruthy();
+  });
+
+  it("inserts a voice transcript into the task prompt and submits it", async () => {
+    invoke.mockImplementation((cmd: string) => {
+      if (cmd === "voice_list_providers") {
+        return Promise.resolve([
+          voiceProvider({ id: "voice-platform-system" }),
+        ]);
+      }
+      if (cmd === "voice_start_recording") return Promise.resolve(undefined);
+      if (cmd === "voice_stop_and_transcribe") {
+        return Promise.resolve("review the open issues");
+      }
+      return Promise.reject(new Error(`invoke not mocked: ${cmd}`));
+    });
+    const onEvent = vi.fn();
+    render(
+      <TaskLauncher
+        component={launcher({
+          project: { id: "p1", label: "aethon", path: "/a" },
+        })}
+        state={{}}
+        onEvent={onEvent}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Voice input" }));
+    await screen.findByRole("button", { name: "Stop voice input" });
+    fireEvent.click(screen.getByRole("button", { name: "Stop voice input" }));
+
+    await waitFor(() =>
+      expect(
+        screen.getByLabelText<HTMLTextAreaElement>("Task prompt").value,
+      ).toBe("review the open issues"),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Start" }));
+
+    await waitFor(() =>
+      expect(onEvent).toHaveBeenCalledWith(
+        "start-task",
+        expect.objectContaining({
+          projectId: "p1",
+          prompt: "review the open issues",
+        }),
+      ),
+    );
   });
 
   it("disables OS autocorrection on branch inputs", () => {

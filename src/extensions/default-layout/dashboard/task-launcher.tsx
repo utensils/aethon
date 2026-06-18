@@ -16,17 +16,31 @@
  * fully live-mutable. An extension can register a custom task-launcher
  * with `aethon.registerComponent("task-launcher", …)`.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import type { BuiltinComponentProps } from "../../../components/A2UIRenderer";
 import type { ChatAttachment } from "../../../types/a2ui";
 import { resolvePointer } from "../../../utils/jsonPointer";
 import { DEFAULT_WORKSPACE_BASE_BRANCH } from "../../../projects";
 import { saveClipboardImageAttachment } from "../../../utils/imageAttachments";
+import { useVoiceHotkey } from "../../../hooks/useVoiceHotkey";
+import { useVoiceInput } from "../../../hooks/useVoiceInput";
+import {
+  insertTranscriptAtSelection,
+  shouldOpenVoiceSettingsForError,
+} from "../../../utils/voice";
 import { ImageAttachmentImage } from "../image-attachment-image";
 import { ImageLightbox } from "../image-lightbox";
 import { AtPicker } from "../at-picker";
 import { formatAtMentionInsertion, type AtMentionMatch } from "../at-mention";
 import { useAtMention } from "../use-at-mention";
+import { VoiceInputButton, VoiceStatus } from "../voice-controls";
 
 interface ProjectLite {
   id: string;
@@ -246,9 +260,9 @@ export function TaskLauncher({
     [atMatch, promptText],
   );
 
-  const submit = useCallback(() => {
+  const submitPrompt = useCallback((rawPrompt: string) => {
     if (submitting) return;
-    const text = promptText.trim();
+    const text = rawPrompt.trim();
     if (!text && attachments.length === 0) return;
     if (!data.project) return;
     setSubmitting(true);
@@ -282,7 +296,6 @@ export function TaskLauncher({
     setSubmitting(false);
   }, [
     submitting,
-    promptText,
     attachments,
     data.project,
     workspaceChoice,
@@ -292,6 +305,96 @@ export function TaskLauncher({
     defaultModelId,
     onEvent,
   ]);
+
+  const submit = useCallback(() => {
+    submitPrompt(promptText);
+  }, [promptText, submitPrompt]);
+
+  const handleTranscript = useCallback(
+    (transcript: string, options?: { autoSend?: boolean }) => {
+      const textarea = textareaRef.current;
+      const start = textarea?.selectionStart ?? promptText.length;
+      const end = textarea?.selectionEnd ?? promptText.length;
+      const next = insertTranscriptAtSelection(
+        textarea?.value ?? promptText,
+        transcript,
+        start,
+        end,
+      );
+      setPromptText(next.text);
+      setTouched(true);
+      setCursor(next.cursor);
+      if (options?.autoSend && next.text.trim().length > 0) {
+        submitPrompt(next.text);
+        return;
+      }
+      requestAnimationFrame(() => {
+        const el = textareaRef.current;
+        if (!el) return;
+        el.focus();
+        el.selectionStart = el.selectionEnd = next.cursor;
+      });
+    },
+    [promptText, submitPrompt],
+  );
+  const voice = useVoiceInput(handleTranscript, (providerId) => {
+    onEvent("voice:setup", { providerId });
+  });
+  const voiceState = voice.state;
+  const cancelVoice = voice.cancel;
+  const voiceConfig = (state.voice as
+    | {
+        toggleHotkey?: string | null;
+        holdHotkey?: string | null;
+      }
+    | undefined) ?? { toggleHotkey: "mod+shift+m", holdHotkey: null };
+  const settings = state.settings as { open?: boolean } | undefined;
+  const palette = state.commandPalette as { open?: boolean } | undefined;
+  const search = state.search as { open?: boolean } | undefined;
+  const voiceInputBlocked =
+    submitting || !!settings?.open || !!palette?.open || !!search?.open;
+  const voiceInputBlockedRef = useRef(voiceInputBlocked);
+  useLayoutEffect(() => {
+    voiceInputBlockedRef.current = voiceInputBlocked;
+  }, [voiceInputBlocked]);
+  const isVoiceInputBlocked = useCallback(
+    () => voiceInputBlockedRef.current,
+    [],
+  );
+  useVoiceHotkey(
+    voice,
+    voiceConfig.toggleHotkey ?? "mod+shift+m",
+    voiceConfig.holdHotkey ?? null,
+    isVoiceInputBlocked,
+  );
+  useEffect(() => {
+    if (voiceState !== "recording") return;
+    const onKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      event.stopPropagation();
+      cancelVoice();
+    };
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => window.removeEventListener("keydown", onKeyDown, true);
+  }, [voiceState, cancelVoice]);
+  const [reducedMotion, setReducedMotion] = useState(() => {
+    if (typeof window === "undefined" || !window.matchMedia) return false;
+    return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  });
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.matchMedia) return;
+    const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const onChange = (event: MediaQueryListEvent) =>
+      setReducedMotion(event.matches);
+    mq.addEventListener?.("change", onChange);
+    return () => mq.removeEventListener?.("change", onChange);
+  }, []);
+  const useDynamicMeter =
+    !reducedMotion && voice.activeProvider?.recordingMode === "native";
+  const voiceErrorOpensSettings = shouldOpenVoiceSettingsForError(
+    voice.activeProvider,
+  );
 
   const onKey = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (atMatch) {
@@ -336,6 +439,9 @@ export function TaskLauncher({
     // modifiers out of habit.
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
+      if (voice.state === "recording" || voice.state === "starting") {
+        voice.cancel();
+      }
       submit();
     }
   };
@@ -542,6 +648,17 @@ export function TaskLauncher({
             />
           </>
         )}
+        <div className="a2ui-task-launcher-voice-controls">
+          <VoiceStatus
+            voice={voice}
+            useDynamicMeter={useDynamicMeter}
+            errorOpensSettings={voiceErrorOpensSettings}
+            onOpenSettings={() =>
+              onEvent("voice:setup", { providerId: voice.activeProvider?.id })
+            }
+          />
+          <VoiceInputButton voice={voice} disabled={submitting} />
+        </div>
         <button
           type="button"
           className="a2ui-task-launcher-submit"
