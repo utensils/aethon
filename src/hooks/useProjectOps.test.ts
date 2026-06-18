@@ -664,6 +664,27 @@ describe("useProjectOps overview terminal project switches", () => {
     expect(newShellTab).not.toHaveBeenCalled();
   });
 
+  it("spawns an overview shell when switching into an empty project bucket with the terminal open", () => {
+    const newShellTab = vi.fn();
+    const { result, stateRef } = renderProjectOps(twoProjectState(), {
+      newShellTab,
+    });
+    stateRef.current = {
+      ...stateRef.current,
+      activeTabId: OVERVIEW_TAB_ID,
+      terminal: { open: true },
+      tabs: [],
+    };
+
+    act(() => {
+      expect(result.current.setActiveProjectById("project-2")).toBe(true);
+    });
+
+    expect(stateRef.current.activeTabId).toBeUndefined();
+    expect(stateRef.current.tabs).toEqual([]);
+    expect(newShellTab).toHaveBeenCalledTimes(1);
+  });
+
   it("does not spawn another shell when the destination bucket already has one", () => {
     const newShellTab = vi.fn();
     const { result, stateRef } = renderProjectOps(twoProjectState(), {
@@ -730,7 +751,7 @@ describe("useProjectOps overview terminal project switches", () => {
     expect(newShellTab).not.toHaveBeenCalled();
   });
 
-  it("restores the destination workspace session instead of carrying overview across buckets", () => {
+  it("restores the destination project session instead of carrying overview across buckets", () => {
     const newShellTab = vi.fn();
     const { result, stateRef } = renderProjectOps(twoProjectState(), {
       newShellTab,
