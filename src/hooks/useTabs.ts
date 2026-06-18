@@ -75,6 +75,7 @@ export function useTabs(ctx: UseTabsContext): UseTabsActions {
     pendingTabOpens,
     appendSystem: ctx.appendSystem,
     dispatchTerminalReplay,
+    prepareWorkspaceStartup: ctx.prepareWorkspaceStartup,
   });
 
   const newShellTab = useNewShellTab({

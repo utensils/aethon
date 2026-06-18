@@ -22,6 +22,7 @@ export interface NewTabDeps {
   pendingTabOpens: MutableRefObject<Map<string, Promise<unknown>>>;
   appendSystem: (text: string) => void;
   dispatchTerminalReplay: (buffer: string) => void;
+  prepareWorkspaceStartup?: (cwd: string) => Promise<boolean>;
 }
 
 /** Build the agent-tab creator. Owns the heavy lifting around restoring
@@ -38,6 +39,7 @@ export function useNewTab(deps: NewTabDeps) {
     pendingTabOpens,
     appendSystem,
     dispatchTerminalReplay,
+    prepareWorkspaceStartup,
   } = deps;
 
   return function newTab(
@@ -162,27 +164,25 @@ export function useNewTab(deps: NewTabDeps) {
     const opening = (async () => {
       if (inheritedCwd) {
         try {
-          const prepared = await invoke<{
-            state?: string;
-            kind?: string | null;
-            reason?: string | null;
-          }>("devshell_prepare_for_path", {
-            args: { cwd: inheritedCwd, includeEnv: false },
-          });
-          if (prepared?.state === "failed") {
-            appendSystem(
-              `Devshell prepare failed for ${inheritedCwd}${
-                prepared.reason ? `: ${prepared.reason}` : ""
-              }. Opening tab with the host environment.`,
-            );
+          const ok = prepareWorkspaceStartup
+            ? await prepareWorkspaceStartup(inheritedCwd)
+            : await invoke<{ state?: string }>(
+                "workspace_startup_prepare_for_path",
+                {
+                  args: { cwd: inheritedCwd },
+                },
+              ).then((prepared) =>
+                ["ready", "continued", "disabled"].includes(
+                  prepared?.state ?? "ready",
+                ),
+              );
+          if (!ok) {
+            return;
           }
         } catch (err) {
           const reason = err instanceof Error ? err.message : String(err);
-          appendSystem(
-            `Devshell prepare failed for ${inheritedCwd}${
-              reason ? `: ${reason}` : ""
-            }. Opening tab with the host environment.`,
-          );
+          appendSystem(`Workspace startup blocked for ${inheritedCwd}: ${reason}`);
+          return;
         } finally {
           setState((prev) => {
             const tabs = ((prev.tabs as Tab[] | undefined) ?? []).map((tab) =>

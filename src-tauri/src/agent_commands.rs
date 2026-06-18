@@ -58,6 +58,7 @@ pub(crate) async fn send_message(
     request: SendMessageRequest,
     state: State<'_, AgentProcesses>,
     devshell: State<'_, Arc<DevshellCache>>,
+    startup: State<'_, crate::commands::startup::WorkspaceStartupState>,
     app: AppHandle,
 ) -> Result<(), String> {
     let tab_id = request.tab_id.unwrap_or_else(|| "default".to_string());
@@ -92,7 +93,7 @@ pub(crate) async fn send_message(
 
     let key = route_payload_key(&state, &payload);
     let worker = worker_for_payload(&key, &payload, true);
-    prepare_worker_devshell(&app, &devshell, worker.as_ref()).await?;
+    prepare_worker_startup(&app, &startup, &devshell, worker.as_ref()).await?;
     write_agent_payload(&state, &app, key, payload, worker).await
 }
 
@@ -233,6 +234,7 @@ pub(crate) async fn agent_command(
     payload: String,
     state: State<'_, AgentProcesses>,
     devshell: State<'_, Arc<DevshellCache>>,
+    startup: State<'_, crate::commands::startup::WorkspaceStartupState>,
     app: AppHandle,
 ) -> Result<(), String> {
     let payload_value: serde_json::Value =
@@ -241,7 +243,7 @@ pub(crate) async fn agent_command(
     let worker = worker_for_payload(&key, &payload_value, true);
     let should_retire = payload_value.get("type").and_then(|v| v.as_str()) == Some("tab_close")
         && key != GLOBAL_AGENT_KEY;
-    prepare_worker_devshell(&app, &devshell, worker.as_ref()).await?;
+    prepare_worker_startup(&app, &startup, &devshell, worker.as_ref()).await?;
     write_agent_payload(&state, &app, key.clone(), payload_value, worker).await?;
     if should_retire {
         retire_agent_key(&state, &key)?;
@@ -249,9 +251,10 @@ pub(crate) async fn agent_command(
     Ok(())
 }
 
-async fn prepare_worker_devshell(
+async fn prepare_worker_startup(
     app: &AppHandle,
-    cache: &Arc<DevshellCache>,
+    startup: &crate::commands::startup::WorkspaceStartupState,
+    devshell: &Arc<DevshellCache>,
     worker: Option<&AgentWorker>,
 ) -> Result<(), String> {
     let Some(cwd) = worker
@@ -260,56 +263,7 @@ async fn prepare_worker_devshell(
     else {
         return Ok(());
     };
-    let cwd = PathBuf::from(cwd);
-    let (enabled, configured_mode) = crate::commands::devshell::effective_config(app, &cwd);
-    if enabled == "never" {
-        return Ok(());
-    }
-    if let Some(reason) =
-        crate::commands::devshell::forced_mode_mismatch_reason(&cwd, configured_mode)
-    {
-        return Err(format!("devshell prepare: {reason}"));
-    }
-    let Some(kind) = crate::devshell::detect_mode(&cwd, configured_mode) else {
-        let reason = format!("no devshell detected at {}", cwd.display());
-        if let Some(error) =
-            crate::commands::devshell::required_devshell_missing_error(&enabled, reason)
-        {
-            return Err(format!("devshell prepare: {error}"));
-        }
-        return Ok(());
-    };
-    if kind.as_str() == "direnv"
-        && let Err(reason) = crate::commands::devshell::direnv_allow(&cwd).await
-    {
-        if crate::commands::devshell::devshell_prepare_is_required(&enabled) {
-            return Err(reason);
-        }
-        tracing::warn!(
-            target: "aethon::devshell",
-            "agent worker devshell direnv allow failed for {}: {reason}; opening host worker",
-            cwd.display()
-        );
-        return Ok(());
-    }
-    let emitter = crate::commands::devshell::emitter_for(app);
-    match cache
-        .prepare_for(Some(&emitter), &cwd, configured_mode)
-        .await
-    {
-        Ok(_) => Ok(()),
-        Err(reason) => {
-            if crate::commands::devshell::devshell_prepare_is_required(&enabled) {
-                return Err(format!("devshell prepare: {reason}"));
-            }
-            tracing::warn!(
-                target: "aethon::devshell",
-                "agent worker devshell prepare failed for {}: {reason}; opening host worker",
-                cwd.display()
-            );
-            Ok(())
-        }
-    }
+    crate::commands::startup::ensure_workspace_startup_ready(app, startup, devshell, cwd).await
 }
 
 /// Forward a JSON payload to every currently running agent worker without

@@ -77,6 +77,7 @@ export interface UseTaskLauncherOptions {
   stateRef?: MutableRefObject<Record<string, unknown>>;
   tabBucketsRef?: MutableRefObject<Map<string, TabBucket>>;
   piDefaultModelRef?: MutableRefObject<string>;
+  prepareWorkspaceStartup?: (cwd: string) => Promise<boolean>;
 }
 
 export interface StartTaskResult {
@@ -130,6 +131,7 @@ export function useTaskLauncher({
   stateRef,
   tabBucketsRef,
   piDefaultModelRef,
+  prepareWorkspaceStartup,
 }: UseTaskLauncherOptions): (opts: StartTaskOptions) => Promise<StartTaskResult | void> {
   return useCallback(
     async (opts: StartTaskOptions): Promise<StartTaskResult | void> => {
@@ -266,9 +268,17 @@ export function useTaskLauncher({
         }
         const opening = (async () => {
           if (cwd) {
-            await invoke("devshell_prepare_for_path", {
-              args: { cwd, includeEnv: false },
-            }).catch(() => undefined);
+            const ready = prepareWorkspaceStartup
+              ? await prepareWorkspaceStartup(cwd)
+              : await invoke<{ state?: string }>(
+                  "workspace_startup_prepare_for_path",
+                  { args: { cwd } },
+                ).then((status) =>
+                  ["ready", "continued", "disabled"].includes(
+                    status?.state ?? "ready",
+                  ),
+                );
+            if (!ready) throw new Error("workspace startup not ready");
             setState((prev) => {
               const clearWaiting = (candidate: Tab): Tab =>
                 candidate.id === tabId && candidate.waiting === true
@@ -320,13 +330,15 @@ export function useTaskLauncher({
           });
       }
       const opening = pendingTabOpens.current.get(tabId);
+      let opened = true;
       if (opening) {
         try {
           await opening;
         } catch {
-          /* tab open failed; sendChat below will no-op */
+          opened = false;
         }
       }
+      if (!opened) return;
       const trimmed = opts.prompt.trim();
       if (trimmed || (opts.attachments?.length ?? 0) > 0) {
         await sendChat(trimmed, {
@@ -343,6 +355,7 @@ export function useTaskLauncher({
       newTab,
       pendingTabOpens,
       piDefaultModelRef,
+      prepareWorkspaceStartup,
       projectsRef,
       pushNotificationRef,
       sendChat,

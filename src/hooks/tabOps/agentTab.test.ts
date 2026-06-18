@@ -100,7 +100,7 @@ describe("newTab restore handling", () => {
     });
   });
 
-  it("prepares the devshell before opening a cwd-backed agent tab", async () => {
+  it("prepares workspace startup before opening a cwd-backed agent tab", async () => {
     const invokeMock = vi.mocked(invoke);
     invokeMock.mockResolvedValue(null);
     let state: Record<string, unknown> = { tabs: [] };
@@ -140,17 +140,17 @@ describe("newTab restore handling", () => {
     await pending.current.get("tab-1");
 
     expect(invokeMock.mock.calls[0]).toEqual([
-      "devshell_prepare_for_path",
-      { args: { cwd: "/proj", includeEnv: false } },
+      "workspace_startup_prepare_for_path",
+      { args: { cwd: "/proj" } },
     ]);
     expect(invokeMock.mock.calls[1]?.[0]).toBe("agent_command");
   });
 
-  it("still opens the agent tab when frontend devshell prepare rejects", async () => {
+  it("does not open the agent tab when required workspace startup rejects", async () => {
     const invokeMock = vi.mocked(invoke);
     invokeMock.mockImplementation((command) =>
-      command === "devshell_prepare_for_path"
-        ? Promise.reject(new Error("ipc unavailable"))
+      command === "workspace_startup_prepare_for_path"
+        ? Promise.reject(new Error("startup approval required"))
         : Promise.resolve(null),
     );
     let state: Record<string, unknown> = { tabs: [] };
@@ -190,10 +190,10 @@ describe("newTab restore handling", () => {
     newTab("tab-1", "Project");
     await pending.current.get("tab-1");
 
-    expect(invokeMock.mock.calls[0]?.[0]).toBe("devshell_prepare_for_path");
-    expect(invokeMock.mock.calls[1]?.[0]).toBe("agent_command");
+    expect(invokeMock.mock.calls[0]?.[0]).toBe("workspace_startup_prepare_for_path");
+    expect(invokeMock.mock.calls.some((call) => call[0] === "agent_command")).toBe(false);
     expect(appendSystem).toHaveBeenCalledWith(
-      "Devshell prepare failed for /proj: ipc unavailable. Opening tab with the host environment.",
+      "Workspace startup blocked for /proj: startup approval required",
     );
     expect((state.tabs as Array<{ waiting: boolean }>)[0].waiting).toBe(false);
   });

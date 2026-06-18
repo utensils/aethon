@@ -337,6 +337,22 @@ export async function installAethonHarness(page: Page): Promise<void> {
           case "set_extension_menu_items":
           case "start_agent":
             return undefined;
+          case "workspace_startup_prepare_for_path": {
+            const cwdArgs =
+              args.args && typeof args.args === "object"
+                ? (args.args as Record<string, unknown>)
+                : args;
+            const root = stringArg(cwdArgs.cwd, projectRoot);
+            return {
+              root,
+              fingerprint: "e2e-no-startup-config",
+              state: "disabled",
+              approved: true,
+              commands: [],
+              warning: null,
+              reason: null,
+            };
+          }
           case "agent_command": {
             const parsed: unknown = JSON.parse(stringArg(args.payload, "{}"));
             const payload =

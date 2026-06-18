@@ -7,7 +7,10 @@ export function initialDevshellTerminalBuffer(
   state: Record<string, unknown>,
   cwd: string,
 ): string {
-  const existing = devshellOutputForCwd(state, cwd);
+  const existing = `${devshellOutputForCwd(state, cwd)}${startupOutputForCwd(
+    state,
+    cwd,
+  )}`;
   if (existing) return existing;
   return devshellNeedsPreparation(state, cwd) ? PREPARING_MESSAGE : "";
 }
@@ -28,6 +31,27 @@ function devshellOutputForCwd(
   const devshell = state.devshell as Record<string, unknown> | undefined;
   const outputByRoot =
     (devshell?.outputByRoot as Record<string, string> | undefined) ?? {};
+  let bestRoot = "";
+  let bestBuffer = "";
+  for (const [root, buffer] of Object.entries(outputByRoot)) {
+    if (typeof buffer !== "string") continue;
+    if (isUnderRoot(cwd, root) && root.length > bestRoot.length) {
+      bestRoot = root;
+      bestBuffer = buffer;
+    }
+  }
+  return bestBuffer.length > TERMINAL_REPLAY_MAX
+    ? bestBuffer.slice(bestBuffer.length - TERMINAL_REPLAY_MAX)
+    : bestBuffer;
+}
+
+function startupOutputForCwd(
+  state: Record<string, unknown>,
+  cwd: string,
+): string {
+  const startup = state.workspaceStartup as Record<string, unknown> | undefined;
+  const outputByRoot =
+    (startup?.outputByRoot as Record<string, string> | undefined) ?? {};
   let bestRoot = "";
   let bestBuffer = "";
   for (const [root, buffer] of Object.entries(outputByRoot)) {

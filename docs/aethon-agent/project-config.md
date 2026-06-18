@@ -2,6 +2,38 @@
 
 Aethon can read lightweight project-local configuration from a repository's `.aethon/` directory. These files travel with the repo and do not require shipping a UI extension.
 
+## Workspace startup commands
+
+Agent tabs opened in a project or workspace run startup work for that root before the agent session starts. Aethon prepares the devshell/env provider first, then runs approved commands from `<project>/.aethon/startup.toml`.
+
+Commands are required by default, run once per root per app launch, and changed command config requires approval again.
+
+```toml
+[startup]
+timeout_seconds = 600
+
+[[startup.commands]]
+id = "deps"
+label = "Install dependencies"
+command = "bun install"
+
+[[startup.commands]]
+id = "codegen"
+label = "Generate local types"
+command = "bun run codegen"
+required = false
+timeout_seconds = 120
+```
+
+Fields:
+
+- `[startup].timeout_seconds` — default command timeout in seconds.
+- `id` — stable command id; defaults to `command-N`.
+- `label` — task label; defaults to `id`.
+- `command` — shell command run from the workspace root.
+- `required` — failure blocks startup unless `false`; defaults to `true`.
+- `timeout_seconds` — per-command timeout.
+
 ## Issue-to-agent templates
 
 The project dashboard's **Open issues** section reads optional templates from `<project>/.aethon/issues.toml`.

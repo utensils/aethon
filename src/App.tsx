@@ -33,6 +33,7 @@ import { useFrontendStateMirror } from "./hooks/useFrontendStateMirror";
 import { usePersistEditorTabs } from "./hooks/usePersistEditorTabs";
 import { useUiOverlays } from "./hooks/useUiOverlays";
 import { useUpdater } from "./hooks/useUpdater";
+import { useWorkspaceStartup } from "./hooks/useWorkspaceStartup";
 import { UpdateBanner } from "./components/UpdateBanner";
 import type { AethonConfig } from "./config";
 import {
@@ -126,6 +127,14 @@ export default function App() {
     pushNotificationRef,
     chatActionsRef,
   } = useAppStateRefs(appStore);
+
+  const {
+    view: workspaceStartupView,
+    prepareWorkspaceStartup,
+    approveStartup,
+    retryStartup,
+    continueStartup,
+  } = useWorkspaceStartup({ state, setState, stateRef });
 
   useSessionPersistence({ appStore, hasSyncSessionSnapshot });
   useAgentActivityHydration(setState);
@@ -295,6 +304,7 @@ export default function App() {
     shellDefaultArgsRef,
     shellInheritEnvRef,
     shellPromptBeforeCloseRef,
+    prepareWorkspaceStartup,
     isShellBusy: async (tabId: string) => {
       const v = await invoke("shell_is_busy", { tabId });
       return v === true;
@@ -588,6 +598,7 @@ export default function App() {
     stateRef,
     tabBucketsRef,
     piDefaultModelRef,
+    prepareWorkspaceStartup,
   });
 
   // Updater (Cmd menu / tray "Check for Updates" + agent-driven path).
@@ -697,6 +708,7 @@ export default function App() {
     updateActiveTab,
     newTab,
     newEditorTab,
+    prepareWorkspaceStartup,
     dispatchTerminalReplay,
     autoRestoreDiscoveredSessions,
     hydrateThemes,
@@ -972,6 +984,10 @@ export default function App() {
       authProfilesOpen={authProfilesOpen}
       chromeReady={chromeReady}
       startupLogoUrl={logoUrl}
+      workspaceStartup={workspaceStartupView}
+      onStartupApprove={approveStartup}
+      onStartupRetry={retryStartup}
+      onStartupContinue={continueStartup}
       topBanner={
         <UpdateBanner
           state={updaterState}
