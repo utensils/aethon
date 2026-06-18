@@ -8,6 +8,7 @@
  */
 
 import {
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -44,6 +45,9 @@ import {
   useFileTreePrefs,
 } from "./useFileTreePrefs";
 import { useFileTreeWatch } from "./useFileTreeWatch";
+import { onAgentTurnComplete } from "../../../utils/agentTurnEvents";
+
+const EMPTY_TABS: EditorTabShape[] = [];
 
 export function FileTreePanel({
   component,
@@ -58,7 +62,8 @@ export function FileTreePanel({
   const embedMode = componentProps.embed ?? "left-stack";
   const fillsContainer = embedMode === "right-sidebar";
   const project = state["project"] as ProjectShape | undefined;
-  const tabs = (state["tabs"] as EditorTabShape[] | undefined) ?? [];
+  const tabs = (state["tabs"] as EditorTabShape[] | undefined) ?? EMPTY_TABS;
+  const tabsRef = useRef(tabs);
   const activeTabId = state["activeTabId"] as string | undefined;
   const activeTab = activeTabId
     ? tabs.find((t) => t.id === activeTabId)
@@ -66,6 +71,10 @@ export function FileTreePanel({
   const activeEditorRoot =
     activeTab?.kind === "editor" ? activeTab.editor?.rootPath : undefined;
   const [aethonRoot, setAethonRoot] = useState<string>("");
+
+  useEffect(() => {
+    tabsRef.current = tabs;
+  }, [tabs]);
 
   useEffect(() => {
     if (project?.path || activeEditorRoot || aethonRoot) return;
@@ -115,6 +124,7 @@ export function FileTreePanel({
     ignoreMatcher,
     projectPathRef,
     refreshFolder,
+    refreshVisibleFolders,
     revealPath,
     revealTarget,
     clearRevealTarget,
@@ -148,6 +158,27 @@ export function FileTreePanel({
     expandAll,
     collapseUnder,
   });
+  const [refreshingFiles, setRefreshingFiles] = useState(false);
+  const refreshFiles = useCallback(async () => {
+    if (!projectPath || refreshingFiles) return;
+    setRefreshingFiles(true);
+    try {
+      await refreshVisibleFolders();
+    } finally {
+      setRefreshingFiles(false);
+    }
+  }, [projectPath, refreshVisibleFolders, refreshingFiles]);
+
+  useEffect(() => {
+    return onAgentTurnComplete(({ tabId }) => {
+      const projectKey = projectPathRef.current;
+      if (!projectKey) return;
+      const tab = tabsRef.current.find((candidate) => candidate.id === tabId);
+      if (!tab || tab.kind !== "agent") return;
+      if (tab.cwd && tab.cwd !== projectKey) return;
+      void refreshVisibleFolders();
+    });
+  }, [projectPathRef, refreshVisibleFolders]);
 
   // Native File menu → "New File…" routes here (the file tree owns the
   // create flow). No-op when no project is active.
@@ -332,15 +363,16 @@ export function FileTreePanel({
                 case "new-folder":
                   void createEntry(projectPath, "dir");
                   break;
-                case "refresh":
-                  void refreshFolder(projectPath);
-                  break;
               }
             }}
           >
             <TreeActionIcon name={action.key} />
           </button>
         ))}
+        <FileTreeRefreshButton
+          refreshing={refreshingFiles}
+          onRefresh={refreshFiles}
+        />
       </div>
     ) : null;
 
@@ -673,8 +705,33 @@ type TreeActionKey = "new-file" | "new-folder" | "refresh";
 const TREE_ACTIONS: { key: TreeActionKey; label: string }[] = [
   { key: "new-file", label: "New File" },
   { key: "new-folder", label: "New Folder" },
-  { key: "refresh", label: "Refresh" },
 ];
+
+function FileTreeRefreshButton({
+  refreshing,
+  onRefresh,
+}: {
+  refreshing: boolean;
+  onRefresh: () => void;
+}) {
+  const label = refreshing ? "Refreshing files" : "Refresh files";
+  return (
+    <button
+      type="button"
+      className={`ae-file-tree-action${refreshing ? " is-refreshing" : ""}`}
+      aria-label={label}
+      aria-busy={refreshing}
+      title={label}
+      disabled={refreshing}
+      onClick={(e) => {
+        e.stopPropagation();
+        onRefresh();
+      }}
+    >
+      <TreeActionIcon name="refresh" />
+    </button>
+  );
+}
 
 /** Compact 16px line icons for the file-tree header toolbar. */
 function TreeActionIcon({ name }: { name: TreeActionKey }) {

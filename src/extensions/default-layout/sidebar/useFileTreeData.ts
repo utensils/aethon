@@ -542,6 +542,18 @@ function useFileTreeData({
     [invalidateFolder, scheduleGitStatusRefresh],
   );
 
+  const refreshVisibleFolders = useCallback(async () => {
+    const projectKey = projectPathRef.current;
+    if (!projectKey) return;
+    const dirs = [projectKey, ...expandedRef.current].sort(
+      (a, b) => a.length - b.length || a.localeCompare(b),
+    );
+    for (const dir of dirs) {
+      if (projectPathRef.current !== projectKey) return;
+      await refreshFolder(dir);
+    }
+  }, [refreshFolder]);
+
   useEffect(() => {
     return () => {
       if (gitStatusRefreshTimerRef.current) {
@@ -560,6 +572,7 @@ function useFileTreeData({
     ignoreMatcher,
     projectPathRef,
     refreshFolder,
+    refreshVisibleFolders,
     revealPath,
     revealTarget,
     clearRevealTarget,
