@@ -36,6 +36,7 @@ import { handleQueuedMessages } from "./queue";
 import { handleSettings } from "./settings";
 import { handleAuthProfiles } from "./authProfiles";
 import { handleSearch } from "./search";
+import { handleScheduledTasks } from "./scheduledTasks";
 import { handlePalette } from "./palette";
 import { handleNotifications } from "./notifications";
 import { handleTerminalPanel, handleShareModeCycle } from "./terminal";
@@ -91,6 +92,7 @@ export const BUILTIN_ROUTE_TABLE: ReadonlyMap<string, readonly EventRouteHandler
     ["type:settings-panel", [handleSettings]],
     ["type:auth-profile-panel", [handleAuthProfiles]],
     ["type:search-panel", [handleSearch]],
+    ["type:scheduled-tasks-panel", [handleScheduledTasks]],
     ["type:command-palette", [handlePalette]],
     // Order matters: handleQueuedMessages runs FIRST and only matches
     // `queue:*` events, returning false for everything else. That lets

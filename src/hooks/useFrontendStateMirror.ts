@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import type { ScheduledTaskRecord } from "../scheduledTasks";
 import type { Tab } from "../types/tab";
 
 export interface UseFrontendStateMirrorContext {
@@ -54,8 +55,11 @@ export function useFrontendStateMirror(
       const sidebar =
         (state.sidebar as Record<string, unknown> | undefined) ?? {};
       const tabs = (state.tabs as Tab[] | undefined) ?? [];
-      const messagesCount =
-        ((state.messages as unknown[] | undefined) ?? []).length;
+      const messagesCount = ((state.messages as unknown[] | undefined) ?? [])
+        .length;
+      const scheduledTasks =
+        (state.scheduledTasks as { tasks?: ScheduledTaskRecord[] } | undefined)
+          ?.tasks ?? [];
       const slices: Record<string, unknown> = {
         "/sidebar/models": sidebar.models ?? [],
         "/sidebar/themes": sidebar.themes ?? [],
@@ -63,6 +67,19 @@ export function useFrontendStateMirror(
         "/status": state.status ?? "",
         "/draft": state.draft ?? "",
         "/messagesCount": messagesCount,
+        "/scheduledTasks": scheduledTasks.map((task) => ({
+          id: task.id,
+          label: task.label,
+          mode: task.mode,
+          status: task.status,
+          nextRunAt: task.nextRunAt ?? null,
+          lastRunAt: task.lastRunAt ?? null,
+          lastCompletedAt: task.lastCompletedAt ?? null,
+          expiresAt: task.expiresAt,
+          runCount: task.runCount,
+          coalescedMisses: task.coalescedMisses,
+          lastError: task.lastError ?? null,
+        })),
         "/tabs": tabs.map((t) => ({
           id: t.id,
           label: t.label,

@@ -91,10 +91,7 @@ pub(crate) async fn send_message(
         payload["images"] = serde_json::Value::Array(images);
     }
 
-    let key = route_payload_key(&state, &payload);
-    let worker = worker_for_payload(&key, &payload, true);
-    prepare_worker_startup(&app, &startup, &devshell, worker.as_ref()).await?;
-    write_agent_payload(&state, &app, key, payload, worker).await
+    dispatch_agent_payload_value(payload, state, devshell, startup, app).await
 }
 
 fn attachments_to_agent_images(
@@ -249,6 +246,19 @@ pub(crate) async fn agent_command(
         retire_agent_key(&state, &key)?;
     }
     Ok(())
+}
+
+pub(crate) async fn dispatch_agent_payload_value(
+    payload_value: serde_json::Value,
+    state: State<'_, AgentProcesses>,
+    devshell: State<'_, Arc<DevshellCache>>,
+    startup: State<'_, crate::commands::startup::WorkspaceStartupState>,
+    app: AppHandle,
+) -> Result<(), String> {
+    let key = route_payload_key(&state, &payload_value);
+    let worker = worker_for_payload(&key, &payload_value, true);
+    prepare_worker_startup(&app, &startup, &devshell, worker.as_ref()).await?;
+    write_agent_payload(&state, &app, key, payload_value, worker).await
 }
 
 async fn prepare_worker_startup(

@@ -73,6 +73,7 @@ export interface AppRootProps {
   settingsOpen: boolean;
   searchOpen: boolean;
   authProfilesOpen: boolean;
+  scheduledTasksOpen: boolean;
   chromeReady: boolean;
   startupLogoUrl: string;
   workspaceStartup?: WorkspaceStartupView | null;
@@ -85,7 +86,7 @@ export interface AppRootProps {
   topBanner?: ReactNode;
 }
 
-/** App-root render. The four overlays mount through `RegistryComponent`
+/** App-root render. Root overlays mount through `RegistryComponent`
  *  so an extension can swap each with `aethon.registerComponent("<type>",
  *  custom)`. Each overlay still gates its own visibility on state
  *  (e.g. /commandPalette/open) — the boolean flags here just keep the
@@ -104,6 +105,7 @@ export function AppRoot({
   settingsOpen,
   searchOpen,
   authProfilesOpen,
+  scheduledTasksOpen,
   chromeReady,
   startupLogoUrl,
   workspaceStartup,
@@ -189,6 +191,14 @@ export function AppRoot({
         {chromeReady && authProfilesOpen && (
           <RegistryComponent
             type="auth-profile-panel"
+            state={renderState}
+            onEvent={onEvent}
+            tabId={activeTabId}
+          />
+        )}
+        {chromeReady && scheduledTasksOpen && (
+          <RegistryComponent
+            type="scheduled-tasks-panel"
             state={renderState}
             onEvent={onEvent}
             tabId={activeTabId}

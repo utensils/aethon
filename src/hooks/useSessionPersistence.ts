@@ -91,6 +91,7 @@ export function buildInitialAppStore({
         ? { projectModels: restored.projectModels }
         : {}),
       closedSessionIds: restored?.closedSessionIds ?? [],
+      sessionUiRestored: Boolean(restored),
       logoUrl,
       appVersion,
       tabs,
@@ -230,6 +231,11 @@ export function useSessionPersistence({
       }, 100);
     };
     const startPersistence = () => {
+      appStore.setState((prev) =>
+        prev.sessionUiRestored === true
+          ? prev
+          : { ...prev, sessionUiRestored: true },
+      );
       persistenceStarted = true;
       persistNow();
       unsubscribe = appStore.subscribe(schedulePersist);

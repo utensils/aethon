@@ -132,6 +132,7 @@ pub fn run() {
         .manage(commands::git::GitWatchState::default())
         .manage(window_state::WindowStateStore::new())
         .manage(updater_state::UpdaterState::new())
+        .manage(commands::scheduler::ScheduledTasksState::new())
         .manage(Arc::new(server::ServerState::new()))
         .manage(devshell::DevshellCache::shared())
         .manage(commands::startup::WorkspaceStartupState::default());
@@ -178,6 +179,18 @@ pub fn run() {
             commands::session::delete_session,
             commands::session::export_chat_markdown,
             commands::session::copy_session_file,
+            commands::scheduler::scheduled_tasks_list,
+            commands::scheduler::scheduled_tasks_reconcile_live_tabs,
+            commands::scheduler::scheduled_tasks_fail_running_for_tab,
+            commands::scheduler::scheduled_task_create,
+            commands::scheduler::scheduled_task_update,
+            commands::scheduler::scheduled_task_pause,
+            commands::scheduler::scheduled_task_resume,
+            commands::scheduler::scheduled_task_cancel,
+            commands::scheduler::scheduled_task_run_now,
+            commands::scheduler::scheduled_task_schedule_wakeup,
+            commands::scheduler::scheduled_task_complete,
+            commands::scheduler::scheduled_task_resolve_loop_prompt,
             commands::subagents::subagents_list,
             commands::subagents::subagents_write,
             commands::subagents::subagents_delete,
@@ -356,6 +369,7 @@ pub fn run() {
             // retires `tab:<id>` workers that have sat idle past the configured
             // TTL; they respawn lazily from their session on next use.
             agent_process::spawn_idle_sweep(app.handle().clone());
+            commands::scheduler::boot(app.handle().clone());
 
             // Release app launches can start with a skeletal PATH. Warm
             // the launch-safe tool path off the setup thread so the

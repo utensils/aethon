@@ -34,11 +34,13 @@ export async function handleChat(
   deps: DispatcherDeps,
   msg: InboundMessage,
 ): Promise<void> {
+  const tabId = msg.tabId ?? "default";
+  const scheduledRun = scheduledRunFromMessage(msg);
   if (!msg.content) {
+    completeScheduledRun(deps, tabId, scheduledRun, false, "chat: missing content");
     deps.send({ type: "error", message: "chat: missing content" });
     return;
   }
-  const tabId = msg.tabId ?? "default";
   chatLog.info(`received tabId=${tabId} chars=${msg.content.length}`);
   // Per-tab hard-guardrail override rides each chat so the source guard sees
   // the current value before this turn's tool calls (and survives a respawn).
@@ -95,6 +97,9 @@ export async function handleChat(
         }
       : {},
   );
+  if (scheduledRun) {
+    tab.scheduledRun = scheduledRun;
+  }
   chatLog.info(`tab ready tabId=${tabId}`);
   if (authServicesRefreshed) {
     refreshTabSessionModelFromAuthServices(state, tabId);
@@ -137,6 +142,8 @@ export async function handleChat(
       tabId,
       message: `file references: ${message}`,
     });
+    completeScheduledRun(deps, tabId, scheduledRun, false, message);
+    if (scheduledRun) tab.scheduledRun = undefined;
     return;
   }
   const busyForTurn = tab.promptInFlight || isUnderlyingSessionBusy(tab);
@@ -156,6 +163,8 @@ export async function handleChat(
       .catch((err: unknown) => {
         const message = err instanceof Error ? err.message : String(err);
         deps.send({ type: "error", tabId, message: `steer: ${message}` });
+        completeScheduledRun(deps, tabId, scheduledRun, false, message);
+        if (scheduledRun) tab.scheduledRun = undefined;
       });
     return;
   }
@@ -177,6 +186,8 @@ export async function handleChat(
           queued: tab.queuedCount,
         });
         deps.send({ type: "error", tabId, message: `followUp: ${message}` });
+        completeScheduledRun(deps, tabId, scheduledRun, false, message);
+        if (scheduledRun) tab.scheduledRun = undefined;
       });
     deps.send({ type: "queued", tabId });
     return;
@@ -194,12 +205,16 @@ export async function handleChat(
     .catch((err: unknown) => {
       const message = err instanceof Error ? err.message : String(err);
       deps.send({ type: "error", tabId, message: `prompt: ${message}` });
+      completeScheduledRun(deps, tabId, scheduledRun, false, message);
+      if (scheduledRun) tab.scheduledRun = undefined;
     })
     .finally(() => {
       const stillStreamingOrRetrying = isUnderlyingSessionBusy(tab);
       if (!tab.agentEndFired && !stillStreamingOrRetrying) {
         tab.promptInFlight = false;
         deps.send({ type: "response_end", tabId });
+        completeScheduledRun(deps, tabId, tab.scheduledRun, true);
+        tab.scheduledRun = undefined;
       }
       if (state.currentAgentTabId === tabId && !stillStreamingOrRetrying) {
         state.currentAgentTabId = undefined;
@@ -207,6 +222,39 @@ export async function handleChat(
       maybeExitForReload(state, deps);
     });
   chatLog.info(`prompt dispatched tabId=${tabId}`);
+}
+
+function scheduledRunFromMessage(
+  msg: InboundMessage,
+): TabRecord["scheduledRun"] | undefined {
+  if (
+    typeof msg.scheduledTaskId !== "string" ||
+    msg.scheduledTaskId.length === 0 ||
+    typeof msg.scheduledRunId !== "string" ||
+    msg.scheduledRunId.length === 0
+  ) {
+    return undefined;
+  }
+  return { taskId: msg.scheduledTaskId, runId: msg.scheduledRunId };
+}
+
+function completeScheduledRun(
+  deps: DispatcherDeps,
+  tabId: string,
+  scheduledRun: TabRecord["scheduledRun"] | undefined,
+  success: boolean,
+  error?: string,
+): void {
+  if (!scheduledRun) return;
+  deps.send({
+    type: "scheduled_task_run_complete",
+    tabId,
+    taskId: scheduledRun.taskId,
+    runId: scheduledRun.runId,
+    success,
+    ...(error ? { error } : {}),
+    ...(scheduledRun.completeRequested ? { completeTask: true } : {}),
+  });
 }
 
 function isUnderlyingSessionBusy(tab: TabRecord): boolean {

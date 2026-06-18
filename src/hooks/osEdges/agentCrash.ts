@@ -1,6 +1,7 @@
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { failRunningScheduledTasksForTab } from "../../scheduledTasks";
 import type { Tab } from "../../types/tab";
 import { closeRunningToolCards } from "../../utils/agentBusy";
 import type { NotificationInput } from "../useNotifications";
@@ -168,6 +169,12 @@ export function subscribeAgentCrash(deps: AgentCrashDeps): () => void {
     const crashMessage = runningTool
       ? `${runningTool} did not finish before the agent worker exited. ${diagnostic}`
       : diagnostic;
+    void failRunningScheduledTasksForTab({
+      tabId: crashedTabId ?? null,
+      message: crashMessage,
+    }).catch(() => {
+      /* scheduler state will recover from persisted running state on restart */
+    });
     activeResponseIdRef.current = null;
     if (crashedTabId) {
       const h = hangWarnTimersRef.current.get(crashedTabId);

@@ -59,6 +59,7 @@ import { useProjectModelRecorder } from "./hooks/useProjectModelRecorder";
 import { useProjectSyncEffects } from "./hooks/useProjectSyncEffects";
 import { useAppSlashCommandContext } from "./hooks/useAppSlashCommandContext";
 import { useAppBridgeMessages } from "./hooks/useAppBridgeMessages";
+import { useScheduledTasks } from "./hooks/useScheduledTasks";
 import { closeAllWorkspaceSessions } from "./hooks/tabOps/closeWorkspaceSessions";
 import { writeState } from "./persist";
 import { useAppState } from "./state/appStore";
@@ -553,6 +554,14 @@ export default function App() {
     findTabById: findTabRouted,
   });
 
+  useScheduledTasks({
+    state,
+    setState,
+    appendMessage,
+    persistLocalChatMessage,
+    pushNotification,
+  });
+
   // All forward-ref slots — used by earlier hooks to call through to
   // functions that aren't defined until after them — are mirrored here
   // in a single commit-phase pass. See `useAppForwardRefs` for the
@@ -966,6 +975,7 @@ export default function App() {
     settingsOpen,
     searchOpen,
     authProfilesOpen,
+    scheduledTasksOpen,
   } = useDerivedRenderState({ state, buildSidebarHistory, hostInfo });
   const chromeReady = bootConfigReady && startupChromeReady;
 
@@ -982,6 +992,7 @@ export default function App() {
       settingsOpen={settingsOpen}
       searchOpen={searchOpen}
       authProfilesOpen={authProfilesOpen}
+      scheduledTasksOpen={scheduledTasksOpen}
       chromeReady={chromeReady}
       startupLogoUrl={logoUrl}
       workspaceStartup={workspaceStartupView}

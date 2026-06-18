@@ -6251,6 +6251,208 @@ body.ae-resizing-terminal * {
   background: color-mix(in oklab, var(--accent) 8%, transparent);
 }
 
+/* =============================================================================
+   Scheduled Tasks manager
+   ============================================================================= */
+
+.ae-scheduled-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, var(--opacity-overlay-scrim, 0.45));
+  backdrop-filter: blur(2px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: var(--z-modal, 1200);
+}
+.ae-scheduled-panel {
+  width: min(980px, 94vw);
+  max-height: 86vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--modal-bg, var(--bg-elev));
+  border: 1px solid var(--modal-border, var(--border));
+  border-radius: var(--radius-lg, 12px);
+  box-shadow:
+    var(--modal-shadow, 0 24px 64px rgba(0, 0, 0, 0.45)),
+    var(--inner-highlight, none);
+  font-family: ui-sans-serif, system-ui, sans-serif;
+}
+.ae-scheduled-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border);
+  background: var(--gradient-surface, transparent);
+}
+.ae-scheduled-header h2 {
+  flex: 1 1 auto;
+  margin: 0;
+  font-size: 1.05rem;
+}
+.ae-scheduled-body {
+  display: grid;
+  grid-template-columns: minmax(280px, 340px) minmax(0, 1fr);
+  min-height: 0;
+  overflow: hidden;
+}
+.ae-scheduled-create,
+.ae-scheduled-list {
+  min-width: 0;
+  min-height: 0;
+  padding: var(--space-4);
+  overflow-y: auto;
+}
+.ae-scheduled-create {
+  border-right: 1px solid var(--border);
+  background: color-mix(in oklab, var(--bg-elev) 92%, var(--bg));
+}
+.ae-scheduled-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--space-3);
+}
+.ae-scheduled-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  font-size: var(--chrome-text-muted);
+  color: var(--text-dim);
+}
+.ae-scheduled-field select,
+.ae-scheduled-field input,
+.ae-scheduled-field textarea {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-input);
+  color: var(--text);
+  padding: 7px 9px;
+  font: inherit;
+}
+.ae-scheduled-field textarea {
+  resize: vertical;
+  min-height: 96px;
+  font-family: var(--font-mono);
+  font-size: var(--chrome-text);
+}
+.ae-scheduled-error {
+  margin-top: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--state-error-border, var(--error));
+  border-radius: var(--radius-md);
+  color: var(--state-error-fg, var(--error));
+  background: var(--state-error-bg, transparent);
+  font-size: var(--chrome-text-muted);
+}
+.ae-scheduled-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-top: var(--space-3);
+}
+.ae-scheduled-target {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-dim);
+  font-size: var(--chrome-text-muted);
+}
+.ae-scheduled-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.ae-scheduled-empty {
+  color: var(--text-dim);
+  font-size: var(--chrome-text);
+  text-align: center;
+  padding: var(--space-5);
+}
+.ae-scheduled-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--card-border, var(--border));
+  border-radius: var(--radius-md);
+  background: var(--card-bg, var(--bg-elev));
+}
+.ae-scheduled-row-main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.ae-scheduled-title,
+.ae-scheduled-meta,
+.ae-scheduled-row-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+.ae-scheduled-title strong,
+.ae-scheduled-prompt {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ae-scheduled-title code {
+  font-size: var(--chrome-text-muted);
+  color: var(--text-dim);
+}
+.ae-scheduled-meta {
+  color: var(--text-dim);
+  font-size: var(--chrome-text-muted);
+}
+.ae-scheduled-prompt {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  color: var(--text-secondary, var(--text));
+  font-size: var(--chrome-text);
+  line-height: 1.35;
+}
+.ae-scheduled-row-actions {
+  justify-content: flex-end;
+}
+.ae-scheduled-row-actions button {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text);
+  padding: 5px 9px;
+  cursor: pointer;
+}
+.ae-scheduled-row-actions button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+@media (max-width: 780px) {
+  .ae-scheduled-panel {
+    width: 96vw;
+  }
+  .ae-scheduled-body {
+    grid-template-columns: 1fr;
+  }
+  .ae-scheduled-create {
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .ae-scheduled-row {
+    grid-template-columns: 1fr;
+  }
+  .ae-scheduled-row-actions {
+    justify-content: flex-start;
+  }
+}
+
 @media (max-width: 720px) {
   .ae-settings-panel {
     width: min(96vw, 860px);
