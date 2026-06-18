@@ -69,6 +69,7 @@ describe("AppRoot workspace startup overlay", () => {
         settingsOpen={false}
         searchOpen={false}
         authProfilesOpen={false}
+        scheduledTasksOpen={false}
         chromeReady
         startupLogoUrl="/logo.svg"
         workspaceStartup={{
