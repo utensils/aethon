@@ -42,6 +42,7 @@ describe("getRuntimeSnapshot", () => {
     expect(snap.layoutStructure).toBeNull();
     expect(snap.layoutSlots).toBeNull();
     expect(snap.highlightGrammars).toEqual([]);
+    expect(snap.nativeWindows).toEqual([]);
   });
 
   it("reflects loaded extensions, themes, components", () => {
@@ -131,6 +132,31 @@ describe("getRuntimeSnapshot", () => {
         surface: "inline",
       },
       { name: "builder", description: "Builds features", surface: "tab" },
+    ]);
+  });
+
+  it("includes native canvas window summaries", () => {
+    const state = new AethonAgentState(makeOpts("/tmp/aethon-rs"));
+    state.nativeWindows.set("Workpad", {
+      id: "Workpad",
+      label: "aethon-canvas-Workpad",
+      kind: "canvas",
+      title: "Workpad",
+      tabId: "default",
+      restoreOnLaunch: true,
+      componentCount: 2,
+    });
+    const snap = getRuntimeSnapshot(state);
+    expect(snap.nativeWindows).toEqual([
+      {
+        id: "Workpad",
+        label: "aethon-canvas-Workpad",
+        kind: "canvas",
+        title: "Workpad",
+        tabId: "default",
+        restoreOnLaunch: true,
+        componentCount: 2,
+      },
     ]);
   });
 

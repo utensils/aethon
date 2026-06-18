@@ -54,7 +54,7 @@ mod restore;
 mod save;
 mod schema;
 
-pub use restore::restore_on_setup;
+pub use restore::{restore_on_setup, restore_window};
 pub use save::{save_now, schedule_save};
 
 /// Tauri-managed save coordinator. One debounce generation counter per

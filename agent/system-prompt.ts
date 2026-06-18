@@ -53,10 +53,10 @@ export function buildSubagentsSection(
       "Choose the subagent whose description best fits; pass everything it needs " +
       "in `prompt` (it runs in an isolated session and sees only that). Multiple " +
       "leading mentions such as `@a and @b ...` mean the whole prompt should fan " +
-      "out with `task_batch` and `surface: \"inline\"` by default. Use " +
+      'out with `task_batch` and `surface: "inline"` by default. Use ' +
       '`surface: "background"` only when the user asks for async/background/' +
       "don't-wait/separate-tabs behavior. Non-leading mentions (e.g. \"when " +
-      "done, have @<name> review\") are guidance to delegate just that part, not " +
+      'done, have @<name> review") are guidance to delegate just that part, not ' +
       "an automatic whole-prompt hijack. Do NOT delegate trivial work you can do " +
       "directly.",
   ];
@@ -199,9 +199,25 @@ export function buildRuntimeSection(snapshot: RuntimeSnapshot): string {
       if (h.componentType) parts.push(`componentType=${h.componentType}`);
       if (h.descendantId) parts.push(`descendantId=${h.descendantId}`);
       if (h.eventType) parts.push(`eventType=${h.eventType}`);
+      if (h.surfaceId) parts.push(`surfaceId=${h.surfaceId}`);
+      if (h.windowId) parts.push(`windowId=${h.windowId}`);
       lines.push(
         `- ${parts.length ? parts.join(", ") : "(matches everything)"}`,
       );
+    }
+  }
+
+  const nativeWindows = snapshot.nativeWindows ?? [];
+  if (nativeWindows.length > 0) {
+    lines.push("");
+    lines.push("Open native A2UI canvas windows:");
+    for (const w of nativeWindows) {
+      const tab = w.tabId ? `, owner tab \`${w.tabId}\`` : "";
+      const count =
+        typeof w.componentCount === "number"
+          ? `, ${w.componentCount} components`
+          : "";
+      lines.push(`- \`${w.id}\` — "${w.title}" (${w.kind}${tab}${count})`);
     }
   }
 

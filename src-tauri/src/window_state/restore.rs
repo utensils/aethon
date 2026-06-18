@@ -25,9 +25,17 @@ const CLAMP_MARGIN_Y: f64 = 40.0;
 /// `activate_after_show` is true, the main window is also brought to
 /// the foreground after an updater relaunch.
 pub fn restore_on_setup(app: &AppHandle, activate_after_show: bool) -> Result<(), String> {
+    restore_window(app, MAIN_LABEL, activate_after_show)
+}
+
+pub fn restore_window(
+    app: &AppHandle,
+    label: &str,
+    activate_after_show: bool,
+) -> Result<(), String> {
     let store = load_store(app);
-    let Some(window) = app.get_webview_window(MAIN_LABEL) else {
-        tracing::warn!(target: "aethon::window_state", "main window not found at setup");
+    let Some(window) = app.get_webview_window(label) else {
+        tracing::warn!(target: "aethon::window_state", "window {label} not found at setup");
         return Ok(());
     };
 
@@ -37,7 +45,7 @@ pub fn restore_on_setup(app: &AppHandle, activate_after_show: bool) -> Result<()
     let monitor_snaps: Vec<MonitorSnapshot> =
         monitors.iter().map(MonitorSnapshot::from_monitor).collect();
 
-    if let Some(state) = store.states.get(MAIN_LABEL)
+    if let Some(state) = store.states.get(label)
         && !monitor_snaps.is_empty()
     {
         let target = restoreable_state(state, &monitor_snaps);
@@ -68,11 +76,11 @@ pub fn restore_on_setup(app: &AppHandle, activate_after_show: bool) -> Result<()
     // zoomed window on macOS also can't be moved via the overlay
     // titlebar's drag region.
 
-    show_main_window(app, &window, activate_after_show);
+    show_window(app, &window, activate_after_show);
     Ok(())
 }
 
-fn show_main_window(_app: &AppHandle, window: &tauri::WebviewWindow, activate: bool) {
+fn show_window(_app: &AppHandle, window: &tauri::WebviewWindow, activate: bool) {
     if activate {
         // Cmd+H on macOS hides the app at the application level;
         // showing/focusing the webview alone does not unhide it.

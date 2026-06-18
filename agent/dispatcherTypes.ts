@@ -73,6 +73,8 @@ export interface InboundMessage {
     componentType?: string;
     templateRootType?: string;
     eventType?: string;
+    surfaceId?: string;
+    windowId?: string;
     data?: unknown;
   };
   /** Devshell push event forwarded from the frontend's Tauri event

@@ -36,6 +36,47 @@ import {
   handleTabOpen,
 } from "./tabs";
 
+function mirrorNativeWindowsFromFrontend(
+  state: AethonAgentState,
+  value: unknown,
+): void {
+  if (!Array.isArray(value)) return;
+  state.nativeWindows.clear();
+  for (const item of value) {
+    if (!item || typeof item !== "object") continue;
+    const rec = item as {
+      id?: unknown;
+      label?: unknown;
+      kind?: unknown;
+      title?: unknown;
+      tabId?: unknown;
+      restoreOnLaunch?: unknown;
+      componentCount?: unknown;
+    };
+    if (
+      typeof rec.id !== "string" ||
+      typeof rec.label !== "string" ||
+      rec.kind !== "canvas" ||
+      typeof rec.title !== "string"
+    ) {
+      continue;
+    }
+    state.nativeWindows.set(rec.id, {
+      id: rec.id,
+      label: rec.label,
+      kind: "canvas",
+      title: rec.title,
+      ...(typeof rec.tabId === "string" ? { tabId: rec.tabId } : {}),
+      ...(typeof rec.restoreOnLaunch === "boolean"
+        ? { restoreOnLaunch: rec.restoreOnLaunch }
+        : {}),
+      ...(typeof rec.componentCount === "number"
+        ? { componentCount: rec.componentCount }
+        : {}),
+    });
+  }
+}
+
 export type { DispatcherDeps, InboundMessage } from "./dispatcherTypes";
 export {
   handleChat,
@@ -196,6 +237,9 @@ export async function dispatchInboundMessage(
       case "frontend_state_patch":
         if (!msg.path || typeof msg.path !== "string") break;
         state.frontendState.set(msg.path, msg.value);
+        if (msg.path === "/nativeWindows") {
+          mirrorNativeWindowsFromFrontend(state, msg.value);
+        }
         deps.scheduleStateFileWrite();
         break;
       case "boot_layout":

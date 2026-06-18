@@ -1,5 +1,6 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { ExtensionRegistry } from "./extensions/ExtensionRegistry";
 import { defaultLayoutExtension } from "./extensions/default-layout";
 import { AppRoot } from "./app/AppRoot";
@@ -61,6 +62,10 @@ import { useAppSlashCommandContext } from "./hooks/useAppSlashCommandContext";
 import { useAppBridgeMessages } from "./hooks/useAppBridgeMessages";
 import { useScheduledTasks } from "./hooks/useScheduledTasks";
 import { closeAllWorkspaceSessions } from "./hooks/tabOps/closeWorkspaceSessions";
+import {
+  syncNativeWindowsToState as syncNativeWindowsToStateSlice,
+  type NativeCanvasWindowRecord,
+} from "./nativeWindows";
 import { writeState } from "./persist";
 import { useAppState } from "./state/appStore";
 import { activeWorkspaceCwd } from "./utils/activeWorkspaceRoot";
@@ -110,12 +115,18 @@ export default function App() {
   const { appStore, hasSyncSessionSnapshot } = initialApp;
   const state = useAppState(appStore, (s) => s);
   const setState = appStore.setState;
+  const nativeWindowsRef = useRef<Map<string, NativeCanvasWindowRecord>>(
+    new Map(),
+  );
 
   // Active layout payload — replaceable. Extensions can swap the chrome wholesale
   // by calling window.aethon.setLayout(payload), or register a new extension via
   // window.aethon.registerExtension(extension) and switch to its layout.
   const [layout, setLayout] = useState<A2UIPayload>(BOOT_LAYOUT);
   const [startupChromeReady, setStartupChromeReady] = useState(false);
+  const syncNativeWindowsToState = useCallback(() => {
+    syncNativeWindowsToStateSlice(setState, nativeWindowsRef);
+  }, [setState]);
 
   const {
     stateRef,
@@ -139,6 +150,44 @@ export default function App() {
 
   useSessionPersistence({ appStore, hasSyncSessionSnapshot });
   useAgentActivityHydration(setState);
+
+  useEffect(() => {
+    let disposed = false;
+    invoke<NativeCanvasWindowRecord[]>("native_window_list")
+      .then((records) => {
+        if (disposed || !Array.isArray(records)) return;
+        nativeWindowsRef.current = new Map(
+          records.map((record) => [record.id, record]),
+        );
+        syncNativeWindowsToState();
+      })
+      .catch(() => {
+        /* native-window state is best-effort mirror data */
+      });
+    const unlistenRecord = listen<NativeCanvasWindowRecord>(
+      "native-window-record",
+      (event) => {
+        const record = event.payload;
+        if (!record || typeof record.id !== "string") return;
+        nativeWindowsRef.current.set(record.id, record);
+        syncNativeWindowsToState();
+      },
+    );
+    const unlistenClosed = listen<{ id?: string }>(
+      "native-window-closed",
+      (event) => {
+        const id = event.payload?.id;
+        if (typeof id !== "string") return;
+        nativeWindowsRef.current.delete(id);
+        syncNativeWindowsToState();
+      },
+    );
+    return () => {
+      disposed = true;
+      unlistenRecord.then((fn) => fn());
+      unlistenClosed.then((fn) => fn());
+    };
+  }, [syncNativeWindowsToState]);
 
   const recordProjectModel = useProjectModelRecorder(setState);
 
@@ -230,7 +279,8 @@ export default function App() {
     activeRoot: activeWorkspaceRoot,
     setDevshellEntry: (root, patch) => {
       setState((s) => {
-        const prev = (s.devshell as { entries?: Record<string, DevshellEntry> }) ?? {};
+        const prev =
+          (s.devshell as { entries?: Record<string, DevshellEntry> }) ?? {};
         const entries = { ...(prev.entries ?? {}) };
         // Merge the patch over the previous entry so resolver-event
         // updates (which only carry kind/state/timings) don't clobber
@@ -629,12 +679,11 @@ export default function App() {
     },
   } = useUpdater({ appendSystem });
   const reapplyConfigWithUpdater = useMemo(
-    () =>
-      (fresh: AethonConfig) => {
-        reapplyConfig(fresh);
-        setUpdateChannel(fresh.updates.channel);
-        setUpdateDisableAutoCheck(fresh.updates.disableAutoCheck);
-      },
+    () => (fresh: AethonConfig) => {
+      reapplyConfig(fresh);
+      setUpdateChannel(fresh.updates.channel);
+      setUpdateDisableAutoCheck(fresh.updates.disableAutoCheck);
+    },
     [reapplyConfig, setUpdateChannel, setUpdateDisableAutoCheck],
   );
 
@@ -713,6 +762,7 @@ export default function App() {
     turnStartedAtRef,
     lastExtensionStateKeysRef,
     pendingTabOpens,
+    nativeWindowsRef,
     updateTab: updateTabRouted,
     updateActiveTab,
     newTab,
@@ -740,6 +790,7 @@ export default function App() {
     scopedDiscoveredSessions,
     recentSessionItems,
     syncRecentSessionsToState,
+    syncNativeWindowsToState,
     routeShellWrite,
     startTaskInProject,
     markStartupChromeReady: () => setStartupChromeReady(true),

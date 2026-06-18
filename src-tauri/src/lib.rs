@@ -19,6 +19,7 @@
 //! - [`commands::fs`] — project-scoped file-system access for the
 //!   Monaco editor + file tree.
 //! - [`commands::git`] — git status, worktrees, GitHub data, issues, and folder picker.
+//! - [`commands::native_windows`] — restorable A2UI canvas windows.
 //! - [`commands::window`] — fullscreen/devtools/updater.
 //!
 //! Helpers without a Tauri dependency live in [`helpers`]; PTY-backed
@@ -146,6 +147,7 @@ pub fn run() {
         .manage(commands::fs::FsWatchState::default())
         .manage(commands::git::GitFetchState::default())
         .manage(commands::git::GitWatchState::default())
+        .manage(commands::native_windows::NativeWindowsState::new())
         .manage(window_state::WindowStateStore::new())
         .manage(updater_state::UpdaterState::new())
         .manage(commands::scheduler::ScheduledTasksState::new())
@@ -170,6 +172,7 @@ pub fn run() {
                 if let Err(e) = window_state::save_now(window.app_handle(), window.label()) {
                     tracing::warn!(target: "aethon::window_state", "save_now on close: {e}");
                 }
+                commands::native_windows::handle_window_closed(window.app_handle(), window.label());
             }
             _ => {}
         })
@@ -254,6 +257,13 @@ pub fn run() {
             commands::git::issues::gh_issue_view,
             commands::git::picker::pick_project_directory,
             commands::host::host_info,
+            commands::native_windows::native_window_open_canvas,
+            commands::native_windows::native_window_save_canvas,
+            commands::native_windows::native_window_get_canvas,
+            commands::native_windows::native_window_list,
+            commands::native_windows::native_window_focus,
+            commands::native_windows::native_window_close,
+            commands::native_windows::native_window_set_title,
             commands::server::server_status,
             commands::server::server_start,
             commands::server::server_stop,
@@ -375,6 +385,9 @@ pub fn run() {
                     }
                 }
             }
+            if let Err(err) = commands::native_windows::restore_on_setup(app.handle()) {
+                tracing::warn!(target: "aethon::native_windows", "restore failed: {err}");
+            }
             // Built-in HTTP + mDNS server. Failures inside `boot` are
             // logged + swallowed so a port collision or LAN hiccup
             // never blocks the UI.
@@ -484,6 +497,27 @@ mod tests {
             assert!(
                 src.contains(command),
                 "{command} must stay registered in the invoke_handler list",
+            );
+        }
+    }
+
+    #[test]
+    fn native_window_commands_are_wired_to_handler_and_lifecycle() {
+        let src = include_str!("lib.rs");
+        for command in [
+            "commands::native_windows::native_window_open_canvas",
+            "commands::native_windows::native_window_save_canvas",
+            "commands::native_windows::native_window_get_canvas",
+            "commands::native_windows::native_window_list",
+            "commands::native_windows::native_window_focus",
+            "commands::native_windows::native_window_close",
+            "commands::native_windows::native_window_set_title",
+            "commands::native_windows::handle_window_closed",
+            "commands::native_windows::restore_on_setup",
+        ] {
+            assert!(
+                src.contains(command),
+                "{command} must stay wired for native canvas windows",
             );
         }
     }

@@ -2,6 +2,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { invoke } from "@tauri-apps/api/core";
 import App from "./App.tsx";
+import NativeCanvasWindowApp from "./NativeCanvasWindowApp";
 import { prewarmHighlighter } from "./utils/highlight";
 // Side-effect import: registers Monaco's web-worker factories and binds
 // the @monaco-editor/react loader to the bundled monaco package so the
@@ -22,7 +23,9 @@ import "./styles/chrome.css";
 // server can wrap user JS to call back via __AETHON_INVOKE__('debug_eval_result', ...).
 // Compiled out of release builds.
 if (import.meta.env.DEV) {
-  (window as unknown as { __AETHON_INVOKE__: typeof invoke }).__AETHON_INVOKE__ = invoke;
+  (
+    window as unknown as { __AETHON_INVOKE__: typeof invoke }
+  ).__AETHON_INVOKE__ = invoke;
 }
 
 // Spawn the Shiki highlight worker eagerly so the first user-visible code
@@ -30,8 +33,16 @@ if (import.meta.env.DEV) {
 // Idempotent; safe to call here.
 prewarmHighlighter();
 
+const params = new URLSearchParams(window.location.search);
+const surface = params.get("surface");
+const canvasWindowId = params.get("id") ?? "";
+
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <App />
+    {surface === "canvas-window" ? (
+      <NativeCanvasWindowApp id={canvasWindowId} />
+    ) : (
+      <App />
+    )}
   </StrictMode>,
 );

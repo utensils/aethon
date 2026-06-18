@@ -6,10 +6,11 @@ import { vi, type Mock } from "vitest";
 import type { MutableRefObject } from "react";
 import { defaultLayoutExtension } from "../../extensions/default-layout";
 import { ExtensionRegistry } from "../../extensions/ExtensionRegistry";
+import type { NativeCanvasWindowRecord } from "../../nativeWindows";
 import { emptyProjectsState } from "../../projects";
 import type { BridgeMessageContext, DiscoveredSession } from "./types";
 
-const ref = <T,>(value: T): MutableRefObject<T> => ({ current: value });
+const ref = <T>(value: T): MutableRefObject<T> => ({ current: value });
 
 export interface FixtureOverrides {
   state?: Record<string, unknown>;
@@ -46,6 +47,7 @@ export interface HandlerFixture {
     hydrateExtensionLayouts: Mock;
     hydrateFrontendModules: Mock;
     syncRecentSessionsToState: Mock;
+    syncNativeWindowsToState: Mock;
     autoRestoreDiscoveredSessions: Mock;
     dispatchTerminalReplay: Mock;
     announceProjectToBridge: Mock;
@@ -75,9 +77,9 @@ export function buildHandlerFixture(
   // original argument.
   const setState = vi.fn((arg: unknown) => {
     if (typeof arg === "function") {
-      stateRef.current = (arg as (
-        p: Record<string, unknown>,
-      ) => Record<string, unknown>)(stateRef.current);
+      stateRef.current = (
+        arg as (p: Record<string, unknown>) => Record<string, unknown>
+      )(stateRef.current);
     } else {
       stateRef.current = arg as Record<string, unknown>;
     }
@@ -103,6 +105,7 @@ export function buildHandlerFixture(
   const hydrateExtensionLayouts = vi.fn();
   const hydrateFrontendModules = vi.fn();
   const syncRecentSessionsToState = vi.fn();
+  const syncNativeWindowsToState = vi.fn();
   const autoRestoreDiscoveredSessions = vi.fn();
   const dispatchTerminalReplay = vi.fn();
   const announceProjectToBridge = vi.fn();
@@ -110,9 +113,7 @@ export function buildHandlerFixture(
   const startTaskInProject = vi.fn(() => Promise.resolve());
   const ackMutation = vi.fn();
   const knownTabIds = vi.fn(() => new Set<string>(["default"]));
-  const scopedDiscoveredSessions = vi.fn(
-    (d: DiscoveredSession[]) => d,
-  );
+  const scopedDiscoveredSessions = vi.fn((d: DiscoveredSession[]) => d);
   const recentSessionItems = vi.fn(() => []);
   const markStartupChromeReady = vi.fn();
 
@@ -131,6 +132,7 @@ export function buildHandlerFixture(
     turnStartedAtRef: ref(new Map()),
     lastExtensionStateKeysRef: ref(new Set()),
     pendingTabOpens: ref(new Map()),
+    nativeWindowsRef: ref(new Map<string, NativeCanvasWindowRecord>()),
 
     updateTab,
     updateActiveTab,
@@ -163,6 +165,7 @@ export function buildHandlerFixture(
     scopedDiscoveredSessions,
     recentSessionItems,
     syncRecentSessionsToState,
+    syncNativeWindowsToState,
 
     routeShellWrite,
     startTaskInProject,
@@ -185,7 +188,9 @@ export function buildHandlerFixture(
     for (const call of setState.mock.calls) {
       const arg = call[0];
       if (typeof arg === "function") {
-        cur = (arg as (p: Record<string, unknown>) => Record<string, unknown>)(cur);
+        cur = (arg as (p: Record<string, unknown>) => Record<string, unknown>)(
+          cur,
+        );
       } else {
         cur = arg as Record<string, unknown>;
       }
@@ -218,6 +223,7 @@ export function buildHandlerFixture(
       hydrateExtensionLayouts,
       hydrateFrontendModules,
       syncRecentSessionsToState,
+      syncNativeWindowsToState,
       autoRestoreDiscoveredSessions,
       dispatchTerminalReplay,
       announceProjectToBridge,

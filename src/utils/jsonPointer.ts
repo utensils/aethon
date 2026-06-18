@@ -71,7 +71,8 @@ function clonePointerContainer(
   nextToken?: string,
 ): PointerContainer {
   if (Array.isArray(value)) return [...value];
-  if (isPointerContainer(value)) return { ...(value as Record<string, unknown>) };
+  if (isPointerContainer(value))
+    return { ...(value as Record<string, unknown>) };
   return isArrayIndex(nextToken) ? [] : {};
 }
 
@@ -93,10 +94,20 @@ function writePointerChild(
  * the write path; sibling branches keep their existing references.
  */
 export function setPointer(
+  state: unknown[],
+  pointer: string,
+  value: unknown,
+): unknown[];
+export function setPointer(
   state: Record<string, unknown>,
   pointer: string,
   value: unknown,
-): Record<string, unknown> {
+): Record<string, unknown>;
+export function setPointer(
+  state: PointerContainer,
+  pointer: string,
+  value: unknown,
+): PointerContainer {
   if (!pointer || pointer === "" || pointer === "/") {
     return state;
   }
@@ -116,7 +127,7 @@ export function setPointer(
   }
 
   writePointerChild(cursor, tokens[tokens.length - 1], value);
-  return next as Record<string, unknown>;
+  return next;
 }
 
 /**
@@ -166,14 +177,12 @@ export function deletePointer(
 /**
  * Checks if a value is a dynamic reference ($ref property)
  */
-export function isDynamicRef(
-  value: unknown,
-): value is { $ref: string } {
+export function isDynamicRef(value: unknown): value is { $ref: string } {
   return (
     typeof value === "object" &&
     value !== null &&
     "$ref" in value &&
-    typeof (value).$ref === "string"
+    typeof value.$ref === "string"
   );
 }
 

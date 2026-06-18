@@ -22,6 +22,7 @@ import { buildA2uiTools } from "../a2ui-tools";
 import { createAethonBashToolDefinition } from "../bash-tool";
 import { buildDashboardTools } from "../dashboard-tools";
 import { buildEditorTools } from "../editor-tools";
+import { buildWindowTools } from "../window-tools";
 import { buildSessionTitleTools } from "../session-title-tool";
 import { buildSchedulerTools } from "../scheduler-tools";
 import {
@@ -185,6 +186,7 @@ export async function ensureTab(
       ...buildShellTools(),
       ...buildDashboardTools(),
       ...buildEditorTools(),
+      ...buildWindowTools(),
       ...buildMemoryTools(state, tabId),
       ...buildSchedulerTools(state, deps, tabId),
       buildSubagentTaskTool(state, deps, tabId),

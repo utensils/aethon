@@ -14,6 +14,7 @@ import type {
 } from "../../extensions/default-layout/notifications";
 import type { ProjectsState } from "../../projects";
 import type { StartTaskResult } from "../useTaskLauncher";
+import type { NativeWindowsRef } from "../../nativeWindows";
 
 /** A bridge-to-frontend message. The `type` discriminator routes to a
  *  handler in the registry; other keys are payload-specific and typed
@@ -71,6 +72,7 @@ export interface BridgeMessageContext {
   turnStartedAtRef: MutableRefObject<Map<string, number>>;
   lastExtensionStateKeysRef: MutableRefObject<Set<string>>;
   pendingTabOpens: MutableRefObject<Map<string, Promise<unknown>>>;
+  nativeWindowsRef: NativeWindowsRef;
 
   // ─── Tab actions (from useTabs) ─────────────────────────────────────
   updateTab: (tabId: string, updater: (tab: Tab) => Tab) => void;
@@ -171,6 +173,7 @@ export interface BridgeMessageContext {
     openIds: Set<string>,
   ) => RecentSessionItem[];
   syncRecentSessionsToState: () => void;
+  syncNativeWindowsToState: () => void;
 
   // ─── Misc helpers (defined on App) ──────────────────────────────────
   routeShellWrite: (args: Record<string, unknown>) => Promise<{ ok: true }>;

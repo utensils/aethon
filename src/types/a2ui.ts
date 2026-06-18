@@ -271,6 +271,8 @@ export interface A2UIPayload {
 export interface A2UIEvent {
   componentId: string;
   eventType: string;
+  surfaceId?: string;
+  windowId?: string;
   data?: unknown;
 }
 

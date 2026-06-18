@@ -15,6 +15,10 @@ interface AethonEventInfo {
   componentType?: string;
   /** Type of the host template if the event fired inside an expanded template. */
   templateRootType?: string;
+  /** Surface that emitted the event, e.g. `canvas-window:Workpad`. */
+  surfaceId?: string;
+  /** Native canvas window id when the event came from a window. */
+  windowId?: string;
   eventType?: string;
   data?: unknown;
 }
@@ -28,6 +32,10 @@ interface AethonEventMatch {
   descendantId?: string;
   /** Match the event name (e.g. "click", "submit", "change"). */
   eventType?: string;
+  /** Match a specific surface id. */
+  surfaceId?: string;
+  /** Match a specific native canvas window id. */
+  windowId?: string;
 }
 
 interface AethonPiHandlerCtx {
@@ -93,6 +101,12 @@ interface AethonCanvasApi {
   ): Promise<{ ok: boolean; error?: string }>;
 }
 
+type AethonMutationResult<T = unknown> = Promise<{
+  ok: boolean;
+  error?: string;
+  data?: T;
+}>;
+
 interface AethonEditorApi {
   /** Open or focus a file in the Monaco editor. */
   openFile(input: {
@@ -103,6 +117,62 @@ interface AethonEditorApi {
   }): Promise<{ ok: boolean; error?: string; data?: unknown }>;
 }
 
+interface AethonNativeCanvasWindowSummary {
+  id: string;
+  label: string;
+  kind: "canvas";
+  title: string;
+  tabId?: string;
+  restoreOnLaunch?: boolean;
+  componentCount?: number;
+}
+
+interface AethonWindowsApi {
+  openCanvas(input?: {
+    id?: string;
+    title?: string;
+    components?: AethonCanvasComponent | AethonCanvasComponent[];
+    state?: Record<string, unknown>;
+    width?: number;
+    height?: number;
+    x?: number;
+    y?: number;
+    focus?: boolean;
+    restoreOnLaunch?: boolean;
+  }): AethonMutationResult;
+  list(): AethonMutationResult<AethonNativeCanvasWindowSummary[]>;
+  focus(id: string): AethonMutationResult;
+  close(id: string): AethonMutationResult;
+  setTitle(id: string, title: string): AethonMutationResult;
+  emitCanvas(
+    id: string,
+    components: AethonCanvasComponent | AethonCanvasComponent[],
+  ): AethonMutationResult;
+  appendCanvas(
+    id: string,
+    components: AethonCanvasComponent | AethonCanvasComponent[],
+  ): AethonMutationResult;
+  patchCanvas(id: string, path: string, value: unknown): AethonMutationResult;
+  clearCanvas(id: string): AethonMutationResult;
+  setState(id: string, path: string, value: unknown): AethonMutationResult;
+}
+
+interface AethonWindowHandlerCtx {
+  id: string;
+  setState(path: string, value: unknown): AethonMutationResult;
+  emit(
+    components: AethonCanvasComponent | AethonCanvasComponent[],
+  ): AethonMutationResult;
+  append(
+    components: AethonCanvasComponent | AethonCanvasComponent[],
+  ): AethonMutationResult;
+  patch(path: string, value: unknown): AethonMutationResult;
+  clear(): AethonMutationResult;
+  setTitle(title: string): AethonMutationResult;
+  focus(): AethonMutationResult;
+  close(): AethonMutationResult;
+}
+
 interface AethonEventCtx {
   setState(path: string, value: unknown): void;
   registerComponent(componentType: string, template: unknown): void;
@@ -110,6 +180,10 @@ interface AethonEventCtx {
   pi: AethonPiHandlerCtx;
   /** Tab-scoped canvas helper — writes inherit the originating tab. */
   canvas: AethonCanvasApi;
+  /** Native canvas window API. */
+  windows: AethonWindowsApi;
+  /** Present when this handler was invoked by a native canvas window. */
+  window?: AethonWindowHandlerCtx;
 }
 
 declare global {
@@ -141,7 +215,10 @@ declare global {
          */
         onEvent(
           match: AethonEventMatch,
-          handler: (event: AethonEventInfo, ctx: AethonEventCtx) => void | Promise<void>,
+          handler: (
+            event: AethonEventInfo,
+            ctx: AethonEventCtx,
+          ) => void | Promise<void>,
         ): void;
 
         /**
@@ -202,6 +279,9 @@ declare global {
          * setState uses (active turn → last-known active tab).
          */
         canvas: AethonCanvasApi;
+
+        /** Native OS windows that render bare A2UI canvas content. */
+        windows: AethonWindowsApi;
 
         /**
          * Agent-side Monaco editor actions. `openFile` validates through

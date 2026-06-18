@@ -34,6 +34,7 @@ import { handleLayoutPatch } from "./layoutPatch";
 import { handleLayoutSet } from "./layoutSet";
 import { handleModelChanged } from "./modelChanged";
 import { handleNativeSlashResult } from "./nativeSlashResult";
+import { handleNativeWindowQuery } from "./nativeWindowQuery";
 import { handleNotice } from "./notice";
 import { handleNotification } from "./notification";
 import { handleNotificationDismiss } from "./notificationDismiss";
@@ -90,6 +91,7 @@ export const bridgeMessageHandlers: Readonly<
   thinking_level_changed: handleModelChanged,
   codex_fast_mode_changed: handleModelChanged,
   native_slash_result: handleNativeSlashResult,
+  native_window_query: handleNativeWindowQuery,
   notice: handleNotice,
   notification: handleNotification,
   notification_dismiss: handleNotificationDismiss,

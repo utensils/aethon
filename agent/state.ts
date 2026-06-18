@@ -180,6 +180,8 @@ export interface A2UIEventMatch {
   componentType?: string;
   descendantId?: string;
   eventType?: string;
+  surfaceId?: string;
+  windowId?: string;
 }
 
 export interface A2UIEventInfo {
@@ -187,6 +189,8 @@ export interface A2UIEventInfo {
   componentType?: string;
   templateRootType?: string;
   eventType?: string;
+  surfaceId?: string;
+  windowId?: string;
   data?: unknown;
 }
 
@@ -208,6 +212,28 @@ export interface PiHandlerCtx {
  *  this loose type is just the structural shape used by handler ctx. */
 export type AethonApiLike = Record<string, unknown>;
 
+export interface NativeCanvasWindowSummary {
+  id: string;
+  label: string;
+  kind: "canvas";
+  title: string;
+  tabId?: string;
+  restoreOnLaunch?: boolean;
+  componentCount?: number;
+}
+
+export interface AethonWindowHandlerCtx {
+  id: string;
+  setState(path: string, value: unknown): Promise<MutationResult>;
+  emit(components: unknown): Promise<MutationResult>;
+  append(components: unknown): Promise<MutationResult>;
+  patch(path: string, value: unknown): Promise<MutationResult>;
+  clear(): Promise<MutationResult>;
+  setTitle(title: string): Promise<MutationResult>;
+  focus(): Promise<MutationResult>;
+  close(): Promise<MutationResult>;
+}
+
 export type A2UIEventHandler = (
   event: A2UIEventInfo,
   ctx: {
@@ -219,6 +245,8 @@ export type A2UIEventHandler = (
     pi: PiHandlerCtx;
     canvas: AethonApiLike;
     shells: AethonApiLike;
+    windows: AethonApiLike;
+    window?: AethonWindowHandlerCtx;
   },
 ) => void | Promise<void>;
 
@@ -499,6 +527,7 @@ export class AethonAgentState {
     string,
     RegisteredHighlightGrammar
   >();
+  readonly nativeWindows = new Map<string, NativeCanvasWindowSummary>();
   readonly a2uiEventHandlers: {
     match: A2UIEventMatch;
     handler: A2UIEventHandler;
