@@ -8,7 +8,7 @@ import type {
 
 const TERMINAL_URL_PATTERN = /\bhttps?:\/\/[^\s<>"'`]+/gi;
 const TRAILING_URL_PUNCTUATION = new Set([".", ",", ";", ":", "!", "?"]);
-const TRAILING_CLOSERS: Record<string, string> = {
+const TRAILING_CLOSERS: Partial<Record<string, string>> = {
   ")": "(",
   "]": "[",
   "}": "{",
