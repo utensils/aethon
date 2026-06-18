@@ -44,6 +44,25 @@ export interface UseNotificationsActions {
 
 const MAX_VISIBLE = 6;
 
+function findTabForNotification(
+  state: Record<string, unknown>,
+  tabId: string,
+): Tab | undefined {
+  const tabs = (state.tabs as Tab[] | undefined) ?? [];
+  const visible = tabs.find((t) => t.id === tabId);
+  if (visible) return visible;
+
+  const buckets = state.persistedTabBuckets as
+    | Record<string, { tabs?: Tab[] }>
+    | undefined;
+  if (!buckets) return undefined;
+  for (const bucket of Object.values(buckets)) {
+    const hidden = bucket.tabs?.find((t) => t.id === tabId);
+    if (hidden) return hidden;
+  }
+  return undefined;
+}
+
 /**
  * Toast stack rendered at App root. Used for mutation feedback (theme
  * set, layout switched), agent-pushed `notice`s, and OS-level completion
@@ -148,8 +167,7 @@ export function useNotifications(
     const isActiveTab = stateRef.current.activeTabId === input.tabId;
     if (windowFocused && isActiveTab) return;
 
-    const tabs = (stateRef.current.tabs as Tab[] | undefined) ?? [];
-    const tab = tabs.find((t) => t.id === input.tabId);
+    const tab = findTabForNotification(stateRef.current, input.tabId);
     const lastMsg = tab?.messages?.at(-1);
     const snippet =
       typeof lastMsg?.text === "string" && lastMsg.text.length > 0
@@ -166,7 +184,7 @@ export function useNotifications(
           : "Agent ready for your reply",
         message: snippet,
         kind: "success",
-        durationMs: 6000,
+        durationMs: 10000,
         actions: [{ label: "View", action: `activate-tab:${input.tabId}` }],
       });
       return;
