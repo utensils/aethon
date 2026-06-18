@@ -4,6 +4,7 @@ import type { WorkspaceStartupView } from "../hooks/useWorkspaceStartup";
 export interface StartupCurtainProps {
   logoUrl: string;
   startup?: WorkspaceStartupView | null;
+  scope?: "window" | "workspace";
   onApprove?: () => void;
   onRetry?: () => void;
   onContinue?: () => void;
@@ -12,6 +13,7 @@ export interface StartupCurtainProps {
 export function StartupCurtain({
   logoUrl,
   startup,
+  scope = "window",
   onApprove,
   onRetry,
   onContinue,
@@ -38,18 +40,22 @@ export function StartupCurtain({
     .filter(Boolean)
     .join(" ");
   const title = pendingApproval
-    ? "Approve Workspace Startup"
+    ? "Review Workspace Startup"
     : failed
       ? "Workspace Startup Failed"
       : running
         ? "Preparing Workspace"
         : "Workspace Startup";
+  const className =
+    scope === "workspace"
+      ? "ae-startup-curtain ae-startup-curtain--workspace"
+      : "ae-startup-curtain";
 
   return (
     <div
-      className="ae-startup-curtain"
+      className={className}
       role={interactive ? "dialog" : "status"}
-      aria-modal={interactive ? "true" : undefined}
+      aria-modal={interactive && scope === "window" ? "true" : undefined}
       aria-live={interactive ? undefined : "polite"}
       aria-labelledby={titleId}
       aria-describedby={describedBy || undefined}
@@ -94,16 +100,16 @@ export function StartupCurtain({
           <div className="ae-startup-actions">
             {pendingApproval ? (
               <button type="button" onClick={onApprove}>
-                Approve
+                Approve and run
               </button>
             ) : null}
             {failed ? (
               <button type="button" onClick={onRetry}>
-                Retry
+                Retry startup
               </button>
             ) : null}
             <button type="button" className="is-secondary" onClick={onContinue}>
-              Continue
+              Skip startup
             </button>
           </div>
         ) : null}

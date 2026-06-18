@@ -99,12 +99,14 @@ export function Layout({
           minWidth: 0,
           minHeight: 0,
           display: visible || keepsMountedForMotion ? "flex" : "none",
+          position: slotName === "canvas" ? "relative" : undefined,
         };
         return (
           <div
             key={child.id}
             className="a2ui-layout-cell"
             data-area={area}
+            data-slot={slotName}
             data-visible={visible ? "true" : "false"}
             style={cellStyle}
           >
