@@ -52,7 +52,7 @@ export function UpdateBanner({
         <span className={`${styles.message} ${styles.errorMessage}`}>
           Update failed: {state.error}
         </span>
-        <div className={styles.actions}>
+        <div className={styles.actions} data-no-drag>
           <button className={styles.btnPrimary} onClick={onRetry}>
             Try again
           </button>
@@ -85,7 +85,7 @@ export function UpdateBanner({
     return (
       <div className={styles.banner} {...dragProps}>
         <span className={styles.message}>{phaseLabel}</span>
-        <div className={styles.progressWrap}>
+        <div className={styles.progressWrap} data-no-drag>
           <div className={styles.progressTrack}>
             <div
               className={styles.progressBar}
@@ -104,7 +104,7 @@ export function UpdateBanner({
         {productLabel} <span className={styles.version}>v{state.version}</span>{" "}
         is available
       </span>
-      <div className={styles.actions}>
+      <div className={styles.actions} data-no-drag>
         <button className={styles.btnPrimary} onClick={onInstallNow}>
           Install Now
         </button>
