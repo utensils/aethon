@@ -8,9 +8,10 @@ import {
 } from "@mariozechner/pi-coding-agent";
 import type { Api, Model } from "@mariozechner/pi-ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { AethonAgentState } from "../state";
+import type { AethonAgentState, TabRecord } from "../state";
 import type { DispatcherDeps } from "../dispatcherTypes";
 import {
+  authRefreshTabIds,
   authProfileServicesForTab,
   defaultProfileIdForTab,
   handleAuthProfileMessage,
@@ -48,7 +49,24 @@ function makeState(userDir = tempUserDir()): AethonAgentState {
     authProfiles: loadAuthProfilesState(userDir),
     authProfileServices: new Map(),
     tabAuthProfileIds: new Map(),
+    tabs: new Map(),
   } as unknown as AethonAgentState;
+}
+
+function fakeTab(model: string, promptInFlight = false): TabRecord {
+  const [provider, ...rest] = model.split("/");
+  return {
+    id: "tab",
+    session: {
+      model: { provider, id: rest.join("/") },
+    } as unknown as TabRecord["session"],
+    toolArgsCache: new Map(),
+    promptInFlight,
+    agentEndFired: false,
+    queuedCount: 0,
+    toolCardSeq: 0,
+    responseMessageSeq: 0,
+  };
 }
 
 function addProfile(
@@ -201,6 +219,23 @@ describe("auth profile manager", () => {
     expect(refreshed).toBe(true);
     expect(reload).toHaveBeenCalledOnce();
     expect(refresh).toHaveBeenCalledOnce();
+  });
+
+  it("selects matching idle provider tabs for backend refresh after auth changes", () => {
+    const state = makeState();
+    state.tabs.set("active", fakeTab("openai-codex/gpt-5.4"));
+    state.tabs.set("other-provider", fakeTab("anthropic/claude-opus-4-7"));
+    state.tabs.set("busy", fakeTab("openai-codex/gpt-5.4", true));
+    state.tabs.set("other-profile", fakeTab("openai-codex/gpt-5.4"));
+    state.tabAuthProfileIds.set("other-profile", "different-profile");
+
+    expect(
+      authRefreshTabIds(state, {
+        profileId: "codex-work",
+        providerId: "openai-codex",
+        targetTabId: "active",
+      }),
+    ).toEqual(["active"]);
   });
 
   it("rejects deleting unknown or unsafe profile ids before removing files", async () => {

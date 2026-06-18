@@ -48,6 +48,7 @@ export interface AuthProfilesSnapshot {
 interface PendingOAuth {
   profileId: string;
   providerId: string;
+  targetTabId?: string;
   controller: AbortController;
   isReauth: boolean;
   resolvePrompt?: (value: string) => void;
@@ -236,7 +237,7 @@ export async function handleAuthProfileMessage(
       emitAuthProfiles(state, deps);
       return true;
     case "auth_profile_api_key_save":
-      handleApiKeySave(state, deps, msg);
+      await handleApiKeySave(state, deps, msg);
       return true;
     case "auth_profile_login_start":
       handleOAuthStart(state, deps, msg);
@@ -353,15 +354,16 @@ function authProfileProviders(state: AethonAgentState): AuthProfileProvider[] {
     .sort((a, b) => a.label.localeCompare(b.label));
 }
 
-function handleApiKeySave(
+async function handleApiKeySave(
   state: AethonAgentState,
   deps: DispatcherDeps,
   msg: InboundMessage,
-): void {
+): Promise<void> {
   const providerId = stringField(msg.providerId);
   const key = stringField(msg.key);
   if (!providerId || !key)
     throw new Error("auth_profile_api_key_save: providerId and key required");
+  const targetTabId = normalizedTabId(msg.tabId);
   const requestedProfileId = stringField(msg.profileId);
   const existing = requestedProfileId
     ? findProfile(state, requestedProfileId)
@@ -401,16 +403,13 @@ function handleApiKeySave(
   }
   saveAuthProfiles(state);
   servicesForProfile(state, meta.id, { forceRefresh: true });
-  void recreateIdleTabsUsingProfile(state, deps, meta.id).catch(
-    (err: unknown) => {
-      const message = err instanceof Error ? err.message : String(err);
-      deps.send({
-        type: "error",
-        message: `auth_profile_api_key_save: ${message}`,
-      });
-    },
-  );
+  await refreshTabsAfterAuthChange(state, deps, {
+    profileId: meta.id,
+    providerId,
+    targetTabId,
+  });
   emitAuthProfiles(state, deps);
+  await emitGlobalReady(state, deps);
 }
 
 function handleOAuthStart(
@@ -435,6 +434,7 @@ function handleOAuthStart(
     throw new Error("auth_profile_login_start: profile is not oauth");
   }
   const isReauth = Boolean(existing);
+  const targetTabId = normalizedTabId(msg.tabId);
   const meta =
     existing ??
     createProfileMeta(state.authProfiles, {
@@ -454,6 +454,7 @@ function handleOAuthStart(
   const pending: PendingOAuth = {
     profileId: meta.id,
     providerId,
+    targetTabId,
     controller: new AbortController(),
     isReauth,
   };
@@ -536,7 +537,19 @@ function handleOAuthStart(
       }
       saveAuthProfiles(state);
       servicesForProfile(state, meta.id, { forceRefresh: true });
-      await recreateIdleTabsUsingProfile(state, deps, meta.id);
+      try {
+        await refreshTabsAfterAuthChange(state, deps, {
+          profileId: meta.id,
+          providerId,
+          targetTabId: pending.targetTabId,
+        });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        deps.send({
+          type: "error",
+          message: `auth_profile_login_start: refresh session: ${message}`,
+        });
+      }
       deps.send({
         type: "auth_profile_login_event",
         event: {
@@ -548,6 +561,15 @@ function handleOAuthStart(
         },
       });
       emitAuthProfiles(state, deps);
+      try {
+        await emitGlobalReady(state, deps);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        deps.send({
+          type: "error",
+          message: `auth_profile_login_start: emit ready: ${message}`,
+        });
+      }
     })
     .catch((err: unknown) => {
       pendingOAuth.delete(challengeId);
@@ -593,17 +615,54 @@ function handleOAuthCancel(
   emitAuthProfiles(state, deps);
 }
 
-async function recreateIdleTabsUsingProfile(
+async function refreshTabsAfterAuthChange(
   state: AethonAgentState,
   deps: DispatcherDeps,
-  profileId: string,
+  options: {
+    profileId: string;
+    providerId: string;
+    targetTabId?: string;
+  },
 ): Promise<void> {
+  for (const tabId of authRefreshTabIds(state, options)) {
+    state.tabAuthProfileIds.set(tabId, options.profileId);
+    await recreateTabSession(state, deps, tabId, options.profileId);
+  }
+}
+
+export function authRefreshTabIds(
+  state: AethonAgentState,
+  options: {
+    profileId: string;
+    providerId: string;
+    targetTabId?: string;
+  },
+): string[] {
+  const tabIds = new Set<string>();
   for (const [tabId, activeProfileId] of state.tabAuthProfileIds) {
-    if (activeProfileId !== profileId) continue;
+    if (activeProfileId === options.profileId) tabIds.add(tabId);
+  }
+  if (options.targetTabId) tabIds.add(options.targetTabId);
+  for (const [tabId, tab] of state.tabs) {
+    if (
+      !state.tabAuthProfileIds.has(tabId) &&
+      tab.session.model?.provider === options.providerId
+    ) {
+      tabIds.add(tabId);
+    }
+  }
+
+  const out: string[] = [];
+  for (const tabId of tabIds) {
     const existing = state.tabs.get(tabId);
     if (!existing || existing.promptInFlight) continue;
-    await recreateTabSession(state, deps, tabId, profileId);
+    const activeProfileId = state.tabAuthProfileIds.get(tabId);
+    if (activeProfileId && activeProfileId !== options.profileId) continue;
+    const modelProvider = existing.session.model?.provider;
+    if (modelProvider && modelProvider !== options.providerId) continue;
+    out.push(tabId);
   }
+  return out;
 }
 
 async function recreateTabSession(
@@ -764,6 +823,10 @@ function markProfileUsed(state: AethonAgentState, profileId: string): void {
     ),
   };
   saveAuthProfiles(state);
+}
+
+function normalizedTabId(value: unknown): string | undefined {
+  return typeof value === "string" && value.length > 0 ? value : undefined;
 }
 
 function stringField(value: unknown): string {
