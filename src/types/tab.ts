@@ -148,6 +148,10 @@ export interface Tab {
   model: string;
   /** Active pi reasoning/thinking level for this session, when available. */
   thinkingLevel?: string;
+  /** User-facing mode for this agent session. Plan mode asks the agent to
+   *  analyze and propose a plan without making changes until the user
+   *  switches back to implementation mode. */
+  planMode?: boolean;
   contextUsage?: ContextUsageState;
   // Rolling buffer of bash output for this tab. The Terminal component
   // writes to xterm directly for the active tab; this buffer survives
@@ -262,6 +266,7 @@ export function makeEmptyTab(
     queuedMessages: [],
     canvas: null,
     model: "",
+    planMode: false,
     terminalBuffer: "",
     projectId,
   };

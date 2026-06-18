@@ -138,12 +138,60 @@ describe("useChat setModel", () => {
         tabId: "tab-1",
         mode: "normal",
         model: "anthropic/claude-opus-4-7",
+        planMode: false,
       },
     });
     expect((stateRef.current.tabs as Tab[])[0].messages.at(-1)).toMatchObject({
       role: "user",
       text: "hello",
       delivery: "sent",
+    });
+  });
+
+  it("sends plan-mode prompts with the plan-mode flag", async () => {
+    const tab = {
+      ...makeEmptyTab("tab-1", "Tab 1"),
+      model: "anthropic/claude-opus-4-7",
+      planMode: true,
+    };
+    const { ctx, stateRef } = buildContext({ tabs: [tab] });
+    const { result } = renderHook(() => useChat(ctx));
+
+    await act(async () => {
+      await result.current.sendChat("design the fix");
+    });
+
+    const call = invoke.mock.calls.find(([cmd]) => cmd === "send_message");
+    const request = (
+      call?.[1] as { request: { message: string; planMode: boolean } }
+    ).request;
+    expect(request.message).toBe("design the fix");
+    expect(request.planMode).toBe(true);
+    expect((stateRef.current.tabs as Tab[])[0].messages.at(-1)).toMatchObject({
+      role: "user",
+      text: "design the fix",
+    });
+  });
+
+  it("carries plan mode on steering sends too", async () => {
+    const tab = {
+      ...makeEmptyTab("tab-1", "Tab 1"),
+      model: "anthropic/claude-opus-4-7",
+      planMode: true,
+    };
+    const { ctx } = buildContext({ waiting: true, tabs: [tab] });
+    const { result } = renderHook(() => useChat(ctx));
+
+    await act(async () => {
+      await result.current.sendChat("adjust the plan", { mode: "steer" });
+    });
+
+    expect(invoke).toHaveBeenCalledWith("send_message", {
+      request: expect.objectContaining({
+        message: "adjust the plan",
+        mode: "steer",
+        planMode: true,
+      }),
     });
   });
 
@@ -195,6 +243,7 @@ describe("useChat setModel", () => {
         mode: "normal",
         model: "openai-codex/gpt-5.5",
         thinkingLevel: "high",
+        planMode: false,
       },
     });
   });
@@ -224,6 +273,7 @@ describe("useChat setModel", () => {
         mode: "normal",
         attachments: [attachment],
         model: "anthropic/claude-opus-4-7",
+        planMode: false,
       },
     });
     const tab = (stateRef.current.tabs as Tab[])[0];
@@ -260,6 +310,7 @@ describe("useChat setModel", () => {
         mode: "normal",
         cwd: "/projects/aethon-fix-86",
         model: "anthropic/claude-opus-4-7",
+        planMode: false,
       },
     });
     const tabs = stateRef.current.tabs as Tab[];
@@ -307,6 +358,7 @@ describe("useChat setModel", () => {
         tabId: "issue-tab",
         mode: "normal",
         model: "anthropic/claude-opus-4-7",
+        planMode: false,
       },
     });
     const tabs = stateRef.current.tabs as Tab[];
@@ -346,6 +398,7 @@ describe("useChat setModel", () => {
         tabId: "tab-1",
         mode: "steer",
         model: "anthropic/claude-opus-4-7",
+        planMode: false,
       },
     });
   });
@@ -663,6 +716,7 @@ describe("useChat setModel", () => {
         tabId: "tab-1",
         mode: "normal",
         model: "anthropic/claude-opus-4-7",
+        planMode: false,
       },
     });
     const tab = (stateRef.current.tabs as Tab[])[0];
@@ -711,6 +765,7 @@ describe("useChat setModel", () => {
         tabId: "tab-1",
         mode: "steer",
         model: "anthropic/claude-opus-4-7",
+        planMode: false,
       },
     });
     expect((stateRef.current.tabs as Tab[])[0].messages.at(-1)).toMatchObject({

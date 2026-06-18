@@ -382,6 +382,20 @@ describe("ChatInput", () => {
     expect(onEvent).not.toHaveBeenCalledWith("submit", expect.any(Object));
   });
 
+  it("renders a plan-mode chip that toggles the mode", () => {
+    const { onEvent } = renderInput(
+      vi.fn(),
+      { planMode: { $ref: "/planMode" } },
+      { planMode: true },
+    );
+
+    const chip = screen.getByRole("button", { name: "Plan mode on" });
+    expect(chip.textContent).toBe("Plan");
+    fireEvent.click(chip);
+
+    expect(onEvent).toHaveBeenLastCalledWith("mode:toggle-plan");
+  });
+
   it("cleans up composer resize state if unmounted mid-drag", () => {
     const { unmount } = renderInput();
 

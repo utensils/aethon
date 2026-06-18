@@ -47,6 +47,9 @@ export async function handleChat(
   if (typeof msg.hardEnforce === "boolean") {
     state.tabHardEnforce.set(tabId, msg.hardEnforce);
   }
+  if (typeof msg.planMode === "boolean") {
+    state.tabPlanMode.set(tabId, msg.planMode);
+  }
   const cwdOverride =
     typeof msg.cwd === "string" && msg.cwd.length > 0 ? msg.cwd : undefined;
   // Explicit `@name` subagent invocation: record a one-shot steer consumed by
@@ -107,6 +110,7 @@ export async function handleChat(
   if (requestedModel.thinkingLevel) {
     tab.session.setThinkingLevel(requestedModel.thinkingLevel);
   }
+  const planMode = state.tabPlanMode.get(tabId) === true;
   const wantsSteer = msg.mode === "steer";
   const images = normalizeImages(msg.images);
   let content: string;
@@ -128,7 +132,7 @@ export async function handleChat(
         message: `file references: ${expanded.issues.join("\n")}`,
       });
     }
-    content = expanded.prompt;
+    content = planMode ? withPlanModeInstruction(expanded.prompt) : expanded.prompt;
   } catch (err) {
     if (mentions.length > 0) state.pendingExplicitSubagent.delete(tabId);
     const message =
@@ -222,6 +226,13 @@ export async function handleChat(
       maybeExitForReload(state, deps);
     });
   chatLog.info(`prompt dispatched tabId=${tabId}`);
+}
+
+const PLAN_MODE_INSTRUCTION =
+  "You are in Aethon plan mode. Do not edit files, run shell commands, start implementation tasks, commit, push, or make persistent changes. Inspect read-only context as needed, then propose a concise implementation plan with risks and tests. Wait for the user to switch back to implementation mode or explicitly approve implementation.";
+
+function withPlanModeInstruction(prompt: string): string {
+  return `${PLAN_MODE_INSTRUCTION}\n\nUser request:\n${prompt}`;
 }
 
 function scheduledRunFromMessage(

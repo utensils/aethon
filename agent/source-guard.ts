@@ -2,6 +2,15 @@ import { isAbsolute, join, resolve, sep } from "node:path";
 import type { Agent } from "@mariozechner/pi-agent-core";
 
 const GUARDED_TOOLS = new Set(["write", "edit"]);
+const PLAN_MODE_BLOCKED_TOOLS = new Set([
+  "write",
+  "edit",
+  "bash",
+  "task",
+  "task_batch",
+  "startTask",
+  "writeShell",
+]);
 
 const PROTECTED_DIRS = ["src", "src-tauri", "agent"] as const;
 
@@ -15,6 +24,9 @@ export interface HardGuardOptions {
   /** Live per-tab toggle, read on every tool call so a runtime flip (the
    *  composer guardrail switch) takes effect without re-wrapping the agent. */
   hardEnforce?: () => boolean;
+  /** Live per-tab plan-mode toggle. When true, mutating tools are blocked
+   *  even inside the project root. */
+  planMode?: () => boolean;
 }
 
 /**
@@ -63,6 +75,16 @@ function evaluateGuard(
 ): { block: true; reason: string } | undefined {
   const name = ctx.toolCall.name;
   const args = ctx.args as { path?: string; command?: string } | undefined;
+
+  if (hardGuard?.planMode?.() && PLAN_MODE_BLOCKED_TOOLS.has(name)) {
+    return {
+      block: true,
+      reason:
+        `Plan mode is on for this session, so the ${name} tool is blocked. ` +
+        "Inspect context with read-only tools and propose a plan. Ask the user " +
+        "to switch back to implementation mode before making changes.",
+    };
+  }
 
   // 1. Aethon source guard. Resolve relative paths against process.cwd()
   //    (the agent launch dir == the source root in dev), matching the

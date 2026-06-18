@@ -24,6 +24,26 @@ export const handleChatInput: EventRouteHandler = async (
   { eventType, data },
   ctx,
 ) => {
+  if (eventType === "mode:toggle-plan") {
+    const tabId = ctx.stateRef.current.activeTabId as string | undefined;
+    const tabs = (ctx.stateRef.current.tabs as Tab[] | undefined) ?? [];
+    const activeTab = tabs.find((tab) => tab.id === tabId);
+    const enabled =
+      activeTab?.kind === "agent" ? activeTab.planMode !== true : true;
+    ctx.updateActiveTab((tab) => {
+      if (tab.kind !== "agent") return tab;
+      return { ...tab, planMode: enabled };
+    });
+    ctx.setState((prev) => ({ ...prev, planMode: enabled }));
+    ctx.pushNotification({
+      title: enabled ? "Plan mode on" : "Implementation mode on",
+      message: enabled
+        ? "New prompts will ask for a plan before code changes."
+        : "New prompts may make code changes.",
+      kind: "success",
+    });
+    return true;
+  }
   if (eventType === "submit") {
     const payload =
       (data as

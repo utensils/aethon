@@ -200,6 +200,7 @@ export async function ensureTab(
     tabRoot: resolvedCwd,
     hardEnforce: () =>
       state.tabHardEnforce.get(tabId) ?? state.hardEnforceProjectRootDefault,
+    planMode: () => state.tabPlanMode.get(tabId) === true,
   });
 
   const rec: TabRecord = {

@@ -46,6 +46,9 @@ pub(crate) struct SendMessageRequest {
     /// turn's tool calls. `None` leaves the per-tab value untouched (the
     /// agent falls back to the global default).
     hard_enforce: Option<bool>,
+    /// Per-tab plan-mode toggle. Forwarded to the agent so mutating tools can
+    /// be blocked while the user is asking for analysis/design only.
+    plan_mode: Option<bool>,
 }
 
 #[tauri::command]
@@ -85,6 +88,9 @@ pub(crate) async fn send_message(
     }
     if let Some(hard_enforce) = request.hard_enforce {
         payload["hardEnforce"] = serde_json::Value::Bool(hard_enforce);
+    }
+    if let Some(plan_mode) = request.plan_mode {
+        payload["planMode"] = serde_json::Value::Bool(plan_mode);
     }
     let images = attachments_to_agent_images(&app, request.attachments.unwrap_or_default())?;
     if !images.is_empty() {
