@@ -157,6 +157,9 @@ export interface DiscoveredTab {
   tabId: string;
   lastModified: number;
   cwd?: string;
+  /** false when `cwd` is set but the directory no longer exists on disk
+   *  (e.g. a deleted workspace/worktree). Absent when cwd is unset. */
+  cwdExists?: boolean;
   firstUserMessage?: string;
   /** User-supplied label (via the sidebar "Rename session…" action).
    *  When present, the sidebar shows this instead of `firstUserMessage`.

@@ -985,6 +985,39 @@ describe("readSessionTranscript", () => {
     });
   });
 
+  it("reports cwdExists: false when the session cwd directory is missing", async () => {
+    const dir = await tempRoot();
+    const path = join(dir, "session.jsonl");
+    await writeFile(
+      path,
+      `${JSON.stringify({
+        type: "session",
+        id: "s",
+        cwd: "/nonexistent/deleted-workspace",
+      })}\n`,
+    );
+    const meta = await readSessionMetadata(dir);
+    expect(meta?.cwd).toBe("/nonexistent/deleted-workspace");
+    expect(meta?.cwdExists).toBe(false);
+  });
+
+  it("reports cwdExists: true when the session cwd directory exists", async () => {
+    const existingDir = await tempRoot();
+    const dir = await tempRoot();
+    const path = join(dir, "session.jsonl");
+    await writeFile(
+      path,
+      `${JSON.stringify({
+        type: "session",
+        id: "s",
+        cwd: existingDir,
+      })}\n`,
+    );
+    const meta = await readSessionMetadata(dir);
+    expect(meta?.cwd).toBe(existingDir);
+    expect(meta?.cwdExists).toBe(true);
+  });
+
   it("round-trips a custom session label and surfaces it through readSessionMetadata", async () => {
     const dir = await tempRoot();
     await writeFile(

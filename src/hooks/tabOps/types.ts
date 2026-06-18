@@ -9,6 +9,8 @@ export interface DiscoveredSession {
   tabId: string;
   lastModified: number;
   cwd?: string;
+  /** false when `cwd` is set but the directory no longer exists on disk. */
+  cwdExists?: boolean;
   firstUserMessage?: string;
   customLabel?: string;
 }

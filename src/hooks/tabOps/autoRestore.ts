@@ -39,6 +39,7 @@ export function useAutoRestoreDiscoveredSessions(deps: AutoRestoreDeps) {
       .filter((d) => !liveIds.has(d.tabId))
       .filter((d) => !closedSessionIds.has(d.tabId))
       .filter((d) => !autoRestoredSessionIdsRef.current.has(d.tabId))
+      .filter((d) => d.cwdExists !== false)
       .slice(0, 8);
     if (toRestore.length === 0) return;
     // Open oldest first so the most recent session ends up active.

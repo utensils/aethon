@@ -17,6 +17,8 @@ export interface DiscoveredSession {
   tabId: string;
   lastModified: number;
   cwd?: string;
+  /** false when `cwd` is set but the directory no longer exists on disk. */
+  cwdExists?: boolean;
   /** First user message text, trimmed to 60 chars by the bridge. Used to
    *  label sidebar history items meaningfully instead of UUID slices. */
   firstUserMessage?: string;

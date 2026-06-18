@@ -45,6 +45,9 @@ export interface LatestSessionLog {
 
 export interface SessionLogMetadata {
   cwd?: string;
+  /** false when `cwd` is set but the directory no longer exists on disk
+   *  (e.g. a deleted workspace/worktree). Absent when cwd is unset. */
+  cwdExists?: boolean;
   lastModified: number;
   /** First user-turn text, trimmed to 60 chars. Used to label sessions
    *  meaningfully in the sidebar instead of showing raw UUID slices. */

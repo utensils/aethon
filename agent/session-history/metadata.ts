@@ -107,9 +107,18 @@ export async function readSessionMetadata(
   const raw = await readFile(latest.path, "utf8");
   const { cwd, firstUserMessage } = metaFromSessionLines(raw.split(/\r?\n/));
   const customLabel = await readSessionLabel(sessionDir);
+  let cwdExists: boolean | undefined;
+  if (cwd) {
+    try {
+      await stat(cwd);
+      cwdExists = true;
+    } catch {
+      cwdExists = false;
+    }
+  }
   return {
     lastModified: latest.mtimeMs,
-    ...(cwd ? { cwd } : {}),
+    ...(cwd ? { cwd, cwdExists } : {}),
     ...(firstUserMessage ? { firstUserMessage } : {}),
     ...(customLabel ? { customLabel } : {}),
   };
