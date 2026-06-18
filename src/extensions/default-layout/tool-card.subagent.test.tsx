@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
-import { cleanup, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { SubagentResult, ToolCard } from "./tool-card";
 import type { A2UIComponent } from "../../types/a2ui";
 
@@ -103,5 +103,79 @@ describe("ToolCard subagent activity", () => {
       />,
     );
     expect(screen.getByText(/Line one/)).toBeTruthy();
+  });
+});
+
+describe("ToolCard file changes", () => {
+  it("renders and expands an edited file preview", () => {
+    render(
+      <ToolCard
+        component={{
+          id: "tool-edit",
+          type: "tool-card",
+          props: {
+            title: "edit",
+            toolName: "edit",
+            startedAt: 1,
+            endedAt: 2,
+            fileChange: {
+              kind: "edited",
+              path: "src/App.tsx",
+              rootPath: "/repo",
+              preview: "--- a/src/App.tsx\n+++ b/src/App.tsx\n-old\n+new",
+              additions: 1,
+              deletions: 1,
+            },
+          },
+        }}
+        state={{}}
+        onEvent={() => {}}
+      />,
+    );
+
+    fireEvent.click(screen.getByText("Edited 1 file"));
+
+    expect(screen.getByText("App.tsx")).toBeTruthy();
+    expect(screen.getByText("+1")).toBeTruthy();
+    expect(screen.getByText("-1")).toBeTruthy();
+    expect(screen.getByText("+new")).toBeTruthy();
+  });
+
+  it("emits file open and diff actions", () => {
+    const onEvent = vi.fn();
+    render(
+      <ToolCard
+        component={{
+          id: "tool-write",
+          type: "tool-card",
+          props: {
+            title: "write",
+            toolName: "write",
+            fileChange: {
+              kind: "created",
+              path: "src/new.ts",
+              rootPath: "/repo",
+              preview: "+export const ok = true;",
+              additions: 1,
+            },
+          },
+        }}
+        state={{}}
+        onEvent={onEvent}
+      />,
+    );
+
+    fireEvent.click(screen.getByText("Created 1 file"));
+    fireEvent.click(screen.getByTitle("Open src/new.ts"));
+    expect(onEvent).toHaveBeenCalledWith("tool-file-open", {
+      filePath: "src/new.ts",
+      rootPath: "/repo",
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Open diff for new.ts" }));
+    expect(onEvent).toHaveBeenCalledWith("tool-file-diff", {
+      filePath: "src/new.ts",
+      rootPath: "/repo",
+    });
   });
 });

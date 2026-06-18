@@ -409,7 +409,14 @@ export const ChatMessageRow = memo(
           <AttachmentGallery attachments={message.attachments} />
         )}
         {message.a2ui && (
-          <A2UIRenderer payload={message.a2ui} state={state} tabId={tabId} />
+          <A2UIRenderer
+            payload={message.a2ui}
+            state={state}
+            onEvent={(component, eventType, data) =>
+              onEvent?.(eventType, data, component.id)
+            }
+            tabId={tabId}
+          />
         )}
         {canBranch && (
           <div
@@ -532,12 +539,14 @@ function ToolGroupRow({
   group,
   state,
   tabId,
+  onEvent,
   expanded,
   onToggle,
 }: {
   group: Extract<MessageGroup, { type: "tool-group" }>;
   state: Record<string, unknown>;
   tabId?: string;
+  onEvent?: BuiltinComponentProps["onEvent"];
   expanded: boolean;
   onToggle: () => void;
 }) {
@@ -567,6 +576,9 @@ function ToolGroupRow({
                 key={m.id}
                 payload={m.a2ui}
                 state={state}
+                onEvent={(component, eventType, data) =>
+                  onEvent?.(eventType, data, component.id)
+                }
                 tabId={tabId}
               />
             ) : null,
@@ -913,6 +925,7 @@ function VirtualMessageList({
               group={group}
               state={state}
               tabId={tabId}
+              onEvent={onEvent}
               expanded={expandedGroups.has(group.id)}
               onToggle={() => toggleGroup(group.id)}
             />

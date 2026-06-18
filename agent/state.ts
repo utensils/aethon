@@ -233,6 +233,8 @@ export interface TabRecord {
       name: string;
       summary: string;
       uiId: string;
+      args?: unknown;
+      rootPath?: string;
       bashStream?: BashTerminalStreamState;
       taskPartialStream?: BashTerminalStreamState;
       /** Epoch ms — when tool_execution_start fired. Used by the M6 P4

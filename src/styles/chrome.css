@@ -6780,7 +6780,7 @@ body.ae-resizing-terminal * {
 .ae-tool-card {
   background: transparent;
   border: 1px solid var(--border);
-  border-radius: 20px;
+  border-radius: var(--radius-md);
   padding: 0;
   min-width: 0;
   max-width: 100%;
@@ -6790,7 +6790,7 @@ body.ae-resizing-terminal * {
     background 120ms ease;
 }
 .ae-tool-card[open] {
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   width: 100%;
   background: var(--bg-elev);
 }
@@ -6827,7 +6827,7 @@ body.ae-resizing-terminal * {
 .ae-tool-card[open] .ae-tool-card-summary {
   padding-bottom: 6px;
   border-bottom: 1px solid var(--border);
-  border-radius: 10px 10px 0 0;
+  border-radius: var(--radius-md) var(--radius-md) 0 0;
   white-space: normal;
 }
 
@@ -6952,6 +6952,201 @@ body.ae-resizing-terminal * {
   color: var(--text-dim);
   font-size: var(--chrome-text-muted);
   font-style: italic;
+}
+
+.ae-tool-file-change {
+  min-width: 0;
+}
+
+.ae-tool-file-change-summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  color: var(--text-secondary, var(--text-dim));
+  font-size: var(--chrome-text);
+  list-style: none;
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.ae-tool-file-change-summary::-webkit-details-marker {
+  display: none;
+}
+
+.ae-tool-file-change-chevron {
+  display: inline-flex;
+  color: var(--text-dim);
+}
+
+.ae-tool-file-change-icon {
+  color: var(--text-dim);
+  font-size: var(--chrome-text);
+}
+
+.ae-tool-file-change-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: 500;
+}
+
+.ae-tool-file-change-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  margin-top: 8px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--bg) 72%, transparent);
+}
+
+.ae-tool-file-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  overflow: hidden;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-elev);
+}
+
+.ae-tool-file-open {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  flex: 1;
+  min-width: 0;
+  padding: 7px 10px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.ae-tool-file-open:hover {
+  background: var(--bg-hover);
+}
+
+.ae-tool-file-icon {
+  flex: 0 0 auto;
+}
+
+.ae-tool-file-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-family: var(--font-mono);
+  font-size: var(--chrome-text);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.ae-tool-file-dir {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: var(--chrome-text-muted);
+  white-space: nowrap;
+}
+
+.ae-tool-file-stat {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: 0 0 auto;
+  font-family: var(--font-mono);
+  font-size: var(--chrome-text);
+  font-weight: 600;
+}
+
+.ae-tool-file-add {
+  color: var(--state-success-fg, var(--success));
+}
+
+.ae-tool-file-del {
+  color: var(--state-error-fg, var(--danger));
+}
+
+.ae-tool-file-diff {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 30px;
+  height: 30px;
+  margin-right: 4px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+
+.ae-tool-file-diff:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.ae-tool-file-diff-preview {
+  margin: 0;
+  max-height: 360px;
+  overflow: auto;
+  background: color-mix(in srgb, var(--bg) 84%, transparent);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--type-code-size);
+  line-height: var(--type-code-line);
+}
+
+.ae-tool-file-diff-preview code {
+  display: block;
+  min-width: max-content;
+}
+
+.ae-tool-file-diff-line {
+  display: grid;
+  grid-template-columns: 4.25ch minmax(0, 1fr);
+  min-height: 1.55em;
+}
+
+.ae-tool-file-diff-line.is-add {
+  background: color-mix(in srgb, var(--state-success-bg, var(--success)) 28%, transparent);
+  color: var(--state-success-fg, var(--text));
+}
+
+.ae-tool-file-diff-line.is-del {
+  background: color-mix(in srgb, var(--state-error-bg, var(--danger)) 28%, transparent);
+  color: var(--state-error-fg, var(--text));
+}
+
+.ae-tool-file-diff-line.is-hunk,
+.ae-tool-file-diff-line.is-meta {
+  color: var(--text-dim);
+}
+
+.ae-tool-file-diff-lineno {
+  padding: 0 8px;
+  border-right: 1px solid var(--border);
+  color: var(--text-dim);
+  text-align: right;
+  user-select: none;
+}
+
+.ae-tool-file-diff-text {
+  padding: 0 10px;
+  white-space: pre;
+}
+
+.ae-tool-file-no-preview {
+  padding: 10px;
+  color: var(--text-dim);
+  font-size: var(--chrome-text-muted);
 }
 
 .ae-subagent-result {

@@ -82,6 +82,7 @@ interface RestoredToolCall {
   uiId: string;
   toolName: string;
   argsSummary: string;
+  args?: unknown;
   startedAt?: number;
 }
 
@@ -91,6 +92,7 @@ function toolCardMessage(opts: {
   argsSummary: string;
   result?: unknown;
   isError?: boolean;
+  args?: unknown;
   startedAt?: number;
   endedAt?: number;
 }): RestoredChatMessage {
@@ -102,6 +104,7 @@ function toolCardMessage(opts: {
       id: opts.uiId,
       toolName: opts.toolName,
       argsSummary: opts.argsSummary,
+      ...(opts.args !== undefined ? { args: opts.args } : {}),
       ...(opts.result !== undefined ? { result: opts.result } : {}),
       ...(opts.isError !== undefined ? { isError: opts.isError } : {}),
       ...(opts.startedAt !== undefined ? { startedAt: opts.startedAt } : {}),
@@ -165,6 +168,7 @@ export function parseSessionHistoryLines(
           uiId: cached.uiId,
           toolName: cached.toolName,
           argsSummary: cached.argsSummary,
+          ...(cached.args !== undefined ? { args: cached.args } : {}),
           result,
           isError,
           ...(cached.startedAt !== undefined
@@ -249,6 +253,7 @@ export function parseSessionHistoryLines(
           uiId,
           toolName,
           argsSummary,
+          ...(args !== undefined ? { args } : {}),
           ...(startedAt !== undefined ? { startedAt } : {}),
         }),
       );
@@ -257,6 +262,7 @@ export function parseSessionHistoryLines(
         uiId,
         toolName,
         argsSummary,
+        ...(args !== undefined ? { args } : {}),
         ...(startedAt !== undefined ? { startedAt } : {}),
       });
     }

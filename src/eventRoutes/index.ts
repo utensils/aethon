@@ -67,7 +67,7 @@ import {
   handleSidebarRenameProject,
   handleSidebarSetProjectWorkspaceBase,
 } from "./sidebar";
-import { handleEditorCanvas, handleFileTree } from "./editor";
+import { handleEditorCanvas, handleFileTree, handleToolCardFile } from "./editor";
 import {
   handleProjectsDashboard,
   handleProjectDashboard,
@@ -101,8 +101,9 @@ export const BUILTIN_ROUTE_TABLE: ReadonlyMap<string, readonly EventRouteHandler
     // handleChatInput unchanged.
     ["type:chat-input", [handleQueuedMessages, handleChatInput]],
     ["type:composer-visibility-pills", [handleComposerPills]],
-    ["type:chat-history", [handleChatMessages, handleSessionBranch]],
-    ["type:main-canvas", [handleChatMessages, handleSessionBranch]],
+    ["type:chat-history", [handleToolCardFile, handleChatMessages, handleSessionBranch]],
+    ["type:main-canvas", [handleToolCardFile, handleChatMessages, handleSessionBranch]],
+    ["type:tool-card", [handleToolCardFile]],
     ["type:queued-messages-popover", [handleQueuedMessages]],
     ["type:empty-state", [handleEmptyState]],
     // Workspace landing — session rows share dashboard restore/delete

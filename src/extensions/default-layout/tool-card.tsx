@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { FileIcon } from "../../components/file-icon";
 import type {
   BooleanValue,
   NumberValue,
@@ -15,8 +16,18 @@ import type {
   SubagentProgressBatch,
   SubagentProgressEntry,
 } from "../../hooks/bridgeMessageHandlers/subagentProgress";
+import { Chevron } from "./sidebar/chevron";
 
 const TOOL_LONG_RUN_THRESHOLD_MS = 30 * 1000;
+
+interface ToolFileChange {
+  kind?: "edited" | "created";
+  path?: string;
+  rootPath?: string;
+  preview?: string;
+  additions?: number;
+  deletions?: number;
+}
 
 /** The tool-card's component id is `tool-<seq>-<callId>`; the subagent progress
  *  slice is keyed by the raw callId, so strip the prefix to look it up. */
@@ -158,10 +169,133 @@ function ToolStatusIcon({
   );
 }
 
+function basename(path: string): string {
+  return path.replace(/[/\\]+$/, "").split(/[/\\]/).pop() || path;
+}
+
+function parentPath(path: string): string {
+  const trimmed = path.replace(/[/\\]+$/, "");
+  const idx = Math.max(trimmed.lastIndexOf("/"), trimmed.lastIndexOf("\\"));
+  return idx > 0 ? trimmed.slice(0, idx) : "";
+}
+
+function previewLines(preview: string): string[] {
+  return preview.replace(/\n$/, "").split(/\r?\n/).slice(0, 80);
+}
+
+function lineTone(line: string): "add" | "del" | "hunk" | "meta" | "ctx" {
+  if (line.startsWith("+") && !line.startsWith("+++")) return "add";
+  if (line.startsWith("-") && !line.startsWith("---")) return "del";
+  if (line.startsWith("@@")) return "hunk";
+  if (
+    line.startsWith("diff --git ") ||
+    line.startsWith("index ") ||
+    line.startsWith("+++") ||
+    line.startsWith("---")
+  ) {
+    return "meta";
+  }
+  return "ctx";
+}
+
+function ToolFileChangePreview({
+  change,
+  onEvent,
+}: {
+  change: ToolFileChange;
+  onEvent: BuiltinComponentProps["onEvent"];
+}) {
+  const [open, setOpen] = useState(false);
+  const filePath = typeof change.path === "string" ? change.path : "";
+  if (!filePath) return null;
+  const kind = change.kind === "created" ? "created" : "edited";
+  const label = kind === "created" ? "Created 1 file" : "Edited 1 file";
+  const fileName = basename(filePath);
+  const dir = parentPath(filePath);
+  const additions =
+    typeof change.additions === "number" && Number.isFinite(change.additions)
+      ? change.additions
+      : 0;
+  const deletions =
+    typeof change.deletions === "number" && Number.isFinite(change.deletions)
+      ? change.deletions
+      : 0;
+  const eventPayload = {
+    filePath,
+    ...(change.rootPath ? { rootPath: change.rootPath } : {}),
+  };
+
+  return (
+    <details
+      className="ae-tool-file-change"
+      onToggle={(event) => setOpen(event.currentTarget.open)}
+    >
+      <summary className="ae-tool-file-change-summary">
+        <span className="ae-tool-file-change-chevron" aria-hidden="true">
+          <Chevron expanded={open} />
+        </span>
+        <span className="ae-tool-file-change-icon" aria-hidden="true">
+          ✎
+        </span>
+        <span className="ae-tool-file-change-label">{label}</span>
+      </summary>
+      <div className="ae-tool-file-change-body">
+        <div className="ae-tool-file-row">
+          <button
+            type="button"
+            className="ae-tool-file-open"
+            title={`Open ${filePath}`}
+            onClick={() => onEvent("tool-file-open", eventPayload)}
+          >
+            <FileIcon path={filePath} isDir={false} className="ae-tool-file-icon" />
+            <span className="ae-tool-file-name">{fileName}</span>
+            {dir ? <span className="ae-tool-file-dir">{dir}</span> : null}
+          </button>
+          <span className="ae-tool-file-stat" aria-label="Line changes">
+            {additions > 0 ? (
+              <span className="ae-tool-file-add">+{additions}</span>
+            ) : null}
+            {deletions > 0 ? (
+              <span className="ae-tool-file-del">-{deletions}</span>
+            ) : null}
+          </span>
+          <button
+            type="button"
+            className="ae-tool-file-diff"
+            title={`Open diff for ${filePath}`}
+            aria-label={`Open diff for ${fileName}`}
+            onClick={() => onEvent("tool-file-diff", eventPayload)}
+          >
+            ⧉
+          </button>
+        </div>
+        {change.preview ? (
+          <pre className="ae-tool-file-diff-preview">
+            <code>
+              {previewLines(change.preview).map((line, index) => (
+                <span
+                  key={`${index}-${line}`}
+                  className={`ae-tool-file-diff-line is-${lineTone(line)}`}
+                >
+                  <span className="ae-tool-file-diff-lineno">{index + 1}</span>
+                  <span className="ae-tool-file-diff-text">{line || " "}</span>
+                </span>
+              ))}
+            </code>
+          </pre>
+        ) : (
+          <div className="ae-tool-file-no-preview">No inline diff available</div>
+        )}
+      </div>
+    </details>
+  );
+}
+
 export function ToolCard({
   component,
   state,
   renderChildren,
+  onEvent,
 }: BuiltinComponentProps) {
   const props = component.props as {
     title?: StringValue;
@@ -171,6 +305,7 @@ export function ToolCard({
     isError?: BooleanValue;
     toolName?: StringValue;
     status?: StringValue;
+    fileChange?: ToolFileChange;
   };
   const baseTitle = props.title ? resolveString(props.title, state) : "";
   const description = props.description
@@ -209,6 +344,10 @@ export function ToolCard({
 
   const isLongRunning = running && elapsedMs >= TOOL_LONG_RUN_THRESHOLD_MS;
   const hasChildren = (component.children?.length ?? 0) > 0;
+  const fileChange =
+    props.fileChange && typeof props.fileChange === "object"
+      ? props.fileChange
+      : undefined;
 
   const timeSuffix = useMemo(() => {
     if (running) return formatToolDuration(elapsedMs);
@@ -249,11 +388,13 @@ export function ToolCard({
         {subagentProgress && (
           <SubagentActivityStack progress={subagentProgress} />
         )}
-        {hasChildren ? (
-          renderChildren?.()
-        ) : subagentProgress ? null : (
-          <div className="ae-tool-card-empty">No output</div>
+        {fileChange && (
+          <ToolFileChangePreview change={fileChange} onEvent={onEvent} />
         )}
+        {hasChildren && !fileChange?.preview ? renderChildren?.() : null}
+        {!hasChildren && !fileChange && !subagentProgress ? (
+          <div className="ae-tool-card-empty">No output</div>
+        ) : null}
       </div>
     </details>
   );
