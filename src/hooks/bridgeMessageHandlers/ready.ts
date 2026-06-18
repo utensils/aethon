@@ -325,6 +325,11 @@ export const handleReady: BridgeMessageHandler = (data, ctx) => {
     // reload they're the only way to restore tab UI state that was
     // driven by the agent (React state didn't survive).
     {
+      const configuredDefaultThinkingLevel =
+        typeof next.defaultThinkingLevel === "string" &&
+        next.defaultThinkingLevel.length > 0
+          ? next.defaultThinkingLevel
+          : undefined;
       const localTabs = ((next.tabs as Tab[] | undefined) ?? []).slice();
       const bridgeTabs =
         (data.tabs as
@@ -359,8 +364,15 @@ export const handleReady: BridgeMessageHandler = (data, ctx) => {
         if (bt?.model && !localTabs[i].model) {
           localTabs[i] = { ...localTabs[i], model: bt.model };
         }
-        if (bt?.thinkingLevel) {
-          localTabs[i] = { ...localTabs[i], thinkingLevel: bt.thinkingLevel };
+        const tabThinkingLevel = localTabs[i]?.thinkingLevel;
+        const localThinkingLevel =
+          typeof tabThinkingLevel === "string" && tabThinkingLevel.length > 0
+            ? tabThinkingLevel
+            : undefined;
+        const readyThinkingLevel =
+          localThinkingLevel ?? configuredDefaultThinkingLevel ?? bt?.thinkingLevel;
+        if (readyThinkingLevel) {
+          localTabs[i] = { ...localTabs[i], thinkingLevel: readyThinkingLevel };
         }
         if (bt?.cwd && !localTabs[i].cwd) {
           localTabs[i] = { ...localTabs[i], cwd: bt.cwd };
@@ -429,7 +441,7 @@ export const handleReady: BridgeMessageHandler = (data, ctx) => {
       ...(userDir ? { aethonRoot: userDir } : {}),
       model: activeModel,
       ...(activeThinkingLevel ? { thinkingLevel: activeThinkingLevel } : {}),
-      defaultThinkingLevel: activeThinkingLevel ?? existingDefaultThinkingLevel,
+      defaultThinkingLevel: existingDefaultThinkingLevel ?? activeThinkingLevel,
       codexFastMode:
         typeof data.codexFastMode === "boolean"
           ? data.codexFastMode
@@ -495,6 +507,7 @@ export const handleReady: BridgeMessageHandler = (data, ctx) => {
           type: "tab_open",
           tabId: t.id,
           ...(t.model ? { model: t.model } : {}),
+          ...(t.thinkingLevel ? { thinkingLevel: t.thinkingLevel } : {}),
           ...(restoredCwd ? { cwd: restoredCwd } : {}),
           ...(t.authProfileId ? { authProfileId: t.authProfileId } : {}),
           restoreHistory: true,
