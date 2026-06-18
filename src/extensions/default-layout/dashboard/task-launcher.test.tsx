@@ -86,18 +86,156 @@ describe("TaskLauncher", () => {
     expect(html).toBe("");
   });
 
-  it("renders the project chip label and start button", () => {
-    const html = renderToStaticMarkup(
+  it("omits the project chip on per-project launchers", () => {
+    render(
       <TaskLauncher
         component={launcher({
           project: { id: "p1", label: "aethon", path: "/a" },
+          otherProjects: [{ id: "p2", label: "koban", path: "/k" }],
         })}
         state={{}}
         onEvent={() => {}}
       />,
     );
-    expect(html).toContain("aethon");
-    expect(html).toContain("Start");
+    expect(screen.queryByRole("button", { name: "Project" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Workspace" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Start" })).toBeTruthy();
+  });
+
+  it("shows a local project selector for host-level launchers", async () => {
+    const onEvent = vi.fn();
+    render(
+      <TaskLauncher
+        component={launcher({
+          project: { id: "p1", label: "aethon", path: "/a" },
+          projects: [
+            { id: "p1", label: "aethon", path: "/a" },
+            { id: "p2", label: "koban", path: "/k" },
+          ],
+          workspacesByProject: {
+            p2: [{ id: "k-main", label: "main", path: "/k" }],
+          },
+          showProjectSelector: true,
+        })}
+        state={{}}
+        onEvent={onEvent}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Project" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "koban" }));
+    fireEvent.change(screen.getByLabelText("Task prompt"), {
+      target: { value: "ship it" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Start" }));
+
+    await waitFor(() =>
+      expect(onEvent).toHaveBeenCalledWith(
+        "start-task",
+        expect.objectContaining({
+          projectId: "p2",
+          prompt: "ship it",
+        }),
+      ),
+    );
+  });
+
+  it("resets workspace and base branch when a host-level selected project disappears", async () => {
+    const onEvent = vi.fn();
+    const { rerender } = render(
+      <TaskLauncher
+        component={launcher({
+          project: {
+            id: "p1",
+            label: "aethon",
+            path: "/a",
+            workspaceBaseBranch: "trunk",
+          },
+          projects: [
+            {
+              id: "p1",
+              label: "aethon",
+              path: "/a",
+              workspaceBaseBranch: "trunk",
+            },
+            {
+              id: "p2",
+              label: "koban",
+              path: "/k",
+              workspaceBaseBranch: "release",
+            },
+          ],
+          showProjectSelector: true,
+        })}
+        state={{}}
+        onEvent={onEvent}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Project" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "koban" }));
+    fireEvent.click(screen.getByRole("button", { name: "Workspace" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "+ New workspace" }));
+    expect(
+      screen.getByLabelText<HTMLInputElement>(
+        "Base branch (empty = project default)",
+      ).value,
+    ).toBe("release");
+
+    rerender(
+      <TaskLauncher
+        component={launcher({
+          project: {
+            id: "p1",
+            label: "aethon",
+            path: "/a",
+            workspaceBaseBranch: "trunk",
+          },
+          projects: [
+            {
+              id: "p1",
+              label: "aethon",
+              path: "/a",
+              workspaceBaseBranch: "trunk",
+            },
+          ],
+          showProjectSelector: true,
+        })}
+        state={{}}
+        onEvent={onEvent}
+      />,
+    );
+
+    await waitFor(() =>
+      expect(
+        screen.queryByLabelText("Base branch (empty = project default)"),
+      ).toBeNull(),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Workspace" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "+ New workspace" }));
+    expect(
+      screen.getByLabelText<HTMLInputElement>(
+        "Base branch (empty = project default)",
+      ).value,
+    ).toBe("trunk");
+    fireEvent.change(screen.getByLabelText("New branch name"), {
+      target: { value: "codex/check-selector" },
+    });
+    fireEvent.change(screen.getByLabelText("Task prompt"), {
+      target: { value: "ship it" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Start" }));
+
+    await waitFor(() =>
+      expect(onEvent).toHaveBeenCalledWith(
+        "start-task",
+        expect.objectContaining({
+          projectId: "p1",
+          branch: "codex/check-selector",
+          baseBranch: "trunk",
+        }),
+      ),
+    );
   });
 
   it("renders the voice input control on the overview task launcher", () => {

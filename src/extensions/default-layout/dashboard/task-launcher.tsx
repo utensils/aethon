@@ -6,7 +6,7 @@
  * point for the agent-side `startTask` pi tool (UI/pi parity).
  *
  * Chip row:
- *   - project — switcher across projects (selectable when multiple).
+ *   - project — optional host-level switcher across projects.
  *   - workspace — "current" (cwd), or one of the existing workspaces, or
  *     "+ New workspace" (opens the branch chip).
  *   - branch — only shown for "+ New workspace". Base branch picker
@@ -59,8 +59,12 @@ interface WorkspaceLite {
 interface LauncherData {
   /** The project this composer targets — usually `/project`. */
   project: ProjectLite | null;
+  /** Selectable projects for host-level launchers. */
+  projects: ProjectLite[];
   /** Other selectable projects, used by the project chip's menu. */
   otherProjects: ProjectLite[];
+  /** Existing workspaces keyed by project id for host-level launchers. */
+  workspacesByProject: Record<string, WorkspaceLite[]>;
   /** Existing workspaces for the active project. */
   workspaces: WorkspaceLite[];
   /** Currently-selected workspace id (or null for "project root"). */
@@ -102,19 +106,29 @@ export function TaskLauncher({
   const props = component.props as
     | {
         project?: unknown;
+        projects?: unknown;
         otherProjects?: unknown;
+        workspacesByProject?: unknown;
         workspaces?: unknown;
         activeWorkspaceId?: unknown;
         placeholder?: string;
         prompt?: unknown;
+        showProjectSelector?: boolean;
       }
     | undefined;
+  const showProjectSelector = props?.showProjectSelector === true;
 
   const data: LauncherData = useMemo(
     () => ({
       project: resolveOrInline<ProjectLite>(props?.project, state),
+      projects: resolveOrInline<ProjectLite[]>(props?.projects, state) ?? [],
       otherProjects:
         resolveOrInline<ProjectLite[]>(props?.otherProjects, state) ?? [],
+      workspacesByProject:
+        resolveOrInline<Record<string, WorkspaceLite[]>>(
+          props?.workspacesByProject,
+          state,
+        ) ?? {},
       workspaces:
         resolveOrInline<WorkspaceLite[]>(props?.workspaces, state) ?? [],
       activeWorkspaceId:
@@ -122,10 +136,46 @@ export function TaskLauncher({
     }),
     [
       props?.project,
+      props?.projects,
       props?.otherProjects,
+      props?.workspacesByProject,
       props?.workspaces,
       props?.activeWorkspaceId,
       state,
+    ],
+  );
+
+  const selectableProjects = useMemo(() => {
+    const seen = new Set<string>();
+    const list: ProjectLite[] = [];
+    for (const p of [data.project, ...data.projects, ...data.otherProjects]) {
+      if (!p || seen.has(p.id)) continue;
+      seen.add(p.id);
+      list.push(p);
+    }
+    return list;
+  }, [data.project, data.projects, data.otherProjects]);
+  const [selectedProjectId, setSelectedProjectId] = useState(
+    data.project?.id ?? selectableProjects[0]?.id ?? "",
+  );
+  const selectedProject = showProjectSelector
+    ? (selectableProjects.find((p) => p.id === selectedProjectId) ??
+      data.project ??
+      selectableProjects[0] ??
+      null)
+    : data.project;
+  const selectedWorkspaces = useMemo(
+    () =>
+      showProjectSelector
+        ? selectedProject
+          ? (data.workspacesByProject[selectedProject.id] ?? [])
+          : []
+        : data.workspaces,
+    [
+      data.workspaces,
+      data.workspacesByProject,
+      selectedProject,
+      showProjectSelector,
     ],
   );
 
@@ -178,8 +228,10 @@ export function TaskLauncher({
   // sidebar, not just "project root". Falls back to "current" (project
   // root) when no workspace is active.
   const initialChoice: WorkspaceChoice = useMemo(() => {
-    if (!data.activeWorkspaceId) return { kind: "current" };
-    const wt = data.workspaces.find((w) => w.id === data.activeWorkspaceId);
+    if (!data.activeWorkspaceId || showProjectSelector) {
+      return { kind: "current" };
+    }
+    const wt = selectedWorkspaces.find((w) => w.id === data.activeWorkspaceId);
     if (!wt) return { kind: "current" };
     return {
       kind: "existing",
@@ -187,7 +239,7 @@ export function TaskLauncher({
       path: wt.path,
       label: wt.label || wt.branch || "workspace",
     };
-  }, [data.activeWorkspaceId, data.workspaces]);
+  }, [data.activeWorkspaceId, selectedWorkspaces, showProjectSelector]);
   const [workspaceChoice, setWorkspaceChoice] =
     useState<WorkspaceChoice>(initialChoice);
   // Re-sync when the active workspace changes on the project (the user
@@ -201,9 +253,22 @@ export function TaskLauncher({
   }, [initialChoice, touched]);
   const [newBranch, setNewBranch] = useState("");
   const defaultBaseBranch =
-    data.project?.workspaceBaseBranch ?? DEFAULT_WORKSPACE_BASE_BRANCH;
+    selectedProject?.workspaceBaseBranch ?? DEFAULT_WORKSPACE_BASE_BRANCH;
   const [baseBranch, setBaseBranch] = useState(defaultBaseBranch);
   const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    const fallbackProject = data.project ?? selectableProjects[0] ?? null;
+    if (!fallbackProject) return;
+    if (selectableProjects.some((p) => p.id === selectedProjectId)) return;
+    queueMicrotask(() => {
+      setSelectedProjectId(fallbackProject.id);
+      setWorkspaceChoice({ kind: "current" });
+      setBaseBranch(
+        fallbackProject.workspaceBaseBranch ?? DEFAULT_WORKSPACE_BASE_BRANCH,
+      );
+    });
+  }, [data.project, selectableProjects, selectedProjectId]);
 
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   useEffect(() => {
@@ -225,7 +290,7 @@ export function TaskLauncher({
   const atRoot =
     workspaceChoice.kind === "existing"
       ? workspaceChoice.path
-      : (data.project?.path ?? null);
+      : (selectedProject?.path ?? null);
   const {
     atMatch,
     highlightIdx: atHighlightIdx,
@@ -264,11 +329,11 @@ export function TaskLauncher({
     if (submitting) return;
     const text = rawPrompt.trim();
     if (!text && attachments.length === 0) return;
-    if (!data.project) return;
+    if (!selectedProject) return;
     setSubmitting(true);
     const baseTrimmed = baseBranch.trim();
     onEvent("start-task", {
-      projectId: data.project.id,
+      projectId: selectedProject.id,
       prompt: text,
       attachments,
       newWorkspace: workspaceChoice.kind === "new",
@@ -297,7 +362,7 @@ export function TaskLauncher({
   }, [
     submitting,
     attachments,
-    data.project,
+    selectedProject,
     workspaceChoice,
     newBranch,
     baseBranch,
@@ -470,7 +535,7 @@ export function TaskLauncher({
       });
   };
 
-  if (!data.project) return null;
+  if (!selectedProject) return null;
 
   const workspaceLabel =
     workspaceChoice.kind === "current"
@@ -490,7 +555,7 @@ export function TaskLauncher({
         className="a2ui-task-launcher-input"
         placeholder={
           props?.placeholder ??
-          `Start a task in ${data.project.label}… use @<subagent> or @path`
+          `Start a task in ${selectedProject.label}… use @<subagent> or @path`
         }
         value={promptText}
         rows={3}
@@ -569,23 +634,27 @@ export function TaskLauncher({
             }}
           />
         )}
-        <ChipMenu
-          label={data.project.label}
-          icon="◰"
-          ariaLabel="Project"
-          items={[
-            { id: data.project.id, label: data.project.label, current: true },
-            ...data.otherProjects.map((p) => ({
+        {showProjectSelector && selectableProjects.length > 0 && (
+          <ChipMenu
+            label={selectedProject.label}
+            icon="◰"
+            ariaLabel="Project"
+            items={selectableProjects.map((p) => ({
               id: p.id,
               label: p.label,
-              current: false,
-            })),
-          ]}
-          onSelect={(id) => {
-            if (id === data.project!.id) return;
-            onEvent("select-project-card", { projectId: id });
-          }}
-        />
+              current: p.id === selectedProject.id,
+            }))}
+            onSelect={(id) => {
+              const project = selectableProjects.find((p) => p.id === id);
+              setSelectedProjectId(id);
+              setWorkspaceChoice({ kind: "current" });
+              setBaseBranch(
+                project?.workspaceBaseBranch ?? DEFAULT_WORKSPACE_BASE_BRANCH,
+              );
+              setTouched(true);
+            }}
+          />
+        )}
         <ChipMenu
           label={workspaceLabel}
           icon="⌥"
@@ -593,10 +662,10 @@ export function TaskLauncher({
           items={[
             {
               id: "current",
-              label: `project root (${data.project.label})`,
+              label: `project root (${selectedProject.label})`,
               current: workspaceChoice.kind === "current",
             },
-            ...data.workspaces.map((w) => ({
+            ...selectedWorkspaces.map((w) => ({
               id: w.id,
               label: w.label || w.branch || "workspace",
               current:
@@ -614,7 +683,7 @@ export function TaskLauncher({
             if (id === "current") setWorkspaceChoice({ kind: "current" });
             else if (id === "__new__") setWorkspaceChoice({ kind: "new" });
             else {
-              const found = data.workspaces.find((w) => w.id === id);
+              const found = selectedWorkspaces.find((w) => w.id === id);
               if (found)
                 setWorkspaceChoice({
                   kind: "existing",
