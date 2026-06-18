@@ -11,20 +11,50 @@ import type { AethonAgentState } from "../state";
 import { compilePattern, modelDescriptor, modelKey } from "./utils";
 import type { TabLifecycleDeps } from "./utils";
 
+function uniqueModels(models: Model<Api>[]): Model<Api>[] {
+  const seen = new Set<string>();
+  const out: Model<Api>[] = [];
+  for (const model of models) {
+    const key = modelKey(model);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(model);
+  }
+  return out;
+}
+
+function allRegistryModels(state: AethonAgentState) {
+  return uniqueModels([
+    ...state.modelRegistry.getAll(),
+    ...[...state.authProfileServices.values()].flatMap((services) =>
+      services.modelRegistry.getAll(),
+    ),
+  ]);
+}
+
+function availableModels(state: AethonAgentState) {
+  return uniqueModels([
+    ...state.modelRegistry.getAvailable(),
+    ...[...state.authProfileServices.values()].flatMap((services) =>
+      services.modelRegistry.getAvailable(),
+    ),
+  ]);
+}
+
 /** Filter the picker to the user's enabledModels patterns from
  *  ~/.pi/agent/settings.json. Always include the current model. */
 export function buildPickerModels(
   state: AethonAgentState,
   currentModel?: Model<Api>,
 ): Model<Api>[] {
-  const all = state.modelRegistry.getAll();
+  const all = allRegistryModels(state);
   const enabled = state.settingsManager.getEnabledModels();
   let pickerModels: Model<Api>[];
   if (enabled && enabled.length > 0) {
     const patterns = enabled.map(compilePattern);
     pickerModels = all.filter((m) => patterns.some((p) => p.test(modelKey(m))));
   } else {
-    pickerModels = state.modelRegistry.getAvailable();
+    pickerModels = availableModels(state);
   }
   const seen = new Set(pickerModels.map(modelKey));
   if (currentModel && !seen.has(modelKey(currentModel))) {
@@ -66,6 +96,20 @@ export async function refreshCachedModels(
     logger
       .scope("picker")
       .warn(`model registry refresh failed: ${(err as Error).message}`);
+  }
+  for (const [profileId, services] of state.authProfileServices) {
+    try {
+      services.authStorage.reload();
+      services.modelRegistry.refresh();
+    } catch (err) {
+      logger
+        .scope("picker")
+        .warn(
+          `profile model registry refresh failed (${profileId}): ${
+            (err as Error).message
+          }`,
+        );
+    }
   }
   state.cachedModels = buildPickerModels(
     state,

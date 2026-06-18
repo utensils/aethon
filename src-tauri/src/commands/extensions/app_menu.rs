@@ -108,6 +108,7 @@ pub fn install_app_menu(
     // macOS, so we omit it here — the user closes the window via the
     // red traffic light or Cmd+Q. Adding both would let macOS route
     // Cmd+W to whichever menu item it picks first.
+    #[cfg(target_os = "macos")]
     let file_menu = SubmenuBuilder::new(app, "File")
         .item(&new_file)
         .item(&save_file)
@@ -116,6 +117,18 @@ pub fn install_app_menu(
         .item(&new_tab)
         .item(&new_agent_tab)
         .item(&close_tab)
+        .build()?;
+    #[cfg(not(target_os = "macos"))]
+    let file_menu = SubmenuBuilder::new(app, "File")
+        .item(&new_file)
+        .item(&save_file)
+        .item(&revert_file)
+        .separator()
+        .item(&new_tab)
+        .item(&new_agent_tab)
+        .item(&close_tab)
+        .separator()
+        .item(&PredefinedMenuItem::quit(app, Some("Exit"))?)
         .build()?;
 
     let edit_menu = SubmenuBuilder::new(app, "Edit")
@@ -236,6 +249,15 @@ mod tests {
         assert!(
             src.contains("SubmenuBuilder::new(app, \"Extensions\").item(&manage_extensions)"),
             "the Extensions submenu should be created even when no extension-registered menu items exist",
+        );
+    }
+
+    #[test]
+    fn non_macos_file_menu_exposes_exit() {
+        let src = include_str!("app_menu.rs");
+        assert!(
+            src.contains("PredefinedMenuItem::quit(app, Some(\"Exit\"))"),
+            "Linux/Windows should expose File → Exit; macOS keeps Quit in the app menu",
         );
     }
 }

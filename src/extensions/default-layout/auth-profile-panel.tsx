@@ -60,6 +60,7 @@ export function AuthProfilePanel({
           : "auth_profile_api_key_save",
       providerId: selectedProvider.id,
       label: label.trim() || selectedProvider.label,
+      tabId: activeTabId,
       ...(selectedProvider.kind === "api_key" ? { key: apiKey } : {}),
     });
     if (selectedProvider.kind === "api_key") {
@@ -88,6 +89,7 @@ export function AuthProfilePanel({
       providerId: profile.providerId,
       profileId: profile.id,
       label: profile.label,
+      tabId: activeTabId,
     });
 
   const deleteProfile = (profileId: string) =>

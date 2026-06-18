@@ -135,6 +135,33 @@ describe("buildPickerModels", () => {
       "openai-codex/gpt-5.1-codex",
     ]);
   });
+
+  it("includes models available through auth profile registries", () => {
+    const { state } = makeFixture();
+    const codex = {
+      id: "gpt-5.5",
+      provider: "openai-codex",
+      name: "GPT-5.5 Codex",
+    };
+    state.modelRegistry = {
+      getAll: () => [],
+      getAvailable: () => [],
+    } as unknown as AethonAgentState["modelRegistry"];
+    state.authProfileServices.set("codex-work", {
+      authStorage: { reload: vi.fn() },
+      modelRegistry: {
+        getAll: () => [codex],
+        getAvailable: () => [codex],
+      },
+    });
+    state.settingsManager = {
+      getEnabledModels: () => [],
+    } as unknown as AethonAgentState["settingsManager"];
+
+    expect(buildPickerModels(state).map(modelKey)).toEqual([
+      "openai-codex/gpt-5.5",
+    ]);
+  });
 });
 
 describe("refreshCachedModels", () => {
