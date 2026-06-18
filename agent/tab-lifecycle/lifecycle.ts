@@ -23,6 +23,7 @@ import { createAethonBashToolDefinition } from "../bash-tool";
 import { buildDashboardTools } from "../dashboard-tools";
 import { buildEditorTools } from "../editor-tools";
 import { buildSessionTitleTools } from "../session-title-tool";
+import { buildSchedulerTools } from "../scheduler-tools";
 import {
   buildSubagentTaskBatchTool,
   buildSubagentTaskTool,
@@ -185,6 +186,7 @@ export async function ensureTab(
       ...buildDashboardTools(),
       ...buildEditorTools(),
       ...buildMemoryTools(state, tabId),
+      ...buildSchedulerTools(state, deps, tabId),
       buildSubagentTaskTool(state, deps, tabId),
       buildSubagentTaskBatchTool(state, deps, tabId),
     ],

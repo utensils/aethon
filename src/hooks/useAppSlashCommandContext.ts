@@ -15,6 +15,18 @@ import type { ExtensionRegistry } from "../extensions/ExtensionRegistry";
 import type { LayoutCatalogueEntry } from "../extensions/default-layout";
 import type { NotificationInput } from "./useNotifications";
 import type { AuthProfilesUiState } from "../auth-profiles";
+import {
+  cancelScheduledTask,
+  createScheduledTask,
+  listScheduledTasks,
+  pauseScheduledTask,
+  resolveLoopPrompt,
+  resumeScheduledTask,
+  runScheduledTaskNow,
+  type ScheduledTaskMode,
+  type ScheduledTaskRecord,
+  type ScheduledTaskSchedule,
+} from "../scheduledTasks";
 
 export interface UseAppSlashCommandContextOptions {
   bootLayout: A2UIPayload;
@@ -273,6 +285,78 @@ export function useAppSlashCommandContext({
           }),
         });
       },
+      openScheduledTasks: () => {
+        setState((prev) => ({
+          ...prev,
+          scheduledTasks: {
+            ...(prev.scheduledTasks ?? {}),
+            open: true,
+          },
+        }));
+      },
+      createScheduledTask: async (input: {
+        mode: ScheduledTaskMode;
+        schedule: ScheduledTaskSchedule;
+        prompt: string;
+        label?: string;
+        promptSource?: string;
+      }): Promise<ScheduledTaskRecord> => {
+        const tabs = (stateRef.current.tabs as Tab[] | undefined) ?? [];
+        const activeId = stateRef.current.activeTabId;
+        const tab = tabs.find((t) => t.id === activeId);
+        if (!tab || tab.kind !== "agent") {
+          throw new Error("Open an agent tab before creating a scheduled task.");
+        }
+        const project = activeProject(projectsRef.current);
+        const cwd =
+          tab.cwd ??
+          project?.path ??
+          (await invoke<string>("aethon_home_dir").catch(() => ""));
+        if (!cwd) throw new Error("Could not resolve a working directory.");
+        let prompt = input.prompt.trim();
+        let promptSource = input.promptSource ?? "inline";
+        if (!prompt) {
+          const resolved = await resolveLoopPrompt(cwd);
+          prompt = resolved.prompt;
+          promptSource = resolved.source;
+        }
+        const created = await createScheduledTask({
+          tabId: tab.id,
+          cwd,
+          model: tab.model || null,
+          thinkingLevel: tab.thinkingLevel ?? null,
+          hardEnforce: tab.hardEnforceProjectRoot ?? null,
+          authProfileId: tab.authProfileId ?? null,
+          label: input.label ?? null,
+          prompt,
+          visiblePrompt: prompt,
+          promptSource,
+          mode: input.mode,
+          schedule: input.schedule,
+        });
+        setState((prev) => {
+          const cur =
+            (prev.scheduledTasks as
+              | { tasks?: ScheduledTaskRecord[] }
+              | undefined) ?? {};
+          return {
+            ...prev,
+            scheduledTasks: {
+              ...cur,
+              tasks: [
+                created,
+                ...(cur.tasks ?? []).filter((task) => task.id !== created.id),
+              ],
+            },
+          };
+        });
+        return created;
+      },
+      listScheduledTasks,
+      runScheduledTask: runScheduledTaskNow,
+      pauseScheduledTask,
+      resumeScheduledTask,
+      cancelScheduledTask,
       activeTabId: () => {
         const id = stateRef.current.activeTabId;
         return typeof id === "string" && id.length > 0 ? id : null;

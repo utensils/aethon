@@ -36,6 +36,7 @@ export interface DerivedRenderStateResult {
   settingsOpen: boolean;
   searchOpen: boolean;
   authProfilesOpen: boolean;
+  scheduledTasksOpen: boolean;
 }
 
 export function useDerivedRenderState({
@@ -238,6 +239,9 @@ export function useDerivedRenderState({
     (renderRecord.authProfiles as { modal?: { open?: boolean } } | undefined)
       ?.modal?.open,
   );
+  const scheduledTasksOpen = Boolean(
+    (renderRecord.scheduledTasks as { open?: boolean } | undefined)?.open,
+  );
 
   return {
     renderState,
@@ -246,5 +250,6 @@ export function useDerivedRenderState({
     settingsOpen,
     searchOpen,
     authProfilesOpen,
+    scheduledTasksOpen,
   };
 }

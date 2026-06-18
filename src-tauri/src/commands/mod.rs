@@ -26,6 +26,7 @@ pub mod extensions;
 pub mod fs;
 pub mod git;
 pub mod host;
+pub mod scheduler;
 pub mod server;
 pub mod session;
 pub mod startup;

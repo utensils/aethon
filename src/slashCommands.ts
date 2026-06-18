@@ -7,6 +7,14 @@
 // passthrough entries. Submitting one sends the original text to pi's prompt
 // router.
 
+import {
+  formatTaskStatus,
+  parseLoopArgs,
+  type ScheduledTaskMode,
+  type ScheduledTaskRecord,
+  type ScheduledTaskSchedule,
+} from "./scheduledTasks";
+
 export interface SlashCommandContext {
   /** Append a chat-history bubble (system role). Use for output that
    *  belongs in the conversation surface — `/help` listings, `/extensions`
@@ -79,6 +87,19 @@ export interface SlashCommandContext {
   /** Rename a session by tabId. Empty `label` clears the custom label
    *  and falls back to the auto-derived first-user-message label. */
   renameSession: (tabId: string, label: string) => Promise<void>;
+  openScheduledTasks?: () => void;
+  createScheduledTask?: (input: {
+    mode: ScheduledTaskMode;
+    schedule: ScheduledTaskSchedule;
+    prompt: string;
+    label?: string;
+    promptSource?: string;
+  }) => Promise<ScheduledTaskRecord>;
+  listScheduledTasks?: () => Promise<ScheduledTaskRecord[]>;
+  runScheduledTask?: (id: string) => Promise<ScheduledTaskRecord>;
+  pauseScheduledTask?: (id: string) => Promise<ScheduledTaskRecord>;
+  resumeScheduledTask?: (id: string) => Promise<ScheduledTaskRecord>;
+  cancelScheduledTask?: (id: string) => Promise<ScheduledTaskRecord>;
   /** Currently active tab id, or null when none. Used by `/rename` so
    *  no-arg target inference can hit the right session. */
   activeTabId: () => string | null;
@@ -118,6 +139,18 @@ function helpFor(commands: SlashCommand[]): string {
     lines.push(`- ${usage} — ${c.description}`);
   }
   return lines.join("\n");
+}
+
+function matchTask(
+  tasks: ScheduledTaskRecord[],
+  idOrPrefix: string,
+): ScheduledTaskRecord | null {
+  const needle = idOrPrefix.trim();
+  if (!needle) return null;
+  const exact = tasks.find((t) => t.id === needle);
+  if (exact) return exact;
+  const matches = tasks.filter((t) => t.id.startsWith(needle));
+  return matches.length === 1 ? matches[0] : null;
 }
 
 export function buildBuiltinSlashCommands(): SlashCommand[] {
@@ -328,6 +361,121 @@ export function buildBuiltinSlashCommands(): SlashCommand[] {
       description: "Export the pi session as HTML, or JSONL when path ends in .jsonl",
       usage: "[path.html|path.jsonl]",
       run: (args, ctx) => ctx.runNativeCommand("export", args),
+    },
+    {
+      name: "loop",
+      description: "Run a repeated scheduled task in this session",
+      usage: "[interval] [prompt]",
+      run: async (args, ctx) => {
+        const parsed = parseLoopArgs(args);
+        if (!parsed.ok) {
+          ctx.notify({
+            title: "Invalid loop",
+            message: parsed.error,
+            kind: "error",
+          });
+          return;
+        }
+        try {
+          if (!ctx.createScheduledTask) {
+            throw new Error("Scheduled tasks are unavailable.");
+          }
+          const task = await ctx.createScheduledTask({
+            mode: parsed.mode,
+            schedule: parsed.schedule,
+            prompt: parsed.prompt,
+          });
+          ctx.notify({
+            title: "Loop scheduled",
+            message: `${task.label} (${task.id.slice(0, 8)})`,
+            kind: "success",
+          });
+        } catch (err) {
+          ctx.notify({
+            title: "Loop failed",
+            message: err instanceof Error ? err.message : String(err),
+            kind: "error",
+          });
+        }
+      },
+    },
+    {
+      name: "tasks",
+      description: "Open or control Scheduled Tasks",
+      usage: "[list|run|pause|resume|cancel <id>]",
+      run: async (args, ctx) => {
+        const [subRaw, ...rest] = args.trim().split(/\s+/).filter(Boolean);
+        const sub = subRaw?.toLowerCase();
+        if (!sub || sub === "open") {
+          if (ctx.openScheduledTasks) ctx.openScheduledTasks();
+          else {
+            ctx.notify({
+              title: "Scheduled tasks unavailable",
+              kind: "warning",
+            });
+          }
+          return;
+        }
+        if (!ctx.listScheduledTasks) {
+          ctx.notify({
+            title: "Scheduled tasks unavailable",
+            kind: "warning",
+          });
+          return;
+        }
+        if (sub === "list") {
+          const tasks = await ctx.listScheduledTasks();
+          if (tasks.length === 0) {
+            ctx.appendSystem("No scheduled tasks.");
+            return;
+          }
+          ctx.appendSystem(
+            [
+              "Scheduled tasks:",
+              ...tasks.map(
+                (task) =>
+                  `- \`${task.id.slice(0, 8)}\` — ${task.label} (${formatTaskStatus(task)})`,
+              ),
+            ].join("\n"),
+          );
+          return;
+        }
+        const id = rest[0] ?? "";
+        const tasks = await ctx.listScheduledTasks();
+        const task = matchTask(tasks, id);
+        if (!task) {
+          ctx.notify({
+            title: "Unknown task",
+            message: "Use `/tasks list` to find the id.",
+            kind: "error",
+          });
+          return;
+        }
+        const action =
+          sub === "run"
+            ? ctx.runScheduledTask
+            : sub === "pause"
+              ? ctx.pauseScheduledTask
+              : sub === "resume"
+                ? ctx.resumeScheduledTask
+                : sub === "cancel" || sub === "delete" || sub === "stop"
+                  ? ctx.cancelScheduledTask
+                  : null;
+        if (!action) {
+          ctx.notify({
+            title: `Unknown tasks command: ${sub}`,
+            message: "Usage: /tasks [list|run|pause|resume|cancel <id>]",
+            kind: "error",
+          });
+          return;
+        }
+        const updated = await action(task.id);
+        ctx.notify({
+          title: `Task ${updated.status}`,
+          message: updated.label,
+          kind: updated.status === "failed" ? "error" : "success",
+        });
+      },
     },
     {
       name: "terminal",

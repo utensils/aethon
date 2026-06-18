@@ -46,11 +46,13 @@ import { handleRegisterHighlightGrammar } from "./registerHighlightGrammar";
 import { handleResponse } from "./response";
 import { handleResponseDelta } from "./responseDelta";
 import { handleResponseEnd } from "./responseEnd";
+import { handleScheduledTaskRunComplete } from "./scheduledTaskRunComplete";
 import { handleSessionForked } from "./sessionForked";
 import { handleSessionHistory } from "./sessionHistory";
 import { handleSessionLabelChanged } from "./sessionLabelChanged";
 import { handleSessionRolledBack } from "./sessionRolledBack";
 import { handleShellQuery } from "./shellQuery";
+import { handleSchedulerQuery } from "./schedulerQuery";
 import { handleDashboardQuery } from "./dashboardQuery";
 import { handleDevshellQuery } from "./devshellQuery";
 import { handleGitQuery } from "./gitQuery";
@@ -100,10 +102,12 @@ export const bridgeMessageHandlers: Readonly<
   response: handleResponse,
   response_delta: handleResponseDelta,
   response_end: handleResponseEnd,
+  scheduled_task_run_complete: handleScheduledTaskRunComplete,
   session_forked: handleSessionForked,
   session_history: handleSessionHistory,
   session_label_changed: handleSessionLabelChanged,
   session_rolled_back: handleSessionRolledBack,
+  scheduler_query: handleSchedulerQuery,
   shell_query: handleShellQuery,
   dashboard_query: handleDashboardQuery,
   devshell_query: handleDevshellQuery,

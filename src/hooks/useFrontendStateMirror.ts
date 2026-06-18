@@ -56,6 +56,9 @@ export function useFrontendStateMirror(
       const tabs = (state.tabs as Tab[] | undefined) ?? [];
       const messagesCount =
         ((state.messages as unknown[] | undefined) ?? []).length;
+      const scheduledTasks =
+        (state.scheduledTasks as { tasks?: unknown[] } | undefined)?.tasks ??
+        [];
       const slices: Record<string, unknown> = {
         "/sidebar/models": sidebar.models ?? [],
         "/sidebar/themes": sidebar.themes ?? [],
@@ -63,6 +66,7 @@ export function useFrontendStateMirror(
         "/status": state.status ?? "",
         "/draft": state.draft ?? "",
         "/messagesCount": messagesCount,
+        "/scheduledTasks": scheduledTasks,
         "/tabs": tabs.map((t) => ({
           id: t.id,
           label: t.label,

@@ -265,6 +265,14 @@ export interface TabRecord {
   aethonRetryAttempt?: number;
   aethonRetryInFlight?: boolean;
   aethonRetryTimer?: ReturnType<typeof setTimeout>;
+  /** Current Rust-scheduled task run, when this prompt was fired by
+   *  Aethon's native scheduler instead of direct user input. */
+  scheduledRun?: {
+    taskId: string;
+    runId: string;
+    wakeupScheduled?: boolean;
+    completeRequested?: boolean;
+  };
   /** Live context-meter estimate for text/tool output that has streamed
    *  in this turn but has not yet landed in pi's authoritative usage. */
   contextUsageTransientTokens?: number;

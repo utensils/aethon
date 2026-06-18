@@ -517,6 +517,7 @@ export function handleSessionEvent(
         // rollback / fork affordances work without a reload.
         emitEntryIds(deps, rec, tabId);
         deps.send({ type: "response_end", tabId });
+        emitScheduledRunComplete(deps, rec, tabId, !failedMessage, failedMessage);
       }
       break;
     }
@@ -560,10 +561,32 @@ export function handleSessionEvent(
         }
         rollResponseMessage(rec);
         deps.send({ type: "response_end", tabId });
+        emitScheduledRunComplete(deps, rec, tabId, false, ev.finalError);
       }
       break;
     }
   }
+}
+
+function emitScheduledRunComplete(
+  deps: TabLifecycleDeps,
+  rec: TabRecord,
+  tabId: string,
+  success: boolean,
+  error?: string,
+): void {
+  const scheduled = rec.scheduledRun;
+  if (!scheduled) return;
+  deps.send({
+    type: "scheduled_task_run_complete",
+    tabId,
+    taskId: scheduled.taskId,
+    runId: scheduled.runId,
+    success,
+    ...(error ? { error } : {}),
+    ...(scheduled.completeRequested ? { completeTask: true } : {}),
+  });
+  rec.scheduledRun = undefined;
 }
 
 function summarizeToolResult(result: unknown): string {

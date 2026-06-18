@@ -42,6 +42,7 @@ import { CommandPalette } from "./command-palette";
 import { NotificationStack } from "./notifications";
 import { SettingsPanel } from "./settings-panel";
 import { SearchPanel } from "./search-panel";
+import { ScheduledTasksPanel } from "./scheduled-tasks-panel";
 import { ShareModeBadge } from "./share-mode-badge";
 import { GhStatsStrip } from "./dashboard/gh-stats-strip";
 import { ProjectCard } from "./dashboard/project-card";
@@ -137,6 +138,7 @@ export const defaultLayoutExtension: A2UIExtension = {
     "settings-panel": SettingsPanel,
     "auth-profile-panel": AuthProfilePanel,
     "search-panel": SearchPanel,
+    "scheduled-tasks-panel": ScheduledTasksPanel,
     // M6 P2: shell tab share-mode badge — extracted as its own
     // registerable component so an extension can replace it (e.g. with a
     // custom click-flow or icon set) without rewriting the whole shell
