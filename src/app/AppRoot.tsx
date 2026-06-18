@@ -1,3 +1,5 @@
+import { useSyncExternalStore } from "react";
+import { createPortal } from "react-dom";
 import type { Dispatch, ReactNode, SetStateAction } from "react";
 import A2UIRenderer, {
   RegistryComponent,
@@ -9,6 +11,52 @@ import type { A2UIPayload } from "../types/a2ui";
 import { isMacOS } from "../utils/platform";
 import { StartupCurtain } from "./StartupCurtain";
 import type { WorkspaceStartupView } from "../hooks/useWorkspaceStartup";
+
+const WORKSPACE_STARTUP_HOST_SELECTOR =
+  '.a2ui-layout-cell[data-area="canvas"][data-visible="true"]';
+
+function readWorkspaceStartupHost(active: boolean): HTMLElement | null {
+  if (!active || typeof document === "undefined") return null;
+  return document.querySelector<HTMLElement>(WORKSPACE_STARTUP_HOST_SELECTOR);
+}
+
+function subscribeWorkspaceStartupHost(onStoreChange: () => void): () => void {
+  if (
+    typeof document === "undefined" ||
+    !document.body ||
+    typeof MutationObserver === "undefined"
+  ) {
+    return () => {};
+  }
+
+  const observer = new MutationObserver(onStoreChange);
+  observer.observe(document.body, {
+    attributes: true,
+    attributeFilter: ["data-area", "data-visible"],
+    childList: true,
+    subtree: true,
+  });
+  queueMicrotask(onStoreChange);
+
+  return () => observer.disconnect();
+}
+
+function WorkspaceStartupPortal({
+  active,
+  children,
+}: {
+  active: boolean;
+  children: ReactNode;
+}) {
+  const host = useSyncExternalStore(
+    subscribeWorkspaceStartupHost,
+    () => readWorkspaceStartupHost(active),
+    () => null,
+  );
+
+  if (!active || !host) return null;
+  return createPortal(children, host);
+}
 
 export interface AppRootProps {
   registry: ExtensionRegistry;
@@ -61,12 +109,13 @@ export function AppRoot({
   onStartupContinue,
   topBanner,
 }: AppRootProps) {
-  const showStartupOverlay =
+  const showStartupOverlay = Boolean(
     chromeReady &&
-    workspaceStartup?.entry &&
-    ["running", "approval_required", "failed"].includes(
-      workspaceStartup.entry.state,
-    );
+      workspaceStartup?.entry &&
+      ["running", "approval_required", "failed"].includes(
+        workspaceStartup.entry.state,
+      ),
+  );
   return (
     <ExtensionRegistryProvider registry={registry}>
       {/* `data-platform="mac"` gates the overlay-titlebar chrome (traffic-
@@ -91,13 +140,16 @@ export function AppRoot({
           />
         )}
         {showStartupOverlay ? (
-          <StartupCurtain
-            logoUrl={startupLogoUrl}
-            startup={workspaceStartup}
-            onApprove={onStartupApprove}
-            onRetry={onStartupRetry}
-            onContinue={onStartupContinue}
-          />
+          <WorkspaceStartupPortal active={showStartupOverlay}>
+            <StartupCurtain
+              logoUrl={startupLogoUrl}
+              startup={workspaceStartup}
+              scope="workspace"
+              onApprove={onStartupApprove}
+              onRetry={onStartupRetry}
+              onContinue={onStartupContinue}
+            />
+          </WorkspaceStartupPortal>
         ) : null}
         {chromeReady && notificationsOpen && (
           <RegistryComponent

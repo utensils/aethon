@@ -176,6 +176,12 @@ body {
   background: var(--gradient-app-backdrop, var(--bg));
 }
 
+.ae-startup-curtain--workspace {
+  position: absolute;
+  z-index: 20;
+  background: var(--bg);
+}
+
 .ae-startup-panel {
   width: min(620px, 100%);
   max-height: min(620px, calc(var(--app-viewport-height) - 48px));
@@ -183,6 +189,10 @@ body {
   flex-direction: column;
   gap: 14px;
   overflow: hidden;
+}
+
+.ae-startup-curtain--workspace .ae-startup-panel {
+  max-height: min(620px, calc(100% - 48px));
 }
 
 .ae-startup-header {
@@ -350,6 +360,9 @@ body.ae-resizing-composer .a2ui-layout {
 .a2ui-layout-cell[data-visible="false"] {
   opacity: 0;
   pointer-events: none;
+}
+.a2ui-layout-cell[data-area="canvas"] {
+  position: relative;
 }
 
 .a2ui-layout-cell > .a2ui-renderer,
