@@ -71,6 +71,10 @@
             rustc = rustToolchain;
           };
 
+          cargoTargetEnv = lib.toUpper (
+            builtins.replaceStrings [ "-" ] [ "_" ] pkgs.stdenv.hostPlatform.config
+          );
+
           cargoTauriHook = pkgs.cargo-tauri.hook.override {
             cargo = rustToolchain;
           };
@@ -119,8 +123,12 @@
             pkgs.atk
             pkgs.gdk-pixbuf
             pkgs.libsoup_3
+            pkgs.gst_all_1.gstreamer
+            pkgs.gst_all_1.gst-plugins-base
             pkgs.glib
             pkgs.glib-networking
+            pkgs.dbus
+            pkgs.zlib
             pkgs.alsa-lib
             pkgs.openssl
             pkgs.libayatana-appindicator
@@ -219,6 +227,9 @@
               # PATH, so without this the bare treefmt can't find its config.
               config.treefmt.build.wrapper
             ]
+            ++ lib.optionals pkgs.stdenv.isLinux [
+              pkgs.stdenv.cc
+            ]
             ++ linuxBuildInputs
             ++ darwinBuildInputs;
 
@@ -231,7 +242,10 @@
             ++ lib.optionals pkgs.stdenv.isLinux [
               {
                 name = "PKG_CONFIG_PATH";
-                value = lib.makeSearchPath "lib/pkgconfig" (map lib.getDev linuxBuildInputs);
+                value = lib.concatStringsSep ":" [
+                  (lib.makeSearchPath "lib/pkgconfig" (map lib.getDev linuxBuildInputs))
+                  (lib.makeSearchPath "share/pkgconfig" (map lib.getDev linuxBuildInputs))
+                ];
               }
               {
                 name = "LD_LIBRARY_PATH";
@@ -244,8 +258,38 @@
                 value = "1";
               }
               {
+                # WebKitGTK's native Wayland backend can report negative
+                # viewport/DPR values on Hyprland, collapsing the app grid.
+                # Prefer XWayland, but keep Wayland as a fallback for hosts
+                # without XWayland.
+                name = "GDK_BACKEND";
+                value = "x11,wayland";
+              }
+              {
                 name = "GIO_EXTRA_MODULES";
                 prefix = "${pkgs.glib-networking}/lib/gio/modules";
+              }
+              {
+                name = "GST_PLUGIN_SYSTEM_PATH_1_0";
+                value = lib.makeSearchPath "lib/gstreamer-1.0" linuxBuildInputs;
+              }
+              {
+                name = "CC";
+                value = "${pkgs.stdenv.cc}/bin/cc";
+              }
+              {
+                name = "CXX";
+                value = "${pkgs.stdenv.cc}/bin/c++";
+              }
+              {
+                name = "CARGO_TARGET_${cargoTargetEnv}_LINKER";
+                value = "${pkgs.stdenv.cc}/bin/cc";
+              }
+              {
+                # Keep Rust's final link on the same Nix glibc as the
+                # WebKitGTK closure instead of a host/profile compiler.
+                name = "RUSTC_LINKER";
+                value = "${pkgs.stdenv.cc}/bin/cc";
               }
             ]
             ++ lib.optionals pkgs.stdenv.isDarwin [

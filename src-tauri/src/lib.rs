@@ -67,8 +67,24 @@ fn home_dir_for_logging() -> Option<std::path::PathBuf> {
     }
 }
 
+#[cfg(target_os = "linux")]
+fn prefer_stable_linux_webview_backend() {
+    if std::env::var_os("GDK_BACKEND").is_none() {
+        // WebKitGTK's native Wayland backend can report negative viewport
+        // dimensions/DPR on Hyprland, collapsing the React grid before the
+        // frontend can recover. Prefer XWayland, while preserving a Wayland
+        // fallback and respecting explicit user overrides.
+        unsafe { std::env::set_var("GDK_BACKEND", "x11,wayland") };
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+fn prefer_stable_linux_webview_backend() {}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    prefer_stable_linux_webview_backend();
+
     // Boot-rollback helper sub-invocation: when the post-update
     // probation timer fires, the parent spawns this same binary with
     // `--boot-rollback-helper <sentinel-path> <parent-pid>`. The
