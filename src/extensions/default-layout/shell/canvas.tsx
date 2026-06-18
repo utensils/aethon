@@ -37,6 +37,7 @@ import {
   terminalFontSizeForUiScale,
   TERMINAL_UI_SCALE_SETTLE_MS,
 } from "../terminal-helpers";
+import { registerTerminalUrlLinks } from "../terminal-linkifier";
 import {
   decideShellResize,
   shouldSkipResize,
@@ -122,6 +123,7 @@ export function ShellCanvas({ component, state, onEvent }: BuiltinComponentProps
     fitRef.current = fit;
     term.loadAddon(fit);
     term.open(containerRef.current);
+    const linkDisposable = registerTerminalUrlLinks(term);
     try {
       const webgl = new WebglAddon();
       webgl.onContextLoss(() => webgl.dispose());
@@ -266,6 +268,7 @@ export function ShellCanvas({ component, state, onEvent }: BuiltinComponentProps
       stopThemeObserver();
       stopScaleObserver();
       onDataDisposable.dispose();
+      linkDisposable.dispose();
       term.dispose();
       termRef.current = null;
       fitRef.current = null;

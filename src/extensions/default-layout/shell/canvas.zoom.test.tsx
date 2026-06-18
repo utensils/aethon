@@ -12,6 +12,7 @@ interface MockTerminal {
   rows: number;
   open: ReturnType<typeof vi.fn>;
   loadAddon: ReturnType<typeof vi.fn>;
+  registerLinkProvider: ReturnType<typeof vi.fn>;
   write: ReturnType<typeof vi.fn>;
   onData: ReturnType<typeof vi.fn>;
   refresh: ReturnType<typeof vi.fn>;
@@ -39,6 +40,7 @@ vi.mock("@xterm/xterm", () => ({
       loadAddon: vi.fn((addon: { __attach?: (term: MockTerminal) => void }) => {
         addon.__attach?.(term);
       }),
+      registerLinkProvider: vi.fn(() => ({ dispose: vi.fn() })),
       write: vi.fn(),
       onData: vi.fn(() => ({ dispose: vi.fn() })),
       refresh: vi.fn(),
@@ -130,6 +132,7 @@ describe("ShellCanvas zoom synchronization", () => {
     const term = xtermMocks.terminals[0];
     const fit = xtermMocks.fits[0];
     const mount = container.querySelector<HTMLElement>(".ae-shell-canvas-term");
+    expect(term.registerLinkProvider).toHaveBeenCalledTimes(1);
 
     applyUiScale(1.5);
 
