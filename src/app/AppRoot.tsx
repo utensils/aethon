@@ -13,7 +13,7 @@ import { StartupCurtain } from "./StartupCurtain";
 import type { WorkspaceStartupView } from "../hooks/useWorkspaceStartup";
 
 const WORKSPACE_STARTUP_HOST_SELECTOR =
-  '.a2ui-layout-cell[data-area="canvas"][data-visible="true"]';
+  '.a2ui-layout-cell[data-slot="canvas"][data-visible="true"]';
 
 function readWorkspaceStartupHost(active: boolean): HTMLElement | null {
   if (!active || typeof document === "undefined") return null;
@@ -55,7 +55,10 @@ function WorkspaceStartupPortal({
   );
 
   if (!active || !host) return null;
-  return createPortal(children, host);
+  return createPortal(
+    <div className="ae-workspace-startup-host">{children}</div>,
+    host,
+  );
 }
 
 export interface AppRootProps {

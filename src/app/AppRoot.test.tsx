@@ -26,7 +26,8 @@ function layoutPayload(): A2UIPayload {
         props: {
           columns: "120px minmax(0, 1fr)",
           rows: "38px minmax(0, 1fr)",
-          areas: ["sidebar header", "sidebar canvas"],
+          areas: ["sidebar header", "sidebar workspace"],
+          slotMap: { canvas: "workspace" },
         },
         children: [
           {
@@ -93,15 +94,18 @@ describe("AppRoot workspace startup overlay", () => {
 
     const startup = screen.getByRole("status");
     const canvasCell = container.querySelector<HTMLElement>(
-      '.a2ui-layout-cell[data-area="canvas"]',
+      '.a2ui-layout-cell[data-slot="canvas"]',
     );
     const sidebarCell = container.querySelector<HTMLElement>(
       '.a2ui-layout-cell[data-area="sidebar"]',
     );
+    const startupHost = startup.closest(".ae-workspace-startup-host");
 
     expect(canvasCell).not.toBeNull();
+    expect(canvasCell?.dataset.area).toBe("workspace");
     expect(canvasCell?.contains(startup)).toBe(true);
+    expect(startupHost).not.toBeNull();
+    expect(canvasCell?.contains(startupHost)).toBe(true);
     expect(sidebarCell?.contains(startup)).toBe(false);
-    expect(startup.parentElement).toBe(canvasCell);
   });
 });

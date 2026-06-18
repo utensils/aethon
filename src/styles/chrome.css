@@ -178,8 +178,17 @@ body {
 
 .ae-startup-curtain--workspace {
   position: absolute;
-  z-index: 20;
+  z-index: auto;
   background: var(--bg);
+}
+
+.ae-workspace-startup-host {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  min-width: 0;
+  min-height: 0;
+  pointer-events: auto;
 }
 
 .ae-startup-panel {
@@ -360,9 +369,6 @@ body.ae-resizing-composer .a2ui-layout {
 .a2ui-layout-cell[data-visible="false"] {
   opacity: 0;
   pointer-events: none;
-}
-.a2ui-layout-cell[data-area="canvas"] {
-  position: relative;
 }
 
 .a2ui-layout-cell > .a2ui-renderer,
