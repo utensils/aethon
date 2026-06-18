@@ -45,6 +45,7 @@ import {
   useFileTreePrefs,
 } from "./useFileTreePrefs";
 import { useFileTreeWatch } from "./useFileTreeWatch";
+import { onAgentTurnComplete } from "../../../utils/agentTurnEvents";
 
 const EMPTY_TABS: EditorTabShape[] = [];
 
@@ -62,6 +63,7 @@ export function FileTreePanel({
   const fillsContainer = embedMode === "right-sidebar";
   const project = state["project"] as ProjectShape | undefined;
   const tabs = (state["tabs"] as EditorTabShape[] | undefined) ?? EMPTY_TABS;
+  const tabsRef = useRef(tabs);
   const activeTabId = state["activeTabId"] as string | undefined;
   const activeTab = activeTabId
     ? tabs.find((t) => t.id === activeTabId)
@@ -69,6 +71,10 @@ export function FileTreePanel({
   const activeEditorRoot =
     activeTab?.kind === "editor" ? activeTab.editor?.rootPath : undefined;
   const [aethonRoot, setAethonRoot] = useState<string>("");
+
+  useEffect(() => {
+    tabsRef.current = tabs;
+  }, [tabs]);
 
   useEffect(() => {
     if (project?.path || activeEditorRoot || aethonRoot) return;
@@ -152,17 +158,6 @@ export function FileTreePanel({
     expandAll,
     collapseUnder,
   });
-  const agentBusy = useMemo(() => {
-    const activeTabWaiting = state["waiting"] === true;
-    const visibleTabWaiting = tabs.some(
-      (tab) =>
-        tab.kind === "agent" &&
-        tab.waiting === true &&
-        (!tab.cwd || tab.cwd === projectPath),
-    );
-    return activeTabWaiting || visibleTabWaiting;
-  }, [projectPath, state, tabs]);
-  const wasAgentBusyRef = useRef(agentBusy);
   const [refreshingFiles, setRefreshingFiles] = useState(false);
   const refreshFiles = useCallback(async () => {
     if (!projectPath || refreshingFiles) return;
@@ -175,11 +170,15 @@ export function FileTreePanel({
   }, [projectPath, refreshVisibleFolders, refreshingFiles]);
 
   useEffect(() => {
-    if (wasAgentBusyRef.current && !agentBusy && projectPath) {
+    return onAgentTurnComplete(({ tabId }) => {
+      const projectKey = projectPathRef.current;
+      if (!projectKey) return;
+      const tab = tabsRef.current.find((candidate) => candidate.id === tabId);
+      if (!tab || tab.kind !== "agent") return;
+      if (tab.cwd && tab.cwd !== projectKey) return;
       void refreshVisibleFolders();
-    }
-    wasAgentBusyRef.current = agentBusy;
-  }, [agentBusy, projectPath, refreshVisibleFolders]);
+    });
+  }, [projectPathRef, refreshVisibleFolders]);
 
   // Native File menu → "New File…" routes here (the file tree owns the
   // create flow). No-op when no project is active.

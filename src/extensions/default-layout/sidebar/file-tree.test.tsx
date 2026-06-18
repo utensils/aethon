@@ -11,6 +11,7 @@ import {
 
 import { FileTreePanel } from "./file-tree";
 import { visibleChangedDirs } from "./file-tree-watch";
+import { AGENT_TURN_COMPLETE_EVENT } from "../../../utils/agentTurnEvents";
 
 // Mock persist + tauri invoke per-test so the component sees a known
 // "empty" persisted-store + a controllable directory listing.
@@ -829,7 +830,7 @@ describe("FileTreePanel", () => {
     });
   });
 
-  it("refreshes expanded folders when an agent turn ends after creating a nested file", async () => {
+  it("refreshes expanded folders when one agent turn completes while another tab is still busy", async () => {
     let agentFileCreated = false;
     invokeMock.mockImplementation((cmd: string, args?: { path?: string }) => {
       if (cmd === "fs_list_dir" && args?.path === "/projects/aethon") {
@@ -866,7 +867,22 @@ describe("FileTreePanel", () => {
         {...panelProps({
           state: {
             project: { path: "/projects/aethon", name: "aethon" },
+            activeTabId: "tab-a",
             waiting: true,
+            tabs: [
+              {
+                id: "tab-a",
+                kind: "agent",
+                cwd: "/projects/aethon",
+                waiting: true,
+              },
+              {
+                id: "tab-b",
+                kind: "agent",
+                cwd: "/projects/aethon",
+                waiting: true,
+              },
+            ],
           },
         })}
       />,
@@ -880,11 +896,33 @@ describe("FileTreePanel", () => {
         {...panelProps({
           state: {
             project: { path: "/projects/aethon", name: "aethon" },
+            activeTabId: "tab-a",
             waiting: false,
+            tabs: [
+              {
+                id: "tab-a",
+                kind: "agent",
+                cwd: "/projects/aethon",
+                waiting: false,
+              },
+              {
+                id: "tab-b",
+                kind: "agent",
+                cwd: "/projects/aethon",
+                waiting: true,
+              },
+            ],
           },
         })}
       />,
     );
+    act(() => {
+      window.dispatchEvent(
+        new CustomEvent(AGENT_TURN_COMPLETE_EVENT, {
+          detail: { tabId: "tab-a", text: "done" },
+        }),
+      );
+    });
 
     await screen.findByText("agent-created.ts");
   });
