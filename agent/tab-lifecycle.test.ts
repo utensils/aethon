@@ -371,6 +371,75 @@ describe("toolCardPayload", () => {
     expect(code.props.language).toBe("tsx");
   });
 
+  it("adds file-change metadata for edit tools", () => {
+    const payload = toolCardPayload({
+      id: "tool-c1",
+      toolName: "edit",
+      argsSummary: "src/App.tsx",
+      args: { path: "src/App.tsx" },
+      rootPath: "/repo",
+      result: "--- a/src/App.tsx\n+++ b/src/App.tsx\n-old\n+new",
+    });
+
+    expect(payload).toMatchObject({
+      components: [
+        {
+          props: {
+            fileChange: {
+              kind: "edited",
+              path: "src/App.tsx",
+              rootPath: "/repo",
+              preview: expect.stringContaining("+new"),
+              additions: 1,
+              deletions: 1,
+            },
+          },
+        },
+      ],
+    });
+  });
+
+  it("classifies write tools as created when the result says a file was created", () => {
+    const payload = toolCardPayload({
+      id: "tool-c1",
+      toolName: "write",
+      argsSummary: "src/new.ts",
+      args: { path: "src/new.ts" },
+      result: "Created file src/new.ts\n+export const ok = true;",
+    });
+
+    expect(payload).toMatchObject({
+      components: [
+        {
+          props: {
+            fileChange: {
+              kind: "created",
+              path: "src/new.ts",
+              additions: 1,
+            },
+          },
+        },
+      ],
+    });
+  });
+
+  it("keeps malformed edit args on the generic output path", () => {
+    const payload = toolCardPayload({
+      id: "tool-c1",
+      toolName: "edit",
+      argsSummary: "",
+      args: {},
+      result: "edited",
+    });
+
+    const root = payload.components[0] as {
+      props: Record<string, unknown>;
+      children: unknown[];
+    };
+    expect(root.props.fileChange).toBeUndefined();
+    expect(root.children[0]).toMatchObject({ type: "code" });
+  });
+
   it("marks cancelled cards as a terminal state", () => {
     const payload = toolCardPayload({
       id: "tool-c1",

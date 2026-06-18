@@ -527,6 +527,68 @@ describe("ChatInput", () => {
     });
   });
 
+  it("handles nested tool-file events without forwarding them to the agent", async () => {
+    invokeMock.mockResolvedValue(undefined);
+    invokeMock.mockClear();
+    const registry = new ExtensionRegistry();
+    registry.register({
+      name: "test-tool-card",
+      components: { "tool-card": ToolCard },
+    });
+    const onEvent = vi.fn();
+    render(
+      <ExtensionRegistryProvider registry={registry}>
+        <ChatHistory
+          component={{
+            id: "chat-history",
+            type: "chat-history",
+            props: { messages: { $ref: "/messages" } },
+          }}
+          state={{
+            messages: [
+              {
+                id: "1",
+                role: "agent",
+                a2ui: {
+                  components: [
+                    {
+                      id: "tool-edit-preview",
+                      type: "tool-card",
+                      props: {
+                        title: "edit",
+                        endedAt: 2,
+                        fileChange: {
+                          kind: "edited",
+                          path: "src/App.tsx",
+                          rootPath: "/repo/aethon",
+                        },
+                      },
+                    },
+                  ],
+                },
+              },
+            ],
+          }}
+          onEvent={onEvent}
+        />
+      </ExtensionRegistryProvider>,
+    );
+
+    fireEvent.click(screen.getByText("Edited 1 file"));
+    fireEvent.click(screen.getByTitle("Open src/App.tsx"));
+
+    expect(onEvent).toHaveBeenCalledWith(
+      "tool-file-open",
+      { filePath: "src/App.tsx", rootPath: "/repo/aethon" },
+      "tool-edit-preview",
+    );
+    await Promise.resolve();
+    expect(invokeMock).not.toHaveBeenCalledWith(
+      "dispatch_a2ui_event",
+      expect.anything(),
+    );
+  });
+
   it("keeps the latest pill hidden when the feed is not scrollable", () => {
     renderHistory({
       messages: [{ id: "1", role: "agent", text: "short answer" }],

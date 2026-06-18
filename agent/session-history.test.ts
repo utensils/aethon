@@ -143,6 +143,58 @@ describe("parseSessionHistoryLines", () => {
     ]);
   });
 
+  it("restores edit tool cards with file-change metadata", () => {
+    const lines = [
+      JSON.stringify({
+        type: "message",
+        id: "assistant-tool",
+        message: {
+          role: "assistant",
+          timestamp: 1_000,
+          content: [
+            {
+              type: "toolCall",
+              id: "call-edit-1",
+              name: "edit",
+              arguments: { path: "src/App.tsx" },
+            },
+          ],
+        },
+      }),
+      JSON.stringify({
+        type: "message",
+        id: "result-tool",
+        message: {
+          role: "toolResult",
+          toolCallId: "call-edit-1",
+          toolName: "edit",
+          content: [
+            {
+              type: "text",
+              text: "--- a/src/App.tsx\n+++ b/src/App.tsx\n-old\n+new",
+            },
+          ],
+          isError: false,
+          timestamp: 2_500,
+        },
+      }),
+    ];
+
+    const restored = parseSessionHistoryLines(lines);
+    expect(restored[0]?.a2ui?.components[0]).toMatchObject({
+      type: "tool-card",
+      props: {
+        toolName: "edit",
+        fileChange: {
+          kind: "edited",
+          path: "src/App.tsx",
+          additions: 1,
+          deletions: 1,
+        },
+      },
+    });
+  });
+
   it("preserves failed tool result state when restoring tool cards", () => {
     const restored = parseSessionHistoryLines([
       JSON.stringify({

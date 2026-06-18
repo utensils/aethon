@@ -7,7 +7,7 @@ function asRecord(data: unknown): Record<string, unknown> {
     : {};
 }
 
-function isAbsolutePath(path: string): boolean {
+export function isAbsolutePath(path: string): boolean {
   return (
     path.startsWith("/") ||
     /^[A-Za-z]:[\\/]/.test(path) ||
@@ -15,7 +15,7 @@ function isAbsolutePath(path: string): boolean {
   );
 }
 
-function joinRoot(root: string, relativePath: string): string {
+export function joinRoot(root: string, relativePath: string): string {
   const separator = root.includes("\\") && !root.includes("/") ? "\\" : "/";
   const rel = relativePath
     .replace(/^[\\/]+/, "")
@@ -75,8 +75,7 @@ export const handleEditorQuery: BridgeMessageHandler = (data, ctx) => {
     if (op !== "open_file") {
       throw new Error(`unknown editor_query op: ${op}`);
     }
-    const requestedPath =
-      typeof args.path === "string" ? args.path.trim() : "";
+    const requestedPath = typeof args.path === "string" ? args.path.trim() : "";
     if (!requestedPath) throw new Error("editor_query.open_file requires path");
 
     const cwd = typeof args.cwd === "string" ? args.cwd.trim() : "";

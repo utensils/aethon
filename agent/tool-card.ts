@@ -1,5 +1,14 @@
 const MAX_IMAGES_PER_RESULT = 4;
 
+export interface ToolFileChange {
+  kind: "edited" | "created";
+  path: string;
+  rootPath?: string;
+  preview?: string;
+  additions?: number;
+  deletions?: number;
+}
+
 function firstLine(value: unknown, max = 180): string {
   if (typeof value !== "string") return "";
   const trimmed = value.trim();
@@ -78,6 +87,54 @@ export function summarizeToolArgs(toolName: string, args: unknown): string {
 
 function truncate(text: string, max: number): string {
   return text.length > max ? text.slice(0, max - 1) + "…" : text;
+}
+
+function stringArg(args: unknown, key: string): string {
+  if (!args || typeof args !== "object") return "";
+  const value = (args as Record<string, unknown>)[key];
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function countDiffStats(text: string): { additions: number; deletions: number } {
+  let additions = 0;
+  let deletions = 0;
+  for (const line of text.split(/\r?\n/)) {
+    if (line.startsWith("+++") || line.startsWith("---")) continue;
+    if (line.startsWith("+")) additions += 1;
+    else if (line.startsWith("-")) deletions += 1;
+  }
+  return { additions, deletions };
+}
+
+function writeLooksCreated(text: string): boolean {
+  return /\b(created|new file|wrote new|created file)\b/i.test(text);
+}
+
+function fileChangeForTool(opts: {
+  toolName: string;
+  args?: unknown;
+  result?: unknown;
+  rootPath?: string;
+}): ToolFileChange | undefined {
+  if (opts.toolName !== "edit" && opts.toolName !== "write") return undefined;
+  const path = stringArg(opts.args, "path");
+  if (!path) return undefined;
+  const extracted =
+    opts.result !== undefined ? extractToolContent(opts.result) : undefined;
+  const preview = extracted?.text ? truncate(extracted.text, 4000) : undefined;
+  const stats = preview ? countDiffStats(preview) : undefined;
+  const kind =
+    opts.toolName === "write" && preview && writeLooksCreated(preview)
+      ? "created"
+      : "edited";
+  return {
+    kind,
+    path,
+    ...(opts.rootPath ? { rootPath: opts.rootPath } : {}),
+    ...(preview ? { preview } : {}),
+    ...(stats && stats.additions > 0 ? { additions: stats.additions } : {}),
+    ...(stats && stats.deletions > 0 ? { deletions: stats.deletions } : {}),
+  };
 }
 
 const EXTENSION_LANGUAGES: Record<string, string> = {
@@ -213,6 +270,9 @@ export function toolCardPayload(opts: {
   id: string;
   toolName: string;
   argsSummary: string;
+  args?: unknown;
+  rootPath?: string;
+  fileChange?: ToolFileChange;
   result?: unknown;
   isError?: boolean;
   status?: "cancelled";
@@ -223,6 +283,9 @@ export function toolCardPayload(opts: {
     id,
     toolName,
     argsSummary,
+    args,
+    rootPath,
+    fileChange,
     result,
     isError,
     status,
@@ -230,6 +293,8 @@ export function toolCardPayload(opts: {
     endedAt,
   } = opts;
   const children: unknown[] = [];
+  const toolFileChange =
+    fileChange ?? fileChangeForTool({ toolName, args, result, rootPath });
   if (result !== undefined) {
     const extracted = extractToolContent(result);
     if (extracted.text) {
@@ -281,6 +346,7 @@ export function toolCardPayload(opts: {
           ...(endedAt !== undefined ? { endedAt } : {}),
           ...(isError ? { isError: true } : {}),
           ...(status !== undefined ? { status } : {}),
+          ...(toolFileChange ? { fileChange: toolFileChange } : {}),
         },
         children,
       },

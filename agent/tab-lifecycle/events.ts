@@ -101,6 +101,15 @@ function responseMessageId(
   return startResponseSegment(rec, canonical);
 }
 
+function currentToolRoot(state: AethonAgentState, tabId: string): string {
+  return (
+    state.tabProjectCwds?.get(tabId) ??
+    state.currentProjectCwd ??
+    state.userDir ??
+    process.cwd()
+  );
+}
+
 function rollResponseMessage(rec: TabRecord): void {
   rec.activeResponseMessageId = undefined;
   rec.activeResponseCanonicalId = undefined;
@@ -328,16 +337,21 @@ export function handleSessionEvent(
       const summary = summarizeToolArgs(ev.toolName, ev.args);
       const startedAt = Date.now();
       const uiId = `tool-${++rec.toolCardSeq}-${ev.toolCallId}`;
+      const rootPath = currentToolRoot(state, tabId);
       rec.toolArgsCache.set(ev.toolCallId, {
         name: ev.toolName,
         summary,
         uiId,
+        args: ev.args,
+        rootPath,
         startedAt,
       });
       const payload = toolCardPayload({
         id: uiId,
         toolName: ev.toolName,
         argsSummary: summary,
+        args: ev.args,
+        rootPath,
         startedAt,
       });
       deps.send({ type: "a2ui", tabId, id: uiId, payload });
@@ -374,6 +388,8 @@ export function handleSessionEvent(
             name: ev.toolName,
             summary: summarizeToolArgs(ev.toolName, ev.args),
             uiId: `tool-${++rec.toolCardSeq}-${ev.toolCallId}`,
+            args: ev.args,
+            rootPath: currentToolRoot(state, tabId),
           };
           rec.toolArgsCache.set(ev.toolCallId, cached);
         }
@@ -393,6 +409,8 @@ export function handleSessionEvent(
             name: ev.toolName,
             summary: summarizeToolArgs(ev.toolName, ev.args),
             uiId: `tool-${++rec.toolCardSeq}-${ev.toolCallId}`,
+            args: ev.args,
+            rootPath: currentToolRoot(state, tabId),
             startedAt: Date.now(),
           };
           rec.toolArgsCache.set(ev.toolCallId, cached);
@@ -401,6 +419,8 @@ export function handleSessionEvent(
           id: cached.uiId,
           toolName: ev.toolName,
           argsSummary: cached.summary,
+          args: cached.args ?? ev.args,
+          rootPath: cached.rootPath,
           result: ev.partialResult,
           startedAt: cached.startedAt,
         });
@@ -433,6 +453,8 @@ export function handleSessionEvent(
         id: uiId,
         toolName: ev.toolName,
         argsSummary: cached?.summary ?? "",
+        args: cached?.args,
+        rootPath: cached?.rootPath,
         result: ev.result,
         isError: ev.isError,
         ...(cached?.status !== undefined ? { status: cached.status } : {}),

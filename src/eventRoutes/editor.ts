@@ -23,12 +23,49 @@ import type {
   EventRouteEvent,
   EventRouteHandler,
 } from "./types";
+import {
+  isAbsolutePath,
+  joinRoot,
+} from "../hooks/bridgeMessageHandlers/editorQuery";
 import { WORKSTATION_AREAS } from "../hooks/useFocus";
 
 function asRecord(data: unknown): Record<string, unknown> {
   return data && typeof data === "object"
     ? (data as Record<string, unknown>)
     : {};
+}
+
+function activeRoot(ctx: EventRouteContext): string {
+  const state = ctx.stateRef.current;
+  const payloadRoot = (state.project as { path?: string } | undefined)?.path;
+  const activeTabId =
+    typeof state.activeTabId === "string" ? state.activeTabId : "";
+  const tabs =
+    (state.tabs as
+      | Array<{ id?: string; cwd?: string; editor?: { rootPath?: string } }>
+      | undefined) ?? [];
+  const activeTab = tabs.find((tab) => tab.id === activeTabId);
+  return activeTab?.editor?.rootPath ?? activeTab?.cwd ?? payloadRoot ?? "";
+}
+
+function resolveToolFileTarget(
+  data: unknown,
+  ctx: EventRouteContext,
+): { filePath: string; rootPath?: string } | null {
+  const payload = asRecord(data);
+  const rawPath = typeof payload.filePath === "string" ? payload.filePath : "";
+  if (!rawPath) return null;
+  const payloadRoot =
+    typeof payload.rootPath === "string" ? payload.rootPath.trim() : "";
+  const rootPath = payloadRoot || activeRoot(ctx);
+  const filePath =
+    !isAbsolutePath(rawPath) && rootPath
+      ? joinRoot(rootPath, rawPath)
+      : rawPath;
+  return {
+    filePath,
+    ...(rootPath ? { rootPath } : {}),
+  };
 }
 
 const FILES_SIDEBAR_MIN_WIDTH = 220;
@@ -132,6 +169,25 @@ export const handleEditorCanvas: EventRouteHandler = async (
     default:
       return false;
   }
+};
+
+export const handleToolCardFile: EventRouteHandler = (
+  event: EventRouteEvent,
+  ctx: EventRouteContext,
+): boolean => {
+  if (
+    event.eventType !== "tool-file-open" &&
+    event.eventType !== "tool-file-diff"
+  ) {
+    return false;
+  }
+  const target = resolveToolFileTarget(event.data, ctx);
+  if (!target) return true;
+  ctx.newEditorTab(target.filePath, {
+    ...(target.rootPath ? { rootPath: target.rootPath } : {}),
+    ...(event.eventType === "tool-file-diff" ? { diff: true } : {}),
+  });
+  return true;
 };
 
 export const handleFileTree: EventRouteHandler = (

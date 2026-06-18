@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { handleEditorCanvas, handleFileTree } from "./editor";
+import { handleEditorCanvas, handleFileTree, handleToolCardFile } from "./editor";
 import { buildRouteFixture } from "./testFixtures";
 
 const editorEvent = (eventType: string, data: unknown) => ({
@@ -313,5 +313,60 @@ describe("handleFileTree", () => {
       fx.ctx,
     );
     expect(claimed).toBe(false);
+  });
+});
+
+describe("handleToolCardFile", () => {
+  it("opens a tool-card file in an editor tab", () => {
+    const fx = buildRouteFixture({
+      state: { project: { path: "/projects/aethon" } },
+    });
+    const claimed = handleToolCardFile(
+      {
+        component: { id: "tool-1", type: "tool-card" },
+        eventType: "tool-file-open",
+        data: { filePath: "src/App.tsx" },
+      },
+      fx.ctx,
+    );
+    expect(claimed).toBe(true);
+    expect(fx.mocks.newEditorTab).toHaveBeenCalledWith(
+      "/projects/aethon/src/App.tsx",
+      { rootPath: "/projects/aethon" },
+    );
+  });
+
+  it("opens a tool-card file in a diff tab", () => {
+    const fx = buildRouteFixture();
+    const claimed = handleToolCardFile(
+      {
+        component: { id: "tool-1", type: "tool-card" },
+        eventType: "tool-file-diff",
+        data: {
+          filePath: "/projects/aethon/src/App.tsx",
+          rootPath: "/projects/aethon",
+        },
+      },
+      fx.ctx,
+    );
+    expect(claimed).toBe(true);
+    expect(fx.mocks.newEditorTab).toHaveBeenCalledWith(
+      "/projects/aethon/src/App.tsx",
+      { diff: true, rootPath: "/projects/aethon" },
+    );
+  });
+
+  it("ignores unrelated tool-card events", () => {
+    const fx = buildRouteFixture();
+    expect(
+      handleToolCardFile(
+        {
+          component: { id: "tool-1", type: "tool-card" },
+          eventType: "tool-noop",
+          data: {},
+        },
+        fx.ctx,
+      ),
+    ).toBe(false);
   });
 });

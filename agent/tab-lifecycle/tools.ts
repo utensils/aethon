@@ -42,6 +42,8 @@ export function cancelRunningToolCards(
       id: cached.uiId,
       toolName: cached.name,
       argsSummary: cached.summary,
+      args: cached.args,
+      rootPath: cached.rootPath,
       result: "Cancelled by user.",
       status: "cancelled",
       startedAt: cached.startedAt,
