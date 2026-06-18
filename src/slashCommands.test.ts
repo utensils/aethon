@@ -70,6 +70,7 @@ describe("buildBuiltinSlashCommands", () => {
       "help",
       "theme",
       "model",
+      "plan",
       "login",
       "context",
       "session",
@@ -95,6 +96,56 @@ describe("buildBuiltinSlashCommands", () => {
     for (const cmd of buildBuiltinSlashCommands()) {
       expect(typeof cmd.run).toBe("function");
     }
+  });
+
+  it("/plan toggles the active session mode", async () => {
+    const notifications: string[] = [];
+    const states: boolean[] = [];
+    let enabled = false;
+    const ctx: SlashCommandContext = {
+      appendSystem: () => {},
+      notify: (input) => notifications.push(input.title),
+      clearChat: () => {},
+      setTheme: () => {},
+      listThemes: () => [],
+      setModel: async () => {},
+      setPlanMode: (next) => {
+        enabled = next;
+        states.push(next);
+      },
+      getPlanMode: () => enabled,
+      resetLayout: () => {},
+      listExtensions: () => [],
+      installExtension: () => Promise.resolve(""),
+      listModels: () => [],
+      openLogin: () => {},
+      listAuthProfiles: () => [],
+      useAuthProfile: async () => {},
+      setDefaultAuthProfile: async () => {},
+      toggleTerminal: () => {},
+      toggleSidebar: () => {},
+      toggleFilesSidebar: () => {},
+      activateLayout: () => false,
+      listLayouts: () => [],
+      pickProject: () => Promise.resolve(null),
+      openProject: () => "",
+      setActiveProject: () => false,
+      clearProject: () => {},
+      removeProject: () => false,
+      listProjects: () => [],
+      activeProject: () => null,
+      reloadAgent: async () => {},
+      runNativeCommand: async () => {},
+      renameSession: async () => {},
+      activeTabId: () => "tab-1",
+    };
+    const plan = buildBuiltinSlashCommands().find((c) => c.name === "plan")!;
+
+    await plan.run("", ctx);
+    await plan.run("off", ctx);
+
+    expect(states).toEqual([true, false]);
+    expect(notifications).toEqual(["Plan mode on", "Implementation mode on"]);
   });
 
   it("/extensions install invokes the in-app installer", async () => {

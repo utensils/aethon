@@ -466,6 +466,62 @@ describe("handleChat", () => {
     expect(f.sent).not.toContainEqual({ type: "queued", tabId: "tab-1" });
   });
 
+  it("adds plan-mode instructions to normal prompts and records the tab mode", async () => {
+    const f = makeFixture();
+    const promptCalls: unknown[][] = [];
+    const tab = fakeTabRecord({
+      session: {
+        prompt: (...args: unknown[]) => {
+          promptCalls.push(args);
+          return Promise.resolve();
+        },
+        followUp: () => Promise.resolve(),
+        steer: () => Promise.resolve(),
+      } as unknown as TabRecord["session"],
+    });
+    f.state.tabs.set("tab-1", tab);
+
+    await handleChat(f.state, f.deps, {
+      type: "chat",
+      content: "design the fix",
+      tabId: "tab-1",
+      mode: "normal",
+      planMode: true,
+    });
+
+    expect(f.state.tabPlanMode.get("tab-1")).toBe(true);
+    expect(promptCalls[0][0]).toContain("Aethon plan mode");
+    expect(promptCalls[0][0]).toContain("User request:\ndesign the fix");
+  });
+
+  it("adds plan-mode instructions to steering prompts", async () => {
+    const f = makeFixture();
+    const steerCalls: unknown[][] = [];
+    const tab = fakeTabRecord({
+      promptInFlight: true,
+      session: {
+        prompt: () => Promise.resolve(),
+        followUp: () => Promise.resolve(),
+        steer: (...args: unknown[]) => {
+          steerCalls.push(args);
+          return Promise.resolve();
+        },
+      } as unknown as TabRecord["session"],
+    });
+    f.state.tabs.set("tab-1", tab);
+
+    await handleChat(f.state, f.deps, {
+      type: "chat",
+      content: "adjust the plan",
+      tabId: "tab-1",
+      mode: "steer",
+      planMode: true,
+    });
+
+    expect(steerCalls[0][0]).toContain("Aethon plan mode");
+    expect(steerCalls[0][0]).toContain("User request:\nadjust the plan");
+  });
+
   it("steers retry-active sessions even when Aethon's in-flight flag is stale", async () => {
     const f = makeFixture();
     const promptCalls: unknown[][] = [];

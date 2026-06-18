@@ -143,6 +143,28 @@ export function useAppSlashCommandContext({
       setTheme,
       listThemes,
       setModel,
+      setPlanMode: (enabled: boolean) => {
+        const activeId = stateRef.current.activeTabId;
+        if (typeof activeId !== "string" || activeId.length === 0) return;
+        setState((prev) => {
+          const tabs = (prev.tabs as Tab[] | undefined) ?? [];
+          const idx = tabs.findIndex((t) => t.id === activeId);
+          if (idx < 0 || tabs[idx].kind !== "agent") return prev;
+          const next = [...tabs];
+          next[idx] = { ...next[idx], planMode: enabled };
+          return {
+            ...prev,
+            tabs: next,
+            ...(prev.activeTabId === activeId ? { planMode: enabled } : {}),
+          };
+        });
+      },
+      getPlanMode: () => {
+        const activeId = stateRef.current.activeTabId;
+        const tabs = (stateRef.current.tabs as Tab[] | undefined) ?? [];
+        const tab = tabs.find((t) => t.id === activeId);
+        return tab?.kind === "agent" ? tab.planMode === true : false;
+      },
       resetLayout: () => setLayout(bootLayout),
       listExtensions: () => registry.list().map((s) => s.name),
       installExtension: async (spec: string) => {

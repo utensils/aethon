@@ -40,6 +40,8 @@ export interface InboundMessage {
   thinkingLevel?: string;
   /** Per-tab hard project-root guardrail override, carried on `chat`. */
   hardEnforce?: boolean;
+  /** Per-tab plan-mode toggle, carried on `chat`. */
+  planMode?: boolean;
   /** Native scheduled-task metadata carried on scheduler-fired chat turns. */
   scheduledTaskId?: string;
   scheduledRunId?: string;

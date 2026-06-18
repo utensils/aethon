@@ -20,6 +20,7 @@ export const TAB_MIRROR_KEYS: (keyof Tab)[] = [
   "canvas",
   "model",
   "thinkingLevel",
+  "planMode",
   "contextUsage",
   "cwd",
   // M6 P1: shell-tab fields. The "kind" + "shell" mirror lets layouts

@@ -32,6 +32,28 @@ describe("handleChatInput", () => {
     expect(mocks.sendChat).toHaveBeenCalledWith("look now", { mode: "steer" });
   });
 
+  it("mode route toggles plan mode on the active agent tab", async () => {
+    const { ctx, mocks } = buildRouteFixture();
+    const handled = await handleChatInput(
+      {
+        component: { id: "chat-input" },
+        eventType: "mode:toggle-plan",
+      },
+      ctx,
+    );
+
+    expect(handled).toBe(true);
+    expect(mocks.updateActiveTab).toHaveBeenCalledTimes(1);
+    const updater = mocks.updateActiveTab.mock.calls[0][0] as Parameters<
+      typeof ctx.updateActiveTab
+    >[0];
+    expect(updater(makeEmptyTab("tab-1", "Tab 1")).planMode).toBe(true);
+    expect(mocks.setState).not.toHaveBeenCalled();
+    expect(mocks.pushNotification).toHaveBeenCalledWith(
+      expect.objectContaining({ title: "Plan mode on", kind: "success" }),
+    );
+  });
+
   it("empty command-enter promotes the only queued message to steering", async () => {
     const tab = {
       ...makeEmptyTab("tab-1", "Tab 1"),

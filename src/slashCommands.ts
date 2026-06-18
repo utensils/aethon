@@ -38,6 +38,8 @@ export interface SlashCommandContext {
   setTheme: (id: string) => void;
   listThemes: () => { id: string; label: string }[];
   setModel: (id: string) => Promise<void>;
+  setPlanMode?: (enabled: boolean) => void;
+  getPlanMode?: () => boolean;
   resetLayout: () => void;
   listExtensions: () => string[];
   installExtension: (spec: string) => Promise<string>;
@@ -209,6 +211,65 @@ export function buildBuiltinSlashCommands(): SlashCommand[] {
           return;
         }
         await ctx.setModel(id);
+      },
+    },
+    {
+      name: "plan",
+      description: "Toggle planning-only mode for the active session",
+      usage: "[on|off|toggle|status]",
+      run: (args, ctx) => {
+        if (!ctx.setPlanMode || !ctx.getPlanMode) {
+          ctx.notify({
+            title: "Plan mode unavailable",
+            kind: "warning",
+          });
+          return;
+        }
+        const sub = args.trim().toLowerCase();
+        const current = ctx.getPlanMode();
+        if (!sub || sub === "toggle") {
+          const enabled = !current;
+          ctx.setPlanMode(enabled);
+          ctx.notify({
+            title: enabled ? "Plan mode on" : "Implementation mode on",
+            message: enabled
+              ? "New prompts will ask for a plan before code changes."
+              : "New prompts may make code changes.",
+            kind: "success",
+          });
+          return;
+        }
+        if (sub === "on" || sub === "true") {
+          ctx.setPlanMode(true);
+          ctx.notify({
+            title: "Plan mode on",
+            message: "New prompts will ask for a plan before code changes.",
+            kind: "success",
+          });
+          return;
+        }
+        if (sub === "off" || sub === "false") {
+          ctx.setPlanMode(false);
+          ctx.notify({
+            title: "Implementation mode on",
+            message: "New prompts may make code changes.",
+            kind: "success",
+          });
+          return;
+        }
+        if (sub === "status") {
+          ctx.appendSystem(
+            current
+              ? "Plan mode is on for this session."
+              : "Implementation mode is on for this session.",
+          );
+          return;
+        }
+        ctx.notify({
+          title: `Unknown plan command: ${sub}`,
+          message: "Usage: /plan [on|off|toggle|status]",
+          kind: "error",
+        });
       },
     },
     {

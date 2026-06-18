@@ -157,6 +157,38 @@ describe("wrapWithSourceGuard hard project-root enforcement", () => {
     expect(r?.block).toBeFalsy();
   });
 
+  it("blocks mutating tools while plan mode is on", async () => {
+    const agent = makeAgent();
+    wrapWithSourceGuard(agent, undefined, {
+      tabRoot: TAB,
+      planMode: () => true,
+    });
+
+    for (const tool of [
+      "write",
+      "edit",
+      "bash",
+      "task",
+      "task_batch",
+      "startTask",
+      "writeShell",
+    ]) {
+      const r = await agent.beforeToolCall(ctx(tool, "src/file.ts"), undefined);
+      expect(r?.block).toBe(true);
+      expect(r?.reason).toContain("Plan mode is on");
+    }
+  });
+
+  it("allows read-only tools while plan mode is on", async () => {
+    const agent = makeAgent();
+    wrapWithSourceGuard(agent, undefined, {
+      tabRoot: TAB,
+      planMode: () => true,
+    });
+    const r = await agent.beforeToolCall(ctx("read", "src/file.ts"), undefined);
+    expect(r?.block).toBeFalsy();
+  });
+
   it("reads hardEnforce() live so a runtime toggle takes effect", async () => {
     let on = false;
     const agent = makeAgent();

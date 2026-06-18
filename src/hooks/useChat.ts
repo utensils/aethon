@@ -25,7 +25,6 @@ import {
 import { isAgentTabInFlight } from "../utils/agentBusy";
 
 const STOP_CONFIRM_DELAYS_MS = [0, 150, 500, 1000, 2000] as const;
-
 /** Patch `queuedMessages` and the derived `queueCount` together so the
  *  composer badge can't drift out of sync with the popover list. */
 function withQueue(tab: Tab, next: QueuedMessage[]): Tab {
@@ -638,13 +637,16 @@ export function useChat(ctx: UseChatContext): UseChatActions {
         : typeof stateRef.current.thinkingLevel === "string" &&
             stateRef.current.thinkingLevel.length > 0
           ? stateRef.current.thinkingLevel
-          : undefined;
+        : undefined;
+    const targetPlanMode =
+      targetTab?.kind === "agent" ? targetTab.planMode === true : false;
     try {
       await invoke("send_message", {
         request: {
           message: bridgeText,
           tabId,
           mode,
+          planMode: targetPlanMode,
           ...(attachments.length > 0 ? { attachments } : {}),
           ...(targetCwd ? { cwd: targetCwd } : {}),
           ...(targetModel ? { model: targetModel } : {}),

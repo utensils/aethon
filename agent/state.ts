@@ -409,6 +409,11 @@ export class AethonAgentState {
    *  per-tab toggle), so it's always current before a turn's tool calls and
    *  survives an agent respawn. Read live by the wrapWithSourceGuard closure. */
   readonly tabHardEnforce = new Map<string, boolean>();
+  /** Per-tab plan mode. When true, the source guard blocks mutating tools
+   *  while still allowing read/introspection so the model can inspect and
+   *  propose a plan. Carried on every chat from the frontend and read live by
+   *  the wrapWithSourceGuard closure. */
+  readonly tabPlanMode = new Map<string, boolean>();
   /** Global default for the hard project-root guardrail, from
    *  `[guardrails] hard_enforce_project_root` via the
    *  AETHON_HARD_ENFORCE_PROJECT_ROOT env at spawn. */
