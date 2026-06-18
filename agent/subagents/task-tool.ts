@@ -49,6 +49,7 @@ import {
 } from "../file-references";
 /** Cap on the text returned to the parent (and streamed partials). */
 const MAX_RESULT_CHARS = 100_000;
+const ABORT_CLEANUP_GRACE_MS = 2_000;
 type RequestedTaskSurface = "inline" | "background" | "auto";
 type ExecutionSurface = "inline" | "tab" | "background";
 
@@ -582,7 +583,7 @@ async function runInlineSubagent(
   } finally {
     signal?.removeEventListener("abort", onAbort);
     if (abortPromise) {
-      await abortPromise;
+      await waitForAbortCleanup(abortPromise, sub.name);
     }
     unsubscribe();
     try {
@@ -608,6 +609,31 @@ async function runInlineSubagent(
     content: [{ type: "text", text: text.slice(0, MAX_RESULT_CHARS) }],
     details,
   };
+}
+
+async function waitForAbortCleanup(
+  abortPromise: Promise<void>,
+  subagentName: string,
+): Promise<void> {
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  const timeoutPromise = new Promise<"timeout">((resolve) => {
+    timeout = setTimeout(
+      () => resolve("timeout"),
+      ABORT_CLEANUP_GRACE_MS,
+    );
+  });
+  const result = await Promise.race([
+    abortPromise.then(() => "settled" as const),
+    timeoutPromise,
+  ]);
+  if (timeout) clearTimeout(timeout);
+  if (result === "timeout") {
+    logger
+      .scope("subagent")
+      .warn(
+        `abort did not settle within ${ABORT_CLEANUP_GRACE_MS}ms for "${subagentName}"; disposing session anyway`,
+      );
+  }
 }
 
 interface TasksApi {

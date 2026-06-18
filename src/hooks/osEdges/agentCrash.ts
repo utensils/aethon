@@ -19,6 +19,94 @@ export interface AgentCrashDeps {
   pushNotification: (n: NotificationInput) => string;
 }
 
+function defaultCrashDiagnostic(key?: string): string {
+  return key
+    ? `Agent worker exited unexpectedly (${key}).`
+    : "Agent worker exited unexpectedly.";
+}
+
+function normalizeTailLine(line: string): string {
+  return line.trim().replace(/^stdout:\s*/i, "").trim();
+}
+
+function isRuntimeBanner(line: string): boolean {
+  return (
+    /^Bun v\d+(?:\.\d+)*/i.test(line) ||
+    /^Node\.js v\d+(?:\.\d+)*/i.test(line)
+  );
+}
+
+function isActionableDiagnostic(line: string): boolean {
+  return /fatal|panic|error|failed|timed?\s*out|timeout|exception|crash|closed unexpectedly|aborted/i.test(
+    line,
+  );
+}
+
+export function selectAgentCrashDiagnostic(
+  tail: readonly string[],
+  key?: string,
+): string {
+  const candidates = [...tail]
+    .reverse()
+    .map(normalizeTailLine)
+    .filter((line) => line.length > 0 && !isRuntimeBanner(line));
+  return (
+    candidates.find(isActionableDiagnostic) ??
+    candidates[0] ??
+    defaultCrashDiagnostic(key)
+  );
+}
+
+function summarizeRunningToolComponent(
+  component: {
+    type?: unknown;
+    props?: Record<string, unknown>;
+    children?: unknown[];
+  },
+): string | undefined {
+  if (
+    component.type === "tool-card" &&
+    component.props?.startedAt !== undefined &&
+    component.props.endedAt === undefined
+  ) {
+    const toolName = String(
+      component.props.toolName ?? component.props.title ?? "tool",
+    ).trim();
+    const description =
+      typeof component.props.description === "string"
+        ? component.props.description.trim()
+        : "";
+    return [toolName, description].filter(Boolean).join(" ");
+  }
+  for (const child of component.children ?? []) {
+    if (!child || typeof child !== "object") continue;
+    const summary = summarizeRunningToolComponent(child);
+    if (summary) return summary;
+  }
+  return undefined;
+}
+
+export function summarizeRunningToolCrash(
+  tabs: readonly Tab[] | undefined,
+  crashedTabId?: string,
+): string | undefined {
+  if (!crashedTabId) return undefined;
+  const matchingTabs = (tabs ?? []).filter(
+    (tab) =>
+      (tab.kind ?? "agent") === "agent" &&
+      tab.id === crashedTabId,
+  );
+  for (const tab of matchingTabs) {
+    for (const message of tab.messages ?? []) {
+      for (const component of message.a2ui?.components ?? []) {
+        const summary = summarizeRunningToolComponent(component);
+        if (summary) return summary;
+      }
+    }
+  }
+  return undefined;
+}
+
 /** P5 bridge crash recovery. The Rust supervisor emits this when the
  *  bun child exits unexpectedly (intentional hot-reload kills go
  *  through `agent-reloaded` instead). Clears per-tab waiting state,
@@ -72,12 +160,14 @@ export function subscribeAgentCrash(deps: AgentCrashDeps): () => void {
         ? event.payload.tabId
         : undefined;
     const globalOnlyCrash = !crashedTabId && crashedKey === "__global__";
-    const lastLine =
-      tail.length > 0
-        ? tail[tail.length - 1]
-        : crashedKey
-          ? `agent stdout closed unexpectedly (${crashedKey})`
-          : "agent stdout closed unexpectedly";
+    const diagnostic = selectAgentCrashDiagnostic(tail, crashedKey);
+    const runningTool = summarizeRunningToolCrash(
+      (stateRef.current.tabs as Tab[] | undefined) ?? [],
+      crashedTabId,
+    );
+    const crashMessage = runningTool
+      ? `${runningTool} did not finish before the agent worker exited. ${diagnostic}`
+      : diagnostic;
     activeResponseIdRef.current = null;
     if (crashedTabId) {
       const h = hangWarnTimersRef.current.get(crashedTabId);
@@ -98,7 +188,7 @@ export function subscribeAgentCrash(deps: AgentCrashDeps): () => void {
         if (globalOnlyCrash) return t;
         if (crashedTabId && t.id !== crashedTabId) return t;
         const closedTools = closeRunningToolCards(t.messages, {
-          notice: "Tool call did not finish before the agent crashed.",
+          notice: crashMessage,
         });
         return {
           ...t,
@@ -139,7 +229,7 @@ export function subscribeAgentCrash(deps: AgentCrashDeps): () => void {
     pushNotification({
       id: notificationId,
       title: "Agent process exited unexpectedly",
-      message: lastLine.slice(0, 200),
+      message: crashMessage.slice(0, 240),
       kind: "error",
       // Keep visible until dismissed or restart succeeds — a transient
       // toast would race a user away from the keyboard while a long
