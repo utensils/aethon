@@ -243,6 +243,14 @@ export function switchProjectBucket(
       activeTabId,
       persistedTabBuckets,
     };
+    const attention = prev.agentAttentionTabs as
+      | Record<string, true>
+      | undefined;
+    if (activeTabId && attention?.[activeTabId]) {
+      const nextAttention = { ...attention };
+      delete nextAttention[activeTabId];
+      result.agentAttentionTabs = nextAttention;
+    }
     const activeTab = next.tabs.find((t) => t.id === activeTabId);
     if (activeTab) {
       const rec = activeTab as unknown as Record<string, unknown>;

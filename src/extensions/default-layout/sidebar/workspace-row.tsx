@@ -197,6 +197,12 @@ export function WorkspaceRow({
 
   const tooltip = isFailed && item.pendingError ? item.pendingError : item.path;
   const displayLabel = item.label || item.branch || "workspace";
+  const agentVisualState =
+    item.agent?.status === "running"
+      ? "running"
+      : item.agent?.status === "needs-attention"
+        ? "attention"
+        : "idle";
 
   useEffect(() => {
     if (!canRenameInline) return;
@@ -290,7 +296,11 @@ export function WorkspaceRow({
         if (consumeSuppressedClick?.()) return;
         if (isPendingActive || isFailed || confirmingRemove || canRenameInline)
           return;
-        onEvent("switch-workspace", { sectionId, workspaceId: item.id }, item.id);
+        onEvent(
+          "switch-workspace",
+          { sectionId, workspaceId: item.id },
+          item.id,
+        );
       }}
       onDoubleClick={() => {
         if (consumeSuppressedClick?.()) return;
@@ -316,20 +326,22 @@ export function WorkspaceRow({
       ) : null}
       {item.agent && item.agent.status !== "none" ? (
         <span
-          className={`ae-sb-agent-dot ae-sb-agent-dot--${
-            item.agent.status === "running" ? "running" : "idle"
-          }`}
+          className={`ae-sb-agent-dot ae-sb-agent-dot--${agentVisualState}`}
           aria-label={
             item.agent.status === "running"
               ? "Agent running"
-              : "Agent session idle"
+              : item.agent.status === "needs-attention"
+                ? "Agent ready for your reply"
+                : "Agent session idle"
           }
           title={
             item.agent.status === "running"
               ? `${item.agent.runningCount} agent turn${
                   item.agent.runningCount === 1 ? "" : "s"
                 } running`
-              : "Idle agent session — awaiting your input"
+              : item.agent.status === "needs-attention"
+                ? "Agent finished — ready for your reply"
+                : "Idle agent session — awaiting your input"
           }
         />
       ) : null}
@@ -367,7 +379,11 @@ export function WorkspaceRow({
       ) : null}
       {prEligible && !canRenameInline && (prLoading || prChip) ? (
         <span className="ae-workspace-pr-slot">
-          {prChip ? <WorkspacePrBadge chip={prChip} /> : <span aria-hidden="true" />}
+          {prChip ? (
+            <WorkspacePrBadge chip={prChip} />
+          ) : (
+            <span aria-hidden="true" />
+          )}
         </span>
       ) : null}
       {isPendingActive ? (

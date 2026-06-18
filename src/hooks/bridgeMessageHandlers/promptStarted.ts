@@ -50,8 +50,15 @@ export const handlePromptStarted: BridgeMessageHandler = (data, ctx) => {
   ctx.setState((prev) => {
     const running =
       (prev.agentRunningTabs as Record<string, true> | undefined) ?? {};
-    if (running[tabId]) return prev;
-    return { ...prev, agentRunningTabs: { ...running, [tabId]: true } };
+    const attention =
+      (prev.agentAttentionTabs as Record<string, true> | undefined) ?? {};
+    const result: Record<string, unknown> = running[tabId]
+      ? prev
+      : { ...prev, agentRunningTabs: { ...running, [tabId]: true } };
+    if (!attention[tabId]) return result;
+    const nextAttention = { ...attention };
+    delete nextAttention[tabId];
+    return { ...result, agentAttentionTabs: nextAttention };
   });
   if (ctx.stateRef.current.activeTabId === tabId) {
     ctx.setState((prev) => ({ ...prev, status: "thinking…" }));

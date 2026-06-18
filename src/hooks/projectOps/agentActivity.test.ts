@@ -1,9 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { makeEmptyTab, type Tab } from "../../types/tab";
-import {
-  attachAgentActivity,
-  summarizeAgentTabs,
-} from "./agentActivity";
+import { attachAgentActivity, summarizeAgentTabs } from "./agentActivity";
 
 function agentTab(id: string, projectId: string | null, cwd?: string): Tab {
   return { ...makeEmptyTab(id, id, projectId, "agent"), cwd };
@@ -36,6 +33,24 @@ describe("summarizeAgentTabs", () => {
     });
   });
 
+  it("returns needs-attention when a completed background turn is unread", () => {
+    const tabs = [agentTab("a", "p", "/p")];
+    expect(summarizeAgentTabs(tabs, new Set(), new Set(["a"]))).toEqual({
+      status: "needs-attention",
+      activeCount: 1,
+      runningCount: 0,
+    });
+  });
+
+  it("prioritizes running over needs-attention", () => {
+    const tabs = [agentTab("a", "p", "/p"), agentTab("b", "p", "/p")];
+    expect(summarizeAgentTabs(tabs, new Set(["b"]), new Set(["a"]))).toEqual({
+      status: "running",
+      activeCount: 2,
+      runningCount: 1,
+    });
+  });
+
   it("ignores non-agent tabs", () => {
     const shell = { ...makeEmptyTab("s", "s", "p", "shell"), cwd: "/p" };
     expect(summarizeAgentTabs([shell], new Set(["s"]))).toEqual({
@@ -56,7 +71,9 @@ describe("summarizeAgentTabs", () => {
 });
 
 describe("attachAgentActivity", () => {
-  const project = (workspaces: { id: string; path: string; isMain?: boolean }[]) => ({
+  const project = (
+    workspaces: { id: string; path: string; isMain?: boolean }[],
+  ) => ({
     id: "proj",
     label: "proj",
     workspaces: workspaces.map((w) => ({
@@ -69,9 +86,7 @@ describe("attachAgentActivity", () => {
   });
 
   it("scopes main-path tabs to the project line, leaving the main workspace dot-free", () => {
-    const projects = [
-      project([{ id: "wt-main", path: "/p", isMain: true }]),
-    ];
+    const projects = [project([{ id: "wt-main", path: "/p", isMain: true }])];
     const tabs = [agentTab("a", "proj", "/p")];
     const [out] = attachAgentActivity(projects, tabs, new Set(["a"]));
     expect(out.agent.status).toBe("running");
@@ -115,10 +130,37 @@ describe("attachAgentActivity", () => {
     expect(out.agentRollup.runningCount).toBe(1);
   });
 
+  it("rolls up completed workspace activity that needs attention", () => {
+    const projects = [
+      project([
+        { id: "wt-main", path: "/p", isMain: true },
+        { id: "wt-feat", path: "/p/.wt/feat" },
+      ]),
+    ];
+    const tabs = [agentTab("w", "proj", "/p/.wt/feat")];
+    const [out] = attachAgentActivity(
+      projects,
+      tabs,
+      new Set(),
+      new Set(["w"]),
+    );
+    const feat = out.workspaces.find((w) => w.id === "wt-feat");
+    expect(feat?.agent?.status).toBe("needs-attention");
+    expect(out.agentRollup.status).toBe("needs-attention");
+  });
+
   it("does not leak tabs across sibling projects", () => {
     const projects = [
-      { id: "p1", label: "p1", workspaces: [{ id: "m1", path: "/p1", isMain: true }] },
-      { id: "p2", label: "p2", workspaces: [{ id: "m2", path: "/p2", isMain: true }] },
+      {
+        id: "p1",
+        label: "p1",
+        workspaces: [{ id: "m1", path: "/p1", isMain: true }],
+      },
+      {
+        id: "p2",
+        label: "p2",
+        workspaces: [{ id: "m2", path: "/p2", isMain: true }],
+      },
     ];
     const tabs = [agentTab("a", "p1", "/p1")];
     const out = attachAgentActivity(projects, tabs, new Set(["a"]));

@@ -36,6 +36,22 @@ describe("handleResponseEnd", () => {
     expect(mocks.maybeFireCompletionNotification).toHaveBeenCalled();
   });
 
+  it("marks a completed non-active turn as needing attention", () => {
+    const { ctx, applySetState } = buildHandlerFixture({
+      state: {
+        activeTabId: "visible",
+        agentRunningTabs: { hidden: true },
+      },
+    });
+    ctx.turnStartedAtRef.current.set("hidden", Date.now() - 5000);
+
+    handleResponseEnd({ type: "response_end", tabId: "hidden" }, ctx);
+
+    const next = applySetState();
+    expect(next.agentRunningTabs).toEqual({});
+    expect(next.agentAttentionTabs).toEqual({ hidden: true });
+  });
+
   it("freezes running tool cards when the turn ends", () => {
     const { ctx, mocks } = buildHandlerFixture({
       state: { activeTabId: "default" },

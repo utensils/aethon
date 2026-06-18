@@ -1318,6 +1318,22 @@ body.ae-resizing-sidebar .a2ui-layout {
   box-shadow: 0 0 0 2px var(--state-success-border, transparent);
   animation: ae-tab-busy-pulse 1.6s ease-in-out infinite;
 }
+.ae-sb-agent-dot--attention {
+  background: var(--state-warning-fg, var(--warning));
+  box-shadow:
+    0 0 0 2px
+      color-mix(
+        in srgb,
+        var(--state-warning-fg, var(--warning)) 24%,
+        transparent
+      ),
+    0 0 8px
+      color-mix(
+        in srgb,
+        var(--state-warning-fg, var(--warning)) 34%,
+        transparent
+      );
+}
 .ae-sb-agent-dot--idle {
   background: transparent;
   box-shadow: inset 0 0 0 1.5px var(--state-success-border, var(--text-dim));

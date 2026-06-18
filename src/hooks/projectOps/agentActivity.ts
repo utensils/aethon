@@ -4,10 +4,16 @@ import { normalizeSessionPath } from "./tabBuckets";
 /** Aggregate agent state for one sidebar scope (a project's main workspace,
  *  a specific workspace, or a project rollup):
  *   - `running`            — at least one agent turn is in flight.
+ *   - `needs-attention`    — a background/unfocused turn completed and is
+ *                            waiting for the user to look.
  *   - `idle-with-session`  — an agent session exists but no turn is running
  *                            (i.e. it's waiting on the user's next input).
  *   - `none`               — no agent session for this scope. */
-export type AgentActivity = "running" | "idle-with-session" | "none";
+export type AgentActivity =
+  | "running"
+  | "needs-attention"
+  | "idle-with-session"
+  | "none";
 
 export interface AgentActivitySummary {
   status: AgentActivity;
@@ -31,17 +37,25 @@ const NONE: AgentActivitySummary = {
 export function summarizeAgentTabs(
   tabs: readonly Tab[],
   runningIds: ReadonlySet<string>,
+  attentionIds: ReadonlySet<string> = new Set(),
 ): AgentActivitySummary {
   let activeCount = 0;
   let runningCount = 0;
+  let attentionCount = 0;
   for (const tab of tabs) {
     if (tab.kind !== "agent") continue;
     activeCount += 1;
     if (runningIds.has(tab.id)) runningCount += 1;
+    else if (attentionIds.has(tab.id)) attentionCount += 1;
   }
   if (activeCount === 0) return NONE;
   return {
-    status: runningCount > 0 ? "running" : "idle-with-session",
+    status:
+      runningCount > 0
+        ? "running"
+        : attentionCount > 0
+          ? "needs-attention"
+          : "idle-with-session",
     activeCount,
     runningCount,
   };
@@ -85,6 +99,7 @@ export function attachAgentActivity<P extends ProjectLike>(
   projects: readonly P[],
   agentTabs: readonly Tab[],
   runningIds: ReadonlySet<string>,
+  attentionIds: ReadonlySet<string> = new Set(),
 ): WithAgentActivity<P>[] {
   const tabsByCwd = new Map<string, Tab[]>();
   for (const tab of agentTabs) {
@@ -119,13 +134,16 @@ export function attachAgentActivity<P extends ProjectLike>(
       // surfaced on the project line, so leave its row dot-free.
       if (w.isMain) return w;
       const wtTabs = tabsByCwd.get(normalizeSessionPath(w.path)) ?? [];
-      return { ...w, agent: summarizeAgentTabs(wtTabs, runningIds) };
+      return {
+        ...w,
+        agent: summarizeAgentTabs(wtTabs, runningIds, attentionIds),
+      };
     });
 
     return {
       ...project,
-      agent: summarizeAgentTabs(mainTabs, runningIds),
-      agentRollup: summarizeAgentTabs(rollupTabs, runningIds),
+      agent: summarizeAgentTabs(mainTabs, runningIds, attentionIds),
+      agentRollup: summarizeAgentTabs(rollupTabs, runningIds, attentionIds),
       workspaces: nextWorkspaces,
     };
   });
