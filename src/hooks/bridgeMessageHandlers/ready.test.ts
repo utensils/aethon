@@ -193,6 +193,53 @@ describe("handleReady", () => {
     ]);
   });
 
+  it("keeps the configured default reasoning level ahead of the bridge fallback", () => {
+    const configuredThinkingLevel = "xhigh";
+    const bridgeFallbackThinkingLevel = "high";
+    const { ctx, applySetState } = buildHandlerFixture({
+      state: {
+        activeTabId: "default",
+        defaultThinkingLevel: configuredThinkingLevel,
+        thinkingLevel: configuredThinkingLevel,
+        tabs: [{ id: "default", model: "openai/gpt-5.5" }],
+        sidebar: {},
+      },
+    });
+
+    handleReady(
+      {
+        type: "ready",
+        model: "openai/gpt-5.5",
+        thinkingLevel: bridgeFallbackThinkingLevel,
+        models: [
+          {
+            id: "openai/gpt-5.5",
+            label: "GPT-5.5",
+            provider: "openai",
+            thinkingLevels: ["off", "minimal", "low", "medium", "high", "xhigh"],
+          },
+        ],
+        extensionStateKeys: [],
+        discoveredTabs: [],
+        tabs: [
+          {
+            id: "default",
+            model: "openai/gpt-5.5",
+            thinkingLevel: bridgeFallbackThinkingLevel,
+          },
+        ],
+      },
+      ctx,
+    );
+
+    const next = applySetState();
+    expect(next.thinkingLevel).toBe(configuredThinkingLevel);
+    expect(next.defaultThinkingLevel).toBe(configuredThinkingLevel);
+    expect((next.tabs as { thinkingLevel?: string }[])[0].thinkingLevel).toBe(
+      configuredThinkingLevel,
+    );
+  });
+
   it("prunes extension state keys that disappeared between readies", () => {
     const { ctx, applySetState } = buildHandlerFixture({
       state: { activeTabId: "default", tabs: [{ id: "default" }], sidebar: {} },
@@ -562,6 +609,57 @@ describe("handleReady", () => {
         tabId: "tab-2",
         restoreHistory: true,
         cwd: "/repo/a",
+      }),
+    ]);
+  });
+
+  it("replays restored tab reasoning levels to the bridge", () => {
+    const harness = installTauriMocks();
+    const { ctx } = buildHandlerFixture({
+      state: {
+        activeTabId: "default",
+        defaultThinkingLevel: "xhigh",
+        tabs: [
+          { id: "default", model: "claude", projectId: "p2" },
+          {
+            id: "tab-2",
+            model: "openai/gpt-5.5",
+            thinkingLevel: "xhigh",
+            projectId: "p1",
+          },
+        ],
+      },
+    });
+    ctx.projectsRef.current = {
+      activeId: "p2",
+      activeWorkspaceId: null,
+      workspacesByProject: {},
+      activeHostId: null,
+      projects: [
+        { id: "p1", label: "A", path: "/repo/a", lastUsed: 1 },
+        { id: "p2", label: "B", path: "/repo/b", lastUsed: 2 },
+      ],
+    };
+
+    handleReady(
+      {
+        type: "ready",
+        model: "claude",
+        tabs: [{ id: "default", model: "claude" }],
+      },
+      ctx,
+    );
+
+    const payloads = harness.invoke.mock.calls
+      .filter((call) => call[0] === "agent_command")
+      .map((call) => JSON.parse(call[1].payload as string));
+    expect(payloads).toEqual([
+      expect.objectContaining({
+        type: "tab_open",
+        tabId: "tab-2",
+        restoreHistory: true,
+        cwd: "/repo/a",
+        thinkingLevel: "xhigh",
       }),
     ]);
   });
