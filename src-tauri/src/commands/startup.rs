@@ -311,7 +311,7 @@ pub async fn workspace_startup_approve(
         StartupEvent {
             root: root.display().to_string(),
             fingerprint: fingerprint.clone(),
-            state: "approved".to_string(),
+            state: "idle".to_string(),
             task_id: None,
             task_label: None,
             required: None,
@@ -836,12 +836,7 @@ fn shell_command(script: &str) -> tokio::process::Command {
 fn read_startup_config(root: &Path) -> StartupConfig {
     let path = root.join(".aethon").join("startup.toml");
     let text = match std::fs::read_to_string(&path) {
-        Ok(mut text) => {
-            if text.len() > STARTUP_CONFIG_MAX_BYTES {
-                text.truncate(STARTUP_CONFIG_MAX_BYTES);
-            }
-            text
-        }
+        Ok(text) => truncate_utf8(text, STARTUP_CONFIG_MAX_BYTES),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
         Err(e) => {
             tracing::warn!(
@@ -915,7 +910,7 @@ fn devshell_task_state(record: Option<&StartupRecord>) -> &'static str {
         {
             "running"
         }
-        StartupState::ApprovalRequired | StartupState::Running | StartupState::Ready => "succeeded",
+        StartupState::ApprovalRequired | StartupState::Running | StartupState::Ready => "ready",
         StartupState::Failed | StartupState::Continued => "idle",
     }
 }
@@ -928,7 +923,7 @@ fn command_task_state(
         return "idle";
     };
     match record.state {
-        StartupState::Ready => "succeeded",
+        StartupState::Ready => "ready",
         StartupState::Running if record.active_task_id.as_deref() == Some(command.id.as_str()) => {
             "running"
         }
@@ -937,6 +932,18 @@ fn command_task_state(
         }
         _ => "idle",
     }
+}
+
+fn truncate_utf8(mut text: String, max_bytes: usize) -> String {
+    if text.len() <= max_bytes {
+        return text;
+    }
+    let mut end = max_bytes;
+    while end > 0 && !text.is_char_boundary(end) {
+        end -= 1;
+    }
+    text.truncate(end);
+    text
 }
 
 fn approval_matches(app: &AppHandle, root: &Path, fingerprint: &str) -> Result<bool, String> {
@@ -1075,7 +1082,7 @@ command = "bun install"
 
         assert_eq!(response.state, "approval_required");
         assert_eq!(response.commands[0].id, STARTUP_DEVSHELL_TASK_ID);
-        assert_eq!(response.commands[0].state, "succeeded");
+        assert_eq!(response.commands[0].state, "ready");
         assert_eq!(response.commands[1].id, "deps");
         assert_eq!(response.commands[1].state, "idle");
     }
@@ -1128,5 +1135,14 @@ command = "bun install"
         assert_eq!(response.commands.len(), 1);
         assert_eq!(response.commands[0].id, STARTUP_DEVSHELL_TASK_ID);
         assert_eq!(response.commands[0].state, "failed");
+    }
+
+    #[test]
+    fn truncate_utf8_keeps_char_boundary() {
+        let input = format!("{}é", "a".repeat(STARTUP_CONFIG_MAX_BYTES - 1));
+        let truncated = truncate_utf8(input, STARTUP_CONFIG_MAX_BYTES);
+
+        assert_eq!(truncated.len(), STARTUP_CONFIG_MAX_BYTES - 1);
+        assert!(truncated.is_char_boundary(truncated.len()));
     }
 }

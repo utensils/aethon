@@ -29,6 +29,8 @@ describe("StartupCurtain", () => {
 
     expect(html).toContain("Approve Workspace Startup");
     expect(html).toContain("Install dependencies");
+    expect(html).toContain("role=\"dialog\"");
+    expect(html).toContain("aria-modal=\"true\"");
     expect(html).toContain("<button");
     expect(html).not.toContain("aria-hidden=\"true\"");
   });

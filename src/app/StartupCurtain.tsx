@@ -1,3 +1,4 @@
+import { useId } from "react";
 import type { WorkspaceStartupView } from "../hooks/useWorkspaceStartup";
 
 export interface StartupCurtainProps {
@@ -15,6 +16,9 @@ export function StartupCurtain({
   onRetry,
   onContinue,
 }: StartupCurtainProps) {
+  const titleId = useId();
+  const reasonId = useId();
+  const outputId = useId();
   const entry = startup?.entry ?? null;
   if (!entry) {
     return (
@@ -26,6 +30,13 @@ export function StartupCurtain({
   const pendingApproval = entry.state === "approval_required";
   const failed = entry.state === "failed";
   const running = entry.state === "running";
+  const interactive = pendingApproval || failed;
+  const describedBy = [
+    entry.reason ? reasonId : null,
+    startup?.output ? outputId : null,
+  ]
+    .filter(Boolean)
+    .join(" ");
   const title = pendingApproval
     ? "Approve Workspace Startup"
     : failed
@@ -35,12 +46,19 @@ export function StartupCurtain({
         : "Workspace Startup";
 
   return (
-    <div className="ae-startup-curtain" role="status" aria-live="polite">
+    <div
+      className="ae-startup-curtain"
+      role={interactive ? "dialog" : "status"}
+      aria-modal={interactive ? "true" : undefined}
+      aria-live={interactive ? undefined : "polite"}
+      aria-labelledby={titleId}
+      aria-describedby={describedBy || undefined}
+    >
       <div className="ae-startup-panel">
         <div className="ae-startup-header">
           <img src={logoUrl} alt="" />
           <div>
-            <h1>{title}</h1>
+            <h1 id={titleId}>{title}</h1>
             <p>{entry.root}</p>
           </div>
         </div>
@@ -62,9 +80,15 @@ export function StartupCurtain({
             ))
           )}
         </div>
-        {entry.reason ? <p className="ae-startup-reason">{entry.reason}</p> : null}
+        {entry.reason ? (
+          <p className="ae-startup-reason" id={reasonId}>
+            {entry.reason}
+          </p>
+        ) : null}
         {startup?.output ? (
-          <pre className="ae-startup-output">{startup.output}</pre>
+          <pre className="ae-startup-output" id={outputId}>
+            {startup.output}
+          </pre>
         ) : null}
         {pendingApproval || failed ? (
           <div className="ae-startup-actions">
