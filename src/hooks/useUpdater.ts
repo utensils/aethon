@@ -42,8 +42,8 @@ export interface UseUpdaterContext {
 }
 
 export interface UseUpdaterActions {
-  /** Manual menu trigger. Forces a check immediately and downloads if
-   *  one is available. */
+  /** Manual menu trigger. Forces a check immediately and surfaces the
+   *  pending update banner if one is available. */
   checkForUpdates: () => Promise<void>;
   /** Banner "Install Now" click. */
   installNow: () => Promise<void>;
@@ -103,8 +103,8 @@ export function releaseUrl(channel: UpdateChannel): string {
 /**
  * Manual + auto-updater. Wires the menu's "Check for Updates" action
  * to the new Rust `check_for_updates_with_channel` command (which engages
- * boot probation on install) and runs a 30-minute background poll on
- * release builds.
+ * boot probation only when the user clicks the banner install action) and
+ * runs a 30-minute background poll on release builds.
  *
  * The Rust shell only registers the updater plugin when a pubkey is
  * configured; if not, `updater_available` returns false and we report
@@ -131,9 +131,10 @@ export function useUpdater(ctx: UseUpdaterContext): {
     stateRef.current = state;
   }, [state]);
   const lastDismissedVersion = useRef<string | null>(null);
-  const checkInFlightRef = useRef<
-    Promise<"available" | "up-to-date" | "error" | "disabled"> | null
-  >(null);
+  const lastAvailableVersion = useRef<string | null>(null);
+  const checkInFlightRef = useRef<Promise<
+    "available" | "up-to-date" | "error" | "disabled"
+  > | null>(null);
 
   const update = useCallback(
     (patch: Partial<UpdaterStateView>) => {
@@ -225,7 +226,7 @@ export function useUpdater(ctx: UseUpdaterContext): {
   // posts system messages for the manual path.
   const runCheck = useCallback(
     async (
-      opts: { announce?: boolean } = {},
+      opts: { announce?: boolean; revealDismissed?: boolean } = {},
     ): Promise<"available" | "up-to-date" | "error" | "disabled"> => {
       if (checkInFlightRef.current) {
         return checkInFlightRef.current;
@@ -247,9 +248,11 @@ export function useUpdater(ctx: UseUpdaterContext): {
             { channel: stateRef.current.channel },
           );
           if (info) {
+            lastAvailableVersion.current = info.version;
             // Only un-dismiss if this is a different version than what
             // the user already dismissed.
             const dismissed =
+              !opts.revealDismissed &&
               stateRef.current.dismissed &&
               lastDismissedVersion.current === info.version;
             update({
@@ -261,6 +264,7 @@ export function useUpdater(ctx: UseUpdaterContext): {
             });
             return "available";
           }
+          lastAvailableVersion.current = null;
           update({ available: false, version: null, body: null, error: null });
           return "up-to-date";
         } catch (err) {
@@ -321,16 +325,16 @@ export function useUpdater(ctx: UseUpdaterContext): {
 
   const checkForUpdates = useCallback(async () => {
     appendSystemRef.current("Checking for updates…");
-    const result = await runCheck({ announce: true });
+    const result = await runCheck({ announce: true, revealDismissed: true });
     if (result === "up-to-date")
       appendSystemRef.current("Aethon is up to date.");
     else if (result === "available") {
+      update({ dismissed: false });
       appendSystemRef.current(
-        `Update available: ${stateRef.current.version}. Downloading…`,
+        `Update available: ${lastAvailableVersion.current ?? stateRef.current.version}.`,
       );
-      await installNow();
     }
-  }, [installNow, runCheck]);
+  }, [runCheck, update]);
 
   // Boot-probation lifecycle:
   //
