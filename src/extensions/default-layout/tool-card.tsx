@@ -1,10 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { FileIcon } from "../../components/file-icon";
-import type {
-  BooleanValue,
-  NumberValue,
-  StringValue,
-} from "../../types/a2ui";
+import type { BooleanValue, NumberValue, StringValue } from "../../types/a2ui";
 import type { BuiltinComponentProps } from "../../components/A2UIRenderer";
 import {
   resolveBoolean,
@@ -170,7 +166,12 @@ function ToolStatusIcon({
 }
 
 function basename(path: string): string {
-  return path.replace(/[/\\]+$/, "").split(/[/\\]/).pop() || path;
+  return (
+    path
+      .replace(/[/\\]+$/, "")
+      .split(/[/\\]/)
+      .pop() || path
+  );
 }
 
 function parentPath(path: string): string {
@@ -180,7 +181,10 @@ function parentPath(path: string): string {
 }
 
 function previewLines(preview: string): string[] {
-  return preview.replace(/\n$/, "").split(/\r?\n/).slice(0, 80);
+  return preview
+    .replace(/\r?\n$/, "")
+    .split(/\r?\n/)
+    .slice(0, 80);
 }
 
 function lineTone(line: string): "add" | "del" | "hunk" | "meta" | "ctx" {
@@ -247,7 +251,11 @@ function ToolFileChangePreview({
             title={`Open ${filePath}`}
             onClick={() => onEvent("tool-file-open", eventPayload)}
           >
-            <FileIcon path={filePath} isDir={false} className="ae-tool-file-icon" />
+            <FileIcon
+              path={filePath}
+              isDir={false}
+              className="ae-tool-file-icon"
+            />
             <span className="ae-tool-file-name">{fileName}</span>
             {dir ? <span className="ae-tool-file-dir">{dir}</span> : null}
           </button>
@@ -284,7 +292,9 @@ function ToolFileChangePreview({
             </code>
           </pre>
         ) : (
-          <div className="ae-tool-file-no-preview">No inline diff available</div>
+          <div className="ae-tool-file-no-preview">
+            No inline diff available
+          </div>
         )}
       </div>
     </details>

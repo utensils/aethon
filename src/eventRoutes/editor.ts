@@ -23,30 +23,16 @@ import type {
   EventRouteEvent,
   EventRouteHandler,
 } from "./types";
+import {
+  isAbsolutePath,
+  joinRoot,
+} from "../hooks/bridgeMessageHandlers/editorQuery";
 import { WORKSTATION_AREAS } from "../hooks/useFocus";
 
 function asRecord(data: unknown): Record<string, unknown> {
   return data && typeof data === "object"
     ? (data as Record<string, unknown>)
     : {};
-}
-
-function isAbsolutePath(path: string): boolean {
-  return (
-    path.startsWith("/") ||
-    /^[A-Za-z]:[\\/]/.test(path) ||
-    /^[/\\]{2}[^/\\]/.test(path)
-  );
-}
-
-function joinRoot(root: string, relativePath: string): string {
-  const separator = root.includes("\\") && !root.includes("/") ? "\\" : "/";
-  const rel = relativePath
-    .replace(/^[\\/]+/, "")
-    .split(/[\\/]+/)
-    .filter((part) => part.length > 0 && part !== ".")
-    .join(separator);
-  return `${root.replace(/[\\/]+$/, "")}${separator}${rel}`;
 }
 
 function activeRoot(ctx: EventRouteContext): string {
@@ -73,7 +59,9 @@ function resolveToolFileTarget(
     typeof payload.rootPath === "string" ? payload.rootPath.trim() : "";
   const rootPath = payloadRoot || activeRoot(ctx);
   const filePath =
-    !isAbsolutePath(rawPath) && rootPath ? joinRoot(rootPath, rawPath) : rawPath;
+    !isAbsolutePath(rawPath) && rootPath
+      ? joinRoot(rootPath, rawPath)
+      : rawPath;
   return {
     filePath,
     ...(rootPath ? { rootPath } : {}),

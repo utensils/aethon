@@ -16,7 +16,10 @@ import type {
   StringValue,
 } from "../../types/a2ui";
 import A2UIRenderer from "../../components/A2UIRenderer";
-import type { BuiltinComponentProps } from "../../components/A2UIRenderer";
+import type {
+  A2UIEventHandler,
+  BuiltinComponentProps,
+} from "../../components/A2UIRenderer";
 import { resolveString } from "../../utils/dataBinding";
 import { resolvePointer } from "../../utils/jsonPointer";
 import { splitThinkingBlocks } from "../../utils/thinkingBlocks";
@@ -47,6 +50,15 @@ import { ImageLightbox } from "./image-lightbox";
 // overflow check that gates the scroll-to-bottom pill.
 const DEFAULT_AT_BOTTOM_THRESHOLD = 60;
 const FENCED_CODE_MARKER_RE = /(^|\n)(```|~~~)/;
+
+function forwardNestedA2UIEvent(
+  onEvent: BuiltinComponentProps["onEvent"] | undefined,
+): A2UIEventHandler {
+  return (component, eventType, data) => {
+    onEvent?.(eventType, data, component.id);
+    return eventType === "tool-file-open" || eventType === "tool-file-diff";
+  };
+}
 
 // tabId → the message id at the top of the viewport when the tab was left
 // scrolled-up (absent when it was left following at the bottom). The message
@@ -412,9 +424,7 @@ export const ChatMessageRow = memo(
           <A2UIRenderer
             payload={message.a2ui}
             state={state}
-            onEvent={(component, eventType, data) =>
-              onEvent?.(eventType, data, component.id)
-            }
+            onEvent={forwardNestedA2UIEvent(onEvent)}
             tabId={tabId}
           />
         )}
@@ -576,9 +586,7 @@ function ToolGroupRow({
                 key={m.id}
                 payload={m.a2ui}
                 state={state}
-                onEvent={(component, eventType, data) =>
-                  onEvent?.(eventType, data, component.id)
-                }
+                onEvent={forwardNestedA2UIEvent(onEvent)}
                 tabId={tabId}
               />
             ) : null,
