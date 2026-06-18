@@ -21,6 +21,8 @@
 import type { JSX } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { releaseUrl, type UpdaterStateView } from "../hooks/useUpdater";
+import { isMacOS } from "../utils/platform";
+import { onWindowDragMouseDown } from "../utils/windowDrag";
 import styles from "./UpdateBanner.module.css";
 
 export interface UpdateBannerProps {
@@ -36,10 +38,17 @@ export function UpdateBanner({
   onDismiss,
   onRetry,
 }: UpdateBannerProps): JSX.Element | null {
+  const dragProps = isMacOS()
+    ? ({
+        "data-tauri-drag-region": "deep",
+        onMouseDown: onWindowDragMouseDown,
+      } as const)
+    : {};
+
   if (state.error) {
     const url = releaseUrl(state.channel);
     return (
-      <div className={styles.banner} role="alert">
+      <div className={styles.banner} role="alert" {...dragProps}>
         <span className={`${styles.message} ${styles.errorMessage}`}>
           Update failed: {state.error}
         </span>
@@ -74,7 +83,7 @@ export function UpdateBanner({
         ? "Preparing rollback backup…"
         : "Downloading update…";
     return (
-      <div className={styles.banner}>
+      <div className={styles.banner} {...dragProps}>
         <span className={styles.message}>{phaseLabel}</span>
         <div className={styles.progressWrap}>
           <div className={styles.progressTrack}>
@@ -90,10 +99,10 @@ export function UpdateBanner({
   }
 
   return (
-    <div className={styles.banner}>
+    <div className={styles.banner} {...dragProps}>
       <span className={styles.message}>
-        {productLabel}{" "}
-        <span className={styles.version}>v{state.version}</span> is available
+        {productLabel} <span className={styles.version}>v{state.version}</span>{" "}
+        is available
       </span>
       <div className={styles.actions}>
         <button className={styles.btnPrimary} onClick={onInstallNow}>

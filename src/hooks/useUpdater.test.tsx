@@ -18,13 +18,17 @@ declare global {
   }
 }
 
-const invoke = vi.fn((cmd: string, _args?: unknown) => {
-  if (cmd === "updater_available") return Promise.resolve(true);
-  if (cmd === "check_for_updates_with_channel") return Promise.resolve(null);
-  return Promise.resolve(undefined);
-});
+const invoke = vi.fn<(cmd: string, _args?: unknown) => Promise<unknown>>(
+  (cmd) => {
+    if (cmd === "updater_available") return Promise.resolve(true);
+    if (cmd === "check_for_updates_with_channel") return Promise.resolve(null);
+    return Promise.resolve(undefined);
+  },
+);
 
-const listen = vi.fn((_event: string, _cb: unknown) => Promise.resolve(vi.fn()));
+const listen = vi.fn((_event: string, _cb: unknown) =>
+  Promise.resolve(vi.fn()),
+);
 const getConfig = vi.fn(() =>
   Promise.resolve({
     updates: { channel: "nightly", disableAutoCheck: false },
@@ -85,6 +89,74 @@ describe("useUpdater", () => {
         ([cmd]) => cmd === "check_for_updates_with_channel",
       ),
     ).toHaveLength(1);
+
+    unmount();
+  });
+
+  it("manual check surfaces an available update without installing it", async () => {
+    vi.stubEnv("DEV", true);
+    invoke.mockImplementation((cmd: string, _args?: unknown) => {
+      if (cmd === "updater_available") return Promise.resolve(true);
+      if (cmd === "check_for_updates_with_channel") {
+        return Promise.resolve({
+          version: "0.5.0",
+          current_version: "0.4.0",
+          body: null,
+          date: null,
+        });
+      }
+      return Promise.resolve(undefined);
+    });
+    const appendSystem = vi.fn();
+    const { useUpdater } = await import("./useUpdater");
+
+    const { result, unmount } = renderHook(() => useUpdater({ appendSystem }));
+
+    await act(async () => {
+      await result.current.actions.checkForUpdates();
+    });
+
+    expect(invoke).toHaveBeenCalledWith("check_for_updates_with_channel", {
+      channel: "stable",
+    });
+    expect(
+      invoke.mock.calls.some(([cmd]) => cmd === "install_pending_update"),
+    ).toBe(false);
+    expect(result.current.state).toMatchObject({
+      available: true,
+      version: "0.5.0",
+      downloading: false,
+      dismissed: false,
+    });
+    expect(appendSystem.mock.calls.map(([text]) => text)).toEqual([
+      "Checking for updates…",
+      "Update available: 0.5.0.",
+    ]);
+
+    act(() => {
+      result.current.actions.dismiss();
+    });
+    await waitFor(() => expect(result.current.state.dismissed).toBe(true));
+
+    invoke.mockClear();
+    appendSystem.mockClear();
+    await act(async () => {
+      await result.current.actions.checkForUpdates();
+    });
+
+    expect(
+      invoke.mock.calls.some(([cmd]) => cmd === "install_pending_update"),
+    ).toBe(false);
+    expect(result.current.state).toMatchObject({
+      available: true,
+      version: "0.5.0",
+      downloading: false,
+      dismissed: false,
+    });
+    expect(appendSystem.mock.calls.map(([text]) => text)).toEqual([
+      "Checking for updates…",
+      "Update available: 0.5.0.",
+    ]);
 
     unmount();
   });

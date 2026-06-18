@@ -14,6 +14,10 @@ vi.mock("@tauri-apps/plugin-opener", () => ({
   openUrl: vi.fn(() => Promise.resolve()),
 }));
 
+vi.mock("../utils/platform", () => ({
+  isMacOS: () => true,
+}));
+
 const here = dirname(fileURLToPath(import.meta.url));
 const css = readFileSync(join(here, "UpdateBanner.module.css"), "utf8");
 const themeCss = readFileSync(join(here, "../styles/themes.css"), "utf8");
@@ -43,7 +47,10 @@ function declarationValue(rule: string, property: string): string {
 }
 
 function normalizeCssValue(value: string): string {
-  return value.replace(/\s+/g, " ").replace(/\s*,\s*/g, ", ").trim();
+  return value
+    .replace(/\s+/g, " ")
+    .replace(/\s*,\s*/g, ", ")
+    .trim();
 }
 
 function themeVars(themeId: string): Record<string, string> {
@@ -80,9 +87,7 @@ function parseHexColor(hex: string): [number, number, number] {
 function relativeLuminance(hex: string): number {
   const [red, green, blue] = parseHexColor(hex).map((channel) => {
     const value = channel / 255;
-    return value <= 0.04045
-      ? value / 12.92
-      : ((value + 0.055) / 1.055) ** 2.4;
+    return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
   });
   return 0.2126 * red + 0.7152 * green + 0.0722 * blue;
 }
@@ -97,7 +102,10 @@ function contrastRatio(foreground: string, background: string): number {
 
 function updateBannerPrimaryContrast(themeId: string): number {
   const vars = themeVars(themeId);
-  return contrastRatio(updateBannerPrimaryForegroundFor(vars), vars["--accent"]);
+  return contrastRatio(
+    updateBannerPrimaryForegroundFor(vars),
+    vars["--accent"],
+  );
 }
 
 const baseState: UpdaterStateView = {
@@ -117,6 +125,12 @@ describe("UpdateBanner stylesheet", () => {
   it("reserves macOS overlay titlebar space for the traffic lights", () => {
     expect(css).toMatch(/\[data-platform="mac"\]\s+\.banner\s*\{/);
     expect(css).toMatch(/padding-left:\s*max\(94px,\s*0\.9rem\)/);
+  });
+
+  it("keeps the banner surface draggable while preserving button clicks", () => {
+    expect(css).toMatch(/\[data-platform="mac"\]\s+\.banner\s*\{/);
+    expect(css).toMatch(/-webkit-app-region:\s*drag/);
+    expect(css).toMatch(/\.actions\s*\{[\s\S]*?-webkit-app-region:\s*no-drag/);
   });
 
   it("uses theme accent foreground fallbacks for the primary action", () => {
@@ -157,6 +171,7 @@ describe("UpdateBanner", () => {
   it("renders the available nightly update controls", () => {
     const html = render(baseState);
 
+    expect(html).toContain('data-tauri-drag-region="deep"');
     expect(html).toContain("Aethon Nightly");
     expect(html).toContain("v0.4.0-dev.66.g4e64993");
     expect(html).toContain("Install Now");
