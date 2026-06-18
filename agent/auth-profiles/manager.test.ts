@@ -238,6 +238,40 @@ describe("auth profile manager", () => {
     ).toEqual(["active"]);
   });
 
+  it("emits auth profiles after API key save even when session refresh fails", async () => {
+    const userDir = tempUserDir();
+    const state = makeState(userDir);
+    state.tabs.set("active", fakeTab("openai-codex/gpt-5.4"));
+    const sent: Record<string, unknown>[] = [];
+    const deps = {
+      send: (message: Record<string, unknown>) => sent.push(message),
+    } as DispatcherDeps;
+
+    await handleAuthProfileMessage(state, deps, {
+      type: "auth_profile_api_key_save",
+      providerId: "openai-codex",
+      key: "sk-test",
+      label: "Codex Work",
+      tabId: "active",
+    });
+
+    expect(loadAuthProfilesState(userDir).profiles).toHaveLength(1);
+    expect(state.authProfiles.defaultByProvider["openai-codex"]).toBe(
+      state.authProfiles.profiles[0]?.id,
+    );
+    expect(sent).toContainEqual(
+      expect.objectContaining({
+        type: "error",
+        message: expect.stringContaining(
+          "auth_profile_api_key_save: refresh session:",
+        ),
+      }),
+    );
+    expect(sent).toContainEqual(
+      expect.objectContaining({ type: "auth_profiles" }),
+    );
+  });
+
   it("rejects deleting unknown or unsafe profile ids before removing files", async () => {
     const state = makeState();
     const deps = {

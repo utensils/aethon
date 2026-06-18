@@ -403,13 +403,29 @@ async function handleApiKeySave(
   }
   saveAuthProfiles(state);
   servicesForProfile(state, meta.id, { forceRefresh: true });
-  await refreshTabsAfterAuthChange(state, deps, {
-    profileId: meta.id,
-    providerId,
-    targetTabId,
-  });
+  try {
+    await refreshTabsAfterAuthChange(state, deps, {
+      profileId: meta.id,
+      providerId,
+      targetTabId,
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    deps.send({
+      type: "error",
+      message: `auth_profile_api_key_save: refresh session: ${message}`,
+    });
+  }
   emitAuthProfiles(state, deps);
-  await emitGlobalReady(state, deps);
+  try {
+    await emitGlobalReady(state, deps);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    deps.send({
+      type: "error",
+      message: `auth_profile_api_key_save: emit ready: ${message}`,
+    });
+  }
 }
 
 function handleOAuthStart(
