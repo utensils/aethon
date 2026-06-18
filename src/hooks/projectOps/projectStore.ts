@@ -155,6 +155,7 @@ export function useProjectStore(deps: ProjectStoreDeps): ProjectStore {
         }
       }
       return discovered.filter((session) => {
+        if (session.cwdExists === false) return false;
         const cwd = normalizeSessionPath(session.cwd);
         return !cwd || !projectPaths.has(cwd);
       });

@@ -46,6 +46,42 @@ describe("autoRestoreDiscoveredSessions", () => {
     );
   });
 
+  it("does not restore sessions whose cwd no longer exists", () => {
+    const newTab = vi.fn();
+    const autoRestore = useAutoRestoreDiscoveredSessions({
+      stateRef: ref({ tabs: [], closedSessionIds: [] }),
+      autoRestoredSessionIdsRef: ref(new Set<string>()),
+      pushNotification: vi.fn(),
+      newTab,
+    });
+
+    autoRestore(
+      [
+        {
+          tabId: "stale-workspace",
+          lastModified: 1,
+          firstUserMessage: "Please work on issue...",
+          cwd: "/deleted/workspace",
+          cwdExists: false,
+        },
+        {
+          tabId: "valid-session",
+          lastModified: 2,
+          firstUserMessage: "Hello",
+          cwd: "/valid/path",
+          cwdExists: true,
+        },
+      ],
+      new Set(),
+    );
+
+    expect(newTab).toHaveBeenCalledTimes(1);
+    expect(newTab).toHaveBeenCalledWith("valid-session", "Hello", {
+      restoredSession: true,
+      cwd: "/valid/path",
+    });
+  });
+
   it("does not restore already-open local tabs", () => {
     const newTab = vi.fn();
     const autoRestore = useAutoRestoreDiscoveredSessions({
