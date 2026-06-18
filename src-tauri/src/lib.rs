@@ -133,7 +133,8 @@ pub fn run() {
         .manage(window_state::WindowStateStore::new())
         .manage(updater_state::UpdaterState::new())
         .manage(Arc::new(server::ServerState::new()))
-        .manage(devshell::DevshellCache::shared());
+        .manage(devshell::DevshellCache::shared())
+        .manage(commands::startup::WorkspaceStartupState::default());
     #[cfg(feature = "voice")]
     let builder = builder
         .manage(voice::VoiceProviderRegistry::new(
@@ -248,6 +249,11 @@ pub fn run() {
             commands::devshell::devshell_prepare_for_path,
             commands::devshell::devshell_env_for_path,
             commands::devshell::devshell_refresh,
+            commands::startup::workspace_startup_status,
+            commands::startup::workspace_startup_approve,
+            commands::startup::workspace_startup_prepare_for_path,
+            commands::startup::workspace_startup_retry,
+            commands::startup::workspace_startup_continue,
             shell::shell_open,
             shell::shell_input,
             shell::shell_resize,

@@ -2,6 +2,47 @@
 
 Aethon can read lightweight project-local configuration from a repository's `.aethon/` directory. These files travel with the repo and do not require shipping a UI extension.
 
+## Workspace startup commands
+
+Agent tabs opened in a project or workspace run the startup sequence for that root before the agent session starts. Aethon first prepares the configured devshell/env provider, then runs approved commands from:
+
+```text
+<project>/.aethon/startup.toml
+```
+
+Startup commands are required by default. Required failures block agent startup and show Retry / Continue controls; optional failures are shown but do not block. Commands run once per root per app launch, and changed startup config must be approved again before commands run.
+
+```toml
+[startup]
+timeout_seconds = 600
+
+[[startup.commands]]
+id = "deps"
+label = "Install dependencies"
+command = "bun install"
+
+[[startup.commands]]
+id = "codegen"
+label = "Generate local types"
+command = "bun run codegen"
+required = false
+timeout_seconds = 120
+```
+
+### Startup fields
+
+The top-level `[startup]` table supports:
+
+- `timeout_seconds` — default timeout for commands in this file. Defaults to 600 seconds and is capped at 24 hours.
+
+Each `[[startup.commands]]` entry supports:
+
+- `id` — stable command id for UI state. Defaults to `command-N` when omitted.
+- `label` — human-readable task label. Defaults to `id`.
+- `command` — shell command to run from the workspace root. Required.
+- `required` — when `false`, failure is visible but non-blocking. Defaults to `true`.
+- `timeout_seconds` — per-command timeout. Defaults to `[startup].timeout_seconds`.
+
 ## Issue-to-agent templates
 
 The project dashboard's **Open issues** section reads optional templates from:

@@ -28,6 +28,7 @@ pub mod git;
 pub mod host;
 pub mod server;
 pub mod session;
+pub mod startup;
 pub mod subagents;
 pub mod updater;
 pub mod voice;

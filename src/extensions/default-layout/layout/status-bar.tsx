@@ -85,6 +85,16 @@ export function StatusBar({ component, state }: BuiltinComponentProps) {
   const devshellClass = devshellEntry
     ? `a2ui-status-devshell-chip is-${devshellEntry.state}`
     : "a2ui-status-devshell-chip";
+  const startupSlice = resolveValue(state, "/workspaceStartup") as
+    | {
+        activeRoot?: string | null;
+        entries?: Record<string, { state?: string; reason?: string | null }>;
+      }
+    | undefined;
+  const startupRoot = startupSlice?.activeRoot ?? null;
+  const startupEntry =
+    startupRoot && startupSlice?.entries ? startupSlice.entries[startupRoot] : null;
+  const startupLabel = startupEntry ? startupChipLabel(startupEntry.state) : null;
 
   return (
     <footer className="a2ui-status-bar">
@@ -133,11 +143,33 @@ export function StatusBar({ component, state }: BuiltinComponentProps) {
           <span className="a2ui-status-devshell-label">{devshellLabel}</span>
         </span>
       ) : null}
+      {startupLabel ? (
+        <span
+          className={`a2ui-status-startup-chip is-${startupEntry?.state ?? "idle"}`}
+          title={startupEntry?.reason ?? undefined}
+        >
+          <span className="a2ui-status-startup-dot" aria-hidden="true" />
+          <span className="a2ui-status-startup-label">{startupLabel}</span>
+        </span>
+      ) : null}
       {contextUsage ? <ContextMeter usage={contextUsage} /> : null}
       <span className="a2ui-status-center">{center}</span>
       <span className="a2ui-status-right">{right}</span>
     </footer>
   );
+}
+
+function startupChipLabel(state: string | undefined): string | null {
+  switch (state) {
+    case "running":
+      return "startup running";
+    case "approval_required":
+      return "startup approval";
+    case "failed":
+      return "startup failed";
+    default:
+      return null;
+  }
 }
 
 /** Read a state pointer for non-string values (resolveString coerces). */

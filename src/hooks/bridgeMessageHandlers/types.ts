@@ -93,6 +93,7 @@ export interface BridgeMessageContext {
     opts?: { rootPath?: string; diff?: boolean },
   ) => void;
   dispatchTerminalReplay: (buffer: string) => void;
+  prepareWorkspaceStartup?: (cwd: string) => Promise<boolean>;
   autoRestoreDiscoveredSessions: (
     discovered: DiscoveredSession[],
     knownIds: Set<string>,

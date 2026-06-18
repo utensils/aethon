@@ -38,6 +38,9 @@ export interface UseTabsContext {
   /** Default model id from pi `ready`. New tabs inherit this when no per-
    *  tab model has been set, preventing a blank picker on race startup. */
   piDefaultModelRef: MutableRefObject<string>;
+  /** Project/workspace startup gate. Resolves once env providers and
+   *  approved bootstrapping commands have completed for the cwd. */
+  prepareWorkspaceStartup?: (cwd: string) => Promise<boolean>;
   /** Reopen-flow callbacks: when the closed tab belongs to a different
    *  project bucket, switch buckets first so it lands in the correct
    *  visible tab list. */

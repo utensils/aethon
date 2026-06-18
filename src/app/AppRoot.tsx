@@ -7,6 +7,8 @@ import { ExtensionRegistryProvider } from "../extensions/ExtensionRegistryProvid
 import type { ExtensionRegistry } from "../extensions/ExtensionRegistry";
 import type { A2UIPayload } from "../types/a2ui";
 import { isMacOS } from "../utils/platform";
+import { StartupCurtain } from "./StartupCurtain";
+import type { WorkspaceStartupView } from "../hooks/useWorkspaceStartup";
 
 export interface AppRootProps {
   registry: ExtensionRegistry;
@@ -22,6 +24,10 @@ export interface AppRootProps {
   authProfilesOpen: boolean;
   chromeReady: boolean;
   startupLogoUrl: string;
+  workspaceStartup?: WorkspaceStartupView | null;
+  onStartupApprove?: () => void;
+  onStartupRetry?: () => void;
+  onStartupContinue?: () => void;
   /** Optional banner row rendered above the layout. Sits in flow as the
    *  first flex child of `.app` so it pushes the rest of the chrome
    *  down instead of floating over it. */
@@ -49,8 +55,18 @@ export function AppRoot({
   authProfilesOpen,
   chromeReady,
   startupLogoUrl,
+  workspaceStartup,
+  onStartupApprove,
+  onStartupRetry,
+  onStartupContinue,
   topBanner,
 }: AppRootProps) {
+  const showStartupOverlay =
+    chromeReady &&
+    workspaceStartup?.entry &&
+    ["running", "approval_required", "failed"].includes(
+      workspaceStartup.entry.state,
+    );
   return (
     <ExtensionRegistryProvider registry={registry}>
       {/* `data-platform="mac"` gates the overlay-titlebar chrome (traffic-
@@ -66,10 +82,23 @@ export function AppRoot({
             tabId={activeTabId}
           />
         ) : (
-          <div className="ae-boot-curtain" aria-hidden="true">
-            <img src={startupLogoUrl} alt="" />
-          </div>
+          <StartupCurtain
+            logoUrl={startupLogoUrl}
+            startup={workspaceStartup}
+            onApprove={onStartupApprove}
+            onRetry={onStartupRetry}
+            onContinue={onStartupContinue}
+          />
         )}
+        {showStartupOverlay ? (
+          <StartupCurtain
+            logoUrl={startupLogoUrl}
+            startup={workspaceStartup}
+            onApprove={onStartupApprove}
+            onRetry={onStartupRetry}
+            onContinue={onStartupContinue}
+          />
+        ) : null}
         {chromeReady && notificationsOpen && (
           <RegistryComponent
             type="notification-stack"

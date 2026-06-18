@@ -485,16 +485,22 @@ export const handleReady: BridgeMessageHandler = (data, ctx) => {
       ? ctx.projectsRef.current.projects.find((p) => p.id === t.projectId)
       : null;
     const restoredCwd = t.cwd ?? tabProject?.path;
-    const opening = invoke("agent_command", {
-      payload: JSON.stringify({
-        type: "tab_open",
-        tabId: t.id,
-        ...(t.model ? { model: t.model } : {}),
-        ...(restoredCwd ? { cwd: restoredCwd } : {}),
-        ...(t.authProfileId ? { authProfileId: t.authProfileId } : {}),
-        restoreHistory: true,
-      }),
-    });
+    const opening = (async () => {
+      if (restoredCwd && ctx.prepareWorkspaceStartup) {
+        const ready = await ctx.prepareWorkspaceStartup(restoredCwd);
+        if (!ready) return;
+      }
+      return await invoke("agent_command", {
+        payload: JSON.stringify({
+          type: "tab_open",
+          tabId: t.id,
+          ...(t.model ? { model: t.model } : {}),
+          ...(restoredCwd ? { cwd: restoredCwd } : {}),
+          ...(t.authProfileId ? { authProfileId: t.authProfileId } : {}),
+          restoreHistory: true,
+        }),
+      });
+    })();
     ctx.pendingTabOpens.current.set(t.id, opening);
     opening
       .catch(() => {

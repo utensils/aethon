@@ -58,6 +58,7 @@ pub(crate) async fn send_message(
     request: SendMessageRequest,
     state: State<'_, AgentProcesses>,
     devshell: State<'_, Arc<DevshellCache>>,
+    startup: State<'_, crate::commands::startup::WorkspaceStartupState>,
     app: AppHandle,
 ) -> Result<(), String> {
     let tab_id = request.tab_id.unwrap_or_else(|| "default".to_string());
@@ -92,6 +93,7 @@ pub(crate) async fn send_message(
 
     let key = route_payload_key(&state, &payload);
     let worker = worker_for_payload(&key, &payload, true);
+    prepare_worker_startup(&app, &startup, &devshell, worker.as_ref()).await?;
     prepare_worker_devshell(&app, &devshell, worker.as_ref()).await?;
     write_agent_payload(&state, &app, key, payload, worker).await
 }
@@ -233,6 +235,7 @@ pub(crate) async fn agent_command(
     payload: String,
     state: State<'_, AgentProcesses>,
     devshell: State<'_, Arc<DevshellCache>>,
+    startup: State<'_, crate::commands::startup::WorkspaceStartupState>,
     app: AppHandle,
 ) -> Result<(), String> {
     let payload_value: serde_json::Value =
@@ -241,12 +244,28 @@ pub(crate) async fn agent_command(
     let worker = worker_for_payload(&key, &payload_value, true);
     let should_retire = payload_value.get("type").and_then(|v| v.as_str()) == Some("tab_close")
         && key != GLOBAL_AGENT_KEY;
+    prepare_worker_startup(&app, &startup, &devshell, worker.as_ref()).await?;
     prepare_worker_devshell(&app, &devshell, worker.as_ref()).await?;
     write_agent_payload(&state, &app, key.clone(), payload_value, worker).await?;
     if should_retire {
         retire_agent_key(&state, &key)?;
     }
     Ok(())
+}
+
+async fn prepare_worker_startup(
+    app: &AppHandle,
+    startup: &crate::commands::startup::WorkspaceStartupState,
+    devshell: &Arc<DevshellCache>,
+    worker: Option<&AgentWorker>,
+) -> Result<(), String> {
+    let Some(cwd) = worker
+        .and_then(|w| w.cwd.as_deref())
+        .filter(|cwd| !cwd.is_empty())
+    else {
+        return Ok(());
+    };
+    crate::commands::startup::ensure_workspace_startup_ready(app, startup, devshell, cwd).await
 }
 
 async fn prepare_worker_devshell(

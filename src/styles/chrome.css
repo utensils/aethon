@@ -163,6 +163,137 @@ body {
   opacity: 0.9;
 }
 
+.ae-startup-curtain {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  place-items: center;
+  padding: 24px;
+  background: var(--gradient-app-backdrop, var(--bg));
+}
+
+.ae-startup-panel {
+  width: min(620px, 100%);
+  max-height: min(620px, calc(var(--app-viewport-height) - 48px));
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  overflow: hidden;
+}
+
+.ae-startup-header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+}
+
+.ae-startup-header img {
+  width: 44px;
+  height: auto;
+  flex: 0 0 auto;
+  opacity: 0.9;
+}
+
+.ae-startup-header h1 {
+  margin: 0;
+  color: var(--text);
+  font-size: 18px;
+  font-weight: 650;
+  line-height: 1.2;
+}
+
+.ae-startup-header p,
+.ae-startup-reason {
+  margin: 4px 0 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.ae-startup-tasks {
+  display: grid;
+  gap: 8px;
+}
+
+.ae-startup-task {
+  display: grid;
+  grid-template-columns: 12px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 9px;
+  min-height: 28px;
+  color: var(--text);
+  font-size: 13px;
+}
+
+.ae-startup-task-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-muted);
+}
+
+.ae-startup-task-dot.is-running,
+.ae-startup-task-dot.is-idle {
+  background: var(--accent);
+}
+
+.ae-startup-task-dot.is-ready {
+  background: var(--success, #2f9e44);
+}
+
+.ae-startup-task-dot.is-failed {
+  background: var(--danger, #d94848);
+}
+
+.ae-startup-task-meta {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.ae-startup-output {
+  margin: 0;
+  min-height: 0;
+  max-height: 220px;
+  overflow: auto;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.ae-startup-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.ae-startup-actions button {
+  height: 30px;
+  padding: 0 12px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm);
+  background: var(--accent);
+  color: var(--accent-contrast, #fff);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.ae-startup-actions button.is-secondary {
+  border-color: var(--border);
+  background: var(--surface);
+  color: var(--text);
+}
+
 .a2ui-renderer {
   display: flex;
   flex-direction: column;
@@ -4616,6 +4747,40 @@ body.ae-resizing-composer * {
   opacity: 0.7;
 }
 .a2ui-status-devshell-label {
+  color: var(--text);
+  font-family: var(--font-ui);
+}
+
+.a2ui-status-startup-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 0 var(--space-2);
+  border-right: 1px solid var(--border);
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: var(--chrome-text-muted);
+  white-space: nowrap;
+}
+
+.a2ui-status-startup-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--warn);
+}
+
+.a2ui-status-startup-chip.is-running .a2ui-status-startup-dot {
+  animation: ae-devshell-pulse 1.2s ease-in-out infinite;
+}
+
+.a2ui-status-startup-chip.is-failed .a2ui-status-startup-dot,
+.a2ui-status-startup-chip.is-failed .a2ui-status-startup-label {
+  color: var(--err, #c0392b);
+  background: var(--err, #c0392b);
+}
+
+.a2ui-status-startup-label {
   color: var(--text);
   font-family: var(--font-ui);
 }
