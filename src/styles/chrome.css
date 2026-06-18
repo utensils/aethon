@@ -8228,6 +8228,29 @@ button.a2ui-gh-stat:hover {
   border-color: var(--accent);
 }
 
+.a2ui-task-launcher-voice-controls {
+  margin-left: auto;
+  min-height: 30px;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.a2ui-task-launcher-voice-controls + .a2ui-task-launcher-submit {
+  margin-left: 0;
+}
+.a2ui-task-launcher-voice-controls .a2ui-chat-input-voice {
+  position: static;
+  right: auto;
+  bottom: auto;
+}
+.a2ui-task-launcher-voice-controls .a2ui-chat-input-voice-status,
+.a2ui-task-launcher-voice-controls .a2ui-chat-input-voice-error {
+  position: static;
+  right: auto;
+  bottom: auto;
+  max-width: min(260px, 40vw);
+}
+
 .a2ui-task-launcher-submit {
   margin-left: auto;
   padding: 4px var(--space-3);
