@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { BuiltinComponentProps } from "../../components/A2UIRenderer";
 import type { Tab } from "../../types/tab";
@@ -58,10 +58,7 @@ function defaultRunAtValue(): string {
 
 export function ScheduledTasksPanel({ state, onEvent }: BuiltinComponentProps) {
   const scheduled = readScheduledTasksState(state);
-  const tasks = useMemo(
-    () => [...(scheduled.tasks ?? [])],
-    [scheduled.tasks],
-  );
+  const tasks = useMemo(() => [...(scheduled.tasks ?? [])], [scheduled.tasks]);
   const [mode, setMode] = useState<DraftMode>("loopSelfPaced");
   const [prompt, setPrompt] = useState("");
   const [interval, setIntervalValue] = useState("30m");
@@ -69,6 +66,15 @@ export function ScheduledTasksPanel({ state, onEvent }: BuiltinComponentProps) {
   const [runAt, setRunAt] = useState(defaultRunAtValue);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!scheduled.open) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onEvent("close");
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [scheduled.open, onEvent]);
 
   if (!scheduled.open) return null;
 
@@ -103,7 +109,9 @@ export function ScheduledTasksPanel({ state, onEvent }: BuiltinComponentProps) {
         schedule = { kind: "selfPaced" };
       } else if (mode === "oneShot") {
         const ms = datetimeLocalToMs(runAt);
-        if (!ms || ms <= Date.now()) throw new Error("Run time must be future.");
+        if (!ms || ms <= Date.now()) {
+          throw new Error("Run time must be in the future.");
+        }
         taskMode = "oneShot";
         schedule = { kind: "oneShot", runAt: ms };
       } else {
@@ -169,8 +177,13 @@ export function ScheduledTasksPanel({ state, onEvent }: BuiltinComponentProps) {
       >
         <div className="ae-scheduled-header">
           <h2>Scheduled Tasks</h2>
-          <button className="ae-settings-close" onClick={close} aria-label="Close">
-            x
+          <button
+            type="button"
+            className="ae-settings-close"
+            onClick={close}
+            aria-label="Close"
+          >
+            ×
           </button>
         </div>
         <div className="ae-scheduled-body">
@@ -233,6 +246,7 @@ export function ScheduledTasksPanel({ state, onEvent }: BuiltinComponentProps) {
                 {tab ? tab.label : "No agent tab"}
               </span>
               <button
+                type="button"
                 className="ae-settings-primary"
                 disabled={!canCreate}
                 onClick={() => void createTask()}
@@ -265,6 +279,7 @@ export function ScheduledTasksPanel({ state, onEvent }: BuiltinComponentProps) {
                   </div>
                   <div className="ae-scheduled-row-actions">
                     <button
+                      type="button"
                       title="Run now"
                       onClick={() => void act(runScheduledTaskNow, task.id)}
                       disabled={busy || task.status === "running"}
@@ -273,6 +288,7 @@ export function ScheduledTasksPanel({ state, onEvent }: BuiltinComponentProps) {
                     </button>
                     {task.status === "paused" || task.status === "failed" ? (
                       <button
+                        type="button"
                         title="Resume"
                         onClick={() => void act(resumeScheduledTask, task.id)}
                         disabled={busy}
@@ -281,6 +297,7 @@ export function ScheduledTasksPanel({ state, onEvent }: BuiltinComponentProps) {
                       </button>
                     ) : (
                       <button
+                        type="button"
                         title="Pause"
                         onClick={() => void act(pauseScheduledTask, task.id)}
                         disabled={busy || task.status === "running"}
@@ -289,6 +306,7 @@ export function ScheduledTasksPanel({ state, onEvent }: BuiltinComponentProps) {
                       </button>
                     )}
                     <button
+                      type="button"
                       title="Cancel"
                       onClick={() => void act(cancelScheduledTask, task.id)}
                       disabled={busy || task.status === "running"}

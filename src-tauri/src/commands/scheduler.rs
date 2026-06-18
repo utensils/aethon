@@ -562,9 +562,8 @@ pub(crate) fn scheduled_task_complete(
         if !input.success {
             task.status = ScheduledTaskStatus::Failed;
             task.next_run_at = None;
-            task.last_error = input
-                .error
-                .or_else(|| Some("scheduled run failed".to_string()));
+            task.last_error =
+                non_empty(input.error).or_else(|| Some("scheduled run failed".to_string()));
         } else {
             task.last_error = None;
             complete_success(task, now, input.complete_task == Some(true))?;

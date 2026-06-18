@@ -169,14 +169,12 @@ export function subscribeAgentCrash(deps: AgentCrashDeps): () => void {
     const crashMessage = runningTool
       ? `${runningTool} did not finish before the agent worker exited. ${diagnostic}`
       : diagnostic;
-    if (crashedTabId || !globalOnlyCrash) {
-      void failRunningScheduledTasksForTab({
-        tabId: crashedTabId ?? null,
-        message: crashMessage,
-      }).catch(() => {
-        /* scheduler state will recover from persisted running state on restart */
-      });
-    }
+    void failRunningScheduledTasksForTab({
+      tabId: crashedTabId ?? null,
+      message: crashMessage,
+    }).catch(() => {
+      /* scheduler state will recover from persisted running state on restart */
+    });
     activeResponseIdRef.current = null;
     if (crashedTabId) {
       const h = hangWarnTimersRef.current.get(crashedTabId);
