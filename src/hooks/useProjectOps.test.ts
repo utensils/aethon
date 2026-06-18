@@ -633,7 +633,7 @@ describe("useProjectOps overview terminal project switches", () => {
     });
   }
 
-  it("preserves overview and spawns a shell when switching projects with the terminal open", () => {
+  it("restores the destination project session when switching projects with the terminal open", () => {
     const newShellTab = vi.fn();
     const { result, stateRef } = renderProjectOps(twoProjectState(), {
       newShellTab,
@@ -657,10 +657,31 @@ describe("useProjectOps overview terminal project switches", () => {
       expect(result.current.setActiveProjectById("project-2")).toBe(true);
     });
 
-    expect(stateRef.current.activeTabId).toBe(OVERVIEW_TAB_ID);
+    expect(stateRef.current.activeTabId).toBe("beta-agent");
     expect((stateRef.current.tabs as Tab[]).map((t) => t.id)).toEqual([
       "beta-agent",
     ]);
+    expect(newShellTab).not.toHaveBeenCalled();
+  });
+
+  it("spawns an overview shell when switching into an empty project bucket with the terminal open", () => {
+    const newShellTab = vi.fn();
+    const { result, stateRef } = renderProjectOps(twoProjectState(), {
+      newShellTab,
+    });
+    stateRef.current = {
+      ...stateRef.current,
+      activeTabId: OVERVIEW_TAB_ID,
+      terminal: { open: true },
+      tabs: [],
+    };
+
+    act(() => {
+      expect(result.current.setActiveProjectById("project-2")).toBe(true);
+    });
+
+    expect(stateRef.current.activeTabId).toBeUndefined();
+    expect(stateRef.current.tabs).toEqual([]);
     expect(newShellTab).toHaveBeenCalledTimes(1);
   });
 
@@ -697,7 +718,7 @@ describe("useProjectOps overview terminal project switches", () => {
       expect(result.current.setActiveProjectById("project-2")).toBe(true);
     });
 
-    expect(stateRef.current.activeTabId).toBe(OVERVIEW_TAB_ID);
+    expect(stateRef.current.activeTabId).toBe("beta-shell");
     expect(newShellTab).not.toHaveBeenCalled();
   });
 
@@ -730,7 +751,39 @@ describe("useProjectOps overview terminal project switches", () => {
     expect(newShellTab).not.toHaveBeenCalled();
   });
 
-  it("preserves overview without spawning a shell when the terminal is closed", () => {
+  it("restores the destination project session instead of carrying overview across buckets", () => {
+    const newShellTab = vi.fn();
+    const { result, stateRef } = renderProjectOps(twoProjectState(), {
+      newShellTab,
+    });
+    const alphaAgent = nonEmptyAgentTab("alpha-agent", "Alpha", "project-1");
+    const betaAgent = nonEmptyAgentTab("beta-agent", "Beta", "project-2");
+    result.current.tabBucketsRef.current.set(
+      projectScopeBucketKey("project-2", null),
+      {
+        tabs: [betaAgent],
+        activeTabId: "beta-agent",
+      },
+    );
+    stateRef.current = {
+      ...stateRef.current,
+      activeTabId: OVERVIEW_TAB_ID,
+      terminal: { open: true },
+      tabs: [alphaAgent],
+    };
+
+    act(() => {
+      expect(result.current.setActiveProjectById("project-2")).toBe(true);
+    });
+
+    expect(stateRef.current.activeTabId).toBe("beta-agent");
+    expect((stateRef.current.tabs as Tab[]).map((t) => t.id)).toEqual([
+      "beta-agent",
+    ]);
+    expect(newShellTab).not.toHaveBeenCalled();
+  });
+
+  it("restores the destination project session when the terminal is closed", () => {
     const newShellTab = vi.fn();
     const { result, stateRef } = renderProjectOps(twoProjectState(), {
       newShellTab,
@@ -754,11 +807,11 @@ describe("useProjectOps overview terminal project switches", () => {
       expect(result.current.setActiveProjectById("project-2")).toBe(true);
     });
 
-    expect(stateRef.current.activeTabId).toBe(OVERVIEW_TAB_ID);
+    expect(stateRef.current.activeTabId).toBe("beta-agent");
     expect(newShellTab).not.toHaveBeenCalled();
   });
 
-  it("preserves overview and spawns a shell when clearing to the host bucket", () => {
+  it("restores the host session when clearing to the host bucket", () => {
     const newShellTab = vi.fn();
     const { result, stateRef } = renderProjectOps(twoProjectState(), {
       newShellTab,
@@ -779,11 +832,11 @@ describe("useProjectOps overview terminal project switches", () => {
       result.current.clearActiveProject();
     });
 
-    expect(stateRef.current.activeTabId).toBe(OVERVIEW_TAB_ID);
+    expect(stateRef.current.activeTabId).toBe("host-agent");
     expect((stateRef.current.tabs as Tab[]).map((t) => t.id)).toEqual([
       "host-agent",
     ]);
-    expect(newShellTab).toHaveBeenCalledTimes(1);
+    expect(newShellTab).not.toHaveBeenCalled();
   });
 
   it("does not spawn another shell when clearing to a host bucket with a shell", () => {
@@ -816,11 +869,11 @@ describe("useProjectOps overview terminal project switches", () => {
       result.current.clearActiveProject();
     });
 
-    expect(stateRef.current.activeTabId).toBe(OVERVIEW_TAB_ID);
+    expect(stateRef.current.activeTabId).toBe("host-shell");
     expect(newShellTab).not.toHaveBeenCalled();
   });
 
-  it("preserves overview and spawns a shell when switching to a workspace", () => {
+  it("restores the destination workspace session when switching to a workspace", () => {
     const newShellTab = vi.fn();
     const { result, stateRef } = renderProjectOps(projectWithWorkspaceState(), {
       newShellTab,
@@ -849,11 +902,11 @@ describe("useProjectOps overview terminal project switches", () => {
       result.current.activateWorkspace("wt-alpha-feature");
     });
 
-    expect(stateRef.current.activeTabId).toBe(OVERVIEW_TAB_ID);
+    expect(stateRef.current.activeTabId).toBe("workspace-agent");
     expect((stateRef.current.tabs as Tab[]).map((t) => t.id)).toEqual([
       "workspace-agent",
     ]);
-    expect(newShellTab).toHaveBeenCalledTimes(1);
+    expect(newShellTab).not.toHaveBeenCalled();
   });
 
   it("does not spawn another shell when switching to a workspace bucket with a shell", () => {
@@ -889,7 +942,7 @@ describe("useProjectOps overview terminal project switches", () => {
       result.current.activateWorkspace("wt-alpha-feature");
     });
 
-    expect(stateRef.current.activeTabId).toBe(OVERVIEW_TAB_ID);
+    expect(stateRef.current.activeTabId).toBe("workspace-shell");
     expect(newShellTab).not.toHaveBeenCalled();
   });
 });
