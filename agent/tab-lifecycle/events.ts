@@ -103,7 +103,7 @@ function responseMessageId(
 
 function currentToolRoot(state: AethonAgentState, tabId: string): string {
   return (
-    state.tabProjectCwds.get(tabId) ??
+    state.tabProjectCwds?.get(tabId) ??
     state.currentProjectCwd ??
     state.userDir ??
     process.cwd()
