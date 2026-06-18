@@ -54,6 +54,7 @@ import type { RuntimeSnapshot } from "./system-prompt";
 import { buildShellsApi } from "./aethon-api-shells";
 import { buildDashboardApi, buildTasksApi } from "./aethon-api-dashboard";
 import { buildEditorApi } from "./aethon-api-editor";
+import { buildWindowsApi } from "./aethon-api-windows";
 
 export interface AethonApiDeps {
   send: (obj: Record<string, unknown>) => void;
@@ -150,6 +151,35 @@ export interface EditorApi {
   openFile(input: { path: string; rootPath?: string }): Promise<MutationResult>;
 }
 
+export interface WindowsApi {
+  openCanvas(input?: {
+    id?: string;
+    title?: string;
+    components?: unknown;
+    state?: unknown;
+    width?: number;
+    height?: number;
+    x?: number;
+    y?: number;
+    focus?: boolean;
+    restoreOnLaunch?: boolean;
+    tabId?: string;
+  }): Promise<MutationResult>;
+  list(): Promise<MutationResult>;
+  focus(id: string): Promise<MutationResult>;
+  close(id: string): Promise<MutationResult>;
+  setTitle(id: string, title: string): Promise<MutationResult>;
+  emitCanvas(id: string, components: unknown): Promise<MutationResult>;
+  appendCanvas(id: string, components: unknown): Promise<MutationResult>;
+  patchCanvas(
+    id: string,
+    path: string,
+    value: unknown,
+  ): Promise<MutationResult>;
+  clearCanvas(id: string): Promise<MutationResult>;
+  setState(id: string, path: string, value: unknown): Promise<MutationResult>;
+}
+
 export interface AethonApi {
   registerComponent: (
     componentType: string,
@@ -200,6 +230,7 @@ export interface AethonApi {
   tasks: TasksApi;
   dashboard: DashboardApi;
   editor: EditorApi;
+  windows: WindowsApi;
 }
 
 /** Build the aethon API and return it. Callers (main.ts) install it on
@@ -438,6 +469,7 @@ export function buildAethonApi(
   const tasks = buildTasksApi(state, queryDeps);
   const dashboard = buildDashboardApi(state, queryDeps);
   const editor = buildEditorApi(state, queryDeps);
+  const windows = buildWindowsApi(state, queryDeps);
 
   return {
     registerComponent: _registerComponent,
@@ -493,6 +525,7 @@ export function buildAethonApi(
     tasks,
     dashboard,
     editor,
+    windows,
   };
 }
 

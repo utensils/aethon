@@ -325,6 +325,27 @@ body {
   overflow: hidden;
 }
 
+.ae-native-canvas-window {
+  background: var(--bg);
+}
+
+.ae-native-canvas-window > .a2ui-renderer {
+  padding: 16px;
+  overflow: auto;
+}
+
+.ae-native-canvas-empty {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  place-items: center;
+  padding: 24px;
+  color: var(--text-dim);
+  font-size: var(--type-body-size);
+  text-align: center;
+}
+
 .a2ui-container,
 .a2ui-card,
 .a2ui-image,

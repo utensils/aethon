@@ -48,6 +48,15 @@ registers focused tools that call this same runtime API:
 - `emitA2uiCanvas({ components })` / `appendA2uiCanvas({ components })`
   / `patchA2uiCanvas({ path, value })` / `clearA2uiCanvas({})` — call
   `aethon.canvas.*`.
+- `openA2uiCanvasWindow({ id?, title?, components?, state?, width?, height?, x?, y?, focus?, restoreOnLaunch? })`
+  / `listA2uiCanvasWindows({})` / `focusA2uiCanvasWindow({ id })` /
+  `closeA2uiCanvasWindow({ id })` / `setA2uiCanvasWindowTitle({ id, title })`
+  / `emitA2uiWindowCanvas({ id, components })` /
+  `appendA2uiWindowCanvas({ id, components })` /
+  `patchA2uiWindowCanvas({ id, path, value })` /
+  `clearA2uiWindowCanvas({ id })` /
+  `setA2uiWindowState({ id, path, value })` — call
+  `aethon.windows.*` for separate native A2UI canvas windows.
 - `openFileInEditor({ path, rootPath? })` — call
   `aethon.editor.openFile` to open or focus a Monaco editor tab.
 
@@ -163,6 +172,63 @@ if you `aethon.canvas.emit(…)` from a setInterval after startup, the
 write targets the _current_ active tab as of the call, not the active
 tab at apply time. If the user switches tabs mid-call the result lands
 on the originally-selected tab.
+
+### `windows.openCanvas / emitCanvas / setState / list / focus / close`
+
+Native canvas windows are separate OS windows that host bare A2UI content.
+Use them for exploratory dashboards, custom workpads, visual inspectors,
+and one-off tools when the user did not explicitly ask you to replace the
+main Aethon chrome.
+
+```ts
+await globalThis.aethon.windows.openCanvas({
+  id: "repo-health",
+  title: "Repo Health",
+  components: [
+    {
+      id: "summary",
+      type: "card",
+      props: { title: "Repository Health" },
+      children: [
+        {
+          id: "status",
+          type: "text",
+          props: { content: { $ref: "/status" } },
+        },
+      ],
+    },
+  ],
+  state: { status: "Checking..." },
+});
+
+await globalThis.aethon.windows.setState("repo-health", "/status", "Clean");
+await globalThis.aethon.windows.patchCanvas(
+  "repo-health",
+  "/components/0/props/title",
+  "Repository Health - Ready",
+);
+```
+
+API:
+
+- `openCanvas({ id?, title?, components?, state?, width?, height?, x?, y?, focus?, restoreOnLaunch? })`
+  creates or updates a native window. Ids must match `/^[A-Za-z][\w-]*$/`.
+  Size defaults to `900x650`; windows restore on app relaunch unless
+  `restoreOnLaunch: false`.
+- `list()` returns open window summaries.
+- `focus(id)`, `close(id)`, and `setTitle(id, title)` control the native
+  window.
+- `emitCanvas(id, components)`, `appendCanvas(id, components)`,
+  `patchCanvas(id, path, value)`, and `clearCanvas(id)` mutate the
+  window-local A2UI payload.
+- `setState(id, path, value)` writes to the window-local JSON Pointer state.
+
+Canvas windows use the same renderer and extension registry as the main
+webview. Declarative templates from `registerComponent`, React components
+from `aethon.frontendEntry`, registered themes, and highlight grammars are
+replayed into each window. Events from a canvas window include `surfaceId`
+and `windowId`, and matching handlers receive `ctx.window` helpers for the
+originating window.
 
 ### `registerComponent(type, template)`
 
@@ -364,8 +430,8 @@ interface FrontendModuleApi {
 
 Registered components receive the same `BuiltinComponentProps` shape
 as built-in composites (`component`, `state`, `onEvent`,
-`renderChildren`, `renderChildWithState`). Reference them in any A2UI
-payload by their declared `type`:
+`renderChildren`, `renderChildWithState`, plus optional `surfaceId` and
+`windowId`). Reference them in any A2UI payload by their declared `type`:
 
 ```ts
 { type: "pulse-card", props: { title: "Live", state: "ok" } }
@@ -375,6 +441,8 @@ The renderer resolves the type through the ExtensionRegistry just like
 any built-in. `examples/extension-package/src/frontend.js` ships a
 minimal `pulse-card` demo (CSS-keyframe pulse, hooks via
 `React.useEffect`).
+The same frontend components are available in native canvas windows, so
+custom chart/widgets render there without replacing the main layout.
 
 Frontend components are treated as app chrome by default: Aethon wraps
 them in `.ae-extension-component`, so text does not accidentally select
@@ -750,6 +818,8 @@ type Match = {
   componentType?: string; // type of the firing component
   descendantId?: string; // id portion after `__tpl__` separator
   eventType?: string; // "click", "submit", "change", …
+  surfaceId?: string; // e.g. "main", "canvas-window:<id>"
+  windowId?: string; // native canvas window id, when present
 };
 ```
 
@@ -763,6 +833,10 @@ Handler signature:
 
 - `ctx.setState(path, value)` — same as `globalThis.aethon.setState` but
   scoped to the originating tab (mirrored keys route to that tab).
+- `ctx.windows` — same as `globalThis.aethon.windows`.
+- `ctx.window` — present when the event came from a native canvas window;
+  includes `id`, `setState`, `emit`, `append`, `patch`, `clear`, `setTitle`,
+  `focus`, and `close` helpers scoped to that window.
 - `ctx.registerComponent(type, template)` — re-export.
 - `ctx.pi.prompt(text)` — fire an LLM turn from the handler. Same chat
   history, same model, same Stop button. Rejects if a prompt is in flight.
@@ -780,6 +854,33 @@ globalThis.aethon.onEvent(
     await ctx.pi.prompt(
       "Read README.md and summarize the project in 3 bullets.",
     );
+  },
+);
+```
+
+### Example: button inside a native canvas window
+
+```ts
+await globalThis.aethon.windows.openCanvas({
+  id: "notes",
+  title: "Notes",
+  components: [
+    {
+      id: "add",
+      type: "button",
+      props: { label: "Add note" },
+    },
+  ],
+});
+
+globalThis.aethon.onEvent(
+  { windowId: "notes", componentType: "button", eventType: "click" },
+  async (_event, ctx) => {
+    await ctx.window?.append({
+      id: `note-${Date.now()}`,
+      type: "paragraph",
+      props: { content: "New note" },
+    });
   },
 );
 ```
@@ -893,6 +994,7 @@ One-call summary suitable for chat output:
     children: [{ id, type, area? }],
   } | null,
   tabs: [{ id, model, messageCount }],
+  nativeWindows: [{ id, title, kind: "canvas", restoreOnLaunch, tabId? }],
   eventHandlers: [...],           // match shape only (no fn bodies)
   uiState: {                      // frontend-mirrored slices
     "/sidebar/models": [...],

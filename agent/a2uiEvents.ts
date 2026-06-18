@@ -36,6 +36,30 @@ export async function handleA2UIEvent(
       continue;
     if (match.eventType && match.eventType !== ev.eventType) continue;
     if (match.descendantId && match.descendantId !== descendantId) continue;
+    if (match.surfaceId && match.surfaceId !== ev.surfaceId) continue;
+    if (match.windowId && match.windowId !== ev.windowId) continue;
+    const windowId =
+      typeof ev.windowId === "string" && ev.windowId.length > 0
+        ? ev.windowId
+        : undefined;
+    const windowCtx = windowId
+      ? {
+          id: windowId,
+          setState: (path: string, value: unknown) =>
+            aethonApi.windows.setState(windowId, path, value),
+          emit: (components: unknown) =>
+            aethonApi.windows.emitCanvas(windowId, components),
+          append: (components: unknown) =>
+            aethonApi.windows.appendCanvas(windowId, components),
+          patch: (path: string, value: unknown) =>
+            aethonApi.windows.patchCanvas(windowId, path, value),
+          clear: () => aethonApi.windows.clearCanvas(windowId),
+          setTitle: (title: string) =>
+            aethonApi.windows.setTitle(windowId, title),
+          focus: () => aethonApi.windows.focus(windowId),
+          close: () => aethonApi.windows.close(windowId),
+        }
+      : undefined;
     // Fire-and-forget the handler — don't await inside the stdin loop.
     Promise.resolve()
       .then(() =>
@@ -46,6 +70,8 @@ export async function handleA2UIEvent(
             pi: piCtx,
             canvas: tabScopedCanvas,
             shells: aethonApi.shells,
+            windows: aethonApi.windows,
+            ...(windowCtx ? { window: windowCtx } : {}),
           }),
         ),
       )

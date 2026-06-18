@@ -66,6 +66,8 @@ interface A2UIRendererProps {
   // the bridge routes handler-fired pi prompts back to the right session
   // (otherwise non-default tabs would always trigger the default tab).
   tabId?: string;
+  surfaceId?: string;
+  windowId?: string;
 }
 
 /**
@@ -115,13 +117,18 @@ export interface BuiltinComponentProps {
   // forward this so events from inside the card route to the
   // correct pi session, not whatever tab happens to be "default".
   tabId?: string;
+  surfaceId?: string;
+  windowId?: string;
 }
 
 // A2UI primitives — always available, can't be overridden by extensions.
 // Recursively prefix every component id in an extension template subtree
 // with the host instance's id. Used when expanding a template so multiple
 // instances don't share React keys or emit ambiguous event componentIds.
-function rewriteTemplateIds(node: A2UIComponent, prefix: string): A2UIComponent {
+function rewriteTemplateIds(
+  node: A2UIComponent,
+  prefix: string,
+): A2UIComponent {
   const out: A2UIComponent = {
     ...node,
     id: node.id ? `${prefix}__${node.id}` : prefix,
@@ -190,6 +197,8 @@ export function RegistryComponent({
   onEvent,
   componentProps,
   tabId,
+  surfaceId,
+  windowId,
 }: {
   type: string;
   state: Record<string, unknown>;
@@ -202,6 +211,8 @@ export function RegistryComponent({
   // to tabId="default", routing extension handlers / ctx.pi.prompt()
   // against the wrong pi session in any non-default active tab.
   tabId?: string;
+  surfaceId?: string;
+  windowId?: string;
 }) {
   const payload = useMemo<A2UIPayload>(
     () => ({
@@ -215,6 +226,8 @@ export function RegistryComponent({
       state={state}
       onEvent={onEvent}
       tabId={tabId}
+      surfaceId={surfaceId}
+      windowId={windowId}
       bare
     />
   );
@@ -226,6 +239,8 @@ export default function A2UIRenderer({
   onStateChange,
   onEvent: externalOnEvent,
   tabId,
+  surfaceId,
+  windowId,
   bare = false,
 }: A2UIRendererProps) {
   const registry = useExtensionRegistry();
@@ -260,7 +275,10 @@ export default function A2UIRenderer({
   const state = useMemo(() => {
     if (mode === "controlled") return externalState as Record<string, unknown>;
     if (mode === "observer") {
-      return { ...(externalState as Record<string, unknown>), ...internalState };
+      return {
+        ...(externalState as Record<string, unknown>),
+        ...internalState,
+      };
     }
     return internalState;
   }, [mode, externalState, internalState]);
@@ -327,7 +345,9 @@ export default function A2UIRenderer({
     templateRootType?: string,
     descendantId?: string,
   ) => {
-    updateState((prev) => applyOptimisticUpdate(prev, component, eventType, data));
+    updateState((prev) =>
+      applyOptimisticUpdate(prev, component, eventType, data),
+    );
 
     if (externalOnEvent) {
       const handled = await externalOnEvent(component, eventType, data);
@@ -354,6 +374,8 @@ export default function A2UIRenderer({
           // the template's outer type ("clock-card") so handlers can match
           // by host without enumerating descendant types.
           templateRootType,
+          surfaceId,
+          windowId,
           eventType,
           data,
         }),
@@ -403,7 +425,10 @@ export default function A2UIRenderer({
         // otherwise the index (rows can re-order at the cost of
         // mounting/unmounting child controls).
         const key =
-          keyProp && item && typeof item === "object" && keyProp in (item as object)
+          keyProp &&
+          item &&
+          typeof item === "object" &&
+          keyProp in (item as object)
             ? String((item as Record<string, unknown>)[keyProp])
             : String(index);
         return (
@@ -483,7 +508,8 @@ export default function A2UIRenderer({
     const renderChildWithState = (
       child: A2UIComponent,
       overlay: Record<string, unknown>,
-    ) => renderComponent(child, templateRootType, { ...activeState, ...overlay });
+    ) =>
+      renderComponent(child, templateRootType, { ...activeState, ...overlay });
 
     return (
       <Component
@@ -491,12 +517,20 @@ export default function A2UIRenderer({
         component={component}
         state={activeState}
         onEvent={(eventType, data, descendantId) =>
-          handleEvent(component, eventType, data, templateRootType, descendantId)
+          handleEvent(
+            component,
+            eventType,
+            data,
+            templateRootType,
+            descendantId,
+          )
         }
         renderChildren={renderChildren}
         renderChild={renderChild}
         renderChildWithState={renderChildWithState}
         tabId={tabId}
+        surfaceId={surfaceId}
+        windowId={windowId}
       />
     );
   };

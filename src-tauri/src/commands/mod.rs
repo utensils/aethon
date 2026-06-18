@@ -10,6 +10,7 @@
 //! - [`extensions`] — extension menu items, native menu + tray, agent
 //!   file-watcher, npm extension installer.
 //! - [`git`] — local git status, worktrees, GitHub data, issues, and picker.
+//! - [`native_windows`] — restorable native canvas windows.
 //! - [`window`] — fullscreen / DevTools / updater gating.
 //! - [`updater`] — channel-aware update check + install + boot probation
 //!   prepare.
@@ -26,6 +27,7 @@ pub mod extensions;
 pub mod fs;
 pub mod git;
 pub mod host;
+pub mod native_windows;
 pub mod scheduler;
 pub mod server;
 pub mod session;

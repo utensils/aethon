@@ -34,6 +34,7 @@ function snapshot(overrides: Partial<RuntimeSnapshot> = {}): RuntimeSnapshot {
     layouts: [],
     frontendModules: [],
     highlightGrammars: [],
+    nativeWindows: [],
     ...overrides,
   };
 }
@@ -121,6 +122,27 @@ describe("buildRuntimeSection failedExtensions", () => {
     );
     expect(out).toContain("cwd `/repo/a`");
     expect(out).toContain("`t2` — model `(none)`, 0 messages");
+  });
+
+  it("lists open native canvas windows and window-scoped handlers", () => {
+    const out = buildRuntimeSection(
+      snapshot({
+        nativeWindows: [
+          {
+            id: "Workpad",
+            label: "aethon-canvas-Workpad",
+            kind: "canvas",
+            title: "Workpad",
+            tabId: "default",
+            componentCount: 2,
+          },
+        ],
+        eventHandlers: [{ windowId: "Workpad", eventType: "click" }],
+      }),
+    );
+    expect(out).toContain("Open native A2UI canvas windows");
+    expect(out).toContain("`Workpad`");
+    expect(out).toContain("windowId=Workpad");
   });
 });
 

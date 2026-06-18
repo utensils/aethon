@@ -64,6 +64,19 @@ export interface RuntimeSnapshot {
     componentType?: string;
     descendantId?: string;
     eventType?: string;
+    surfaceId?: string;
+    windowId?: string;
+  }[];
+  // Native OS windows opened through aethon.windows. V1 entries are
+  // A2UI canvas windows; `kind` leaves room for future surfaces.
+  nativeWindows: {
+    id: string;
+    label: string;
+    kind: "canvas";
+    title: string;
+    tabId?: string;
+    restoreOnLaunch?: boolean;
+    componentCount?: number;
   }[];
   // Extension-registered slash commands (name + description + optional
   // usage). Lets the agent answer "what slash commands are wired?"

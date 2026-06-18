@@ -1,8 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  AethonAgentState,
-  type AethonAgentStateOptions,
-} from "./state";
+import { AethonAgentState, type AethonAgentStateOptions } from "./state";
 import { buildAethonApi } from "./aethon-api";
 import type { RuntimeSnapshot } from "./system-prompt";
 import { markFrontendReady } from "./mutation-ack";
@@ -50,6 +47,7 @@ function fakeSnapshot(): RuntimeSnapshot {
     layouts: [],
     frontendModules: [],
     highlightGrammars: [],
+    nativeWindows: [],
   };
 }
 
@@ -79,6 +77,7 @@ describe("buildAethonApi", () => {
     expect(typeof api.canvas).toBe("object");
     expect(typeof api.shells).toBe("object");
     expect(typeof api.editor).toBe("object");
+    expect(typeof api.windows).toBe("object");
   });
 
   it("registerComponent accepts the bare and components-wrapped shapes", async () => {

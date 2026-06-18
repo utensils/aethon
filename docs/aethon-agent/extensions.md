@@ -121,6 +121,29 @@ interface AethonApi {
   patchLayout(pointer: string, value: unknown): void;
   registerSidebarSection(section: { id, title, items? }): void;
   registerTheme(theme: { id, label?, vars }): void;
+  windows: {
+    openCanvas(input: {
+      id?: string;
+      title?: string;
+      components?: unknown;
+      state?: unknown;
+      width?: number;
+      height?: number;
+      x?: number;
+      y?: number;
+      focus?: boolean;
+      restoreOnLaunch?: boolean;
+    }): Promise<{ ok: boolean; data?: unknown; error?: string }>;
+    emitCanvas(id: string, components: unknown): Promise<{ ok: boolean }>;
+    appendCanvas(id: string, components: unknown): Promise<{ ok: boolean }>;
+    patchCanvas(id: string, path: string, value: unknown): Promise<{ ok: boolean }>;
+    clearCanvas(id: string): Promise<{ ok: boolean }>;
+    setState(id: string, path: string, value: unknown): Promise<{ ok: boolean }>;
+    list(): Promise<{ ok: boolean; data?: unknown[] }>;
+    focus(id: string): Promise<{ ok: boolean }>;
+    close(id: string): Promise<{ ok: boolean }>;
+    setTitle(id: string, title: string): Promise<{ ok: boolean }>;
+  };
   // Introspection
   listExtensions(): { name, source }[];
   listComponents(): Record<string, unknown>;
@@ -129,6 +152,11 @@ interface AethonApi {
   getRuntimeSnapshot(): { release, cwd, docsDir, ..., extensions, components, themes };
 }
 ```
+
+`onEvent` matches can include `surfaceId` and `windowId`. When the event
+comes from a native canvas window, the handler context also includes
+`ctx.window` with `setState`, `emit`, `append`, `patch`, `clear`,
+`setTitle`, `focus`, and `close` helpers scoped to that window.
 
 ## Recipes
 
@@ -299,7 +327,52 @@ You probably don't want this unless you're building a focused-mode
 extension — `setLayout` replaces sidebar, header, status bar, the lot.
 Prefer `patchLayout` for incremental tweaks.
 
-### 6. Drive a user shell tab via `ctx.shells`
+### 6. Open a native canvas window
+
+Native canvas windows are the preferred home for exploratory/custom UI that
+should not replace the main Aethon workspace. They render the same A2UI
+templates, `aethon.frontendEntry` React components, themes, and highlight
+grammars as the main window.
+
+```ts
+await api.windows.openCanvas({
+  id: "repo-health",
+  title: "Repo Health",
+  components: [
+    {
+      id: "refresh",
+      type: "button",
+      props: { label: "Refresh" },
+    },
+    {
+      id: "status",
+      type: "card",
+      props: { title: "Status" },
+      children: [
+        {
+          id: "summary",
+          type: "paragraph",
+          props: { content: { $ref: "/summary" } },
+        },
+      ],
+    },
+  ],
+  state: { summary: "Ready" },
+});
+
+api.onEvent(
+  { windowId: "repo-health", componentType: "button", eventType: "click" },
+  async (_event, ctx) => {
+    await ctx.window?.setState("/summary", "Refreshing...");
+    await ctx.pi.prompt("Refresh the repository health summary.");
+  },
+);
+```
+
+Windows restore on app relaunch by default. Pass `restoreOnLaunch: false`
+for one-off scratch surfaces.
+
+### 7. Drive a user shell tab via `ctx.shells`
 
 Event handlers can reach the same shell sharing API as the model:
 
@@ -331,7 +404,7 @@ Rust regardless of how the API is reached. Calls during register-time
 return `frontend_not_ready`; defer them into a handler or a sidebar
 click to give the bridge handshake time to settle.
 
-### 7. Custom A2UI component reused as a card type
+### 8. Custom A2UI component reused as a card type
 
 ```ts
 api.registerComponent("info-card", {
