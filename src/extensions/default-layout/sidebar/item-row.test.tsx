@@ -56,4 +56,25 @@ describe("ItemRow agent activity", () => {
 
     expect(screen.queryByLabelText("Agent session idle")).toBeNull();
   });
+
+  it.each(["expanded", "collapsed"] as const)(
+    "shows project rollup attention while %s",
+    (disclosure) => {
+      renderItemRow(
+        {
+          id: "p1",
+          label: "aethon",
+          agent: { status: "none", runningCount: 0 },
+          agentRollup: { status: "needs-attention", runningCount: 0 },
+        },
+        disclosure,
+      );
+
+      const dot = screen.getByLabelText("Agent ready for your reply");
+      expect(dot.className).toContain("ae-sb-agent-dot--attention");
+      expect(dot.getAttribute("title")).toBe(
+        "Agent finished — ready for your reply",
+      );
+    },
+  );
 });

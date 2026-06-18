@@ -124,6 +124,24 @@ describe("WorkspaceRow", () => {
     );
   });
 
+  it("renders needs-attention agent activity as an attention dot", () => {
+    harness(
+      wt({
+        agent: {
+          status: "needs-attention",
+          activeCount: 1,
+          runningCount: 0,
+        },
+      }),
+    );
+
+    const dot = screen.getByLabelText("Agent ready for your reply");
+    expect(dot.className).toContain("ae-sb-agent-dot--attention");
+    expect(dot.getAttribute("title")).toBe(
+      "Agent finished — ready for your reply",
+    );
+  });
+
   it("renders pending status with cancel button when queued/starting", () => {
     const { onEvent } = harness(
       wt({ pendingState: "starting", label: "wip" }),
