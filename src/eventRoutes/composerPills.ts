@@ -1,6 +1,7 @@
 import type { EventRouteHandler } from "./types";
 import { resolveVisibility } from "../utils/visibilityResolver";
 import type { ToolCallsMode, VisibilityMode } from "../config";
+import type { Tab } from "../types/tab";
 
 // Thinking cycles show → collapse → hide. Tool calls cycle through the three
 // grouping styles between show and hide so one pill reaches every mode.
@@ -46,6 +47,25 @@ export const handleComposerPills: EventRouteHandler = (event, ctx) => {
   const state = ctx.stateRef.current;
   const activeId =
     typeof state.activeTabId === "string" ? state.activeTabId : undefined;
+
+  if (event.eventType === "toggle-plan") {
+    const tabs = (state.tabs as Tab[] | undefined) ?? [];
+    const activeTab = tabs.find((tab) => tab.id === activeId);
+    const enabled =
+      activeTab?.kind === "agent" ? activeTab.planMode !== true : true;
+    ctx.updateActiveTab((tab) => {
+      if (tab.kind !== "agent") return tab;
+      return { ...tab, planMode: enabled };
+    });
+    ctx.pushNotification({
+      title: enabled ? "Plan mode on" : "Implementation mode on",
+      message: enabled
+        ? "New prompts will ask for a plan before code changes."
+        : "New prompts may make code changes.",
+      kind: "success",
+    });
+    return true;
+  }
 
   if (event.eventType === "cycle") {
     const category = (event.data as { category?: unknown } | undefined)

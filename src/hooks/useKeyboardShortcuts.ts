@@ -63,6 +63,7 @@ export interface UseKeyboardShortcutsContext {
   toggleSessionSearch: () => void;
   openPalette: (mode: "switcher" | "commands" | "files") => void;
   closePalette: () => void;
+  togglePlanMode: () => void;
   adjustZoom: (delta: number) => void;
   resetZoom: () => void;
   toggleFocusComposerTerminal: () => void;
@@ -113,6 +114,13 @@ export function useKeyboardShortcuts(ctx: UseKeyboardShortcutsContext): void {
         }
       }
       const mod = e.metaKey || e.ctrlKey;
+      // Shift+Tab: toggle Plan mode for the active agent session.
+      if (e.key === "Tab" && e.shiftKey && !mod && !e.altKey) {
+        e.preventDefault();
+        e.stopPropagation();
+        ctx.togglePlanMode();
+        return;
+      }
       // Cmd+`: toggle bottom terminal panel + move focus there/back.
       if (e.key === "`" && mod && !e.shiftKey && !e.altKey) {
         e.preventDefault();
@@ -321,18 +329,14 @@ export function useKeyboardShortcuts(ctx: UseKeyboardShortcutsContext): void {
       // because it can sit on top of Settings.
       if (e.key === "Escape") {
         const state = ctx.stateRef.current;
-        const palette = state.palette as
-          | { open?: boolean }
-          | undefined;
+        const palette = state.palette as { open?: boolean } | undefined;
         if (palette?.open) {
           e.preventDefault();
           e.stopPropagation();
           ctx.closePalette();
           return;
         }
-        const settings = state.settings as
-          | { open?: boolean }
-          | undefined;
+        const settings = state.settings as { open?: boolean } | undefined;
         if (settings?.open) {
           e.preventDefault();
           e.stopPropagation();

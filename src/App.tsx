@@ -684,6 +684,25 @@ export default function App() {
     slashContext: () => slashContext(),
   });
 
+  const togglePlanMode = useCallback(() => {
+    const activeId = stateRef.current.activeTabId as string | undefined;
+    const tabs = (stateRef.current.tabs as Tab[] | undefined) ?? [];
+    const activeTab = tabs.find((tab) => tab.id === activeId);
+    if (!activeTab || activeTab.kind !== "agent") return;
+    const enabled = activeTab.planMode !== true;
+    updateActiveTab((tab) =>
+      tab.kind === "agent" ? { ...tab, planMode: enabled } : tab,
+    );
+    pushNotification({
+      title: enabled ? "Plan mode on" : "Implementation mode on",
+      message: enabled
+        ? "New prompts will ask for a plan before code changes."
+        : "New prompts may make code changes.",
+      kind: "success",
+      durationMs: 1600,
+    });
+  }, [pushNotification, stateRef, updateActiveTab]);
+
   // Bridge IPC: spawns the agent on mount, runs the boot handshake
   // (start_agent → boot_layout → report), and routes every
   // `agent-response` event through the per-type handler registry under
@@ -770,6 +789,7 @@ export default function App() {
     toggleSessionSearch,
     openPalette,
     closePalette,
+    togglePlanMode,
     adjustZoom,
     resetZoom,
     toggleFocusComposerTerminal,
