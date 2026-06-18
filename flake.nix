@@ -135,6 +135,11 @@
             pkgs.gsettings-desktop-schemas
           ];
 
+          linuxGSettingsSchemaDirs = lib.optionals pkgs.stdenv.isLinux [
+            "${pkgs.gtk3}/share/gsettings-schemas/${pkgs.gtk3.name}"
+            "${pkgs.gsettings-desktop-schemas}/share/gsettings-schemas/${pkgs.gsettings-desktop-schemas.name}"
+          ];
+
           # macOS gets libiconv from the SDK at link time (libiconv.2.tbd
           # under $SDKROOT/usr/lib), which produces a binary that loads
           # /usr/lib/libiconv.2.dylib at runtime — the path every notarized
@@ -272,6 +277,12 @@
               {
                 name = "GST_PLUGIN_SYSTEM_PATH_1_0";
                 value = lib.makeSearchPath "lib/gstreamer-1.0" linuxBuildInputs;
+              }
+              {
+                name = "XDG_DATA_DIRS";
+                prefix = lib.concatStringsSep ":" (
+                  (map (pkg: "${pkg}/share") linuxBuildInputs) ++ linuxGSettingsSchemaDirs
+                );
               }
               {
                 name = "CC";
