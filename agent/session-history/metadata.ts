@@ -110,8 +110,7 @@ export async function readSessionMetadata(
   let cwdExists: boolean | undefined;
   if (cwd) {
     try {
-      await stat(cwd);
-      cwdExists = true;
+      cwdExists = (await stat(cwd)).isDirectory();
     } catch {
       cwdExists = false;
     }

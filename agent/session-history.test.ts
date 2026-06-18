@@ -986,6 +986,8 @@ describe("readSessionTranscript", () => {
   });
 
   it("reports cwdExists: false when the session cwd directory is missing", async () => {
+    const deleted = await tempRoot();
+    await rm(deleted, { recursive: true, force: true });
     const dir = await tempRoot();
     const path = join(dir, "session.jsonl");
     await writeFile(
@@ -993,11 +995,11 @@ describe("readSessionTranscript", () => {
       `${JSON.stringify({
         type: "session",
         id: "s",
-        cwd: "/nonexistent/deleted-workspace",
+        cwd: deleted,
       })}\n`,
     );
     const meta = await readSessionMetadata(dir);
-    expect(meta?.cwd).toBe("/nonexistent/deleted-workspace");
+    expect(meta?.cwd).toBe(deleted);
     expect(meta?.cwdExists).toBe(false);
   });
 
