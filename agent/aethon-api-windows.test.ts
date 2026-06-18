@@ -109,19 +109,28 @@ describe("buildWindowsApi", () => {
     const p = api.list();
     await Promise.resolve();
     const msg = sent.at(-1)!;
-    ackMutation(state, msg.mutationId as string, true, undefined, {
-      windows: [
+    ackMutation(state, msg.mutationId as string, true, undefined, [
+      {
+        id: "Fresh",
+        label: "aethon-canvas-Fresh",
+        kind: "canvas",
+        title: "Fresh",
+        components: [],
+        state: {},
+      },
+    ]);
+    await expect(p).resolves.toMatchObject({
+      ok: true,
+      data: [
         {
           id: "Fresh",
           label: "aethon-canvas-Fresh",
           kind: "canvas",
           title: "Fresh",
-          components: [],
-          state: {},
+          componentCount: 0,
         },
       ],
     });
-    await expect(p).resolves.toMatchObject({ ok: true });
     expect([...state.nativeWindows.keys()]).toEqual(["Fresh"]);
   });
 });

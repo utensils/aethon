@@ -102,6 +102,29 @@ describe("handleNativeWindowQuery", () => {
     );
   });
 
+  it("lists windows as a plain record array", async () => {
+    const { ctx, mocks } = buildHandlerFixture();
+    harness.invoke.mockResolvedValueOnce([record]);
+    handleNativeWindowQuery(
+      {
+        type: "native_window_query",
+        op: "list",
+        mutationId: "m-list",
+        args: {},
+      },
+      ctx,
+    );
+    await vi.waitFor(() =>
+      expect(mocks.ackMutation).toHaveBeenCalledWith(
+        "m-list",
+        true,
+        undefined,
+        [record],
+      ),
+    );
+    expect(ctx.nativeWindowsRef.current.get("Workpad")).toEqual(record);
+  });
+
   it("writes window-local state with JSON Pointer", async () => {
     const { ctx } = buildHandlerFixture();
     ctx.nativeWindowsRef.current.set("Workpad", record);

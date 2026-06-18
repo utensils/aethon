@@ -101,10 +101,10 @@ interface AethonCanvasApi {
   ): Promise<{ ok: boolean; error?: string }>;
 }
 
-type AethonMutationResult = Promise<{
+type AethonMutationResult<T = unknown> = Promise<{
   ok: boolean;
   error?: string;
-  data?: unknown;
+  data?: T;
 }>;
 
 interface AethonEditorApi {
@@ -115,6 +115,16 @@ interface AethonEditorApi {
     /** Optional alternate validation root for files outside the active cwd. */
     rootPath?: string;
   }): Promise<{ ok: boolean; error?: string; data?: unknown }>;
+}
+
+interface AethonNativeCanvasWindowSummary {
+  id: string;
+  label: string;
+  kind: "canvas";
+  title: string;
+  tabId?: string;
+  restoreOnLaunch?: boolean;
+  componentCount?: number;
 }
 
 interface AethonWindowsApi {
@@ -130,7 +140,7 @@ interface AethonWindowsApi {
     focus?: boolean;
     restoreOnLaunch?: boolean;
   }): AethonMutationResult;
-  list(): AethonMutationResult;
+  list(): AethonMutationResult<AethonNativeCanvasWindowSummary[]>;
   focus(id: string): AethonMutationResult;
   close(id: string): AethonMutationResult;
   setTitle(id: string, title: string): AethonMutationResult;

@@ -85,6 +85,15 @@ function updateKnownWindows(
     return;
   }
 
+  if (Array.isArray(data)) {
+    state.nativeWindows.clear();
+    for (const item of data) {
+      const summary = summarizeWindow(item);
+      if (summary) state.nativeWindows.set(summary.id, summary);
+    }
+    return;
+  }
+
   if (isRecord(data) && Array.isArray(data.windows)) {
     state.nativeWindows.clear();
     for (const item of data.windows) {
@@ -132,7 +141,11 @@ export function buildWindowsApi(
       return windowQuery("open_canvas", args, WINDOW_LONG_ACK_TIMEOUT_MS);
     },
     list() {
-      return windowQuery("list");
+      return windowQuery("list").then((result) =>
+        result.ok
+          ? { ...result, data: [...state.nativeWindows.values()] }
+          : result,
+      );
     },
     focus(id) {
       if (!idRequired(id)) {

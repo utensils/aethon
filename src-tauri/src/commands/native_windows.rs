@@ -141,7 +141,6 @@ fn finite_or_default(value: Option<f64>, default: f64, min: f64) -> f64 {
 fn normalize_state(value: Option<Value>) -> Value {
     match value {
         Some(v) if v.is_object() => v,
-        Some(v) if v.is_array() => v,
         _ => default_state(),
     }
 }
@@ -377,10 +376,10 @@ pub fn native_window_close(
         return Err("id must match /^[A-Za-z][\\w-]*$/".to_string());
     }
     let label = label_for_id(&id);
-    let _ = remove_record(&app, &state, &id)?;
     if let Some(window) = app.get_webview_window(&label) {
         window.close().map_err(|e| format!("close: {e}"))?;
     }
+    let _ = remove_record(&app, &state, &id)?;
     Ok(())
 }
 
@@ -535,5 +534,15 @@ mod tests {
         let back: NativeWindowsStore = serde_json::from_str(&body).unwrap();
         assert_eq!(back.windows[0].label, "aethon-canvas-Canvas");
         assert_eq!(back.windows[0].tab_id.as_deref(), Some("tab-1"));
+    }
+
+    #[test]
+    fn state_normalization_accepts_objects_only() {
+        assert_eq!(
+            normalize_state(Some(json!({"count": 1}))),
+            json!({"count": 1})
+        );
+        assert_eq!(normalize_state(Some(json!([1, 2, 3]))), json!({}));
+        assert_eq!(normalize_state(Some(json!("nope"))), json!({}));
     }
 }

@@ -87,7 +87,7 @@ export const handleNativeWindowQuery: BridgeMessageHandler = (data, ctx) => {
       const records =
         await invoke<NativeCanvasWindowRecord[]>("native_window_list");
       replaceRecords(ctx, records);
-      return { windows: records };
+      return records;
     }
 
     if (op === "focus") {

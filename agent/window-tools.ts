@@ -78,6 +78,15 @@ function asJson(value: unknown): {
   };
 }
 
+function listData(value: unknown): unknown {
+  return value &&
+    typeof value === "object" &&
+    !Array.isArray(value) &&
+    Array.isArray((value as { windows?: unknown }).windows)
+    ? (value as { windows: unknown[] }).windows
+    : (value ?? []);
+}
+
 const EmptyParams = Type.Object({});
 const OpenCanvasWindowParams = Type.Object({
   id: Type.Optional(
@@ -175,7 +184,7 @@ export function buildWindowTools(): ToolDefinition[] {
     async execute(_callId: string, _params: EmptyParamsT) {
       const api = apiOrFail();
       const r = resultOrThrow(await api.windows.list());
-      return asJson(r.data ?? []);
+      return asJson(listData(r.data));
     },
   }) as ToolDefinition;
 

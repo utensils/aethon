@@ -4,7 +4,7 @@ import { buildWindowTools } from "./window-tools";
 function installWindowsApi(overrides: Record<string, unknown> = {}) {
   const windows = {
     openCanvas: vi.fn(() => Promise.resolve({ ok: true, data: { id: "w" } })),
-    list: vi.fn(() => Promise.resolve({ ok: true, data: { windows: [] } })),
+    list: vi.fn(() => Promise.resolve({ ok: true, data: [] })),
     focus: vi.fn(() => Promise.resolve({ ok: true })),
     close: vi.fn(() => Promise.resolve({ ok: true })),
     setTitle: vi.fn(() => Promise.resolve({ ok: true })),
@@ -85,6 +85,23 @@ describe("buildWindowTools", () => {
       "Two",
     );
     expect(windows.setState).toHaveBeenCalledWith("Workpad", "/draft", "hello");
+  });
+
+  it("listA2uiCanvasWindows returns a plain array even for wrapped data", async () => {
+    installWindowsApi({
+      list: vi.fn(() =>
+        Promise.resolve({
+          ok: true,
+          data: {
+            windows: [{ id: "Workpad", title: "Workpad" }],
+          },
+        }),
+      ),
+    });
+    const result = await executeTool("listA2uiCanvasWindows", {});
+    expect(result).toMatchObject({
+      details: [{ id: "Workpad", title: "Workpad" }],
+    });
   });
 
   it("throws when the runtime API returns ok false", async () => {
