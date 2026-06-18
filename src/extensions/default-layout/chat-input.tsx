@@ -88,7 +88,7 @@ export function ChatInput({
     ? resolveString(props.placeholder, state)
     : "";
   const busy = props.disabled ? resolveBoolean(props.disabled, state) : false;
-  const planMode = props.planMode
+  const planMode = props.planMode !== undefined
     ? resolveBoolean(props.planMode, state)
     : state.planMode === true;
   const queueCount = props.queueCount
@@ -497,6 +497,7 @@ export function ChatInput({
           onClick={() => onEvent("mode:toggle-plan")}
           title="Toggle plan mode"
           aria-label={planMode ? "Plan mode on" : "Implementation mode on"}
+          aria-pressed={planMode}
         >
           {planMode ? "Plan" : "Implement"}
         </button>

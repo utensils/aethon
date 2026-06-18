@@ -34,7 +34,6 @@ export const handleChatInput: EventRouteHandler = async (
       if (tab.kind !== "agent") return tab;
       return { ...tab, planMode: enabled };
     });
-    ctx.setState((prev) => ({ ...prev, planMode: enabled }));
     ctx.pushNotification({
       title: enabled ? "Plan mode on" : "Implementation mode on",
       message: enabled

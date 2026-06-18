@@ -391,9 +391,20 @@ describe("ChatInput", () => {
 
     const chip = screen.getByRole("button", { name: "Plan mode on" });
     expect(chip.textContent).toBe("Plan");
+    expect(chip.getAttribute("aria-pressed")).toBe("true");
     fireEvent.click(chip);
 
     expect(onEvent).toHaveBeenLastCalledWith("mode:toggle-plan");
+  });
+
+  it("honors an explicit false plan-mode prop", () => {
+    renderInput(vi.fn(), { planMode: false }, { planMode: true });
+
+    const chip = screen.getByRole("button", {
+      name: "Implementation mode on",
+    });
+    expect(chip.textContent).toBe("Implement");
+    expect(chip.getAttribute("aria-pressed")).toBe("false");
   });
 
   it("cleans up composer resize state if unmounted mid-drag", () => {
