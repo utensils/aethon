@@ -116,24 +116,36 @@ export function ItemRow({
   const agent =
     rollupAgent?.status === "running"
       ? rollupAgent
-      : disclosure === "collapsed"
-        ? (rollupAgent ?? ownAgent)
-        : ownAgent;
+      : rollupAgent?.status === "needs-attention"
+        ? rollupAgent
+        : disclosure === "collapsed"
+          ? (rollupAgent ?? ownAgent)
+          : ownAgent;
+  const agentVisualState =
+    agent?.status === "running"
+      ? "running"
+      : agent?.status === "needs-attention"
+        ? "attention"
+        : "idle";
   const agentDotEl =
     agent && agent.status && agent.status !== "none" ? (
       <span
-        className={`ae-sb-agent-dot ae-sb-agent-dot--${
-          agent.status === "running" ? "running" : "idle"
-        }`}
+        className={`ae-sb-agent-dot ae-sb-agent-dot--${agentVisualState}`}
         aria-label={
-          agent.status === "running" ? "Agent running" : "Agent session idle"
+          agent.status === "running"
+            ? "Agent running"
+            : agent.status === "needs-attention"
+              ? "Agent ready for your reply"
+              : "Agent session idle"
         }
         title={
           agent.status === "running"
             ? `${agent.runningCount ?? 1} agent turn${
                 (agent.runningCount ?? 1) === 1 ? "" : "s"
               } running`
-            : "Idle agent session — awaiting your input"
+            : agent.status === "needs-attention"
+              ? "Agent finished — ready for your reply"
+              : "Idle agent session — awaiting your input"
         }
       />
     ) : null;

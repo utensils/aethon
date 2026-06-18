@@ -170,6 +170,11 @@ export function useDerivedRenderState({
         (state.agentRunningTabs as Record<string, unknown> | undefined) ?? {},
       ),
     );
+    const attentionIds = new Set(
+      Object.keys(
+        (state.agentAttentionTabs as Record<string, unknown> | undefined) ?? {},
+      ),
+    );
     // The running set is the authoritative cross-workspace turn lifecycle:
     // prompt_started adds, response_end / explicit stop / crash removes. The
     // active tab can still promote itself when a visible tool card is live, but
@@ -187,6 +192,7 @@ export function useDerivedRenderState({
           }>,
           agentTabs,
           runningIds,
+          attentionIds,
         )
       : sidebar.projects;
 

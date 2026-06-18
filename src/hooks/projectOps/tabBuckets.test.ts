@@ -129,6 +129,24 @@ describe("switchProjectBucket", () => {
     expect(h.get().draft).toBe(tabA.draft);
   });
 
+  it("clears completed-turn attention when restoring a stashed active tab", () => {
+    const tabA = agentTab("a1", "P", "/P/A");
+    const h = makeHarness({
+      tabs: [],
+      activeTabId: undefined,
+      agentAttentionTabs: { a1: true, other: true },
+    });
+    h.tabBucketsRef.current.set("P::workspace::A", {
+      tabs: [tabA],
+      activeTabId: "a1",
+    });
+
+    switchProjectBucket(h.deps, "P::workspace::B", "P::workspace::A");
+
+    expect(h.get().activeTabId).toBe("a1");
+    expect(h.get().agentAttentionTabs).toEqual({ other: true });
+  });
+
   it("preserves landing when switching to an empty workspace", () => {
     const h = makeHarness({
       tabs: [],
@@ -181,14 +199,10 @@ describe("switchProjectBucket", () => {
     expect((h.get().tabs as Tab[]).map((t) => t.id)).toEqual(["a1"]);
     expect(h.get().activeTabId).toBe("a1");
     expect(
-      h.tabBucketsRef.current
-        .get("P::workspace::B")
-        ?.tabs.map((t) => t.id),
+      h.tabBucketsRef.current.get("P::workspace::B")?.tabs.map((t) => t.id),
     ).toEqual(["b1"]);
     expect(
-      h.tabBucketsRef.current
-        .get("P::workspace::A")
-        ?.tabs.map((t) => t.id),
+      h.tabBucketsRef.current.get("P::workspace::A")?.tabs.map((t) => t.id),
     ).toEqual(["a1"]);
   });
 
@@ -204,9 +218,6 @@ describe("switchProjectBucket", () => {
     switchProjectBucket(h.deps, "P::workspace::A", "P::workspace::B");
 
     expect(h.get().activeTabId).toBe("b1");
-    expect((h.get().tabs as Tab[]).map((t) => t.id)).toEqual([
-      "shell-b",
-      "b1",
-    ]);
+    expect((h.get().tabs as Tab[]).map((t) => t.id)).toEqual(["shell-b", "b1"]);
   });
 });

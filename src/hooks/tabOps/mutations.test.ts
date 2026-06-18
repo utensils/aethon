@@ -35,6 +35,22 @@ describe("useMutations setActiveTab", () => {
     expect(setState).toHaveBeenCalledTimes(1);
     expect(stateRef.current.activeTabId).toBe(OVERVIEW_TAB_ID);
     expect(stateRef.current.landing).toBeNull();
-    expect(stateRef.current.messages).toEqual([{ role: "user", text: "hello" }]);
+    expect(stateRef.current.messages).toEqual([
+      { role: "user", text: "hello" },
+    ]);
+  });
+
+  it("clears a completed-turn attention marker when selecting that tab", () => {
+    const tab = makeEmptyTab("tab-1", "Session", null, "agent");
+    const { actions, stateRef } = setup({
+      tabs: [tab],
+      activeTabId: OVERVIEW_TAB_ID,
+      agentAttentionTabs: { "tab-1": true, other: true },
+    });
+
+    act(() => actions.setActiveTab("tab-1"));
+
+    expect(stateRef.current.activeTabId).toBe("tab-1");
+    expect(stateRef.current.agentAttentionTabs).toEqual({ other: true });
   });
 });

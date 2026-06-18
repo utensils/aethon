@@ -7,6 +7,7 @@ import type { A2UIComponent } from "../types/a2ui";
 import { makeEmptyTab } from "../types/tab";
 import {
   AGENT_ACTIVITY_HYDRATION_RETRY_DELAYS_MS,
+  clearActiveAgentAttention,
   hydrateAgentActivityState,
   useAgentActivityHydration,
 } from "./useAgentActivityHydration";
@@ -20,6 +21,27 @@ vi.mock("@tauri-apps/api/core", () => ({
 afterEach(() => {
   vi.useRealTimers();
   invoke.mockReset();
+  vi.restoreAllMocks();
+});
+
+describe("clearActiveAgentAttention", () => {
+  it("clears the active tab's completed-turn attention marker", () => {
+    const next = clearActiveAgentAttention({
+      activeTabId: "tab-a",
+      agentAttentionTabs: { "tab-a": true, "tab-b": true },
+    });
+
+    expect(next.agentAttentionTabs).toEqual({ "tab-b": true });
+  });
+
+  it("leaves other tabs' attention markers alone", () => {
+    const state = {
+      activeTabId: "tab-a",
+      agentAttentionTabs: { "tab-b": true },
+    };
+
+    expect(clearActiveAgentAttention(state)).toBe(state);
+  });
 });
 
 describe("hydrateAgentActivityState", () => {
@@ -460,8 +482,9 @@ describe("hydrateAgentActivityState", () => {
       typeof stoppedTab,
       typeof concurrentTab,
     ];
-    const stoppedToolCard = nextStoppedTab.messages[0].a2ui
-      ?.components?.[0] as A2UIComponent | undefined;
+    const stoppedToolCard = nextStoppedTab.messages[0].a2ui?.components?.[0] as
+      | A2UIComponent
+      | undefined;
     const concurrentToolCard = nextConcurrentTab.messages[0].a2ui
       ?.components?.[0] as A2UIComponent | undefined;
     expect(nextStoppedTab.waiting).toBe(false);
@@ -543,5 +566,28 @@ describe("hydrateAgentActivityState", () => {
     expect((state.tabs as ReturnType<typeof makeEmptyTab>[])[0].waiting).toBe(
       true,
     );
+  });
+
+  it("clears active-tab attention when the window regains focus", () => {
+    vi.spyOn(document, "hasFocus").mockReturnValue(true);
+    invoke.mockResolvedValue([]);
+    let state: Record<string, unknown> = {
+      activeTabId: "tab-a",
+      agentAttentionTabs: { "tab-a": true, "tab-b": true },
+      tabs: [makeEmptyTab("tab-a", "A")],
+    };
+    const setState: Dispatch<SetStateAction<Record<string, unknown>>> = (
+      arg,
+    ) => {
+      state = typeof arg === "function" ? arg(state) : arg;
+    };
+
+    const { unmount } = renderHook(() => useAgentActivityHydration(setState));
+    act(() => {
+      window.dispatchEvent(new Event("focus"));
+    });
+    unmount();
+
+    expect(state.agentAttentionTabs).toEqual({ "tab-b": true });
   });
 });

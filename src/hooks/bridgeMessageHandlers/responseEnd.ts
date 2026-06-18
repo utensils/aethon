@@ -30,10 +30,35 @@ export const handleResponseEnd: BridgeMessageHandler = (data, ctx) => {
   // Drop the tab from the bucket-independent running set (see promptStarted).
   ctx.setState((prev) => {
     const running = prev.agentRunningTabs as Record<string, true> | undefined;
-    if (!running || !running[tabId]) return prev;
-    const next = { ...running };
-    delete next[tabId];
-    return { ...prev, agentRunningTabs: next };
+    const nextRunning = running ? { ...running } : {};
+    const wasRunning = nextRunning[tabId] === true;
+    if (wasRunning) delete nextRunning[tabId];
+    const attention =
+      (prev.agentAttentionTabs as Record<string, true> | undefined) ?? {};
+    const windowFocused =
+      typeof document !== "undefined" && document.hasFocus();
+    const shouldMarkAttention =
+      prev.activeTabId !== tabId || windowFocused === false;
+    const hadAttention = attention[tabId] === true;
+    const nextAttention = shouldMarkAttention
+      ? hadAttention
+        ? attention
+        : { ...attention, [tabId]: true }
+      : hadAttention
+        ? (() => {
+            const copy = { ...attention };
+            delete copy[tabId];
+            return copy;
+          })()
+        : attention;
+    if (!wasRunning && attention === nextAttention) {
+      return prev;
+    }
+    return {
+      ...prev,
+      agentRunningTabs: nextRunning,
+      agentAttentionTabs: nextAttention,
+    };
   });
   if (ctx.stateRef.current.activeTabId === tabId) {
     ctx.setState((prev) => ({ ...prev, status: "ready" }));

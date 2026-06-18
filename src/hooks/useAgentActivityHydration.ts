@@ -164,6 +164,20 @@ export function hydrateAgentActivityState(
   return next;
 }
 
+export function clearActiveAgentAttention(
+  state: Record<string, unknown>,
+): Record<string, unknown> {
+  const activeTabId = state.activeTabId as string | undefined;
+  if (!activeTabId) return state;
+  const attention = state.agentAttentionTabs as
+    | Record<string, true>
+    | undefined;
+  if (!attention?.[activeTabId]) return state;
+  const nextAttention = { ...attention };
+  delete nextAttention[activeTabId];
+  return { ...state, agentAttentionTabs: nextAttention };
+}
+
 export function useAgentActivityHydration(
   setState: Dispatch<SetStateAction<Record<string, unknown>>>,
 ): void {
@@ -187,6 +201,19 @@ export function useAgentActivityHydration(
     return () => {
       cancelled = true;
       for (const timer of timers) clearTimeout(timer);
+    };
+  }, [setState]);
+
+  useEffect(() => {
+    const clearIfFocused = () => {
+      if (typeof document !== "undefined" && !document.hasFocus()) return;
+      setState((prev) => clearActiveAgentAttention(prev));
+    };
+    window.addEventListener("focus", clearIfFocused);
+    document.addEventListener("visibilitychange", clearIfFocused);
+    return () => {
+      window.removeEventListener("focus", clearIfFocused);
+      document.removeEventListener("visibilitychange", clearIfFocused);
     };
   }, [setState]);
 }

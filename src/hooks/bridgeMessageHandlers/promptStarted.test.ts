@@ -42,8 +42,14 @@ describe("handlePromptStarted", () => {
     const runningUpdater = mocks.setState.mock.calls[0][0] as (
       prev: Record<string, unknown>,
     ) => Record<string, unknown>;
-    expect(runningUpdater({ agentRunningTabs: {} })).toMatchObject({
+    expect(
+      runningUpdater({
+        agentRunningTabs: {},
+        agentAttentionTabs: { default: true },
+      }),
+    ).toMatchObject({
       agentRunningTabs: { default: true },
+      agentAttentionTabs: {},
     });
   });
 

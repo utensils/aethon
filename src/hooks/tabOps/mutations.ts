@@ -116,6 +116,14 @@ export function useMutations(deps: MutationsDeps): MutationsActions {
       if (!target) return prev;
       nextBuffer = target.terminalBuffer ?? "";
       const result: Record<string, unknown> = { ...prev, activeTabId: tabId };
+      const attention = prev.agentAttentionTabs as
+        | Record<string, true>
+        | undefined;
+      if (attention?.[tabId]) {
+        const nextAttention = { ...attention };
+        delete nextAttention[tabId];
+        result.agentAttentionTabs = nextAttention;
+      }
       const targetRec = target as unknown as Record<string, unknown>;
       for (const key of TAB_MIRROR_KEYS) {
         result[key as string] = targetRec[key as string];

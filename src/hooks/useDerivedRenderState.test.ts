@@ -305,6 +305,63 @@ describe("useDerivedRenderState", () => {
     expect(wtMain && "agent" in wtMain).toBe(false);
   });
 
+  it("overlays completed background agent attention across stashed buckets", () => {
+    const visibleTab = {
+      ...makeEmptyTab("visible", "visible", "p2", "agent"),
+      cwd: "/repo/other",
+    };
+    const hiddenDone = {
+      ...makeEmptyTab("done", "done", "p1", "agent"),
+      cwd: "/repo/app-fix",
+    };
+    const { result } = renderHook(() =>
+      useDerivedRenderState({
+        state: {
+          tabs: [visibleTab],
+          activeTabId: "visible",
+          agentAttentionTabs: { done: true },
+          persistedTabBuckets: {
+            "p1::workspace::wt-1": { tabs: [hiddenDone], activeTabId: "done" },
+          },
+          sidebar: {
+            projects: [
+              {
+                id: "p1",
+                workspaces: [
+                  { id: "wt-main", path: "/repo/app", isMain: true },
+                  { id: "wt-1", path: "/repo/app-fix" },
+                ],
+              },
+              {
+                id: "p2",
+                workspaces: [
+                  { id: "wt-main-2", path: "/repo/other", isMain: true },
+                ],
+              },
+            ],
+          },
+        },
+        buildSidebarHistory: vi.fn(() => []),
+        hostInfo,
+      }),
+    );
+
+    const projects = (
+      result.current.renderState.sidebar as {
+        projects: {
+          id: string;
+          agentRollup: { status: string };
+          workspaces: { id: string; agent?: { status: string } }[];
+        }[];
+      }
+    ).projects;
+    const nxvLike = projects.find((p) => p.id === "p1");
+    expect(nxvLike?.agentRollup.status).toBe("needs-attention");
+    expect(
+      nxvLike?.workspaces.find((w) => w.id === "wt-1")?.agent?.status,
+    ).toBe("needs-attention");
+  });
+
   it("keeps sidebar activity running until a terminal turn event clears it", () => {
     // `waiting` can briefly drift false while the agent is still streaming
     // tool output. The running set owns lifecycle until response_end,
@@ -324,7 +381,9 @@ describe("useDerivedRenderState", () => {
             projects: [
               {
                 id: "p1",
-                workspaces: [{ id: "wt-main", path: "/repo/app", isMain: true }],
+                workspaces: [
+                  { id: "wt-main", path: "/repo/app", isMain: true },
+                ],
               },
             ],
           },
@@ -372,7 +431,9 @@ describe("useDerivedRenderState", () => {
             projects: [
               {
                 id: "p1",
-                workspaces: [{ id: "wt-main", path: "/repo/app", isMain: true }],
+                workspaces: [
+                  { id: "wt-main", path: "/repo/app", isMain: true },
+                ],
               },
             ],
           },

@@ -247,9 +247,9 @@ export function useCloseTabActions(deps: CloseTabDeps): CloseTabActions {
         const closedIds = Array.isArray(prev.closedSessionIds)
           ? (prev.closedSessionIds as string[])
           : [];
-        result.closedSessionIds = Array.from(new Set([...closedIds, tabId])).slice(
-          -200,
-        );
+        result.closedSessionIds = Array.from(
+          new Set([...closedIds, tabId]),
+        ).slice(-200);
       }
       // Drop a closed tab from the bucket-independent agent-running set so a
       // closed-mid-turn tab can't leave a stale entry behind.
@@ -258,6 +258,14 @@ export function useCloseTabActions(deps: CloseTabDeps): CloseTabActions {
         const nextRunning = { ...running };
         delete nextRunning[tabId];
         result.agentRunningTabs = nextRunning;
+      }
+      const attention = prev.agentAttentionTabs as
+        | Record<string, true>
+        | undefined;
+      if (attention && attention[tabId]) {
+        const nextAttention = { ...attention };
+        delete nextAttention[tabId];
+        result.agentAttentionTabs = nextAttention;
       }
       if (closing) {
         const closedSession = recentSessionItemFromClosedTab(
