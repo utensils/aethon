@@ -11,6 +11,7 @@ export interface MenuDeps {
   nextTab: (direction: 1 | -1) => void;
   toggleTerminal: () => void;
   toggleFilesSidebar: () => void;
+  togglePlanMode: () => void;
   openSettings: (section?: string) => void;
   clearChat: () => void;
   stopPrompt: () => Promise<void>;
@@ -41,6 +42,7 @@ export function subscribeMenu(deps: MenuDeps): () => void {
     nextTab,
     toggleTerminal,
     toggleFilesSidebar,
+    togglePlanMode,
     openSettings,
     clearChat,
     stopPrompt,
@@ -111,6 +113,9 @@ export function subscribeMenu(deps: MenuDeps): () => void {
       }
       case "toggle_files_sidebar":
         toggleFilesSidebar();
+        break;
+      case "toggle_plan_mode":
+        togglePlanMode();
         break;
       case "manage_extensions":
         openSettings("extensions");

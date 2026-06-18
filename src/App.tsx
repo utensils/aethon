@@ -230,7 +230,8 @@ export default function App() {
     activeRoot: activeWorkspaceRoot,
     setDevshellEntry: (root, patch) => {
       setState((s) => {
-        const prev = (s.devshell as { entries?: Record<string, DevshellEntry> }) ?? {};
+        const prev =
+          (s.devshell as { entries?: Record<string, DevshellEntry> }) ?? {};
         const entries = { ...(prev.entries ?? {}) };
         // Merge the patch over the previous entry so resolver-event
         // updates (which only carry kind/state/timings) don't clobber
@@ -629,12 +630,11 @@ export default function App() {
     },
   } = useUpdater({ appendSystem });
   const reapplyConfigWithUpdater = useMemo(
-    () =>
-      (fresh: AethonConfig) => {
-        reapplyConfig(fresh);
-        setUpdateChannel(fresh.updates.channel);
-        setUpdateDisableAutoCheck(fresh.updates.disableAutoCheck);
-      },
+    () => (fresh: AethonConfig) => {
+      reapplyConfig(fresh);
+      setUpdateChannel(fresh.updates.channel);
+      setUpdateDisableAutoCheck(fresh.updates.disableAutoCheck);
+    },
     [reapplyConfig, setUpdateChannel, setUpdateDisableAutoCheck],
   );
 
@@ -864,6 +864,7 @@ export default function App() {
     stopPrompt,
     toggleTerminal,
     toggleFilesSidebar,
+    togglePlanMode,
     openSettings,
     pushNotification,
     dismissNotification,

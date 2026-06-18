@@ -85,6 +85,11 @@ pub fn install_app_menu(
     let stop_prompt = MenuItemBuilder::with_id("stop_prompt", "Stop Current Prompt")
         .accelerator("CmdOrCtrl+.")
         .build(app)?;
+    // Shift+Tab is handled in the webview so it can remain focus-aware
+    // and pass through to the terminal panel. The native menu item is
+    // still present for discoverability and pointer access.
+    let toggle_plan_mode =
+        MenuItemBuilder::with_id("toggle_plan_mode", "Toggle Plan Mode").build(app)?;
     let check_updates =
         MenuItemBuilder::with_id("check_updates", "Check for Updates…").build(app)?;
 
@@ -151,6 +156,7 @@ pub fn install_app_menu(
         .item(&toggle_files_sidebar)
         .item(&clear_chat)
         .item(&stop_prompt)
+        .item(&toggle_plan_mode)
         .build()?;
     #[cfg(not(target_os = "macos"))]
     let view_menu = SubmenuBuilder::new(app, "View")
@@ -159,6 +165,7 @@ pub fn install_app_menu(
         .item(&toggle_files_sidebar)
         .item(&clear_chat)
         .item(&stop_prompt)
+        .item(&toggle_plan_mode)
         .separator()
         .item(&check_updates)
         .build()?;

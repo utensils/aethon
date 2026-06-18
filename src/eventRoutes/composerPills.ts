@@ -51,8 +51,8 @@ export const handleComposerPills: EventRouteHandler = (event, ctx) => {
   if (event.eventType === "toggle-plan") {
     const tabs = (state.tabs as Tab[] | undefined) ?? [];
     const activeTab = tabs.find((tab) => tab.id === activeId);
-    const enabled =
-      activeTab?.kind === "agent" ? activeTab.planMode !== true : true;
+    if (!activeTab || activeTab.kind !== "agent") return true;
+    const enabled = activeTab.planMode !== true;
     ctx.updateActiveTab((tab) => {
       if (tab.kind !== "agent") return tab;
       return { ...tab, planMode: enabled };
@@ -63,6 +63,7 @@ export const handleComposerPills: EventRouteHandler = (event, ctx) => {
         ? "New prompts will ask for a plan before code changes."
         : "New prompts may make code changes.",
       kind: "success",
+      durationMs: 1600,
     });
     return true;
   }

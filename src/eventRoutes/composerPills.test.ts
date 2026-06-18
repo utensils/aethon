@@ -54,8 +54,25 @@ describe("handleComposerPills", () => {
     const updater = mocks.updateActiveTab.mock.calls[0][0];
     expect(updater(makeEmptyTab("t1", "T1")).planMode).toBe(true);
     expect(mocks.pushNotification).toHaveBeenCalledWith(
-      expect.objectContaining({ title: "Plan mode on", kind: "success" }),
+      expect.objectContaining({
+        title: "Plan mode on",
+        kind: "success",
+        durationMs: 1600,
+      }),
     );
+  });
+
+  it("ignores plan mode toggles without an active agent tab", () => {
+    const { ctx, mocks } = buildRouteFixture({
+      state: {
+        activeTabId: "shell-1",
+        tabs: [makeEmptyTab("shell-1", "Shell", null, "shell")],
+      },
+    });
+
+    expect(handleComposerPills(pillEvent("toggle-plan"), ctx)).toBe(true);
+    expect(mocks.updateActiveTab).not.toHaveBeenCalled();
+    expect(mocks.pushNotification).not.toHaveBeenCalled();
   });
 
   it("cycles tool calls through the grouping styles from the global default", () => {

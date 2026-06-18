@@ -114,8 +114,15 @@ export function useKeyboardShortcuts(ctx: UseKeyboardShortcutsContext): void {
         }
       }
       const mod = e.metaKey || e.ctrlKey;
-      // Shift+Tab: toggle Plan mode for the active agent session.
-      if (e.key === "Tab" && e.shiftKey && !mod && !e.altKey) {
+      // Shift+Tab: toggle Plan mode for the active agent session. Let
+      // xterm keep reverse-tab when the bottom terminal panel has focus.
+      if (
+        e.key === "Tab" &&
+        e.shiftKey &&
+        !mod &&
+        !e.altKey &&
+        !isFocusInTerminalPanel()
+      ) {
         e.preventDefault();
         e.stopPropagation();
         ctx.togglePlanMode();
