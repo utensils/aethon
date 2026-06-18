@@ -50,6 +50,18 @@ jobs:
         run: bun install --frozen-lockfile
       - name: Version files are synced
         run: bun run version:check
+      - name: Use public Ubuntu apt archive
+        run: |
+          if [ -f /etc/apt/apt-mirrors.txt ]; then
+            sudo sed -i \
+              's|http://azure.archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' \
+              /etc/apt/apt-mirrors.txt
+          fi
+          sudo grep -rl 'azure.archive.ubuntu.com' \
+            /etc/apt/sources.list \
+            /etc/apt/sources.list.d 2>/dev/null \
+            | xargs -r sudo sed -i \
+              's|http://azure.archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g'
       - name: Install Playwright Chromium
         run: bunx playwright install --with-deps chromium
       - name: Playwright
