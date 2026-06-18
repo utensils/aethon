@@ -565,6 +565,32 @@ describe("buildSubagentTaskTool", () => {
     expect(h.disposeSpy).toHaveBeenCalled();
   });
 
+  it("does not hang forever when timeout abort cleanup never settles", async () => {
+    vi.useFakeTimers();
+    h.promptImpl = () => new Promise<void>(() => {});
+    const { state } = makeState({
+      name: "reviewer",
+      model: "ollama/llama3.3",
+      timeoutSeconds: 1,
+    });
+    const tool = buildSubagentTaskTool(state, { send: vi.fn() }, "default");
+    const pending = execOf(tool)("c", {
+      subagent_type: "reviewer",
+      prompt: "x",
+    });
+    const rejection = expect(pending).rejects.toThrow(/timed out after 1s/);
+    await Promise.resolve();
+    h.abortSpy.mockImplementationOnce(() => new Promise<void>(() => {}));
+
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(h.abortSpy).toHaveBeenCalled();
+    expect(h.disposeSpy).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(2000);
+    await rejection;
+    expect(h.disposeSpy).toHaveBeenCalled();
+  });
+
   it("launches a tab for surface: tab subagents", async () => {
     const start = vi.fn(() =>
       Promise.resolve({ ok: true, data: { tabId: "t2" } }),
