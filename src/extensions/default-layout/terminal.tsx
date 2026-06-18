@@ -32,6 +32,7 @@ import {
   terminalFontSizeForUiScale,
   TERMINAL_UI_SCALE_SETTLE_MS,
 } from "./terminal-helpers";
+import { registerTerminalUrlLinks } from "./terminal-linkifier";
 
 // ---------------------------------------------------------------------------
 // Terminal — xterm.js with WebGL renderer. Falls back to canvas if WebGL
@@ -156,6 +157,7 @@ export function Terminal({ component, state, onEvent }: BuiltinComponentProps) {
     term.loadAddon(fit);
 
     term.open(containerRef.current);
+    const linkDisposable = registerTerminalUrlLinks(term);
 
     // WebGL renderer — fall back gracefully if context creation fails.
     try {
@@ -254,6 +256,7 @@ export function Terminal({ component, state, onEvent }: BuiltinComponentProps) {
       if (scaleSettleTimer) clearTimeout(scaleSettleTimer);
       stopThemeObserver();
       stopScaleObserver();
+      linkDisposable.dispose();
       if (onTerminalEvent) {
         window.removeEventListener("aethon:terminal", onTerminalEvent);
       }
