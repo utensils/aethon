@@ -971,7 +971,13 @@ export async function tryAutoSwitchOnUsageLimit(
   state.currentAgentTabId = tabId;
   void state.tabContext.run(tabId, () => continueTurn.call(agent)).catch(
     (err: unknown) => {
+      // Mirror the retry path's full cleanup so the tab doesn't stay "busy"
+      // and later mutations aren't misattributed to it.
       rec.promptInFlight = false;
+      rec.agentEndFired = true;
+      if (state.currentAgentTabId === tabId) {
+        state.currentAgentTabId = undefined;
+      }
       const message = err instanceof Error ? err.message : String(err);
       deps.send({ type: "error", tabId, message: `auto-switch: ${message}` });
       deps.send({ type: "response_end", tabId });
@@ -1072,7 +1078,7 @@ async function handleFetchUsage(
   msg: InboundMessage,
 ): Promise<void> {
   const profileId = stringField(msg.profileId);
-  logger.scope("auth-usage").info(`fetch usage for ${profileId}`);
+  logger.scope("auth-usage").debug(`fetch usage for ${profileId}`);
   try {
     const profile = findProfile(state, profileId);
     if (!profile) throw new Error("unknown profileId");
@@ -1081,10 +1087,12 @@ async function handleFetchUsage(
       const usage = await fetchCodexUsage(
         profileTokenProvider(state, profile.id, profile.providerId),
       );
+      // debug-level + no email — the account address is PII and the bridge
+      // logger defaults to info.
       logger
         .scope("auth-usage")
-        .info(
-          `${profileId} → email=${usage.email ?? "none"} plan=${usage.planType ?? "none"} primary=${usage.primary?.usedPercent ?? "none"}`,
+        .debug(
+          `${profileId} → hasEmail=${usage.email ? "y" : "n"} plan=${usage.planType ?? "none"} primary=${usage.primary?.usedPercent ?? "none"}`,
         );
       deps.send({
         type: "auth_profile_usage",

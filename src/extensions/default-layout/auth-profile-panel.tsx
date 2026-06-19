@@ -85,10 +85,15 @@ export function AuthProfilePanel({
         continue;
       }
       if (usageInFlightRef.current.has(profile.id)) continue; // pending
-      usageInFlightRef.current.add(profile.id);
+      const id = profile.id;
+      usageInFlightRef.current.add(id);
       void sendAuthProfileCommand({
         type: "auth_profile_fetch_usage",
-        profileId: profile.id,
+        profileId: id,
+      }).catch(() => {
+        // Bridge down / webview reload — clear the flag so the next effect
+        // run retries instead of leaving the profile stuck pending.
+        usageInFlightRef.current.delete(id);
       });
     }
   }, [auth.modal?.open, auth.profiles, auth.usage]);
@@ -168,6 +173,8 @@ export function AuthProfilePanel({
       type: "auth_profile_rename",
       profileId: renamingId,
       label: renameValue.trim(),
+    }).catch(() => {
+      /* bridge down / reload — rename is non-critical, ignore */
     });
     setRenamingId(null);
   };

@@ -355,6 +355,10 @@ export function useKeyboardShortcuts(ctx: UseKeyboardShortcutsContext): void {
           | { modal?: { open?: boolean } }
           | undefined;
         if (authProfiles?.modal?.open) {
+          // Let an in-progress inline rename swallow Escape (to cancel the
+          // edit) rather than closing the whole panel out from under it.
+          const focused = document.activeElement;
+          if (focused?.classList.contains("ae-auth-rename-input")) return;
           e.preventDefault();
           e.stopPropagation();
           ctx.toggleAccounts();

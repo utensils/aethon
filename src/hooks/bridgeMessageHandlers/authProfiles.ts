@@ -167,5 +167,7 @@ export const handleAuthProfileChanged: BridgeMessageHandler = (message, ctx) => 
     type: "auth_profile_record",
     tabId,
     profileId,
+  }).catch(() => {
+    /* bridge restart / reload — best-effort sync, ignore */
   });
 };
