@@ -642,23 +642,32 @@ export function AccountSelector({
   const activeTabId =
     typeof state.activeTabId === "string" ? state.activeTabId : "default";
 
+  // Only offer accounts for the active tab's model provider — switching to a
+  // profile from another provider would point the tab's auth at a provider
+  // that can't back the current model. When the provider is unknown (no
+  // model yet), fall back to all profiles.
+  const tabProvider = activeTabModelProvider(state, activeTabId);
+  const selectable = tabProvider
+    ? profiles.filter((p) => p.providerId === tabProvider)
+    : profiles;
+  if (selectable.length === 0) return null;
+
   // Resolve the *effective* account so the chip always reflects which one a
   // prompt would actually use — even before the user explicitly picks one:
   //   tab assignment → provider default → sole default → first profile.
-  const tabProvider = activeTabModelProvider(state, activeTabId);
   const resolvedId =
     auth.activeByTab?.[activeTabId] ??
     (tabProvider ? auth.defaultByProvider?.[tabProvider] : undefined) ??
     soleDefault(auth.defaultByProvider) ??
-    profiles[0]?.id;
-  const activeProfile = profiles.find((p) => p.id === resolvedId);
+    selectable[0]?.id;
+  const activeProfile = selectable.find((p) => p.id === resolvedId);
   const usage = resolvedId ? auth.usage?.[resolvedId] : undefined;
 
   const buttonLabel = activeProfile
     ? `${activeProfile.label}${usage?.planType ? ` · ${usage.planType}` : ""}`
     : "account";
 
-  const items: DropdownItem[] = profiles.map((p) => {
+  const items: DropdownItem[] = selectable.map((p) => {
     const u = auth.usage?.[p.id];
     const hint = [u?.email, u?.planType].filter(Boolean).join(" · ") || p.kind;
     return {

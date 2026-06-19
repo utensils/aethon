@@ -69,6 +69,17 @@ export async function handleChat(
         : "inline",
     });
   }
+  // Adopt the tab's account when this is a fresh (respawned) worker that
+  // doesn't yet know it. Only fill the gap — never override a live
+  // assignment (e.g. a mid-session usage-limit auto-switch), so the frontend
+  // value can't clobber a more recent worker-side switch.
+  const msgAuthProfileId =
+    typeof msg.authProfileId === "string" && msg.authProfileId.length > 0
+      ? msg.authProfileId
+      : undefined;
+  if (msgAuthProfileId && !state.tabAuthProfileIds.has(tabId)) {
+    state.tabAuthProfileIds.set(tabId, msgAuthProfileId);
+  }
   const requestedModel = parseModelAndThinking(
     typeof msg.model === "string" && msg.model.length > 0
       ? msg.model

@@ -148,6 +148,26 @@ describe("useChat setModel", () => {
     });
   });
 
+  it("carries the tab's authProfileId so a respawned worker keeps the account", async () => {
+    const tab = {
+      ...makeEmptyTab("tab-1", "Tab 1"),
+      model: "openai-codex/gpt-5.5",
+      authProfileId: "openai-codex-secondary",
+    };
+    const { ctx } = buildContext({ tabs: [tab] });
+    const { result } = renderHook(() => useChat(ctx));
+
+    await act(async () => {
+      await result.current.sendChat("hello");
+    });
+
+    expect(invoke).toHaveBeenCalledWith("send_message", {
+      request: expect.objectContaining({
+        authProfileId: "openai-codex-secondary",
+      }),
+    });
+  });
+
   it("sends plan-mode prompts with the plan-mode flag", async () => {
     const tab = {
       ...makeEmptyTab("tab-1", "Tab 1"),
