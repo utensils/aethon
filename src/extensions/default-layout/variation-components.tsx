@@ -682,8 +682,11 @@ export function AccountSelector({
         },
       ]}
       onSelect={(_sectionId, itemId) => {
+        const tabs =
+          (state.tabs as { id: string; cwd?: string }[] | undefined) ?? [];
+        const cwd = tabs.find((t) => t.id === activeTabId)?.cwd;
         import("../../auth-profiles").then(({ switchAccountForTab }) => {
-          void switchAccountForTab(activeTabId, itemId);
+          void switchAccountForTab(activeTabId, itemId, cwd);
         });
       }}
     />

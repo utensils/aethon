@@ -20,12 +20,18 @@ export async function requestAuthProfiles(): Promise<void> {
  * (possibly rate-limited) account. For non-default tabs we relay a
  * tab-scoped `auth_profile_apply` so the worker re-auths too.
  *
+ * Pass the tab's `cwd` so the relay carries it: if the worker was
+ * idle-retired (or never spawned), `auth_profile_apply` is what spawns it,
+ * and without the cwd the rebuilt session would fall back to the wrong
+ * workspace and run tools in the wrong directory.
+ *
  * Shared by the Accounts panel and the header account selector so both
  * entry points stay in sync.
  */
 export async function switchAccountForTab(
   tabId: string,
   profileId: string,
+  cwd?: string,
 ): Promise<void> {
   await sendAuthProfileCommand({
     type: "auth_profile_use_for_tab",
@@ -37,6 +43,7 @@ export async function switchAccountForTab(
       type: "auth_profile_apply",
       tabId,
       profileId,
+      ...(cwd ? { cwd } : {}),
     });
   }
 }

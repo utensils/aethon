@@ -40,6 +40,10 @@ export function AuthProfilePanel({
     tabId ??
     (typeof state.activeTabId === "string" ? state.activeTabId : "default");
   const activeProfileId = auth.activeByTab[activeTabId];
+  const activeTabCwd = (() => {
+    const tabs = (state.tabs as { id: string; cwd?: string }[] | undefined) ?? [];
+    return tabs.find((t) => t.id === activeTabId)?.cwd;
+  })();
 
   const groupedProfiles = useMemo(
     () =>
@@ -95,7 +99,7 @@ export function AuthProfilePanel({
   };
 
   const activateProfile = (profileId: string) =>
-    switchAccountForTab(activeTabId, profileId);
+    switchAccountForTab(activeTabId, profileId, activeTabCwd);
 
   const setDefault = (profileId: string) =>
     sendAuthProfileCommand({ type: "auth_profile_set_default", profileId });

@@ -36,4 +36,10 @@ describe("switchAccountForTab", () => {
     await switchAccountForTab("default", "openai-codex-primary");
     expect(payloads().map((p) => p.type)).toEqual(["auth_profile_use_for_tab"]);
   });
+
+  it("carries the tab cwd on the worker apply so a respawned worker lands in the right workspace", async () => {
+    await switchAccountForTab("tab-worker", "p1", "/repo/feature");
+    const apply = payloads().find((p) => p.type === "auth_profile_apply");
+    expect(apply?.cwd).toBe("/repo/feature");
+  });
 });

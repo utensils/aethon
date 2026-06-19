@@ -805,7 +805,11 @@ async function handleApplyForTab(
     return;
   }
   const previousModel = existing?.session.model;
-  const cwd = state.tabProjectCwds.get(tabId);
+  // Prefer the cwd carried by the message — when this relay is what spawns
+  // an idle-retired/never-spawned worker, the recorded cwd may be missing
+  // and a fallback cwd would land the session in the wrong workspace.
+  const msgCwd = stringField(msg.cwd);
+  const cwd = msgCwd || state.tabProjectCwds.get(tabId);
   if (existing) clearPendingContextUsageEmit(existing);
   state.tabs.delete(tabId);
   state.tabAuthProfileIds.set(tabId, profile.id);
