@@ -1,9 +1,10 @@
 import { openUrl } from "@tauri-apps/plugin-opener";
-import type {
-  AuthProfileLoginEvent,
-  AuthProfileMeta,
-  AuthProfileProvider,
-  AuthProfilesSnapshot,
+import {
+  sendAuthProfileCommand,
+  type AuthProfileLoginEvent,
+  type AuthProfileMeta,
+  type AuthProfileProvider,
+  type AuthProfilesSnapshot,
 } from "../../auth-profiles";
 import type { Tab } from "../../types/tab";
 import type { BridgeMessageHandler } from "./types";
@@ -158,4 +159,13 @@ export const handleAuthProfileChanged: BridgeMessageHandler = (message, ctx) => 
       },
     },
   }));
+  // Relay the selection to the global bridge so its tabAuthProfileIds stays
+  // in sync with worker-side switches (e.g. usage-limit auto-switch). Without
+  // this, a later global auth_profiles snapshot would revert this tab to the
+  // stale account. The record handler is emit-free, so this can't loop.
+  void sendAuthProfileCommand({
+    type: "auth_profile_record",
+    tabId,
+    profileId,
+  });
 };

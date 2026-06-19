@@ -258,6 +258,9 @@ export async function handleAuthProfileMessage(
     case "auth_profile_apply":
       await handleApplyForTab(state, deps, msg);
       return true;
+    case "auth_profile_record":
+      handleRecordForTab(state, msg);
+      return true;
     case "auth_profile_set_default":
       handleSetDefault(state, deps, msg);
       return true;
@@ -824,6 +827,29 @@ async function handleApplyForTab(
     initialModel: nextModel || desiredModel,
   });
   markProfileUsed(state, profile.id);
+}
+
+/**
+ * Record a tab's account selection in the GLOBAL bridge's map without
+ * touching the session or re-emitting. The frontend relays every
+ * `auth_profile_changed` here so the global bridge's `tabAuthProfileIds`
+ * stays in sync with worker-side switches (e.g. usage-limit auto-switch) —
+ * otherwise a later global `auth_profiles` snapshot would revert the tab to
+ * the stale account. Deliberately emit-free so it can't loop with the
+ * `auth_profile_changed` that triggered it.
+ */
+function handleRecordForTab(
+  state: AethonAgentState,
+  msg: InboundMessage,
+): void {
+  const tabId = stringField(msg.tabId);
+  const profileId = stringField(msg.profileId);
+  if (!tabId || !profileId) return;
+  if (!state.authProfiles.profiles.some((p) => p.id === profileId)) {
+    state.authProfiles = loadAuthProfilesState(state.userDir);
+    if (!state.authProfiles.profiles.some((p) => p.id === profileId)) return;
+  }
+  state.tabAuthProfileIds.set(tabId, profileId);
 }
 
 /** Resolve a `provider/id` model string (from an apply payload) against a
