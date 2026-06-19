@@ -211,6 +211,13 @@ export async function handleChat(
   tab.promptInFlight = true;
   tab.agentEndFired = false;
   state.currentAgentTabId = tabId;
+  // Announce the turn start so the frontend's bucket-independent running set
+  // (agentRunningTabs) lights up this tab's sidebar dot even when its
+  // workspace is backgrounded. Symmetric with the response_end below; without
+  // it a normal prompt only shows "running" for the active workspace (which
+  // infers it from the optimistic `waiting` flag). `source: "chat"` keeps the
+  // handler from running its queue-promotion branch.
+  deps.send({ type: "prompt_started", tabId, source: "chat" });
   state.tabContext
     .run(tabId, () =>
       images.length > 0
