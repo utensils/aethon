@@ -468,6 +468,16 @@ function handleOAuthStart(
     };
     saveAuthProfiles(state);
   }
+  // Abort any lingering OAuth flow for this provider — pi-ai's callback
+  // server binds to a hardcoded port per provider, so a stale server from
+  // a previous login blocks the new flow's state from registering.
+  for (const [oldId, oldPending] of pendingOAuth) {
+    if (oldPending.providerId === providerId) {
+      oldPending.controller.abort();
+      pendingOAuth.delete(oldId);
+    }
+  }
+
   const services = servicesForProfile(state, meta.id, { forceRefresh: true });
   const challengeId = randomUUID();
   const pending: PendingOAuth = {
