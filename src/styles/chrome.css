@@ -9937,9 +9937,16 @@ button.ae-vcs-chip:focus-visible {
   opacity: 0;
   transition: opacity var(--motion-fast) ease;
   pointer-events: none;
-  /* Keep the action row on one line — the parent message sets
-     `overflow-wrap: anywhere`, which otherwise wraps these labels
-     character-by-character into a vertical column. */
+  /* Keep the action row on one line. The parent message is
+     `overflow-wrap: anywhere` + `min-width: 0`, so as an absolutely
+     positioned child this row's shrink-to-fit width can collapse during a
+     list reflow and stack the pills into a vertical column ("renders
+     vertically at times"). Pin the row to its content width and forbid
+     wrapping so the horizontal layout is invariant regardless of the
+     containing block's transient width. */
+  width: max-content;
+  max-width: none;
+  flex-wrap: nowrap;
   white-space: nowrap;
 }
 .a2ui-chat-message:hover .ae-msg-branch-actions,
