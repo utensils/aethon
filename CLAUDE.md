@@ -182,7 +182,7 @@ commands directly; security floors live with the data source.
 ### Tab kinds + terminal panel
 
 `Tab.kind` is `"agent" | "shell"`. The top tab strip carries only agent
-tabs (shells are filtered). The bottom panel (toggle `` Cmd+` ``) hosts
+tabs (shells are filtered). The bottom panel (toggle `` Ctrl+` ``) hosts
 two sub-tab kinds: the always-present read-only `agent-bash` stream
 (buffered tool stdout) and zero or more interactive `portable-pty` shells
 (TUI-capable, 256-color, mouse). State paths: `/terminalPanel/activeSubId`

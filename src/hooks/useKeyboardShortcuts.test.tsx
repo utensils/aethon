@@ -57,7 +57,46 @@ function buildContext(
   };
 }
 
-describe("useKeyboardShortcuts Escape handling", () => {
+describe("useKeyboardShortcuts built-in handling", () => {
+  it("toggles the terminal panel with Ctrl+`", () => {
+    const ctx = buildContext({});
+    render(<Harness ctx={ctx} />);
+
+    fireEvent.keyDown(document, {
+      key: "`",
+      code: "Backquote",
+      ctrlKey: true,
+    });
+
+    expect(ctx.toggleTerminalAndFocus).toHaveBeenCalledTimes(1);
+  });
+
+  it("matches Ctrl+` by physical key across keyboard layouts", () => {
+    const ctx = buildContext({});
+    render(<Harness ctx={ctx} />);
+
+    fireEvent.keyDown(document, {
+      key: "Dead",
+      code: "Backquote",
+      ctrlKey: true,
+    });
+
+    expect(ctx.toggleTerminalAndFocus).toHaveBeenCalledTimes(1);
+  });
+
+  it("leaves Cmd+` for the macOS window switcher", () => {
+    const ctx = buildContext({});
+    render(<Harness ctx={ctx} />);
+
+    fireEvent.keyDown(document, {
+      key: "`",
+      code: "Backquote",
+      metaKey: true,
+    });
+
+    expect(ctx.toggleTerminalAndFocus).not.toHaveBeenCalled();
+  });
+
   it("toggles plan mode on Shift+Tab", () => {
     const ctx = buildContext({
       activeTabId: "agent-1",

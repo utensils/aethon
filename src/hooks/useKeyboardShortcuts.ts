@@ -129,8 +129,15 @@ export function useKeyboardShortcuts(ctx: UseKeyboardShortcutsContext): void {
         ctx.togglePlanMode();
         return;
       }
-      // Cmd+`: toggle bottom terminal panel + move focus there/back.
-      if (e.key === "`" && mod && !e.shiftKey && !e.altKey) {
+      // Ctrl+`: toggle bottom terminal panel + move focus there/back.
+      // Cmd+` is macOS's standard window switcher, so leave it alone.
+      if (
+        e.code === "Backquote" &&
+        e.ctrlKey &&
+        !e.metaKey &&
+        !e.shiftKey &&
+        !e.altKey
+      ) {
         e.preventDefault();
         e.stopPropagation();
         ctx.toggleTerminalAndFocus();

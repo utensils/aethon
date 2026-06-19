@@ -70,7 +70,7 @@ pub fn install_app_menu(
         .accelerator("CmdOrCtrl+Shift+[")
         .build(app)?;
     let toggle_terminal = MenuItemBuilder::with_id("toggle_terminal", "Toggle Terminal")
-        .accelerator("CmdOrCtrl+`")
+        .accelerator("Ctrl+`")
         .build(app)?;
     let toggle_files = MenuItemBuilder::with_id("toggle_files", "Toggle Files")
         .accelerator("CmdOrCtrl+J")

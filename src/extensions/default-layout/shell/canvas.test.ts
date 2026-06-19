@@ -41,7 +41,7 @@ describe("shouldSkipResize", () => {
   });
 
   it("returns true when width collapses to zero", () => {
-    // Cmd+` collapses the terminal grid track to 0px; the ResizeObserver
+    // Ctrl+` collapses the terminal grid track to 0px; the ResizeObserver
     // fires with width=0. Skipping the fit+resize keeps us from sending
     // a tiny `shell_resize` that would raise SIGWINCH on the PTY.
     expect(shouldSkipResize(entry(0, 240))).toBe(true);
