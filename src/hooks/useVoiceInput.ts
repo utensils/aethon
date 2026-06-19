@@ -93,10 +93,20 @@ export interface VoiceInputController {
   cancel: () => void;
 }
 
+export interface UseVoiceInputOptions {
+  /** Whether the surface hosting this controller is currently visible. The
+   *  shared mic slot is app-wide, so a controller whose surface gets hidden
+   *  mid-capture must release it — otherwise the now-visible surface's next
+   *  start fails with "Voice recording is already active". Defaults to true. */
+  surfaceActive?: boolean;
+}
+
 export function useVoiceInput(
   onTranscript: (transcript: string, options: { autoSend: boolean }) => void,
   onNeedsSetup: (providerId: string) => void,
+  options?: UseVoiceInputOptions,
 ): VoiceInputController {
+  const surfaceActive = options?.surfaceActive ?? true;
   const [state, setState] = useState<VoiceState>("idle");
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [interimTranscript, setInterimTranscript] = useState("");
@@ -385,6 +395,25 @@ export function useVoiceInput(
   useLayoutEffect(() => {
     stateRef.current = state;
   });
+
+  // Release the mic if this surface is hidden mid-capture. The composer and the
+  // dashboard task-launcher both stay mounted (the layout grid toggles
+  // display:none, it doesn't unmount), so a recording started while visible
+  // would otherwise keep holding the shared slot after the user navigates away,
+  // blocking the next start on whichever surface is now visible. cancel()
+  // discards rather than transcribing into a surface the user has left.
+  const surfaceActiveRef = useRef(surfaceActive);
+  useEffect(() => {
+    const wasActive = surfaceActiveRef.current;
+    surfaceActiveRef.current = surfaceActive;
+    if (
+      wasActive &&
+      !surfaceActive &&
+      (stateRef.current === "recording" || stateRef.current === "starting")
+    ) {
+      cancel();
+    }
+  }, [surfaceActive, cancel]);
 
   useEffect(() => {
     const onBlur = () => {

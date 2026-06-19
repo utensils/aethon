@@ -402,9 +402,21 @@ export function TaskLauncher({
     },
     [promptText, submitPrompt],
   );
-  const voice = useVoiceInput(handleTranscript, (providerId) => {
-    onEvent("voice:setup", { providerId });
-  });
+  // The dashboard task-launcher and the composer both mount at once — the
+  // layout grid hides cells with display:none rather than unmounting — so each
+  // registers the same global voice hotkey against one shared mic. Track
+  // whether this dashboard actually owns the canvas (mirrors the
+  // project-dashboard's `visible: /emptyAndProject` binding) so it neither
+  // starts while hidden nor keeps holding the slot after being hidden;
+  // otherwise both hotkeys fire and the loser reports "already active".
+  const voiceSurfaceVisible = !!state.emptyAndProject;
+  const voice = useVoiceInput(
+    handleTranscript,
+    (providerId) => {
+      onEvent("voice:setup", { providerId });
+    },
+    { surfaceActive: voiceSurfaceVisible },
+  );
   const voiceState = voice.state;
   const cancelVoice = voice.cancel;
   const voiceConfig = (state.voice as
@@ -417,7 +429,11 @@ export function TaskLauncher({
   const palette = state.commandPalette as { open?: boolean } | undefined;
   const search = state.search as { open?: boolean } | undefined;
   const voiceInputBlocked =
-    submitting || !!settings?.open || !!palette?.open || !!search?.open;
+    submitting ||
+    !voiceSurfaceVisible ||
+    !!settings?.open ||
+    !!palette?.open ||
+    !!search?.open;
   const voiceInputBlockedRef = useRef(voiceInputBlocked);
   useLayoutEffect(() => {
     voiceInputBlockedRef.current = voiceInputBlocked;

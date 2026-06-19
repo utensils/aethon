@@ -185,8 +185,15 @@ export function useVoiceConversation(
     activeRef.current = true;
     setActive(true);
     setConversationActive(true);
-    void startListening();
-  }, [startListening]);
+    // Auto-listen (continuous) is hands-free, so open the mic immediately on
+    // entry. With it off the user drives every turn — including the first — so
+    // land on the paused "tap to talk" state instead of recording on entry.
+    if (optionsRef.current.continuous) {
+      void startListening();
+    } else {
+      setPhase("idle");
+    }
+  }, [setPhase, startListening]);
 
   const exit = useCallback(() => {
     activeRef.current = false;

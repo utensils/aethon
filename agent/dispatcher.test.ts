@@ -394,6 +394,43 @@ describe("handleChat", () => {
     expect(followUpCalls).toEqual([["after this"]]);
     expect(steerCalls).toEqual([]);
     expect(f.sent).toContainEqual({ type: "queued", tabId: "tab-1" });
+    // A queued message must NOT announce a fresh turn start — the
+    // queue-drained agent_start emits prompt_started later instead.
+    expect(
+      f.sent.some((m) => m.type === "prompt_started"),
+    ).toBe(false);
+  });
+
+  it("announces prompt_started for a normal turn so backgrounded workspaces show a running dot", async () => {
+    const f = makeFixture();
+    const tab = fakeTabRecord({
+      session: {
+        prompt: () => Promise.resolve(),
+        followUp: () => Promise.resolve(),
+        steer: () => Promise.resolve(),
+      } as unknown as TabRecord["session"],
+    });
+    f.state.tabs.set("tab-1", tab);
+
+    await handleChat(f.state, f.deps, {
+      type: "chat",
+      content: "do the thing",
+      tabId: "tab-1",
+      mode: "normal",
+    });
+
+    // prompt_started populates the frontend's bucket-independent running set,
+    // which is the only "running" signal for a non-active workspace — without
+    // it a backgrounded agent shows no activity dot until you select its tab.
+    expect(f.sent).toContainEqual({
+      type: "prompt_started",
+      tabId: "tab-1",
+      source: "chat",
+    });
+    // ...and the turn still closes with the matching response_end.
+    await vi.waitFor(() =>
+      expect(f.sent).toContainEqual({ type: "response_end", tabId: "tab-1" }),
+    );
   });
 
   it("rolls back the queue count when followUp rejects", async () => {
