@@ -843,6 +843,10 @@ export async function tryAutoSwitchOnUsageLimit(
 ): Promise<boolean> {
   const existing = state.tabs.get(tabId);
   if (!existing) return false;
+  // A worker bridge's in-memory profile list can be stale (accounts added
+  // after it spawned live only in the global bridge until persisted); reload
+  // from disk so a freshly-added spare account is considered.
+  state.authProfiles = loadAuthProfilesState(state.userDir);
   const currentId = state.tabAuthProfileIds.get(tabId);
   const current = currentId
     ? state.authProfiles.profiles.find((p) => p.id === currentId)
@@ -854,11 +858,15 @@ export async function tryAutoSwitchOnUsageLimit(
   const tried = existing.autoSwitchTried ?? new Set<string>();
   if (currentId) tried.add(currentId);
 
+  // Only choose an account whose usage is *definitively* not limited. A
+  // network/HTTP failure leaves `limitReached` undefined — treat that as
+  // unavailable rather than risk switching onto an unprobeable (possibly
+  // exhausted) account.
   const probe: LimitProbe = async (profileId, providerId) => {
     const usage = await fetchCodexUsage(
       profileTokenProvider(state, profileId, providerId),
     );
-    return usage.limitReached === true;
+    return usage.limitReached !== false;
   };
   const chosen = await pickAvailableAccount(
     state.authProfiles.profiles,
