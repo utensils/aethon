@@ -121,11 +121,20 @@ export function AppRoot({
         workspaceStartup.entry.state,
       ),
   );
+  const sidebarCollapsed =
+    (renderState.layout as { sidebarVisible?: unknown } | undefined)
+      ?.sidebarVisible === false;
   return (
     <ExtensionRegistryProvider registry={registry}>
       {/* `data-platform="mac"` gates the overlay-titlebar chrome (traffic-
           light clearance + drag regions) so non-mac builds render unchanged. */}
-      <div className="app" {...(isMacOS() ? { "data-platform": "mac" } : {})}>
+      <div
+        className="app"
+        {...(isMacOS() ? { "data-platform": "mac" } : {})}
+        {...(sidebarCollapsed
+          ? { "data-sidebar-collapsed": "true" }
+          : {})}
+      >
         {chromeReady ? topBanner : null}
         {chromeReady ? (
           <A2UIRenderer

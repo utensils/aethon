@@ -2044,11 +2044,7 @@ body.ae-resizing-sidebar .a2ui-layout {
 /* macOS overlay titlebar: when the sidebar is collapsed, the header becomes
    the leftmost drag row and must inherit the traffic-light clearance that the
    sidebar brand strip normally owns. */
-[data-platform="mac"]
-  .a2ui-layout:has(
-    > .a2ui-layout-cell[data-area="sidebar"][data-visible="false"]
-  )
-  .app-header {
+[data-platform="mac"][data-sidebar-collapsed="true"] .app-header {
   padding-left: 94px !important;
 }
 

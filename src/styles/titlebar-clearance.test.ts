@@ -12,8 +12,8 @@ const css = readFileSync(join(here, "chrome.css"), "utf8");
 describe("macOS overlay titlebar clearance", () => {
   it("reserves traffic-light space in the header when the sidebar is collapsed", () => {
     expect(css).toMatch(
-      /\[data-platform="mac"\]\s+\.a2ui-layout:has\(\s*>\s*\.a2ui-layout-cell\[data-area="sidebar"\]\[data-visible="false"\]\s*\)\s+\.app-header\s*\{/,
+      /\[data-platform="mac"\]\[data-sidebar-collapsed="true"\]\s+\.app-header\s*\{[\s\S]*?padding-left:\s*94px\s*!important/,
     );
-    expect(css).toMatch(/padding-left:\s*94px\s*!important/);
+    expect(css).not.toMatch(/:has\(/);
   });
 });
