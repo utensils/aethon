@@ -16,6 +16,7 @@ import { resolveBoolean, resolveString } from "../../utils/dataBinding";
 import { resolvePointer } from "../../utils/jsonPointer";
 import { PI_DEFAULT_MODEL_SENTINEL } from "../../utils/modelPicker";
 import type { BuiltinComponentProps } from "../../components/A2UIRenderer";
+import type { Tab } from "../../types/tab";
 import type { VcsSlice } from "../../hooks/useVcsStatus";
 import { ciMeta, prMeta } from "./sidebar/vcs-presentation";
 import { absolutePathFor } from "./sidebar/fileTreeModel";
@@ -682,17 +683,21 @@ export function AccountSelector({
         },
       ]}
       onSelect={(_sectionId, itemId) => {
-        const tabs =
-          (state.tabs as
-            | { id: string; cwd?: string; model?: string }[]
-            | undefined) ?? [];
-        const tab = tabs.find((t) => t.id === activeTabId);
-        import("../../auth-profiles").then(({ switchAccountForTab }) => {
-          void switchAccountForTab(activeTabId, itemId, {
-            cwd: tab?.cwd,
-            model: tab?.model,
-          });
-        });
+        import("../../auth-profiles").then(
+          ({ resolveAccountSwitchTarget, switchAccountForTab }) => {
+            const target = resolveAccountSwitchTarget(
+              (state.tabs as Tab[] | undefined) ?? [],
+              activeTabId,
+            );
+            // Don't switch mid-prompt — the global + worker auth states would
+            // diverge (UI shows the new account, worker keeps the old creds).
+            if (target.busy) return;
+            void switchAccountForTab(target.tabId, itemId, {
+              cwd: target.cwd,
+              model: target.model,
+            });
+          },
+        );
       }}
     />
   );

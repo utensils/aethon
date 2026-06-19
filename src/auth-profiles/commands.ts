@@ -1,4 +1,39 @@
 import { invoke } from "@tauri-apps/api/core";
+import { isAgentTabBusy } from "../utils/agentBusy";
+import { OVERVIEW_TAB_ID, type Tab } from "../types/tab";
+
+export interface AccountSwitchTarget {
+  /** Tab the switch should target. Overview / non-agent / missing tabs
+   *  collapse to `"default"` (the global account path) so we never spawn a
+   *  worker for a session that doesn't exist. */
+  tabId: string;
+  cwd?: string;
+  model?: string;
+  /** True when the resolved tab is mid-prompt; callers must not switch
+   *  (the global + worker states would diverge — see switchAccountForTab). */
+  busy: boolean;
+}
+
+/** Resolve the target + busy state for an account switch from the active
+ *  tab. Shared by the Accounts panel and the header selector. */
+export function resolveAccountSwitchTarget(
+  tabs: Tab[],
+  activeTabId: string | undefined,
+): AccountSwitchTarget {
+  const tab = tabs.find(
+    (t) =>
+      t.id === activeTabId &&
+      t.id !== OVERVIEW_TAB_ID &&
+      (t.kind ?? "agent") === "agent",
+  );
+  if (!tab) return { tabId: "default", busy: false };
+  return {
+    tabId: tab.id,
+    cwd: tab.cwd,
+    model: tab.model,
+    busy: isAgentTabBusy(tab, { includeQueue: true }),
+  };
+}
 
 export async function sendAuthProfileCommand(
   payload: Record<string, unknown>,

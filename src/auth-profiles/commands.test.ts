@@ -7,7 +7,20 @@ vi.mock("@tauri-apps/api/core", () => ({
   invoke: (cmd: string, args: { payload: string }) => invoke(cmd, args),
 }));
 
-import { switchAccountForTab } from "./commands";
+import { resolveAccountSwitchTarget, switchAccountForTab } from "./commands";
+import type { Tab } from "../types/tab";
+
+function agentTab(over: Partial<Tab> = {}): Tab {
+  return {
+    id: "tab-1",
+    kind: "agent",
+    title: "Tab",
+    cwd: "/repo",
+    model: "openai-codex/gpt-5.5",
+    messages: [],
+    ...over,
+  } as Tab;
+}
 
 function payloads(): Array<Record<string, unknown>> {
   return invoke.mock.calls.map(
@@ -45,5 +58,41 @@ describe("switchAccountForTab", () => {
     const apply = payloads().find((p) => p.type === "auth_profile_apply");
     expect(apply?.cwd).toBe("/repo/feature");
     expect(apply?.model).toBe("openai-codex/gpt-5.5");
+  });
+});
+
+describe("resolveAccountSwitchTarget", () => {
+  it("maps a real agent tab to itself with its cwd + model", () => {
+    const tabs = [agentTab({ id: "t-real", cwd: "/x", model: "openai-codex/m" })];
+    expect(resolveAccountSwitchTarget(tabs, "t-real")).toEqual({
+      tabId: "t-real",
+      cwd: "/x",
+      model: "openai-codex/m",
+      busy: false,
+    });
+  });
+
+  it("falls back to the default (global) path for the overview pseudo-tab", () => {
+    // The overview id is not a real session — switching it must not spawn a
+    // worker, so it collapses to the default account path.
+    expect(resolveAccountSwitchTarget([], "__overview__")).toEqual({
+      tabId: "default",
+      busy: false,
+    });
+  });
+
+  it("falls back to default when the active tab id has no matching agent tab", () => {
+    expect(resolveAccountSwitchTarget([agentTab()], "missing")).toEqual({
+      tabId: "default",
+      busy: false,
+    });
+  });
+
+  it("reports busy for a tab that is mid-prompt", () => {
+    const target = resolveAccountSwitchTarget(
+      [agentTab({ id: "t-busy", waiting: true })],
+      "t-busy",
+    );
+    expect(target.busy).toBe(true);
   });
 });

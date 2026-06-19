@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { BuiltinComponentProps } from "../../components/A2UIRenderer";
 import {
   EMPTY_AUTH_PROFILES,
+  resolveAccountSwitchTarget,
   sendAuthProfileCommand,
   switchAccountForTab,
   type AuthProfileLoginEvent,
@@ -9,6 +10,7 @@ import {
   type AuthProfileUsage,
   type AuthProfilesUiState,
 } from "../../auth-profiles";
+import type { Tab } from "../../types/tab";
 
 function readAuthProfiles(state: Record<string, unknown>): AuthProfilesUiState {
   return {
@@ -32,6 +34,7 @@ export function AuthProfilePanel({
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const renameInputRef = useRef<HTMLInputElement>(null);
+  const cancelRenameRef = useRef(false);
 
   const providers = auth.providers;
   const selectedProvider =
@@ -40,12 +43,10 @@ export function AuthProfilePanel({
     tabId ??
     (typeof state.activeTabId === "string" ? state.activeTabId : "default");
   const activeProfileId = auth.activeByTab[activeTabId];
-  const activeTab = (() => {
-    const tabs =
-      (state.tabs as { id: string; cwd?: string; model?: string }[] | undefined) ??
-      [];
-    return tabs.find((t) => t.id === activeTabId);
-  })();
+  const switchTarget = resolveAccountSwitchTarget(
+    (state.tabs as Tab[] | undefined) ?? [],
+    activeTabId,
+  );
 
   const groupedProfiles = useMemo(
     () =>
@@ -115,10 +116,12 @@ export function AuthProfilePanel({
   };
 
   const activateProfile = (profileId: string) =>
-    switchAccountForTab(activeTabId, profileId, {
-      cwd: activeTab?.cwd,
-      model: activeTab?.model,
-    });
+    switchTarget.busy
+      ? undefined // can't switch mid-prompt; the Use button is disabled too
+      : switchAccountForTab(switchTarget.tabId, profileId, {
+          cwd: switchTarget.cwd,
+          model: switchTarget.model,
+        });
 
   const setDefault = (profileId: string) =>
     sendAuthProfileCommand({ type: "auth_profile_set_default", profileId });
@@ -140,11 +143,23 @@ export function AuthProfilePanel({
     sendAuthProfileCommand({ type: "auth_profile_delete", profileId });
 
   const startRename = (profileId: string, currentLabel: string) => {
+    cancelRenameRef.current = false;
     setRenamingId(profileId);
     setRenameValue(currentLabel);
   };
 
+  const cancelRename = () => {
+    // Flag the cancel BEFORE unmounting the input — the resulting blur would
+    // otherwise fire commitRename and submit the rename we meant to discard.
+    cancelRenameRef.current = true;
+    setRenamingId(null);
+  };
+
   const commitRename = () => {
+    if (cancelRenameRef.current) {
+      cancelRenameRef.current = false;
+      return;
+    }
     if (!renamingId || !renameValue.trim()) {
       setRenamingId(null);
       return;
@@ -271,7 +286,7 @@ export function AuthProfilePanel({
                               onBlur={commitRename}
                               onKeyDown={(e) => {
                                 if (e.key === "Enter") commitRename();
-                                if (e.key === "Escape") setRenamingId(null);
+                                if (e.key === "Escape") cancelRename();
                               }}
                             />
                           ) : (
@@ -318,7 +333,12 @@ export function AuthProfilePanel({
                         <button
                           type="button"
                           className="ae-settings-secondary"
-                          disabled={isActive}
+                          disabled={isActive || switchTarget.busy}
+                          title={
+                            switchTarget.busy
+                              ? "Stop the current prompt before switching accounts"
+                              : undefined
+                          }
                           onClick={() => void activateProfile(profile.id)}
                         >
                           Use
