@@ -325,14 +325,19 @@ describe("TaskLauncher", () => {
       />,
     );
 
-    await act(async () => {
+    act(() => {
       fireEvent.keyDown(window, {
         key: "m",
         code: "KeyM",
         metaKey: true,
         shiftKey: true,
       });
-      await new Promise((resolve) => setTimeout(resolve, 10));
+    });
+    // Drain microtasks deterministically (no real timer): if the gate
+    // regressed, start() would have invoked voice_list_providers by now.
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
     });
 
     expect(invoke).not.toHaveBeenCalledWith(
