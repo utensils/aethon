@@ -583,6 +583,86 @@ export function AppearanceMenu({
 }
 
 // ---------------------------------------------------------------------------
+// AccountSelector — header dropdown that shows the active auth profile for
+// the current tab and lets the user switch between stored accounts. Read
+// from `/authProfiles` and the active tab's profile binding. Selecting
+// fires `auth_profile_use_for_tab` directly rather than going through the
+// sidebar select route, because account switching is a per-tab bridge
+// command.
+// ---------------------------------------------------------------------------
+
+interface AuthProfileMeta {
+  id: string;
+  providerId: string;
+  label: string;
+  kind: string;
+}
+
+interface AuthProfileUsageSlim {
+  email?: string;
+  planType?: string;
+  primary?: { usedPercent: number };
+}
+
+export function AccountSelector({
+  state,
+}: BuiltinComponentProps) {
+  const auth = (state.authProfiles ?? {}) as {
+    profiles?: AuthProfileMeta[];
+    activeByTab?: Record<string, string>;
+    usage?: Record<string, AuthProfileUsageSlim>;
+  };
+  const profiles = auth.profiles ?? [];
+  if (profiles.length === 0) return null;
+
+  const activeTabId =
+    typeof state.activeTabId === "string" ? state.activeTabId : "default";
+  const activeProfileId = auth.activeByTab?.[activeTabId];
+  const activeProfile = profiles.find((p) => p.id === activeProfileId);
+  const usage = activeProfileId ? auth.usage?.[activeProfileId] : undefined;
+
+  const buttonLabel = activeProfile
+    ? `${activeProfile.label}${usage?.planType ? ` · ${usage.planType}` : ""}`
+    : "account";
+
+  const items: DropdownItem[] = profiles.map((p) => {
+    const u = auth.usage?.[p.id];
+    const hint = [u?.email, u?.planType].filter(Boolean).join(" · ") || p.kind;
+    return {
+      id: p.id,
+      label: p.label,
+      hint,
+      active: p.id === activeProfileId,
+    };
+  });
+
+  return (
+    <DropdownPickerCore
+      className="a2ui-account-selector"
+      buttonLabel={buttonLabel}
+      align="right"
+      sections={[
+        {
+          id: "accounts",
+          title: "account",
+          items,
+          emptyLabel: "no accounts stored",
+        },
+      ]}
+      onSelect={(_sectionId, itemId) => {
+        import("../../auth-profiles").then(({ sendAuthProfileCommand }) => {
+          void sendAuthProfileCommand({
+            type: "auth_profile_use_for_tab",
+            tabId: activeTabId,
+            profileId: itemId,
+          });
+        });
+      }}
+    />
+  );
+}
+
+// ---------------------------------------------------------------------------
 // VcsStatus — compact header cluster reading the `/vcs` slice: branch (with
 // ahead/behind), working-tree change count, PR state, and CI status. PR/CI
 // pills open GitHub via the `open-url` event. Hidden gracefully when the

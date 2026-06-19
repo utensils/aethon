@@ -2230,6 +2230,9 @@ body.ae-resizing-sidebar .a2ui-layout {
 .a2ui-appearance-menu .a2ui-dropdown-trigger {
   max-width: min(46ch, calc(var(--app-viewport-width) - 32px));
 }
+.a2ui-account-selector .a2ui-dropdown-trigger {
+  max-width: min(30ch, calc(var(--app-viewport-width) - 32px));
+}
 
 .app-header .a2ui-dropdown {
   flex-shrink: 0;
