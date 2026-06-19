@@ -2041,6 +2041,17 @@ body.ae-resizing-sidebar .a2ui-layout {
   overflow: hidden;
 }
 
+/* macOS overlay titlebar: when the sidebar is collapsed, the header becomes
+   the leftmost drag row and must inherit the traffic-light clearance that the
+   sidebar brand strip normally owns. */
+[data-platform="mac"]
+  .a2ui-layout:has(
+    > .a2ui-layout-cell[data-area="sidebar"][data-visible="false"]
+  )
+  .app-header {
+  padding-left: 94px !important;
+}
+
 .app-header-brand {
   display: flex;
   align-items: center;
