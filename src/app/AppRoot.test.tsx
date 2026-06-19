@@ -55,6 +55,31 @@ function layoutPayload(): A2UIPayload {
 }
 
 describe("AppRoot workspace startup overlay", () => {
+  it("mirrors collapsed sidebar state onto the app root for titlebar CSS", () => {
+    const { container } = render(
+      <AppRoot
+        registry={registry()}
+        layout={layoutPayload()}
+        renderState={{ layout: { sidebarVisible: false } }}
+        setState={noop}
+        onEvent={noop}
+        activeTabId="default"
+        notificationsOpen={false}
+        paletteOpen={false}
+        settingsOpen={false}
+        searchOpen={false}
+        authProfilesOpen={false}
+        scheduledTasksOpen={false}
+        chromeReady
+        startupLogoUrl="/logo.svg"
+      />,
+    );
+
+    expect(container.querySelector(".app")?.getAttribute("data-sidebar-collapsed")).toBe(
+      "true",
+    );
+  });
+
   it("mounts running workspace startup inside the canvas cell after chrome is ready", async () => {
     const { container } = render(
       <AppRoot
