@@ -117,7 +117,11 @@ export function navigateToWorkspace(
 export async function refreshProjectWorkspaces(
   deps: Pick<
     GitDeps,
-    "projectsRef" | "lookups" | "persistProjects" | "tabCleanup"
+    | "projectsRef"
+    | "lookups"
+    | "syncProjectsToState"
+    | "persistProjects"
+    | "tabCleanup"
   >,
   projectId: string,
 ): Promise<void> {
@@ -165,6 +169,7 @@ export async function refreshProjectWorkspaces(
       nextState = { ...nextState, activeWorkspaceId: null };
     }
     deps.projectsRef.current = nextState;
+    deps.syncProjectsToState();
     void deps.persistProjects();
   } catch {
     // Project may not be a git repo; keep the prior list intact.

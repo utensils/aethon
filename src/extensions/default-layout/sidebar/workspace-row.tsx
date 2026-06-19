@@ -19,6 +19,7 @@ import type { BuiltinComponentProps } from "../../../components/A2UIRenderer";
 import type { AgentActivitySummary } from "../../../hooks/projectOps/agentActivity";
 import { getGhBranchStatus } from "../../../ghBranchStatusCache";
 import { getGhChecks } from "../../../ghChecksCache";
+import { gitWorktrees } from "../../../workspaces";
 import {
   summarizeWorkspacePrStatus,
   type WorkspacePrChip,
@@ -26,6 +27,20 @@ import {
 
 export const WORKSPACE_PR_REFRESH_MS = 60_000;
 export const WORKSPACE_PENDING_CI_REFRESH_MS = 45_000;
+
+async function liveBranchStillMatches(
+  path: string,
+  branch: string,
+): Promise<boolean> {
+  try {
+    const live = await gitWorktrees(path);
+    const row = live.find((w) => w.path === path);
+    if (!row) return true;
+    return row.branch === branch;
+  } catch {
+    return true;
+  }
+}
 
 export interface WorkspaceSidebarItem {
   id: string;
@@ -137,6 +152,14 @@ export function WorkspaceRow({
         setPrChip(null);
       }
       try {
+        if (!(await liveBranchStillMatches(item.path, branch))) {
+          if (!cancelled) {
+            loadedOnce = true;
+            setPrChip(null);
+            scheduleRefresh(null);
+          }
+          return;
+        }
         const status = await getGhBranchStatus(item.path, branch);
         const checks =
           status.ghAvailable &&
