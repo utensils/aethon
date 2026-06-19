@@ -749,6 +749,46 @@ describe("ChatInput", () => {
     ).toBeTruthy();
   });
 
+  it("resumes following when a new user message is appended after scroll-away", () => {
+    const messages = [
+      { id: "1", role: "user", text: "start" },
+      { id: "2", role: "agent", text: "previous answer" },
+    ];
+    const { onEvent, rerender } = renderHistory({ messages });
+
+    const scroller = screen.getByTestId("virtuoso-mock");
+    act(() => userScrollUp(scroller));
+    expect(
+      screen.getByRole("button", { name: "Scroll to latest message" }),
+    ).toBeTruthy();
+    const before = virtuosoMockState.scrollToCalls.length;
+
+    rerender(
+      <ChatHistory
+        component={{
+          id: "chat-history",
+          type: "chat-history",
+          props: { messages: { $ref: "/messages" } },
+        }}
+        state={{
+          messages: [
+            ...messages,
+            { id: "3", role: "user", text: "follow this new prompt" },
+          ],
+        }}
+        onEvent={onEvent}
+      />,
+    );
+
+    expect(virtuosoMockState.scrollToCalls.length).toBeGreaterThan(before);
+    expect(virtuosoMockState.scrollToCalls).toContainEqual({
+      top: Number.MAX_SAFE_INTEGER,
+    });
+    expect(
+      screen.queryByRole("button", { name: "Scroll to latest message" }),
+    ).toBeNull();
+  });
+
   it("does not treat non-scrolling keydowns as a scroll-away", () => {
     renderHistory({
       messages: [
