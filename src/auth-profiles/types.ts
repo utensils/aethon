@@ -53,7 +53,9 @@ export interface AuthProfileUsageCredits {
 
 export interface AuthProfileUsage {
   email?: string;
+  accountId?: string;
   planType?: string;
+  limitReached?: boolean;
   primary?: AuthProfileUsageWindow;
   secondary?: AuthProfileUsageWindow;
   credits?: AuthProfileUsageCredits;

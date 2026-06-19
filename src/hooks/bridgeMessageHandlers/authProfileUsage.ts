@@ -8,8 +8,14 @@ export const handleAuthProfileUsage: BridgeMessageHandler = (message, ctx) => {
 
   const usage: AuthProfileUsage = {
     email: typeof message.email === "string" ? message.email : undefined,
+    accountId:
+      typeof message.accountId === "string" ? message.accountId : undefined,
     planType:
       typeof message.planType === "string" ? message.planType : undefined,
+    limitReached:
+      typeof message.limitReached === "boolean"
+        ? message.limitReached
+        : undefined,
     primary: isUsageWindow(message.primary) ? message.primary : undefined,
     secondary: isUsageWindow(message.secondary) ? message.secondary : undefined,
     credits: isCredits(message.credits) ? message.credits : undefined,

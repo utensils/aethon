@@ -11,6 +11,7 @@ import type { BridgeMessageHandler } from "./types";
 type AuthProfilesState = AuthProfilesSnapshot & {
   modal?: { open?: boolean };
   login?: AuthProfileLoginEvent;
+  usage?: Record<string, unknown>;
 };
 
 function snapshotFrom(value: unknown): AuthProfilesSnapshot | null {
@@ -84,6 +85,9 @@ export const handleAuthProfiles: BridgeMessageHandler = (message, ctx) => {
         ...snapshot,
         modal: current.modal,
         login: current.login,
+        // Preserve the per-profile usage cache — it arrives via separate
+        // `auth_profile_usage` messages and must survive snapshot refreshes.
+        usage: current.usage,
       },
     };
   });

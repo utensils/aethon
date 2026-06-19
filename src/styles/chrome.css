@@ -6597,6 +6597,15 @@ body.ae-resizing-terminal * {
   color: var(--text-dim);
   font-size: var(--chrome-text-muted);
 }
+.ae-auth-row-email {
+  color: var(--text) !important;
+  font-size: var(--chrome-text-muted);
+  font-weight: 500;
+}
+.ae-auth-row-meta {
+  color: var(--text-dim);
+  font-size: var(--chrome-text-muted);
+}
 .ae-auth-row-name {
   cursor: default;
 }

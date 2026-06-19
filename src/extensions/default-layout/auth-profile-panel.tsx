@@ -276,12 +276,14 @@ export function AuthProfilePanel({
                             </span>
                           )}
                         </div>
-                        <span>
+                        {usage?.email && (
+                          <span className="ae-auth-row-email" title={usage.email}>
+                            {usage.email}
+                          </span>
+                        )}
+                        <span className="ae-auth-row-meta">
                           {profile.provider.label} · {profile.kind}
-                          {usage?.email ? ` · ${usage.email}` : ""}
-                          {usage?.planType
-                            ? ` · ${usage.planType}`
-                            : ""}
+                          {usage?.planType ? ` · ${usage.planType}` : ""}
                         </span>
                         {usage && !usage.error && usage.primary && (
                           <UsageMeter usage={usage} />

@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { mkdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { logger } from "../logger";
 import {
   AuthStorage,
   getAgentDir,
@@ -843,6 +844,7 @@ async function handleFetchUsage(
   msg: InboundMessage,
 ): Promise<void> {
   const profileId = stringField(msg.profileId);
+  logger.scope("auth-usage").info(`fetch usage for ${profileId}`);
   try {
     const profile = findProfile(state, profileId);
     if (!profile) throw new Error("unknown profileId");
@@ -851,6 +853,11 @@ async function handleFetchUsage(
       const { fetchCodexProfileUsage } = await import("./codex-usage");
       const authPath = authProfileAuthPath(state.userDir, profile.id);
       const usage = await fetchCodexProfileUsage(authPath, profile.providerId);
+      logger
+        .scope("auth-usage")
+        .info(
+          `${profileId} → email=${usage.email ?? "none"} plan=${usage.planType ?? "none"} primary=${usage.primary?.usedPercent ?? "none"}`,
+        );
       deps.send({
         type: "auth_profile_usage",
         profileId: profile.id,
