@@ -37,9 +37,13 @@ describe("switchAccountForTab", () => {
     expect(payloads().map((p) => p.type)).toEqual(["auth_profile_use_for_tab"]);
   });
 
-  it("carries the tab cwd on the worker apply so a respawned worker lands in the right workspace", async () => {
-    await switchAccountForTab("tab-worker", "p1", "/repo/feature");
+  it("carries the tab cwd + model on the worker apply so a respawned worker keeps its workspace and model", async () => {
+    await switchAccountForTab("tab-worker", "p1", {
+      cwd: "/repo/feature",
+      model: "openai-codex/gpt-5.5",
+    });
     const apply = payloads().find((p) => p.type === "auth_profile_apply");
     expect(apply?.cwd).toBe("/repo/feature");
+    expect(apply?.model).toBe("openai-codex/gpt-5.5");
   });
 });

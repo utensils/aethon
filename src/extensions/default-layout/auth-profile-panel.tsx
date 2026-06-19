@@ -40,9 +40,11 @@ export function AuthProfilePanel({
     tabId ??
     (typeof state.activeTabId === "string" ? state.activeTabId : "default");
   const activeProfileId = auth.activeByTab[activeTabId];
-  const activeTabCwd = (() => {
-    const tabs = (state.tabs as { id: string; cwd?: string }[] | undefined) ?? [];
-    return tabs.find((t) => t.id === activeTabId)?.cwd;
+  const activeTab = (() => {
+    const tabs =
+      (state.tabs as { id: string; cwd?: string; model?: string }[] | undefined) ??
+      [];
+    return tabs.find((t) => t.id === activeTabId);
   })();
 
   const groupedProfiles = useMemo(
@@ -62,13 +64,27 @@ export function AuthProfilePanel({
     [auth.profiles, providers],
   );
 
+  // Profiles whose usage fetch is awaiting a response. Each
+  // `auth_profile_usage` reply mutates `auth.usage` and re-runs this effect;
+  // without the guard it would re-issue fetches for every still-pending
+  // profile (O(n²) on open). Cleared per-profile when its reply lands, and
+  // fully when the panel closes so a reopen refetches.
+  const usageInFlightRef = useRef<Set<string>>(new Set());
   useEffect(() => {
-    if (!auth.modal?.open) return;
+    if (!auth.modal?.open) {
+      usageInFlightRef.current.clear();
+      return;
+    }
     const now = Date.now();
     for (const profile of auth.profiles) {
       if (profile.kind !== "oauth") continue;
       const cached = auth.usage?.[profile.id];
-      if (cached && now - cached.fetchedAt < USAGE_STALE_MS) continue;
+      if (cached && now - cached.fetchedAt < USAGE_STALE_MS) {
+        usageInFlightRef.current.delete(profile.id); // reply landed
+        continue;
+      }
+      if (usageInFlightRef.current.has(profile.id)) continue; // pending
+      usageInFlightRef.current.add(profile.id);
       void sendAuthProfileCommand({
         type: "auth_profile_fetch_usage",
         profileId: profile.id,
@@ -99,7 +115,10 @@ export function AuthProfilePanel({
   };
 
   const activateProfile = (profileId: string) =>
-    switchAccountForTab(activeTabId, profileId, activeTabCwd);
+    switchAccountForTab(activeTabId, profileId, {
+      cwd: activeTab?.cwd,
+      model: activeTab?.model,
+    });
 
   const setDefault = (profileId: string) =>
     sendAuthProfileCommand({ type: "auth_profile_set_default", profileId });

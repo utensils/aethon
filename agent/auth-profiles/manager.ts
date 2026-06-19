@@ -805,23 +805,40 @@ async function handleApplyForTab(
     return;
   }
   const previousModel = existing?.session.model;
-  // Prefer the cwd carried by the message — when this relay is what spawns
-  // an idle-retired/never-spawned worker, the recorded cwd may be missing
-  // and a fallback cwd would land the session in the wrong workspace.
+  // Prefer the cwd/model carried by the message — when this relay is what
+  // spawns an idle-retired/never-spawned worker, `existing` is undefined, so
+  // the recorded cwd may be missing (wrong-workspace fallback) and there is
+  // no previous model (silent reset to the default model).
   const msgCwd = stringField(msg.cwd);
   const cwd = msgCwd || state.tabProjectCwds.get(tabId);
   if (existing) clearPendingContextUsageEmit(existing);
   state.tabs.delete(tabId);
   state.tabAuthProfileIds.set(tabId, profile.id);
   const services = servicesForProfile(state, profile.id, { forceRefresh: true });
+  const desiredModel = previousModel ?? modelFromIdField(services, msg.model);
   const nextModel =
-    previousModel &&
-    services.modelRegistry.find(previousModel.provider, previousModel.id);
+    desiredModel &&
+    services.modelRegistry.find(desiredModel.provider, desiredModel.id);
   await ensureTab(state, deps, tabId, {
     cwdOverride: cwd,
-    initialModel: nextModel || previousModel,
+    initialModel: nextModel || desiredModel,
   });
   markProfileUsed(state, profile.id);
+}
+
+/** Resolve a `provider/id` model string (from an apply payload) against a
+ *  profile's registry, so a respawned worker keeps the tab's current model
+ *  instead of falling back to the default. */
+function modelFromIdField(
+  services: AuthProfileServices,
+  field: unknown,
+): Model<Api> | undefined {
+  const id = stringField(field);
+  if (!id.includes("/")) return undefined;
+  const [provider, ...rest] = id.split("/");
+  return (
+    services.modelRegistry.find(provider, rest.join("/")) ?? undefined
+  );
 }
 
 interface ContinuableSession {
