@@ -4054,7 +4054,7 @@ body.ae-resizing-composer * {
      doesn't run under it. Bottom padding clears the Send button when
      the user types multiple lines. Right padding reserves room for the
      full three-button cluster (send + mic + conversation, out to ~108px). */
-  padding: 10px 116px 10px 92px;
+  padding: 10px 116px 10px 12px;
   font: inherit;
   outline: none;
   line-height: 1.5;
@@ -4066,45 +4066,6 @@ body.ae-resizing-composer * {
 .a2ui-chat-input-field:focus {
   border-color: var(--accent);
   box-shadow: var(--focus-ring);
-}
-
-.a2ui-chat-input-mode {
-  position: absolute;
-  left: 10px;
-  bottom: 10px;
-  z-index: 1;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 70px;
-  height: 26px;
-  padding: 0 8px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: var(--bg-elev);
-  color: var(--text-dim);
-  font-family: var(--font-ui);
-  font-size: var(--chrome-text-compact);
-  font-weight: 600;
-  line-height: 1;
-  cursor: pointer;
-  user-select: none;
-}
-
-.a2ui-chat-input-mode:hover {
-  border-color: var(--accent);
-  color: var(--text);
-}
-
-.a2ui-chat-input-mode:focus-visible {
-  outline: none;
-  box-shadow: var(--focus-ring);
-}
-
-.a2ui-chat-input-mode-plan {
-  border-color: var(--accent);
-  background: var(--accent-soft);
-  color: var(--accent);
 }
 
 .a2ui-chat-input-send {
@@ -9421,6 +9382,15 @@ button.ae-vcs-chip:focus-visible {
   color: color-mix(in oklab, var(--text-dim) 70%, transparent);
 }
 .ae-vis-pill[data-mode="hide"] .ae-vis-pill-dot {
+  background: transparent;
+  border: 1px solid var(--border-strong);
+}
+.ae-plan-pill[data-mode="on"] {
+  border-color: color-mix(in oklab, var(--accent) 70%, var(--border));
+  background: color-mix(in oklab, var(--accent) 14%, transparent);
+  color: var(--text);
+}
+.ae-plan-pill[data-mode="off"] .ae-vis-pill-dot {
   background: transparent;
   border: 1px solid var(--border-strong);
 }

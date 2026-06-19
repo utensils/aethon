@@ -4,7 +4,10 @@ import { buildRouteFixture } from "./testFixtures";
 import { makeEmptyTab } from "../types/tab";
 
 const pillEvent = (eventType: string, data?: unknown) => ({
-  component: { id: "composer-visibility-pills", type: "composer-visibility-pills" },
+  component: {
+    id: "composer-visibility-pills",
+    type: "composer-visibility-pills",
+  },
   eventType,
   data,
 });
@@ -39,6 +42,39 @@ describe("handleComposerPills", () => {
     });
   });
 
+  it("toggles plan mode on the active agent tab", () => {
+    const { ctx, mocks } = buildRouteFixture({
+      state: {
+        activeTabId: "t1",
+        tabs: [makeEmptyTab("t1", "T1")],
+      },
+    });
+    const handled = handleComposerPills(pillEvent("toggle-plan"), ctx);
+    expect(handled).toBe(true);
+    const updater = mocks.updateActiveTab.mock.calls[0][0];
+    expect(updater(makeEmptyTab("t1", "T1")).planMode).toBe(true);
+    expect(mocks.pushNotification).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: "Plan mode on",
+        kind: "success",
+        durationMs: 1600,
+      }),
+    );
+  });
+
+  it("ignores plan mode toggles without an active agent tab", () => {
+    const { ctx, mocks } = buildRouteFixture({
+      state: {
+        activeTabId: "shell-1",
+        tabs: [makeEmptyTab("shell-1", "Shell", null, "shell")],
+      },
+    });
+
+    expect(handleComposerPills(pillEvent("toggle-plan"), ctx)).toBe(true);
+    expect(mocks.updateActiveTab).not.toHaveBeenCalled();
+    expect(mocks.pushNotification).not.toHaveBeenCalled();
+  });
+
   it("cycles tool calls through the grouping styles from the global default", () => {
     const { ctx, mocks } = buildRouteFixture({
       state: {
@@ -50,9 +86,9 @@ describe("handleComposerPills", () => {
     // show → group-turn (first grouped style).
     handleComposerPills(pillEvent("cycle", { category: "toolCalls" }), ctx);
     const updater = mocks.updateActiveTab.mock.calls[0][0];
-    expect(updater(makeEmptyTab("t1", "T1")).visibilityOverrides.toolCalls).toBe(
-      "group-turn",
-    );
+    expect(
+      updater(makeEmptyTab("t1", "T1")).visibilityOverrides.toolCalls,
+    ).toBe("group-turn");
   });
 
   it("cycles group-block → hide and a legacy 'collapse' override resolves into the cycle", () => {
@@ -111,16 +147,19 @@ describe("handleComposerPills", () => {
   it("clears per-tab overrides on reset-to-global", () => {
     const tab = {
       ...makeEmptyTab("t1", "T1"),
-      visibilityOverrides: { thinking: "hide" as const, toolCalls: "group-run" as const },
+      visibilityOverrides: {
+        thinking: "hide" as const,
+        toolCalls: "group-run" as const,
+      },
     };
     const { ctx, mocks } = buildRouteFixture({
       state: { activeTabId: "t1", tabs: [tab] },
     });
     const handled = handleComposerPills(pillEvent("reset-to-global"), ctx);
     expect(handled).toBe(true);
-    expect(mocks.updateActiveTab.mock.calls[0][0](tab).visibilityOverrides).toBe(
-      undefined,
-    );
+    expect(
+      mocks.updateActiveTab.mock.calls[0][0](tab).visibilityOverrides,
+    ).toBe(undefined);
   });
 
   it("wraps hide back to show", () => {

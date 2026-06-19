@@ -1,8 +1,4 @@
-import type {
-  Dispatch,
-  MutableRefObject,
-  SetStateAction,
-} from "react";
+import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 import type { A2UIPayload, ChatMessage } from "../../types/a2ui";
 import type { Tab } from "../../types/tab";
 import type { NotificationInput } from "../useNotifications";
@@ -48,6 +44,7 @@ export interface UseOsEdgesContext {
   // Focus + chrome.
   toggleTerminal: () => void;
   toggleFilesSidebar: () => void;
+  togglePlanMode: () => void;
   openSettings: (section?: string) => void;
 
   // Notifications.

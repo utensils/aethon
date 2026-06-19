@@ -213,7 +213,6 @@
                 "value": { "$ref": "/draft" },
                 "placeholder": "Message Aethon… (@<subagent> to delegate, @file for context, / for commands)",
                 "disabled": { "$ref": "/waiting" },
-                "planMode": { "$ref": "/planMode" },
                 "queueCount": { "$ref": "/queueCount" },
                 "commands": { "$ref": "/slashCommands" },
                 "onSubmit": "chat:send"

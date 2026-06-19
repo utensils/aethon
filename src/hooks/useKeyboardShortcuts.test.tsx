@@ -44,6 +44,7 @@ function buildContext(
     toggleSessionSearch: vi.fn(),
     openPalette: vi.fn(),
     closePalette: vi.fn(),
+    togglePlanMode: vi.fn(),
     adjustZoom: vi.fn(),
     resetZoom: vi.fn(),
     toggleFocusComposerTerminal: vi.fn(),
@@ -56,6 +57,35 @@ function buildContext(
 }
 
 describe("useKeyboardShortcuts Escape handling", () => {
+  it("toggles plan mode on Shift+Tab", () => {
+    const ctx = buildContext({
+      activeTabId: "agent-1",
+      tabs: [{ id: "agent-1", kind: "agent", label: "Tab 1" }],
+    });
+    render(<Harness ctx={ctx} />);
+
+    fireEvent.keyDown(document, { key: "Tab", shiftKey: true });
+
+    expect(ctx.togglePlanMode).toHaveBeenCalledTimes(1);
+  });
+
+  it("lets Shift+Tab pass through inside the terminal panel", () => {
+    const ctx = buildContext({
+      activeTabId: "agent-1",
+      tabs: [{ id: "agent-1", kind: "agent", label: "Tab 1" }],
+    });
+    const panel = document.createElement("section");
+    panel.className = "ae-terminal-panel";
+    panel.tabIndex = -1;
+    document.body.appendChild(panel);
+    panel.focus();
+    render(<Harness ctx={ctx} />);
+
+    fireEvent.keyDown(panel, { key: "Tab", shiftKey: true });
+
+    expect(ctx.togglePlanMode).not.toHaveBeenCalled();
+  });
+
   it("closes Settings when it is the active overlay", () => {
     const ctx = buildContext({
       palette: { open: false },

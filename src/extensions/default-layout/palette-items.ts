@@ -34,7 +34,7 @@ export type PalettePayload =
   | { kind: "tab"; tabId: string }
   | { kind: "session"; sessionId: string; label: string; cwd?: string }
   | { kind: "project"; projectId: string }
-  | { kind: "open-project"; }
+  | { kind: "open-project" }
   | { kind: "slash"; name: string; args?: string }
   | { kind: "keybinding"; combo: string; action: string }
   | { kind: "layout"; layoutId: string }
@@ -63,6 +63,7 @@ export interface BuiltinKeybinding {
 export const BUILTIN_KEYBINDINGS: BuiltinKeybinding[] = [
   { combo: "meta+p", description: "Quick-open file (fuzzy search)" },
   { combo: "meta+shift+p", description: "Open command palette" },
+  { combo: "shift+tab", description: "Toggle Plan mode" },
   { combo: "meta+t", description: "New tab (focus-aware)" },
   { combo: "meta+shift+t", description: "New shell sub-tab" },
   { combo: "meta+w", description: "Close active tab" },
@@ -82,7 +83,10 @@ export const BUILTIN_KEYBINDINGS: BuiltinKeybinding[] = [
   { combo: "meta+9", description: "Jump to last tab" },
   { combo: "meta+`", description: "Toggle terminal panel + focus" },
   { combo: "meta+j", description: "Toggle files panel" },
-  { combo: "meta+0", description: "Toggle focus between composer and terminal" },
+  {
+    combo: "meta+0",
+    description: "Toggle focus between composer and terminal",
+  },
   { combo: "meta+l", description: "Focus active tab's input" },
   { combo: "meta+b", description: "Toggle left sidebar (projects)" },
   { combo: "meta+d", description: "Toggle right sidebar (files)" },
@@ -104,7 +108,12 @@ export const BUILTIN_KEYBINDINGS: BuiltinKeybinding[] = [
 export interface SelectInput {
   tabs?: { id: string; label: string; kind?: "agent" | "shell" }[];
   activeTabId?: string;
-  recentSessions?: { id: string; label: string; lastModified?: string; cwd?: string }[];
+  recentSessions?: {
+    id: string;
+    label: string;
+    lastModified?: string;
+    cwd?: string;
+  }[];
   sidebar?: {
     projects?: {
       id: string;
@@ -184,7 +193,8 @@ export function selectPaletteItems(
       const branchTag = p.git?.branch
         ? `${p.git.branch}${p.git.dirty ? "•" : ""}`
         : undefined;
-      const hint = p.tooltip ?? branchTag ?? p.hint ?? (p.active ? "active" : undefined);
+      const hint =
+        p.tooltip ?? branchTag ?? p.hint ?? (p.active ? "active" : undefined);
       items.push({
         id: `project:${p.id}`,
         label: p.label,
@@ -206,7 +216,9 @@ export function selectPaletteItems(
     }
   };
   const pushKeybindings = () => {
-    const overriddenCombos = new Set((state.keybindings ?? []).map((k) => k.combo));
+    const overriddenCombos = new Set(
+      (state.keybindings ?? []).map((k) => k.combo),
+    );
     for (const b of BUILTIN_KEYBINDINGS) {
       if (overriddenCombos.has(b.combo)) continue;
       items.push({
@@ -423,20 +435,16 @@ function scoreItem(item: PaletteItem, q: string): number {
   // both match `/theme` cleanly.
   const queryNoSlash = q.startsWith("/") ? q.slice(1) : q;
   const labelScore = fuzzyScore(queryNoSlash, item.label);
-  const hintScore = item.hint
-    ? fuzzyScore(queryNoSlash, item.hint) * 0.6
-    : 0;
-  const sectionScore = fuzzyScore(queryNoSlash, SECTION_LABEL[item.section]) * 0.5;
+  const hintScore = item.hint ? fuzzyScore(queryNoSlash, item.hint) * 0.6 : 0;
+  const sectionScore =
+    fuzzyScore(queryNoSlash, SECTION_LABEL[item.section]) * 0.5;
   const shortcutScore = item.shortcut
     ? fuzzyScore(queryNoSlash, item.shortcut) * 0.4
     : 0;
   return Math.max(labelScore, hintScore, sectionScore, shortcutScore);
 }
 
-export function rankItems(
-  items: PaletteItem[],
-  query: string,
-): PaletteItem[] {
+export function rankItems(items: PaletteItem[], query: string): PaletteItem[] {
   if (!query.trim()) return items;
   let q = query.trim();
   let preferred: PaletteSection | null = null;

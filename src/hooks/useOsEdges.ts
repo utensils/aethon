@@ -90,6 +90,7 @@ export function useOsEdges(ctx: UseOsEdgesContext): void {
         nextTab: ctx.nextTab,
         toggleTerminal: ctx.toggleTerminal,
         toggleFilesSidebar: ctx.toggleFilesSidebar,
+        togglePlanMode: ctx.togglePlanMode,
         openSettings: ctx.openSettings,
         clearChat: ctx.clearChat,
         stopPrompt: ctx.stopPrompt,

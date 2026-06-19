@@ -15,6 +15,7 @@ import {
   QueuedMessagesPopover,
   ToolCard,
 } from "./chat";
+import { ComposerVisibilityPills } from "./composer-visibility-pills";
 
 const { openUrl } = vi.hoisted(() => ({
   openUrl: vi.fn(),
@@ -207,6 +208,26 @@ function renderInput(
   };
 }
 
+function renderComposerPills(
+  onEvent = vi.fn(),
+  state: Record<string, unknown> = {},
+  tabId = "tab-1",
+) {
+  const result = render(
+    <ComposerVisibilityPills
+      component={{
+        id: "composer-visibility-pills",
+        type: "composer-visibility-pills",
+        props: {},
+      }}
+      state={state}
+      tabId={tabId}
+      onEvent={onEvent}
+    />,
+  );
+  return { onEvent, ...result };
+}
+
 function renderHistory(state: Record<string, unknown>) {
   const onEvent = vi.fn();
   const result = render(
@@ -382,29 +403,45 @@ describe("ChatInput", () => {
     expect(onEvent).not.toHaveBeenCalledWith("submit", expect.any(Object));
   });
 
-  it("renders a plan-mode chip that toggles the mode", () => {
-    const { onEvent } = renderInput(
+  it("keeps the plan-mode toggle out of the message field", () => {
+    renderInput(
       vi.fn(),
       { planMode: { $ref: "/planMode" } },
       { planMode: true },
     );
 
-    const chip = screen.getByRole("button", { name: "Plan mode on" });
-    expect(chip.textContent).toBe("Plan");
-    expect(chip.getAttribute("aria-pressed")).toBe("true");
-    fireEvent.click(chip);
-
-    expect(onEvent).toHaveBeenLastCalledWith("mode:toggle-plan");
+    expect(screen.queryByRole("button", { name: /plan mode/i })).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: /implementation mode/i }),
+    ).toBeNull();
   });
 
-  it("honors an explicit false plan-mode prop", () => {
-    renderInput(vi.fn(), { planMode: false }, { planMode: true });
-
-    const chip = screen.getByRole("button", {
-      name: "Implementation mode on",
+  it("renders a compact plan-mode pill that toggles the mode", () => {
+    const onEvent = vi.fn();
+    renderComposerPills(onEvent, {
+      tabs: [{ id: "tab-1", kind: "agent", planMode: true }],
+      transcriptVisibility: { thinking: "show", toolCalls: "show" },
     });
-    expect(chip.textContent).toBe("Implement");
-    expect(chip.getAttribute("aria-pressed")).toBe("false");
+
+    const pill = screen.getByRole("button", { name: /Plan mode: on/ });
+    expect(pill.textContent).toContain("Plan mode");
+    expect(pill.textContent).toContain("on");
+    expect(pill.getAttribute("aria-pressed")).toBe("true");
+    fireEvent.click(pill);
+
+    expect(onEvent).toHaveBeenLastCalledWith("toggle-plan");
+  });
+
+  it("reads plan-mode off state from the active tab", () => {
+    renderComposerPills(vi.fn(), {
+      planMode: true,
+      tabs: [{ id: "tab-1", kind: "agent", planMode: false }],
+      transcriptVisibility: { thinking: "show", toolCalls: "show" },
+    });
+
+    const pill = screen.getByRole("button", { name: /Plan mode: off/ });
+    expect(pill.textContent).toContain("off");
+    expect(pill.getAttribute("aria-pressed")).toBe("false");
   });
 
   it("cleans up composer resize state if unmounted mid-drag", () => {

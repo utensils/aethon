@@ -68,7 +68,6 @@ export function ChatInput({
     value?: StringValue;
     placeholder?: StringValue;
     disabled?: BooleanValue;
-    planMode?: BooleanValue;
     onSubmit?: string;
     onChange?: string;
     commands?: SlashCommandSource;
@@ -88,9 +87,6 @@ export function ChatInput({
     ? resolveString(props.placeholder, state)
     : "";
   const busy = props.disabled ? resolveBoolean(props.disabled, state) : false;
-  const planMode = props.planMode !== undefined
-    ? resolveBoolean(props.planMode, state)
-    : state.planMode === true;
   const queueCount = props.queueCount
     ? resolveNumber(props.queueCount, state)
     : 0;
@@ -489,18 +485,6 @@ export function ChatInput({
         />
       )}
       <div className="a2ui-chat-input-field-wrap">
-        <button
-          type="button"
-          className={`a2ui-chat-input-mode ${
-            planMode ? "a2ui-chat-input-mode-plan" : ""
-          }`}
-          onClick={() => onEvent("mode:toggle-plan")}
-          title="Toggle plan mode"
-          aria-label={planMode ? "Plan mode on" : "Implementation mode on"}
-          aria-pressed={planMode}
-        >
-          {planMode ? "Plan" : "Implement"}
-        </button>
         <textarea
           ref={textareaRef}
           className="a2ui-chat-input-field"

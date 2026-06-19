@@ -98,12 +98,18 @@ export function ComposerVisibilityPills({
   onEvent,
 }: BuiltinComponentProps) {
   const [menuOpen, setMenuOpen] = useState(false);
-  const [coords, setCoords] = useState<{ bottom: number; right: number } | null>(
-    null,
-  );
+  const [coords, setCoords] = useState<{
+    bottom: number;
+    right: number;
+  } | null>(null);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const visibility = resolveVisibility(state, tabId);
   const hardEnforce = resolveHardEnforce(state, tabId);
+  const activeTab = findTab(state, tabId);
+  const planMode =
+    activeTab?.kind === "agent"
+      ? activeTab.planMode === true
+      : state.planMode === true;
   const sessionOverridden =
     hasOverride(state, tabId, "thinking") ||
     hasOverride(state, tabId, "toolCalls");
@@ -183,6 +189,19 @@ export function ComposerVisibilityPills({
 
   return (
     <div className="ae-composer-pills">
+      <button
+        type="button"
+        className="ae-vis-pill ae-plan-pill"
+        data-mode={planMode ? "on" : "off"}
+        title={`Plan mode is ${planMode ? "on" : "off"}. Click or press Shift+Tab to toggle.`}
+        aria-label={`Plan mode: ${planMode ? "on" : "off"}. Click to toggle.`}
+        aria-pressed={planMode}
+        onClick={() => onEvent("toggle-plan")}
+      >
+        <span className="ae-vis-pill-dot" aria-hidden="true" />
+        <span className="ae-vis-pill-label">Plan mode</span>
+        <span className="ae-vis-pill-state">{planMode ? "on" : "off"}</span>
+      </button>
       {pill("thinking", "Thinking")}
       {pill("toolCalls", "Tool calls")}
       <div className="ae-vis-more">
@@ -212,7 +231,9 @@ export function ComposerVisibilityPills({
                 role="group"
                 aria-label="Tool-call grouping"
               >
-                <span className="ae-vis-menu-radios-label">Tool-call grouping</span>
+                <span className="ae-vis-menu-radios-label">
+                  Tool-call grouping
+                </span>
                 <div className="ae-vis-menu-radio-row">
                   {GROUPING_OPTIONS.map((opt) => (
                     <button

@@ -536,6 +536,7 @@ built-in behavior. Built-ins without an override are:
 | `Cmd+B` / `Cmd+D` / `Cmd+J` | Toggle sidebars / file tree          |
 | `Cmd+K`                     | Clear chat                           |
 | `Cmd+.`                     | Stop current prompt                  |
+| `Shift+Tab`                 | Toggle Plan mode                     |
 | `Cmd+Shift+M`               | Toggle voice input                   |
 | `Cmd+=` / `Cmd+-`           | UI zoom controls                     |
 | `Cmd+0`                     | Toggle composer / terminal focus     |
