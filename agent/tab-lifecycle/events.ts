@@ -21,6 +21,7 @@
 
 import {
   extractAgentEndError,
+  formatAgentErrorMessage,
   isRetryableAgentEndError,
 } from "../agent-errors";
 import { logger } from "../logger";
@@ -495,7 +496,11 @@ export function handleSessionEvent(
         retryableFailure &&
         (retrying || scheduleAethonRetry(state, deps, rec, tabId));
       if (failedMessage && !keepTurnOpenForRetry) {
-        deps.send({ type: "error", tabId, message: failedMessage });
+        deps.send({
+          type: "error",
+          tabId,
+          message: formatAgentErrorMessage(failedMessage),
+        });
       }
       const startMs = state.turnStartTimes.get(tabId);
       state.turnStartTimes.delete(tabId);
@@ -571,11 +576,15 @@ export function handleSessionEvent(
       const ev = event as { success?: boolean; finalError?: string };
       cancelAethonRetry(rec);
       if (!ev.success && ev.finalError) {
-        deps.send({
-          type: "error",
-          tabId,
-          message: `auto-retry exhausted: ${ev.finalError}`,
-        });
+        // Usage-limit hits get a clean, self-contained message; transient
+        // failures keep the "auto-retry exhausted:" prefix so the user knows
+        // we already retried.
+        const clean = formatAgentErrorMessage(ev.finalError);
+        const message =
+          clean === ev.finalError
+            ? `auto-retry exhausted: ${ev.finalError}`
+            : clean;
+        deps.send({ type: "error", tabId, message });
         rec.agentEndFired = true;
         rec.promptInFlight = false;
         if (state.currentAgentTabId === tabId) {

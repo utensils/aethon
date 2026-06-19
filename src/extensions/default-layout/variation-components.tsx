@@ -604,12 +604,35 @@ interface AuthProfileUsageSlim {
   primary?: { usedPercent: number };
 }
 
+/** Provider id ("openai-codex") of the active tab's model, for resolving
+ *  the provider-default account. */
+function activeTabModelProvider(
+  state: Record<string, unknown>,
+  activeTabId: string,
+): string | undefined {
+  const tabs = (state.tabs as Array<{ id: string; model?: string }>) ?? [];
+  const model = tabs.find((t) => t.id === activeTabId)?.model;
+  return typeof model === "string" && model.includes("/")
+    ? model.split("/")[0]
+    : undefined;
+}
+
+/** When exactly one provider default is configured, use it as the global
+ *  fallback selection. */
+function soleDefault(
+  defaultByProvider: Record<string, string> | undefined,
+): string | undefined {
+  const values = Object.values(defaultByProvider ?? {});
+  return values.length === 1 ? values[0] : undefined;
+}
+
 export function AccountSelector({
   state,
 }: BuiltinComponentProps) {
   const auth = (state.authProfiles ?? {}) as {
     profiles?: AuthProfileMeta[];
     activeByTab?: Record<string, string>;
+    defaultByProvider?: Record<string, string>;
     usage?: Record<string, AuthProfileUsageSlim>;
   };
   const profiles = auth.profiles ?? [];
@@ -617,9 +640,18 @@ export function AccountSelector({
 
   const activeTabId =
     typeof state.activeTabId === "string" ? state.activeTabId : "default";
-  const activeProfileId = auth.activeByTab?.[activeTabId];
-  const activeProfile = profiles.find((p) => p.id === activeProfileId);
-  const usage = activeProfileId ? auth.usage?.[activeProfileId] : undefined;
+
+  // Resolve the *effective* account so the chip always reflects which one a
+  // prompt would actually use — even before the user explicitly picks one:
+  //   tab assignment → provider default → sole default → first profile.
+  const tabProvider = activeTabModelProvider(state, activeTabId);
+  const resolvedId =
+    auth.activeByTab?.[activeTabId] ??
+    (tabProvider ? auth.defaultByProvider?.[tabProvider] : undefined) ??
+    soleDefault(auth.defaultByProvider) ??
+    profiles[0]?.id;
+  const activeProfile = profiles.find((p) => p.id === resolvedId);
+  const usage = resolvedId ? auth.usage?.[resolvedId] : undefined;
 
   const buttonLabel = activeProfile
     ? `${activeProfile.label}${usage?.planType ? ` · ${usage.planType}` : ""}`
@@ -632,7 +664,7 @@ export function AccountSelector({
       id: p.id,
       label: p.label,
       hint,
-      active: p.id === activeProfileId,
+      active: p.id === resolvedId,
     };
   });
 
@@ -650,12 +682,8 @@ export function AccountSelector({
         },
       ]}
       onSelect={(_sectionId, itemId) => {
-        import("../../auth-profiles").then(({ sendAuthProfileCommand }) => {
-          void sendAuthProfileCommand({
-            type: "auth_profile_use_for_tab",
-            tabId: activeTabId,
-            profileId: itemId,
-          });
+        import("../../auth-profiles").then(({ switchAccountForTab }) => {
+          void switchAccountForTab(activeTabId, itemId);
         });
       }}
     />

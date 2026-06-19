@@ -252,6 +252,9 @@ export async function handleAuthProfileMessage(
     case "auth_profile_use_for_tab":
       await handleUseForTab(state, deps, msg);
       return true;
+    case "auth_profile_apply":
+      await handleApplyForTab(state, deps, msg);
+      return true;
     case "auth_profile_set_default":
       handleSetDefault(state, deps, msg);
       return true;
@@ -761,6 +764,57 @@ async function handleUseForTab(
   });
   emitAuthProfiles(state, deps);
   await emitGlobalReady(state, deps);
+}
+
+/**
+ * Apply an account switch inside a per-tab WORKER bridge. The global bridge
+ * owns the auth surface (snapshot + `auth_profile_changed` emit) via
+ * {@link handleUseForTab}, but a worker runs that tab's prompts in a
+ * separate process and never sees `auth_profile_use_for_tab`. The frontend
+ * relays the switch here (tab-scoped routing) so the worker rebuilds its
+ * session against the new profile's credentials — otherwise the worker
+ * keeps using the old account and a rate-limited account never recovers.
+ *
+ * Deliberately silent: no snapshot/ready emit (those would be a partial,
+ * worker-local view that clobbers the global activeByTab). Just swaps the
+ * session so the next prompt uses the new account.
+ */
+async function handleApplyForTab(
+  state: AethonAgentState,
+  deps: DispatcherDeps,
+  msg: InboundMessage,
+): Promise<void> {
+  const tabId = stringField(msg.tabId);
+  const profileId = stringField(msg.profileId);
+  if (!tabId || !profileId) return;
+  // The profile may have been created after this worker spawned; reload the
+  // persisted profile list so the lookup succeeds.
+  state.authProfiles = loadAuthProfilesState(state.userDir);
+  const profile = state.authProfiles.profiles.find((p) => p.id === profileId);
+  if (!profile) return;
+  const existing = state.tabs.get(tabId);
+  if (existing?.promptInFlight) {
+    deps.send({
+      type: "notice",
+      tabId,
+      message: "agent busy — stop the current prompt before switching accounts",
+    });
+    return;
+  }
+  const previousModel = existing?.session.model;
+  const cwd = state.tabProjectCwds.get(tabId);
+  if (existing) clearPendingContextUsageEmit(existing);
+  state.tabs.delete(tabId);
+  state.tabAuthProfileIds.set(tabId, profile.id);
+  const services = servicesForProfile(state, profile.id, { forceRefresh: true });
+  const nextModel =
+    previousModel &&
+    services.modelRegistry.find(previousModel.provider, previousModel.id);
+  await ensureTab(state, deps, tabId, {
+    cwdOverride: cwd,
+    initialModel: nextModel || previousModel,
+  });
+  markProfileUsed(state, profile.id);
 }
 
 function handleSetDefault(

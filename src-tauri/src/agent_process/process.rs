@@ -468,6 +468,7 @@ fn route_payload_key_without_mutation(payload: &serde_json::Value) -> String {
         payload.get("type").and_then(|v| v.as_str()),
         Some(
             "a2ui_event"
+                | "auth_profile_apply"
                 | "chat"
                 | "local_chat_message"
                 | "native_slash_command"
@@ -668,7 +669,13 @@ mod tests {
 
     #[test]
     fn tab_scoped_control_payloads_route_to_tab_worker() {
-        for ty in ["set_model", "set_thinking_level", "stop", "tab_open"] {
+        for ty in [
+            "set_model",
+            "set_thinking_level",
+            "stop",
+            "tab_open",
+            "auth_profile_apply",
+        ] {
             assert_eq!(
                 route_payload_key_without_mutation(&serde_json::json!({
                     "type": ty,
@@ -690,6 +697,15 @@ mod tests {
         );
         assert_eq!(
             route_payload_key_without_mutation(&serde_json::json!({ "type": "report" })),
+            GLOBAL_AGENT_KEY
+        );
+        // auth_profile_apply on the DEFAULT tab stays on the global bridge
+        // (it owns the default tab's session + the auth surface).
+        assert_eq!(
+            route_payload_key_without_mutation(&serde_json::json!({
+                "type": "auth_profile_apply",
+                "tabId": "default",
+            })),
             GLOBAL_AGENT_KEY
         );
     }

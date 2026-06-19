@@ -3,6 +3,7 @@ import type { BuiltinComponentProps } from "../../components/A2UIRenderer";
 import {
   EMPTY_AUTH_PROFILES,
   sendAuthProfileCommand,
+  switchAccountForTab,
   type AuthProfileLoginEvent,
   type AuthProfileProvider,
   type AuthProfileUsage,
@@ -94,11 +95,7 @@ export function AuthProfilePanel({
   };
 
   const activateProfile = (profileId: string) =>
-    sendAuthProfileCommand({
-      type: "auth_profile_use_for_tab",
-      tabId: activeTabId,
-      profileId,
-    });
+    switchAccountForTab(activeTabId, profileId);
 
   const setDefault = (profileId: string) =>
     sendAuthProfileCommand({ type: "auth_profile_set_default", profileId });

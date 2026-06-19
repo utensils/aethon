@@ -48,8 +48,8 @@ interface RefreshedTokens {
 
 function decodeJwtPayload(token: string): Record<string, unknown> | undefined {
   const parts = token.split(".");
-  if (parts.length < 2) return undefined;
-  const segment = parts[1]!;
+  const segment = parts[1];
+  if (!segment) return undefined;
   const normalized = segment.replace(/-/g, "+").replace(/_/g, "/");
   const padded = normalized.padEnd(
     normalized.length + ((4 - (normalized.length % 4)) % 4),
@@ -117,7 +117,7 @@ async function refreshTokens(refreshToken: string): Promise<RefreshedTokens> {
     access: json.access_token,
     refresh: json.refresh_token,
     idToken: typeof json.id_token === "string" ? json.id_token : undefined,
-    expires: Date.now() + (json.expires_in as number) * 1000,
+    expires: Date.now() + json.expires_in * 1000,
     accountId: jwtAccountId(json.access_token),
   };
 }

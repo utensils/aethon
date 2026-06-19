@@ -1,5 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { extractAgentEndError, isRetryableAgentEndError } from "./agent-errors";
+import {
+  extractAgentEndError,
+  formatAgentErrorMessage,
+  isRetryableAgentEndError,
+  isUsageLimitError,
+} from "./agent-errors";
+
+// Real Codex usage-limit 429 payload (truncated headers) — the raw string
+// the agent surfaces when an account hits its quota.
+const CODEX_USAGE_LIMIT_RAW =
+  'Codex error: {"type":"error","error":{"type":"usage_limit_reached","message":"The usage limit has been reached","plan_type":"pro","resets_at":1781838269,"resets_in_seconds":1621},"status_code":429,"headers":{"X-Codex-Primary-Used-Percent":"100"}}';
 
 describe("extractAgentEndError", () => {
   it("returns undefined for an empty or missing list", () => {
@@ -67,5 +77,51 @@ describe("isRetryableAgentEndError", () => {
         "Your credit balance is too low to access the Anthropic API.",
       ),
     ).toBe(false);
+  });
+
+  it("does NOT retry a usage-limit 429 even though it carries '429'", () => {
+    // Without the usage-limit guard the "429" substring would make this
+    // look retryable and burn the whole retry budget on a dead quota.
+    expect(isRetryableAgentEndError(CODEX_USAGE_LIMIT_RAW)).toBe(false);
+  });
+});
+
+describe("isUsageLimitError", () => {
+  it("detects the Codex usage_limit_reached payload", () => {
+    expect(isUsageLimitError(CODEX_USAGE_LIMIT_RAW)).toBe(true);
+  });
+
+  it("detects the human-readable phrasing", () => {
+    expect(isUsageLimitError("The usage limit has been reached")).toBe(true);
+  });
+
+  it("returns false for unrelated errors", () => {
+    expect(isUsageLimitError("WebSocket closed 1006")).toBe(false);
+  });
+});
+
+describe("formatAgentErrorMessage", () => {
+  it("rewrites a raw usage-limit 429 into a clean, actionable sentence", () => {
+    const out = formatAgentErrorMessage(CODEX_USAGE_LIMIT_RAW);
+    expect(out).toContain("Usage limit reached for this account");
+    expect(out).toContain("(pro)");
+    expect(out).toContain("Resets in 27m"); // 1621s → 27m
+    expect(out).toContain("Cmd+Shift+A");
+    // None of the raw JSON / header noise should leak through.
+    expect(out).not.toContain("X-Codex");
+    expect(out).not.toContain("status_code");
+  });
+
+  it("passes non-usage-limit errors through unchanged", () => {
+    const raw = "Your credit balance is too low to access the Anthropic API.";
+    expect(formatAgentErrorMessage(raw)).toBe(raw);
+  });
+
+  it("omits the reset clause when resets_in_seconds is absent", () => {
+    const out = formatAgentErrorMessage(
+      '{"error":{"type":"usage_limit_reached","message":"The usage limit has been reached"}}',
+    );
+    expect(out).toContain("Usage limit reached for this account");
+    expect(out).not.toContain("Resets in");
   });
 });
