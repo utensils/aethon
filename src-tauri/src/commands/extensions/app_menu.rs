@@ -105,23 +105,10 @@ pub fn install_app_menu(
 
     // Cmd+W is reserved for `close_tab` (browser/IDE convention).
     // Tauri's PredefinedMenuItem::close_window also binds Cmd+W on
-    // macOS, so we omit it here — the user closes the window via the
-    // red traffic light, Cmd+Q, or the final File → Exit item. Adding
-    // both close-window and close-tab would let macOS route Cmd+W to
-    // whichever menu item it picks first.
-    #[cfg(target_os = "macos")]
-    let file_menu = SubmenuBuilder::new(app, "File")
-        .item(&new_file)
-        .item(&save_file)
-        .item(&revert_file)
-        .separator()
-        .item(&new_tab)
-        .item(&new_agent_tab)
-        .item(&close_tab)
-        .separator()
-        .item(&PredefinedMenuItem::quit(app, Some("Exit"))?)
-        .build()?;
-    #[cfg(not(target_os = "macos"))]
+    // macOS, so we omit it here. The user can close the window via
+    // the red traffic light, while Cmd+Q and the final File → Exit item
+    // quit the app. Adding both close-window and close-tab would let
+    // macOS route Cmd+W to whichever menu item it picks first.
     let file_menu = SubmenuBuilder::new(app, "File")
         .item(&new_file)
         .item(&save_file)
@@ -258,9 +245,33 @@ mod tests {
     #[test]
     fn file_menu_exposes_exit_as_final_action() {
         let src = include_str!("app_menu.rs");
+        let marker = "let file_menu = SubmenuBuilder::new(app, \"File\")";
+        let start = src
+            .find(marker)
+            .expect("the native app menu should build a File submenu");
+        assert_eq!(
+            src.matches(marker).count(),
+            1,
+            "the shared File menu block should not drift by platform",
+        );
+
+        let block = &src[start..];
+        let build_start = block
+            .find(".build()?;")
+            .expect("the File submenu builder should be terminated");
+        let block = &block[..build_start];
+        let exit_item = "PredefinedMenuItem::quit(app, Some(\"Exit\"))?";
+
         assert!(
-            src.contains(".item(&close_tab)\n        .separator()\n        .item(&PredefinedMenuItem::quit(app, Some(\"Exit\"))?)\n        .build()?;"),
-            "File → Exit should be the final File menu action on every desktop platform",
+            block.contains(exit_item),
+            "File → Exit should be present on every desktop platform",
+        );
+        let final_item_start = block
+            .rfind(".item(")
+            .expect("the File submenu should contain menu items");
+        assert!(
+            block[final_item_start..].contains(exit_item),
+            "File → Exit should be the final File menu action",
         );
     }
 }
