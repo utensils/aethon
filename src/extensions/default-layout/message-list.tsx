@@ -724,6 +724,7 @@ function VirtualMessageList({
   const userScrollRef = useRef(false);
   const [flashIndex, setFlashIndex] = useState<number | null>(null);
   const prevScrollToMatch = useRef<string | undefined>(undefined);
+  const prevLastMessageId = useRef(messages[messages.length - 1]?.id);
   // Topmost visible group index, fed by Virtuoso's rangeChanged — used to
   // recover the reading anchor when a filter toggle rebuilds the group list.
   const lastRangeRef = useRef<ListRange | null>(null);
@@ -1040,6 +1041,20 @@ function VirtualMessageList({
       scrollToBottom();
     }
   }, [restoreAnchorId, restoreIndex, scrollToBottom, setFollowing, tabId]);
+
+  // A new user turn is an explicit request to continue the conversation, so the
+  // transcript should resume following even if the user had been reading above
+  // the bottom before they sent it. Streaming output still respects manual
+  // scroll-away because only a newly appended user message reaches this branch.
+  useLayoutEffect(() => {
+    const latest = messages[messages.length - 1];
+    const previousId = prevLastMessageId.current;
+    prevLastMessageId.current = latest?.id;
+    if (!latest || latest.id === previousId || latest.role !== "user") return;
+    if (tabId !== undefined) tabScrollCache.delete(tabId);
+    if (!followingRef.current) setFollowing(true);
+    scrollToBottom();
+  }, [messages, scrollToBottom, setFollowing, tabId]);
 
   // Toggling a transcript filter (tool-call grouping / thinking visibility)
   // rebuilds `groups` with a different length + identity. Re-anchor exactly once
