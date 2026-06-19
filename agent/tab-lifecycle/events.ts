@@ -508,11 +508,18 @@ export function handleSessionEvent(
       const keepTurnOpenForAutoSwitch = usageLimitFailure;
       if (usageLimitFailure) {
         const clean = formatAgentErrorMessage(failedMessage);
-        void tryAutoSwitchOnUsageLimit(state, deps, tabId).then((switched) => {
-          if (switched) return; // the resumed turn owns finalization
-          deps.send({ type: "error", tabId, message: clean });
-          finalizeFailedTurn(state, deps, tabId, failedMessage);
-        });
+        void tryAutoSwitchOnUsageLimit(state, deps, tabId)
+          .then((switched) => {
+            if (switched) return; // the resumed turn owns finalization
+            deps.send({ type: "error", tabId, message: clean });
+            finalizeFailedTurn(state, deps, tabId, failedMessage);
+          })
+          .catch(() => {
+            // Auto-switch setup threw (e.g. session recreate failed). The
+            // turn was held open, so finalize it now or the tab stays busy.
+            deps.send({ type: "error", tabId, message: clean });
+            finalizeFailedTurn(state, deps, tabId, failedMessage);
+          });
       } else if (failedMessage && !keepTurnOpenForRetry) {
         deps.send({
           type: "error",
@@ -605,13 +612,17 @@ export function handleSessionEvent(
           // `waiting` and could drain queued messages onto the rate-limited
           // account before the resumed turn starts.
           const clean = formatAgentErrorMessage(finalError);
-          void tryAutoSwitchOnUsageLimit(state, deps, tabId).then(
-            (switched) => {
+          void tryAutoSwitchOnUsageLimit(state, deps, tabId)
+            .then((switched) => {
               if (switched) return; // the resumed turn owns finalization
               deps.send({ type: "error", tabId, message: clean });
               finalizeFailedTurn(state, deps, tabId, finalError);
-            },
-          );
+            })
+            .catch(() => {
+              // Auto-switch setup threw; finalize so the tab doesn't hang.
+              deps.send({ type: "error", tabId, message: clean });
+              finalizeFailedTurn(state, deps, tabId, finalError);
+            });
           break;
         }
         // Transient failures keep the "auto-retry exhausted:" prefix so the
