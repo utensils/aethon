@@ -136,4 +136,63 @@ describe("useVoiceInput", () => {
       "voice-platform-system",
     );
   });
+
+  // The composer and the dashboard task-launcher stay mounted together (the
+  // layout grid toggles display:none, it doesn't unmount), sharing one mic.
+  // A controller whose surface is hidden mid-capture must release the slot so
+  // the now-visible surface's next start doesn't fail with "already active".
+  it("releases the mic when its surface is hidden mid-recording", async () => {
+    const { result, rerender } = renderHook(
+      ({ active }: { active: boolean }) =>
+        useVoiceInput(vi.fn(), vi.fn(), { surfaceActive: active }),
+      { initialProps: { active: true } },
+    );
+
+    await act(async () => {
+      await result.current.start();
+    });
+    expect(result.current.state).toBe("recording");
+
+    act(() => {
+      rerender({ active: false });
+    });
+
+    expect(result.current.state).toBe("idle");
+    expect(service.cancelVoiceRecording).toHaveBeenCalledWith(
+      "voice-platform-system",
+    );
+  });
+
+  it("keeps recording while its surface stays visible", async () => {
+    const { result, rerender } = renderHook(
+      ({ active }: { active: boolean }) =>
+        useVoiceInput(vi.fn(), vi.fn(), { surfaceActive: active }),
+      { initialProps: { active: true } },
+    );
+
+    await act(async () => {
+      await result.current.start();
+    });
+    act(() => {
+      rerender({ active: true });
+    });
+
+    expect(result.current.state).toBe("recording");
+    expect(service.cancelVoiceRecording).not.toHaveBeenCalled();
+  });
+
+  it("does not touch the mic when an idle surface is hidden", () => {
+    const { result, rerender } = renderHook(
+      ({ active }: { active: boolean }) =>
+        useVoiceInput(vi.fn(), vi.fn(), { surfaceActive: active }),
+      { initialProps: { active: true } },
+    );
+
+    act(() => {
+      rerender({ active: false });
+    });
+
+    expect(result.current.state).toBe("idle");
+    expect(service.cancelVoiceRecording).not.toHaveBeenCalled();
+  });
 });

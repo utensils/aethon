@@ -176,9 +176,14 @@ export function ChatInput({
     },
     [attachments, commitDraft, onEvent, setValue, value],
   );
-  const voice = useVoiceInput(handleTranscript, (providerId) => {
-    onEvent("voice:setup", { providerId });
-  });
+  const voiceSurfaceVisible = !!state.agentTabActive;
+  const voice = useVoiceInput(
+    handleTranscript,
+    (providerId) => {
+      onEvent("voice:setup", { providerId });
+    },
+    { surfaceActive: voiceSurfaceVisible },
+  );
   const voiceState = voice.state;
   const cancelVoice = voice.cancel;
   const voiceConfig = (state.voice as
@@ -199,8 +204,15 @@ export function ChatInput({
   const settings = state.settings as { open?: boolean } | undefined;
   const palette = state.commandPalette as { open?: boolean } | undefined;
   const search = state.search as { open?: boolean } | undefined;
+  // The composer and the dashboard task-launcher both mount at once — the
+  // layout grid hides cells with display:none rather than unmounting — so each
+  // registers the same global voice hotkey against one shared mic. Block START
+  // unless this surface actually owns the canvas (`voiceSurfaceVisible` mirrors
+  // the composer-area's `visible: /agentTabActive` binding); otherwise both
+  // hotkeys fire and the loser reports "Voice recording is already active".
+  // Stop/cancel stay live.
   const voiceInputBlocked =
-    !!settings?.open || !!palette?.open || !!search?.open;
+    !voiceSurfaceVisible || !!settings?.open || !!palette?.open || !!search?.open;
   const voiceInputBlockedRef = useRef(voiceInputBlocked);
   useLayoutEffect(() => {
     voiceInputBlockedRef.current = voiceInputBlocked;

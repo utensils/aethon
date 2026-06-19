@@ -2,6 +2,7 @@
 
 import { renderToStaticMarkup } from "react-dom/server";
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -297,6 +298,88 @@ describe("TaskLauncher", () => {
         }),
       ),
     );
+  });
+
+  // The dashboard task-launcher and the composer both stay mounted (the layout
+  // grid toggles display:none), each registering the same global voice hotkey
+  // against one shared mic. The launcher must ignore the hotkey while its
+  // dashboard is hidden, otherwise pressing it fires both surfaces and the
+  // loser reports "Voice recording is already active".
+  it("ignores the voice hotkey while its dashboard is hidden", async () => {
+    invoke.mockImplementation((cmd: string) => {
+      if (cmd === "voice_list_providers") {
+        return Promise.resolve([
+          voiceProvider({ id: "voice-platform-system" }),
+        ]);
+      }
+      if (cmd === "voice_start_recording") return Promise.resolve(undefined);
+      return Promise.reject(new Error(`invoke not mocked: ${cmd}`));
+    });
+    render(
+      <TaskLauncher
+        component={launcher({
+          project: { id: "p1", label: "aethon", path: "/a" },
+        })}
+        state={{ emptyAndProject: false }}
+        onEvent={vi.fn()}
+      />,
+    );
+
+    await act(async () => {
+      fireEvent.keyDown(window, {
+        key: "m",
+        code: "KeyM",
+        metaKey: true,
+        shiftKey: true,
+      });
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    });
+
+    expect(invoke).not.toHaveBeenCalledWith(
+      "voice_list_providers",
+      expect.anything(),
+    );
+    expect(invoke).not.toHaveBeenCalledWith(
+      "voice_start_recording",
+      expect.anything(),
+    );
+  });
+
+  it("starts recording from the voice hotkey while its dashboard is visible", async () => {
+    invoke.mockImplementation((cmd: string) => {
+      if (cmd === "voice_list_providers") {
+        return Promise.resolve([
+          voiceProvider({ id: "voice-platform-system" }),
+        ]);
+      }
+      if (cmd === "voice_start_recording") return Promise.resolve(undefined);
+      return Promise.reject(new Error(`invoke not mocked: ${cmd}`));
+    });
+    render(
+      <TaskLauncher
+        component={launcher({
+          project: { id: "p1", label: "aethon", path: "/a" },
+        })}
+        state={{ emptyAndProject: true }}
+        onEvent={vi.fn()}
+      />,
+    );
+
+    act(() => {
+      fireEvent.keyDown(window, {
+        key: "m",
+        code: "KeyM",
+        metaKey: true,
+        shiftKey: true,
+      });
+    });
+
+    await waitFor(() =>
+      expect(invoke).toHaveBeenCalledWith("voice_start_recording", {
+        providerId: "voice-platform-system",
+      }),
+    );
+    await screen.findByRole("button", { name: "Stop voice input" });
   });
 
   it("disables OS autocorrection on branch inputs", () => {
