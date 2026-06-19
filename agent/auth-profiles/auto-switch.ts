@@ -6,9 +6,6 @@
  * The picker is isolated here (and dependency-injected for the usage probe)
  * so it can be unit-tested without spawning sessions or hitting the network.
  */
-import { fetchCodexProfileUsage } from "./codex-usage";
-import { authProfileAuthPath } from "./store";
-
 export interface AccountCandidate {
   id: string;
   providerId: string;
@@ -46,15 +43,4 @@ export async function pickAvailableAccount(
     if (!limited) return candidate.id;
   }
   return undefined;
-}
-
-/** Default {@link LimitProbe} backed by the real Codex usage API. */
-export function makeCodexLimitProbe(userDir: string): LimitProbe {
-  return async (profileId, providerId) => {
-    const usage = await fetchCodexProfileUsage(
-      authProfileAuthPath(userDir, profileId),
-      providerId,
-    );
-    return usage.limitReached === true;
-  };
 }

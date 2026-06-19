@@ -24,7 +24,8 @@ import {
   type AuthProfileMeta,
   type AuthProfilesState,
 } from "./store";
-import { makeCodexLimitProbe, pickAvailableAccount } from "./auto-switch";
+import { pickAvailableAccount, type LimitProbe } from "./auto-switch";
+import { fetchCodexUsage, type TokenProvider } from "./codex-usage";
 
 export interface AuthProfileServices {
   authStorage: AuthStorage;
@@ -853,12 +854,18 @@ export async function tryAutoSwitchOnUsageLimit(
   const tried = existing.autoSwitchTried ?? new Set<string>();
   if (currentId) tried.add(currentId);
 
+  const probe: LimitProbe = async (profileId, providerId) => {
+    const usage = await fetchCodexUsage(
+      profileTokenProvider(state, profileId, providerId),
+    );
+    return usage.limitReached === true;
+  };
   const chosen = await pickAvailableAccount(
     state.authProfiles.profiles,
     provider,
     currentId,
     tried,
-    makeCodexLimitProbe(state.userDir),
+    probe,
   );
   if (!chosen) return false;
   tried.add(chosen);
@@ -971,6 +978,17 @@ function handleDelete(
 
 const CODEX_PROVIDER_ID = "openai-codex";
 
+/** A {@link TokenProvider} backed by a profile's pi AuthStorage, so OAuth
+ *  refresh + single-use refresh-token rotation go through pi's cross-process
+ *  lock instead of an unsynchronised file read/write. */
+function profileTokenProvider(
+  state: AethonAgentState,
+  profileId: string,
+  providerId: string,
+): TokenProvider {
+  return () => servicesForProfile(state, profileId).authStorage.getApiKey(providerId);
+}
+
 export function parseIdTokenEmail(idToken: string): string | undefined {
   const segments = idToken.split(".");
   if (segments.length < 2) return undefined;
@@ -1002,9 +1020,9 @@ async function handleFetchUsage(
     if (!profile) throw new Error("unknown profileId");
 
     if (profile.providerId === CODEX_PROVIDER_ID) {
-      const { fetchCodexProfileUsage } = await import("./codex-usage");
-      const authPath = authProfileAuthPath(state.userDir, profile.id);
-      const usage = await fetchCodexProfileUsage(authPath, profile.providerId);
+      const usage = await fetchCodexUsage(
+        profileTokenProvider(state, profile.id, profile.providerId),
+      );
       logger
         .scope("auth-usage")
         .info(

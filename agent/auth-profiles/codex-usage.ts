@@ -1,22 +1,23 @@
 /**
  * Codex account usage + identity, fetched directly from OpenAI's HTTP API
- * using a profile's own stored OAuth credentials. No dependency on the
- * `codex` binary — this keeps each account fully isolated (the bearer
- * token scopes the request to exactly one account) and avoids PATH /
- * temp-dir fragility.
+ * using a profile's own access token. No dependency on the `codex` binary —
+ * the bearer token scopes the request to exactly one account, so each
+ * account stays fully isolated, and there is no PATH / temp-dir fragility.
  *
- * Self-contained and side-effect-light: the only write is rotating the
- * refreshed token back into the profile's auth.json. Designed to be
- * reusable anywhere in the UI that needs Codex usage/identity, not just
- * the Accounts panel.
+ * Token handling is delegated to a caller-supplied `getAccessToken` (backed
+ * by pi's `AuthStorage`), so OAuth refresh + single-use refresh-token
+ * rotation happen through the same cross-process lock pi uses — this module
+ * never reads or writes auth.json itself. Designed to be reusable anywhere
+ * in the UI that needs Codex usage/identity, not just the Accounts panel.
  */
-import { readFileSync, writeFileSync } from "node:fs";
-
-const CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann";
-const TOKEN_URL = "https://auth.openai.com/oauth/token";
 const USAGE_URL = "https://chatgpt.com/backend-api/codex/usage";
 const USER_AGENT = "codex_cli_rs/0.136.0 (Aethon)";
 const ORIGINATOR = "codex_cli_rs";
+
+/** Returns a valid access token for the account, refreshing through the
+ *  locked auth store if needed. `undefined` means the account can't
+ *  currently authenticate. */
+export type TokenProvider = () => Promise<string | undefined>;
 
 export interface CodexUsageWindow {
   /** 0-100 percent of the window consumed. */
@@ -38,14 +39,6 @@ export interface CodexUsageResult {
   credits?: { balance?: string; hasCredits?: boolean; unlimited?: boolean };
 }
 
-interface RefreshedTokens {
-  access: string;
-  refresh: string;
-  idToken?: string;
-  expires: number;
-  accountId?: string;
-}
-
 function decodeJwtPayload(token: string): Record<string, unknown> | undefined {
   const parts = token.split(".");
   const segment = parts[1];
@@ -65,8 +58,7 @@ function decodeJwtPayload(token: string): Record<string, unknown> | undefined {
   }
 }
 
-function jwtEmail(token: string | undefined): string | undefined {
-  if (!token) return undefined;
+function jwtEmail(token: string): string | undefined {
   const payload = decodeJwtPayload(token);
   if (!payload) return undefined;
   if (typeof payload.email === "string") return payload.email;
@@ -76,8 +68,7 @@ function jwtEmail(token: string | undefined): string | undefined {
   return typeof auth?.email === "string" ? auth.email : undefined;
 }
 
-function jwtAccountId(token: string | undefined): string | undefined {
-  if (!token) return undefined;
+function jwtAccountId(token: string): string | undefined {
   const payload = decodeJwtPayload(token);
   const auth = payload?.["https://api.openai.com/auth"] as
     | Record<string, unknown>
@@ -86,55 +77,40 @@ function jwtAccountId(token: string | undefined): string | undefined {
   return typeof id === "string" && id.length > 0 ? id : undefined;
 }
 
-/** Exchange a stored refresh token for a fresh access/id token set.
- *  OpenAI rotates refresh tokens (single-use), so the caller must persist
- *  the returned `refresh` value. */
-async function refreshTokens(refreshToken: string): Promise<RefreshedTokens> {
-  const response = await fetch(TOKEN_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
-      grant_type: "refresh_token",
-      refresh_token: refreshToken,
-      client_id: CLIENT_ID,
-    }),
-  });
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    throw new Error(
-      `token refresh failed: ${response.status} ${text.slice(0, 200)}`,
-    );
-  }
-  const json = (await response.json()) as Record<string, unknown>;
-  if (
-    typeof json.access_token !== "string" ||
-    typeof json.refresh_token !== "string" ||
-    typeof json.expires_in !== "number"
-  ) {
-    throw new Error("token refresh response missing required fields");
-  }
-  return {
-    access: json.access_token,
-    refresh: json.refresh_token,
-    idToken: typeof json.id_token === "string" ? json.id_token : undefined,
-    expires: Date.now() + json.expires_in * 1000,
-    accountId: jwtAccountId(json.access_token),
-  };
+function num(value: unknown): number | undefined {
+  return typeof value === "number" ? value : undefined;
 }
 
+/** Normalise one rate-limit window. Accepts both the `/codex/usage` shape
+ *  (`used_percent` + `limit_window_seconds` + `reset_at`) and the
+ *  app-server `rate_limits` shape (`used_percent` + `window_minutes` +
+ *  `resets_at`). */
 function windowFrom(value: unknown): CodexUsageWindow | undefined {
   if (!value || typeof value !== "object") return undefined;
   const rec = value as Record<string, unknown>;
-  if (typeof rec.used_percent !== "number") return undefined;
-  const w: CodexUsageWindow = { usedPercent: rec.used_percent };
-  if (typeof rec.reset_at === "number") w.resetsAt = rec.reset_at;
-  if (typeof rec.limit_window_seconds === "number") {
-    w.windowDurationMins = Math.round(rec.limit_window_seconds / 60);
+  const usedPercent = num(rec.used_percent);
+  if (usedPercent === undefined) return undefined;
+  const w: CodexUsageWindow = { usedPercent };
+  const resetsAt = num(rec.reset_at) ?? num(rec.resets_at);
+  if (resetsAt !== undefined) w.resetsAt = resetsAt;
+  const windowSeconds = num(rec.limit_window_seconds);
+  const windowMinutes = num(rec.window_minutes);
+  if (windowSeconds !== undefined) {
+    w.windowDurationMins = Math.round(windowSeconds / 60);
+  } else if (windowMinutes !== undefined) {
+    w.windowDurationMins = windowMinutes;
   }
   return w;
 }
 
-/** Parse the `/backend-api/codex/usage` response body into our shape. */
+/**
+ * Parse the Codex usage response into our shape. Tolerant of both payload
+ * variants seen in the wild:
+ *   - `/backend-api/codex/usage`: `rate_limit.{primary,secondary}_window`,
+ *     `rate_limit.limit_reached`.
+ *   - app-server `rate_limits`: `rate_limits.{primary,secondary}`,
+ *     `rate_limit_reached_type` (non-null ⇒ limit reached).
+ */
 export function parseCodexUsageBody(
   body: Record<string, unknown>,
 ): Omit<CodexUsageResult, "accountId"> {
@@ -142,14 +118,27 @@ export function parseCodexUsageBody(
   if (typeof body.email === "string") result.email = body.email;
   if (typeof body.plan_type === "string") result.planType = body.plan_type;
 
-  const rateLimit = body.rate_limit as Record<string, unknown> | undefined;
+  const rateLimit = (body.rate_limit ?? body.rate_limits) as
+    | Record<string, unknown>
+    | undefined;
   if (rateLimit && typeof rateLimit === "object") {
     if (typeof rateLimit.limit_reached === "boolean") {
       result.limitReached = rateLimit.limit_reached;
+    } else if ("rate_limit_reached_type" in rateLimit) {
+      result.limitReached =
+        rateLimit.rate_limit_reached_type != null &&
+        rateLimit.rate_limit_reached_type !== "";
     }
-    const primary = windowFrom(rateLimit.primary_window);
+    if (typeof rateLimit.plan_type === "string" && !result.planType) {
+      result.planType = rateLimit.plan_type;
+    }
+    const primary = windowFrom(
+      rateLimit.primary_window ?? rateLimit.primary,
+    );
     if (primary) result.primary = primary;
-    const secondary = windowFrom(rateLimit.secondary_window);
+    const secondary = windowFrom(
+      rateLimit.secondary_window ?? rateLimit.secondary,
+    );
     if (secondary) result.secondary = secondary;
   }
 
@@ -174,63 +163,26 @@ export function parseCodexUsageBody(
 }
 
 /**
- * Fetch usage + identity for a single Codex profile. Refreshes the token,
- * persists the rotated refresh token back to the profile, then calls the
- * usage API scoped to that account.
+ * Fetch usage + identity for a single Codex account, scoped to the token
+ * `getAccessToken` returns. Identity (email/accountId) is read from the
+ * access-token JWT and the response body; usage from the response body.
+ * Returns identity-only on any network/HTTP failure so the caller can still
+ * show who the account is.
  */
-export async function fetchCodexProfileUsage(
-  profileAuthPath: string,
-  providerId: string,
+export async function fetchCodexUsage(
+  getAccessToken: TokenProvider,
 ): Promise<CodexUsageResult> {
-  const stored = JSON.parse(readFileSync(profileAuthPath, "utf8")) as Record<
-    string,
-    unknown
-  >;
-  const entry = stored[providerId];
-  if (!entry || typeof entry !== "object") {
-    throw new Error("no stored credentials for provider");
-  }
-  const creds = entry as Record<string, unknown>;
-  const storedRefresh =
-    typeof creds.refresh === "string"
-      ? creds.refresh
-      : typeof creds.refresh_token === "string"
-        ? creds.refresh_token
-        : undefined;
-  if (!storedRefresh) throw new Error("no refresh token stored");
+  const accessToken = await getAccessToken();
+  if (!accessToken) throw new Error("no access token for account");
 
-  const tokens = await refreshTokens(storedRefresh);
-
-  // Persist rotated tokens — refresh tokens are single-use.
-  writeFileSync(
-    profileAuthPath,
-    JSON.stringify(
-      {
-        ...stored,
-        [providerId]: {
-          ...creds,
-          access: tokens.access,
-          refresh: tokens.refresh,
-          expires: tokens.expires,
-          ...(tokens.accountId ? { accountId: tokens.accountId } : {}),
-        },
-      },
-      null,
-      2,
-    ),
-  );
-
-  const accountId =
-    tokens.accountId ??
-    (typeof creds.accountId === "string" ? creds.accountId : undefined);
-
+  const accountId = jwtAccountId(accessToken);
   const result: CodexUsageResult = {};
-  const email = jwtEmail(tokens.idToken) ?? jwtEmail(tokens.access);
-  if (email) result.email = email;
+  const jwtMail = jwtEmail(accessToken);
+  if (jwtMail) result.email = jwtMail;
   if (accountId) result.accountId = accountId;
 
   const headers: Record<string, string> = {
-    Authorization: `Bearer ${tokens.access}`,
+    Authorization: `Bearer ${accessToken}`,
     "User-Agent": USER_AGENT,
     originator: ORIGINATOR,
   };
@@ -245,9 +197,10 @@ export async function fetchCodexProfileUsage(
   if (!response.ok) return result;
 
   const body = (await response.json()) as Record<string, unknown>;
-  Object.assign(result, parseCodexUsageBody(body));
-  // Prefer JWT email if the API omitted it.
-  if (!result.email && email) result.email = email;
+  const parsed = parseCodexUsageBody(body);
+  // Body email is authoritative (the Codex access JWT often omits it).
+  Object.assign(result, parsed);
+  if (!result.email && jwtMail) result.email = jwtMail;
   if (accountId) result.accountId = accountId;
   return result;
 }
