@@ -81,7 +81,7 @@ export const BUILTIN_KEYBINDINGS: BuiltinKeybinding[] = [
   { combo: "meta+7", description: "Jump to tab 7" },
   { combo: "meta+8", description: "Jump to tab 8" },
   { combo: "meta+9", description: "Jump to last tab" },
-  { combo: "meta+`", description: "Toggle terminal panel + focus" },
+  { combo: "ctrl+`", description: "Toggle terminal panel + focus" },
   { combo: "meta+j", description: "Toggle files panel" },
   {
     combo: "meta+0",

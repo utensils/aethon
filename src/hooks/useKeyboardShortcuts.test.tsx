@@ -58,6 +58,24 @@ function buildContext(
 }
 
 describe("useKeyboardShortcuts Escape handling", () => {
+  it("toggles the terminal panel with Ctrl+`", () => {
+    const ctx = buildContext({});
+    render(<Harness ctx={ctx} />);
+
+    fireEvent.keyDown(document, { key: "`", ctrlKey: true });
+
+    expect(ctx.toggleTerminalAndFocus).toHaveBeenCalledTimes(1);
+  });
+
+  it("leaves Cmd+` for the macOS window switcher", () => {
+    const ctx = buildContext({});
+    render(<Harness ctx={ctx} />);
+
+    fireEvent.keyDown(document, { key: "`", metaKey: true });
+
+    expect(ctx.toggleTerminalAndFocus).not.toHaveBeenCalled();
+  });
+
   it("toggles plan mode on Shift+Tab", () => {
     const ctx = buildContext({
       activeTabId: "agent-1",

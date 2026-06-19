@@ -5,7 +5,7 @@ export interface ShellDims {
 
 /** True when the ResizeObserver fires while the terminal is not actually
  *  visible. The bottom panel stays mounted for chrome animation, so a
- *  Cmd+` close can still report resize events with tiny or stale non-zero
+ *  Ctrl+` close can still report resize events with tiny or stale non-zero
  *  dimensions. Skipping fit + shell_resize there prevents SIGWINCH spam
  *  that makes prompts like starship redraw and stack prompt lines. */
 export function shouldSkipResize(

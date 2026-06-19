@@ -238,7 +238,7 @@ console) can swap chrome at runtime:
 | `Cmd+1`..`Cmd+8`              | Jump to agent tab N. When focus is inside the bottom panel, jumps between sub-tabs instead (1 = agent-bash).                                                                                                 |
 | `Cmd+9`                       | Jump to last agent tab (or last shell sub-tab when focus is in panel).                                                                                                                                       |
 | `Cmd+P` / `Cmd+Shift+P`       | Command palette (switcher / commands)                                                                                                                                                                        |
-| `Cmd+\``                      | Toggle bottom terminal panel (Agent bash sub-tab + each user shell as a sub-tab)                                                                                                                             |
+| `Ctrl+\``                     | Toggle bottom terminal panel (Agent bash sub-tab + each user shell as a sub-tab)                                                                                                                             |
 | `Cmd+B`                       | Toggle sidebar                                                                                                                                                                                               |
 | `Cmd+K`                       | Clear chat                                                                                                                                                                                                   |
 | `Cmd+.`                       | Stop current prompt                                                                                                                                                                                          |
@@ -262,7 +262,7 @@ unchanged: extensions run first and may override built-ins.
 
 ### Terminal panel mental model
 
-The **bottom terminal panel** (toggle `Cmd+\``) is a tabbed surface
+The **bottom terminal panel** (toggle `Ctrl+\``) is a tabbed surface
 hosting two kinds of sub-tabs:
 
 1. **Agent bash** (always present, sub-tab id `"agent-bash"`,

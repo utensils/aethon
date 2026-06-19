@@ -187,7 +187,7 @@ export function usePaletteOverlay(ctx: PaletteOverlayContext) {
           if (id) closeTab(id);
         } else if (p.action === "builtin:meta+shift+]") nextTab(1);
         else if (p.action === "builtin:meta+shift+[") nextTab(-1);
-        else if (p.action === "builtin:meta+`") toggleTerminalAndFocus();
+        else if (p.action === "builtin:ctrl+`") toggleTerminalAndFocus();
         else if (p.action === "builtin:meta+0") toggleFocusComposerTerminal();
         else if (p.action === "builtin:meta+k") clearChat();
         else if (p.action === "builtin:meta+.") void stopPrompt();
