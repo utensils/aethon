@@ -47,8 +47,9 @@ the same combos under `Ctrl` (`Cmd+T` ≡ `Ctrl+T`).
 | `Cmd+D`       | Toggle the right-hand files sidebar.                                                                      |
 | `Cmd+J`       | Toggle the sidebar's file-tree panel.                                                                     |
 | `Cmd+,`       | Open Settings panel.                                                                                      |
+| `Cmd+Shift+A` | Toggle the Accounts panel (per-provider auth profiles + usage).                                           |
 | `Cmd+Shift+F` | Cross-session search overlay.                                                                             |
-| `Esc`         | Close palette / settings / search overlay (when open).                                                    |
+| `Esc`         | Close palette / settings / search / accounts overlay (when open).                                         |
 
 ## Editor
 

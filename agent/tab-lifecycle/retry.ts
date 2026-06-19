@@ -52,7 +52,7 @@ function retrySettings(session: unknown): Required<RetrySettings> {
   };
 }
 
-function removeTrailingFailureMessage(session: unknown): void {
+export function removeTrailingFailureMessage(session: unknown): void {
   const agent = (session as AethonRetrySession).agent;
   const messages = agent?.state?.messages;
   if (!Array.isArray(messages) || messages.length === 0) return;

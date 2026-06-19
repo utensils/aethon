@@ -16,6 +16,7 @@ import { resolveBoolean, resolveString } from "../../utils/dataBinding";
 import { resolvePointer } from "../../utils/jsonPointer";
 import { PI_DEFAULT_MODEL_SENTINEL } from "../../utils/modelPicker";
 import type { BuiltinComponentProps } from "../../components/A2UIRenderer";
+import type { Tab } from "../../types/tab";
 import type { VcsSlice } from "../../hooks/useVcsStatus";
 import { ciMeta, prMeta } from "./sidebar/vcs-presentation";
 import { absolutePathFor } from "./sidebar/fileTreeModel";
@@ -578,6 +579,135 @@ export function AppearanceMenu({
       onSelect={(sectionId, itemId) =>
         onEvent("select", { sectionId, itemId }, itemId)
       }
+    />
+  );
+}
+
+// ---------------------------------------------------------------------------
+// AccountSelector — header dropdown that shows the active auth profile for
+// the current tab and lets the user switch between stored accounts. Read
+// from `/authProfiles` and the active tab's profile binding. Selecting
+// fires `auth_profile_use_for_tab` directly rather than going through the
+// sidebar select route, because account switching is a per-tab bridge
+// command.
+// ---------------------------------------------------------------------------
+
+interface AuthProfileMeta {
+  id: string;
+  providerId: string;
+  label: string;
+  kind: string;
+}
+
+interface AuthProfileUsageSlim {
+  email?: string;
+  planType?: string;
+  primary?: { usedPercent: number };
+}
+
+/** Provider id ("openai-codex") of the active tab's model, for resolving
+ *  the provider-default account. */
+function activeTabModelProvider(
+  state: Record<string, unknown>,
+  activeTabId: string,
+): string | undefined {
+  const tabs = (state.tabs as Array<{ id: string; model?: string }>) ?? [];
+  const model = tabs.find((t) => t.id === activeTabId)?.model;
+  return typeof model === "string" && model.includes("/")
+    ? model.split("/")[0]
+    : undefined;
+}
+
+/** When exactly one provider default is configured, use it as the global
+ *  fallback selection. */
+function soleDefault(
+  defaultByProvider: Record<string, string> | undefined,
+): string | undefined {
+  const values = Object.values(defaultByProvider ?? {});
+  return values.length === 1 ? values[0] : undefined;
+}
+
+export function AccountSelector({
+  state,
+}: BuiltinComponentProps) {
+  const auth = (state.authProfiles ?? {}) as {
+    profiles?: AuthProfileMeta[];
+    activeByTab?: Record<string, string>;
+    defaultByProvider?: Record<string, string>;
+    usage?: Record<string, AuthProfileUsageSlim>;
+  };
+  const profiles = auth.profiles ?? [];
+  if (profiles.length === 0) return null;
+
+  const activeTabId =
+    typeof state.activeTabId === "string" ? state.activeTabId : "default";
+
+  // Only offer accounts for the active tab's model provider — switching to a
+  // profile from another provider would point the tab's auth at a provider
+  // that can't back the current model. When the provider is unknown (no
+  // model yet), fall back to all profiles.
+  const tabProvider = activeTabModelProvider(state, activeTabId);
+  const selectable = tabProvider
+    ? profiles.filter((p) => p.providerId === tabProvider)
+    : profiles;
+  if (selectable.length === 0) return null;
+
+  // Resolve the *effective* account so the chip always reflects which one a
+  // prompt would actually use — even before the user explicitly picks one:
+  //   tab assignment → provider default → sole default → first profile.
+  const resolvedId =
+    auth.activeByTab?.[activeTabId] ??
+    (tabProvider ? auth.defaultByProvider?.[tabProvider] : undefined) ??
+    soleDefault(auth.defaultByProvider) ??
+    selectable[0]?.id;
+  const activeProfile = selectable.find((p) => p.id === resolvedId);
+  const usage = resolvedId ? auth.usage?.[resolvedId] : undefined;
+
+  const buttonLabel = activeProfile
+    ? `${activeProfile.label}${usage?.planType ? ` · ${usage.planType}` : ""}`
+    : "account";
+
+  const items: DropdownItem[] = selectable.map((p) => {
+    const u = auth.usage?.[p.id];
+    const hint = [u?.email, u?.planType].filter(Boolean).join(" · ") || p.kind;
+    return {
+      id: p.id,
+      label: p.label,
+      hint,
+      active: p.id === resolvedId,
+    };
+  });
+
+  return (
+    <DropdownPickerCore
+      className="a2ui-account-selector"
+      buttonLabel={buttonLabel}
+      align="right"
+      sections={[
+        {
+          id: "accounts",
+          title: "account",
+          items,
+          emptyLabel: "no accounts stored",
+        },
+      ]}
+      onSelect={(_sectionId, itemId) => {
+        import("../../auth-profiles").then(
+          ({ resolveAccountSwitchTarget, switchAccountForTab }) => {
+            const target = resolveAccountSwitchTarget(
+              (state.tabs as Tab[] | undefined) ?? [],
+              activeTabId,
+            );
+            // Don't switch mid-prompt — the global + worker auth states would
+            // diverge (UI shows the new account, worker keeps the old creds).
+            if (target.busy) return;
+            void switchAccountForTab(target.tabId, itemId, {
+              cwd: target.cwd,
+              model: target.model,
+            });
+          },
+        );
+      }}
     />
   );
 }

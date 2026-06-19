@@ -50,6 +50,11 @@
               "props": {}
             },
             {
+              "id": "account-selector",
+              "type": "account-selector",
+              "props": {}
+            },
+            {
               "id": "appearance-menu",
               "type": "appearance-menu",
               "props": {}

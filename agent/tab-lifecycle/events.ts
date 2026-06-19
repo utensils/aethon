@@ -21,8 +21,11 @@
 
 import {
   extractAgentEndError,
+  formatAgentErrorMessage,
   isRetryableAgentEndError,
+  isUsageLimitError,
 } from "../agent-errors";
+import { tryAutoSwitchOnUsageLimit } from "../auth-profiles";
 import { logger } from "../logger";
 import type { AethonAgentState, TabRecord } from "../state";
 import {
@@ -494,8 +497,39 @@ export function handleSessionEvent(
       const keepTurnOpenForRetry =
         retryableFailure &&
         (retrying || scheduleAethonRetry(state, deps, rec, tabId));
-      if (failedMessage && !keepTurnOpenForRetry) {
-        deps.send({ type: "error", tabId, message: failedMessage });
+      // A usage-limit hit triggers an async account hop. Keep the turn open
+      // until that decision resolves — finalizing now would clear `waiting`
+      // and could drain queued messages onto the rate-limited account before
+      // the resumed turn starts.
+      const usageLimitFailure =
+        failedMessage !== undefined &&
+        !keepTurnOpenForRetry &&
+        isUsageLimitError(failedMessage);
+      const keepTurnOpenForAutoSwitch = usageLimitFailure;
+      if (usageLimitFailure) {
+        const clean = formatAgentErrorMessage(failedMessage);
+        void tryAutoSwitchOnUsageLimit(state, deps, tabId)
+          .then((switched) => {
+            if (switched) return; // the resumed turn owns finalization
+            deps.send({ type: "error", tabId, message: clean });
+            finalizeFailedTurn(state, deps, tabId, failedMessage);
+          })
+          .catch(() => {
+            // Auto-switch setup threw (e.g. session recreate failed). The
+            // turn was held open, so finalize it now or the tab stays busy.
+            deps.send({ type: "error", tabId, message: clean });
+            finalizeFailedTurn(state, deps, tabId, failedMessage);
+          });
+      } else if (failedMessage && !keepTurnOpenForRetry) {
+        deps.send({
+          type: "error",
+          tabId,
+          message: formatAgentErrorMessage(failedMessage),
+        });
+      } else if (!failedMessage) {
+        // Clean turn — reset the auto-switch loop guard so a future limit
+        // can switch accounts again.
+        rec.autoSwitchTried = undefined;
       }
       const startMs = state.turnStartTimes.get(tabId);
       state.turnStartTimes.delete(tabId);
@@ -524,7 +558,7 @@ export function handleSessionEvent(
       for (const [toolCallId, cached] of rec.toolArgsCache) {
         if (cached.endedAt !== undefined) rec.toolArgsCache.delete(toolCallId);
       }
-      if (!keepTurnOpenForRetry) {
+      if (!keepTurnOpenForRetry && !keepTurnOpenForAutoSwitch) {
         cancelAethonRetry(rec);
         rec.agentEndFired = true;
         rec.promptInFlight = false;
@@ -571,10 +605,32 @@ export function handleSessionEvent(
       const ev = event as { success?: boolean; finalError?: string };
       cancelAethonRetry(rec);
       if (!ev.success && ev.finalError) {
+        const finalError = ev.finalError;
+        if (isUsageLimitError(finalError)) {
+          // Hop to an account with headroom and resume. Keep the turn open
+          // until the decision resolves — finalizing now would clear
+          // `waiting` and could drain queued messages onto the rate-limited
+          // account before the resumed turn starts.
+          const clean = formatAgentErrorMessage(finalError);
+          void tryAutoSwitchOnUsageLimit(state, deps, tabId)
+            .then((switched) => {
+              if (switched) return; // the resumed turn owns finalization
+              deps.send({ type: "error", tabId, message: clean });
+              finalizeFailedTurn(state, deps, tabId, finalError);
+            })
+            .catch(() => {
+              // Auto-switch setup threw; finalize so the tab doesn't hang.
+              deps.send({ type: "error", tabId, message: clean });
+              finalizeFailedTurn(state, deps, tabId, finalError);
+            });
+          break;
+        }
+        // Transient failures keep the "auto-retry exhausted:" prefix so the
+        // user knows we already retried.
         deps.send({
           type: "error",
           tabId,
-          message: `auto-retry exhausted: ${ev.finalError}`,
+          message: `auto-retry exhausted: ${finalError}`,
         });
         rec.agentEndFired = true;
         rec.promptInFlight = false;
@@ -588,6 +644,31 @@ export function handleSessionEvent(
       break;
     }
   }
+}
+
+/**
+ * Finalize a turn that ended in failure — used by the usage-limit
+ * auto-switch path when no alternative account was available, so the turn
+ * was held open during the (async) hop decision. Operates on the tab's
+ * current record (the auto-switch may have replaced it) and is idempotent.
+ */
+function finalizeFailedTurn(
+  state: AethonAgentState,
+  deps: TabLifecycleDeps,
+  tabId: string,
+  failedMessage: string | undefined,
+): void {
+  const rec = state.tabs.get(tabId);
+  if (!rec || rec.agentEndFired) return;
+  cancelAethonRetry(rec);
+  rec.agentEndFired = true;
+  rec.promptInFlight = false;
+  if (state.currentAgentTabId === tabId) {
+    state.currentAgentTabId = undefined;
+  }
+  rollResponseMessage(rec);
+  deps.send({ type: "response_end", tabId });
+  emitScheduledRunComplete(deps, rec, tabId, false, failedMessage);
 }
 
 function emitScheduledRunComplete(

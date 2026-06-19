@@ -298,6 +298,10 @@ export interface TabRecord {
   aethonRetryAttempt?: number;
   aethonRetryInFlight?: boolean;
   aethonRetryTimer?: ReturnType<typeof setTimeout>;
+  /** Auth profile ids already tried by the usage-limit auto-switch for the
+   *  current prompt. Prevents looping back onto an account we just bounced
+   *  off; cleared on the next successful (non-error) turn. */
+  autoSwitchTried?: Set<string>;
   /** Current Rust-scheduled task run, when this prompt was fired by
    *  Aethon's native scheduler instead of direct user input. */
   scheduledRun?: {

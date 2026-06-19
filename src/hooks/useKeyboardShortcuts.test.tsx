@@ -53,6 +53,7 @@ function buildContext(
     focusActiveContextInput: vi.fn(),
     exportActiveChatMarkdown: vi.fn(() => Promise.resolve()),
     pushNotification: vi.fn(),
+    toggleAccounts: vi.fn(),
   };
 }
 

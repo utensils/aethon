@@ -31,6 +31,7 @@ import {
   AuthProfilePanel,
 } from "./components";
 import {
+  AccountSelector,
   AgentStatusPill,
   AppearanceMenu,
   ModelPicker,
@@ -131,6 +132,7 @@ export const defaultLayoutExtension: A2UIExtension = {
     "agent-status-pill": AgentStatusPill,
     "model-picker": ModelPicker,
     "appearance-menu": AppearanceMenu,
+    "account-selector": AccountSelector,
     "vcs-status": VcsStatus,
     "source-control-panel": SourceControlPanel,
     "command-palette": CommandPalette,

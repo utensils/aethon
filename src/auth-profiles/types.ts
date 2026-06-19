@@ -39,11 +39,36 @@ export interface AuthProfileLoginEvent {
   error?: string;
 }
 
+export interface AuthProfileUsageWindow {
+  usedPercent: number;
+  resetsAt?: number;
+  windowDurationMins?: number;
+}
+
+export interface AuthProfileUsageCredits {
+  balance?: string;
+  hasCredits?: boolean;
+  unlimited?: boolean;
+}
+
+export interface AuthProfileUsage {
+  email?: string;
+  accountId?: string;
+  planType?: string;
+  limitReached?: boolean;
+  primary?: AuthProfileUsageWindow;
+  secondary?: AuthProfileUsageWindow;
+  credits?: AuthProfileUsageCredits;
+  error?: string;
+  fetchedAt: number;
+}
+
 export interface AuthProfilesUiState extends AuthProfilesSnapshot {
   modal?: {
     open?: boolean;
   };
   login?: AuthProfileLoginEvent;
+  usage?: Record<string, AuthProfileUsage>;
 }
 
 export const EMPTY_AUTH_PROFILES: AuthProfilesSnapshot = {

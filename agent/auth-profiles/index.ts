@@ -27,4 +27,5 @@ export {
   refreshTabSessionModelFromAuthServices,
   saveAuthProfiles,
   servicesForProvider,
+  tryAutoSwitchOnUsageLimit,
 } from "./manager";

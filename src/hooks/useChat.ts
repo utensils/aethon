@@ -656,6 +656,12 @@ export function useChat(ctx: UseChatContext): UseChatActions {
           ...(typeof targetTab?.hardEnforceProjectRoot === "boolean"
             ? { hardEnforce: targetTab.hardEnforceProjectRoot }
             : {}),
+          // Carry the tab's account so a freshly (re)spawned worker resolves
+          // the right profile instead of falling back to the provider
+          // default (which could be the account the user switched away from).
+          ...(targetTab?.authProfileId
+            ? { authProfileId: targetTab.authProfileId }
+            : {}),
         },
       });
     } catch (err) {

@@ -16,12 +16,14 @@ import {
   defaultProfileIdForTab,
   handleAuthProfileMessage,
   modelRegistryForModelId,
+  parseIdTokenEmail,
   refreshAuthServicesForTab,
 } from "./manager";
 import {
   authProfileAuthPath,
   createProfileMeta,
   loadAuthProfilesState,
+  saveAuthProfilesState,
   upsertProfileMeta,
 } from "./store";
 
@@ -270,6 +272,67 @@ describe("auth profile manager", () => {
     expect(sent).toContainEqual(
       expect.objectContaining({ type: "auth_profiles" }),
     );
+  });
+
+  it("auth_profile_apply refuses to switch a worker tab mid-prompt", async () => {
+    const userDir = tempUserDir();
+    const state = makeState(userDir);
+    const profileId = addProfile(state, "openai-codex", "Codex Two");
+    // handleApplyForTab reloads profiles from disk (the worker's in-memory
+    // list may be stale), so the profile must be persisted.
+    saveAuthProfilesState(userDir, state.authProfiles);
+    const busy = fakeTab("openai-codex/gpt-5.5", true);
+    state.tabs.set("tab-worker", busy);
+    state.tabAuthProfileIds.set("tab-worker", "openai-codex-other");
+    const sent: Record<string, unknown>[] = [];
+    const deps = {
+      send: (m: Record<string, unknown>) => sent.push(m),
+    } as DispatcherDeps;
+
+    await handleAuthProfileMessage(state, deps, {
+      type: "auth_profile_apply",
+      tabId: "tab-worker",
+      profileId,
+    });
+
+    // Busy guard: assignment unchanged, a notice is emitted, no recreate.
+    expect(state.tabAuthProfileIds.get("tab-worker")).toBe("openai-codex-other");
+    expect(sent).toContainEqual(
+      expect.objectContaining({ type: "notice", tabId: "tab-worker" }),
+    );
+  });
+
+  it("auth_profile_apply is a no-op for an unknown profile id", async () => {
+    const state = makeState();
+    const deps = { send: vi.fn() } as unknown as DispatcherDeps;
+
+    await handleAuthProfileMessage(state, deps, {
+      type: "auth_profile_apply",
+      tabId: "tab-worker",
+      profileId: "does-not-exist",
+    });
+
+    expect(state.tabAuthProfileIds.has("tab-worker")).toBe(false);
+  });
+
+  it("parses the email claim out of a JWT id_token", () => {
+    const payload = { email: "codex-user@example.com", sub: "abc" };
+    const encoded = Buffer.from(JSON.stringify(payload), "utf8")
+      .toString("base64")
+      .replace(/\+/g, "-")
+      .replace(/\//g, "_")
+      .replace(/=+$/, "");
+    const idToken = `header.${encoded}.signature`;
+
+    expect(parseIdTokenEmail(idToken)).toBe("codex-user@example.com");
+  });
+
+  it("returns undefined for malformed id_tokens or missing email", () => {
+    expect(parseIdTokenEmail("not-a-jwt")).toBeUndefined();
+    const noEmail = Buffer.from(JSON.stringify({ sub: "abc" }), "utf8")
+      .toString("base64url");
+    expect(parseIdTokenEmail(`header.${noEmail}.sig`)).toBeUndefined();
+    expect(parseIdTokenEmail("header.!!!notbase64!!!.sig")).toBeUndefined();
   });
 
   it("rejects deleting unknown or unsafe profile ids before removing files", async () => {

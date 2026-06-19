@@ -1,9 +1,10 @@
 import { openUrl } from "@tauri-apps/plugin-opener";
-import type {
-  AuthProfileLoginEvent,
-  AuthProfileMeta,
-  AuthProfileProvider,
-  AuthProfilesSnapshot,
+import {
+  sendAuthProfileCommand,
+  type AuthProfileLoginEvent,
+  type AuthProfileMeta,
+  type AuthProfileProvider,
+  type AuthProfilesSnapshot,
 } from "../../auth-profiles";
 import type { Tab } from "../../types/tab";
 import type { BridgeMessageHandler } from "./types";
@@ -11,6 +12,7 @@ import type { BridgeMessageHandler } from "./types";
 type AuthProfilesState = AuthProfilesSnapshot & {
   modal?: { open?: boolean };
   login?: AuthProfileLoginEvent;
+  usage?: Record<string, unknown>;
 };
 
 function snapshotFrom(value: unknown): AuthProfilesSnapshot | null {
@@ -84,6 +86,9 @@ export const handleAuthProfiles: BridgeMessageHandler = (message, ctx) => {
         ...snapshot,
         modal: current.modal,
         login: current.login,
+        // Preserve the per-profile usage cache — it arrives via separate
+        // `auth_profile_usage` messages and must survive snapshot refreshes.
+        usage: current.usage,
       },
     };
   });
@@ -154,4 +159,15 @@ export const handleAuthProfileChanged: BridgeMessageHandler = (message, ctx) => 
       },
     },
   }));
+  // Relay the selection to the global bridge so its tabAuthProfileIds stays
+  // in sync with worker-side switches (e.g. usage-limit auto-switch). Without
+  // this, a later global auth_profiles snapshot would revert this tab to the
+  // stale account. The record handler is emit-free, so this can't loop.
+  void sendAuthProfileCommand({
+    type: "auth_profile_record",
+    tabId,
+    profileId,
+  }).catch(() => {
+    /* bridge restart / reload — best-effort sync, ignore */
+  });
 };
