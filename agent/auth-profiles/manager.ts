@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdirSync, statSync } from "node:fs";
+import { mkdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import {
   AuthStorage,
@@ -259,6 +259,9 @@ export async function handleAuthProfileMessage(
       return true;
     case "auth_profile_delete":
       handleDelete(state, deps, msg);
+      return true;
+    case "auth_profile_fetch_usage":
+      void handleFetchUsage(state, deps, msg);
       return true;
     default:
       return false;
@@ -801,6 +804,132 @@ function handleDelete(
   removeProfile(state, profileId);
   saveAuthProfiles(state);
   emitAuthProfiles(state, deps);
+}
+
+const CODEX_PROVIDER_ID = "openai-codex";
+const CODEX_RATE_LIMITS_URL =
+  "https://chatgpt.com/backend-api/codex/rate_limits";
+
+interface AuthProfileUsageWindow {
+  usedPercent: number;
+  resetsAt?: number;
+  windowDurationMins?: number;
+}
+
+interface AuthProfileUsageMessage {
+  type: "auth_profile_usage";
+  profileId: string;
+  email?: string;
+  planType?: string;
+  primary?: AuthProfileUsageWindow;
+  secondary?: AuthProfileUsageWindow;
+  credits?: { balance?: string; hasCredits?: boolean; unlimited?: boolean };
+  error?: string;
+}
+
+export function parseIdTokenEmail(idToken: string): string | undefined {
+  const segments = idToken.split(".");
+  if (segments.length < 2) return undefined;
+  const payload = segments[1];
+  if (!payload) return undefined;
+  const normalized = payload.replace(/-/g, "+").replace(/_/g, "/");
+  const padded = normalized.padEnd(
+    normalized.length + ((4 - (normalized.length % 4)) % 4),
+    "=",
+  );
+  try {
+    const json = Buffer.from(padded, "base64").toString("utf8");
+    const claims = JSON.parse(json) as { email?: unknown };
+    return typeof claims.email === "string" ? claims.email : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function parseUsageWindow(value: unknown): AuthProfileUsageWindow | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const rec = value as Record<string, unknown>;
+  if (typeof rec.usedPercent !== "number") return undefined;
+  const window: AuthProfileUsageWindow = { usedPercent: rec.usedPercent };
+  if (typeof rec.resetsAt === "number") window.resetsAt = rec.resetsAt;
+  if (typeof rec.windowDurationMins === "number") {
+    window.windowDurationMins = rec.windowDurationMins;
+  }
+  return window;
+}
+
+async function handleFetchUsage(
+  state: AethonAgentState,
+  deps: Pick<DispatcherDeps, "send">,
+  msg: InboundMessage,
+): Promise<void> {
+  const profileId = stringField(msg.profileId);
+  try {
+    const profile = findProfile(state, profileId);
+    if (!profile) throw new Error("unknown profileId");
+    const authPath = authProfileAuthPath(state.userDir, profile.id);
+    const parsed = JSON.parse(readFileSync(authPath, "utf8")) as Record<
+      string,
+      unknown
+    >;
+    const entry = parsed[profile.providerId];
+    if (!entry || typeof entry !== "object") {
+      throw new Error("no stored credentials for provider");
+    }
+    const creds = entry as Record<string, unknown>;
+    const accessToken =
+      typeof creds.access_token === "string" ? creds.access_token : undefined;
+    const idToken =
+      typeof creds.id_token === "string" ? creds.id_token : undefined;
+    const email = idToken ? parseIdTokenEmail(idToken) : undefined;
+
+    const result: AuthProfileUsageMessage = {
+      type: "auth_profile_usage",
+      profileId: profile.id,
+    };
+    if (email) result.email = email;
+
+    if (profile.providerId === CODEX_PROVIDER_ID && accessToken) {
+      const response = await fetch(CODEX_RATE_LIMITS_URL, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      if (!response.ok) {
+        throw new Error(
+          `rate_limits request failed: ${response.status} ${response.statusText}`,
+        );
+      }
+      const body = (await response.json()) as Record<string, unknown>;
+      if (typeof body.planType === "string") result.planType = body.planType;
+      const primary = parseUsageWindow(body.primary);
+      if (primary) result.primary = primary;
+      const secondary = parseUsageWindow(body.secondary);
+      if (secondary) result.secondary = secondary;
+      if (body.credits && typeof body.credits === "object") {
+        const credits = body.credits as Record<string, unknown>;
+        result.credits = {
+          balance:
+            typeof credits.balance === "string" ? credits.balance : undefined,
+          hasCredits:
+            typeof credits.hasCredits === "boolean"
+              ? credits.hasCredits
+              : undefined,
+          unlimited:
+            typeof credits.unlimited === "boolean"
+              ? credits.unlimited
+              : undefined,
+        };
+      }
+    }
+
+    deps.send(result);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    deps.send({
+      type: "auth_profile_usage",
+      profileId,
+      error: message,
+    });
+  }
 }
 
 function removeProfile(state: AethonAgentState, profileId: string): void {

@@ -1,10 +1,11 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { BuiltinComponentProps } from "../../components/A2UIRenderer";
 import {
   EMPTY_AUTH_PROFILES,
   sendAuthProfileCommand,
   type AuthProfileLoginEvent,
   type AuthProfileProvider,
+  type AuthProfileUsage,
   type AuthProfilesUiState,
 } from "../../auth-profiles";
 
@@ -14,6 +15,8 @@ function readAuthProfiles(state: Record<string, unknown>): AuthProfilesUiState {
     ...((state.authProfiles as AuthProfilesUiState | undefined) ?? {}),
   };
 }
+
+const USAGE_STALE_MS = 5 * 60 * 1000;
 
 export function AuthProfilePanel({
   state,
@@ -25,6 +28,9 @@ export function AuthProfilePanel({
   const [label, setLabel] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [promptValue, setPromptValue] = useState("");
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState("");
+  const renameInputRef = useRef<HTMLInputElement>(null);
 
   const providers = auth.providers;
   const selectedProvider =
@@ -50,6 +56,24 @@ export function AuthProfilePanel({
       })),
     [auth.profiles, providers],
   );
+
+  useEffect(() => {
+    if (!auth.modal?.open) return;
+    const now = Date.now();
+    for (const profile of auth.profiles) {
+      if (profile.kind !== "oauth") continue;
+      const cached = auth.usage?.[profile.id];
+      if (cached && now - cached.fetchedAt < USAGE_STALE_MS) continue;
+      void sendAuthProfileCommand({
+        type: "auth_profile_fetch_usage",
+        profileId: profile.id,
+      });
+    }
+  }, [auth.modal?.open, auth.profiles, auth.usage]);
+
+  useEffect(() => {
+    if (renamingId) renameInputRef.current?.focus();
+  }, [renamingId]);
 
   const startLogin = async () => {
     if (!selectedProvider) return;
@@ -94,6 +118,24 @@ export function AuthProfilePanel({
 
   const deleteProfile = (profileId: string) =>
     sendAuthProfileCommand({ type: "auth_profile_delete", profileId });
+
+  const startRename = (profileId: string, currentLabel: string) => {
+    setRenamingId(profileId);
+    setRenameValue(currentLabel);
+  };
+
+  const commitRename = () => {
+    if (!renamingId || !renameValue.trim()) {
+      setRenamingId(null);
+      return;
+    }
+    void sendAuthProfileCommand({
+      type: "auth_profile_rename",
+      profileId: renamingId,
+      label: renameValue.trim(),
+    });
+    setRenamingId(null);
+  };
 
   const submitPrompt = async (event: AuthProfileLoginEvent) => {
     await sendAuthProfileCommand({
@@ -191,15 +233,64 @@ export function AuthProfilePanel({
                   const isActive = activeProfileId === profile.id;
                   const isDefault =
                     auth.defaultByProvider[profile.providerId] === profile.id;
+                  const usage = auth.usage?.[profile.id];
+                  const isRenaming = renamingId === profile.id;
                   return (
-                    <li key={profile.id} className="ae-auth-row">
+                    <li
+                      key={profile.id}
+                      className={`ae-auth-row${isActive ? " ae-auth-row--active" : ""}`}
+                    >
                       <div className="ae-auth-row-main">
-                        <strong>{profile.label}</strong>
+                        <div className="ae-auth-row-label">
+                          {isRenaming ? (
+                            <input
+                              ref={renameInputRef}
+                              className="ae-settings-input ae-auth-rename-input"
+                              value={renameValue}
+                              onChange={(e) => setRenameValue(e.target.value)}
+                              onBlur={commitRename}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") commitRename();
+                                if (e.key === "Escape") setRenamingId(null);
+                              }}
+                            />
+                          ) : (
+                            <strong
+                              className="ae-auth-row-name"
+                              onDoubleClick={() =>
+                                startRename(profile.id, profile.label)
+                              }
+                              title="Double-click to rename"
+                            >
+                              {profile.label}
+                            </strong>
+                          )}
+                          {isActive && (
+                            <span className="ae-auth-badge ae-auth-badge--active">
+                              Active
+                            </span>
+                          )}
+                          {isDefault && (
+                            <span className="ae-auth-badge ae-auth-badge--default">
+                              Default
+                            </span>
+                          )}
+                        </div>
                         <span>
                           {profile.provider.label} · {profile.kind}
-                          {isActive ? " · active" : ""}
-                          {isDefault ? " · default" : ""}
+                          {usage?.email ? ` · ${usage.email}` : ""}
+                          {usage?.planType
+                            ? ` · ${usage.planType}`
+                            : ""}
                         </span>
+                        {usage && !usage.error && usage.primary && (
+                          <UsageMeter usage={usage} />
+                        )}
+                        {usage?.error && (
+                          <span className="ae-auth-usage-error">
+                            {usage.error}
+                          </span>
+                        )}
                       </div>
                       <div className="ae-auth-row-actions">
                         <button
@@ -218,6 +309,15 @@ export function AuthProfilePanel({
                         >
                           Default
                         </button>
+                        <button
+                          type="button"
+                          className="ae-settings-secondary"
+                          onClick={() =>
+                            startRename(profile.id, profile.label)
+                          }
+                        >
+                          Rename
+                        </button>
                         {profile.kind === "oauth" && (
                           <button
                             type="button"
@@ -229,7 +329,7 @@ export function AuthProfilePanel({
                         )}
                         <button
                           type="button"
-                          className="ae-settings-secondary"
+                          className="ae-settings-secondary ae-auth-btn-danger"
                           onClick={() => void deleteProfile(profile.id)}
                         >
                           Delete
@@ -245,6 +345,84 @@ export function AuthProfilePanel({
       </div>
     </div>
   );
+}
+
+function UsageMeter({ usage }: { usage: AuthProfileUsage }) {
+  const { primary, secondary, credits } = usage;
+  return (
+    <div className="ae-auth-usage">
+      {primary && (
+        <div className="ae-auth-usage-bar-group">
+          <div className="ae-auth-usage-bar-header">
+            <span>{windowLabel(primary.windowDurationMins, "Primary")}</span>
+            <span>{primary.usedPercent}%</span>
+          </div>
+          <div className="ae-auth-usage-bar-track">
+            <div
+              className={`ae-auth-usage-bar-fill${primary.usedPercent >= 90 ? " ae-auth-usage-bar-fill--danger" : primary.usedPercent >= 70 ? " ae-auth-usage-bar-fill--warn" : ""}`}
+              style={{ width: `${Math.min(primary.usedPercent, 100)}%` }}
+            />
+          </div>
+          {primary.resetsAt != null && (
+            <span className="ae-auth-usage-reset">
+              Resets {formatResetTime(primary.resetsAt)}
+            </span>
+          )}
+        </div>
+      )}
+      {secondary && (
+        <div className="ae-auth-usage-bar-group">
+          <div className="ae-auth-usage-bar-header">
+            <span>{windowLabel(secondary.windowDurationMins, "Secondary")}</span>
+            <span>{secondary.usedPercent}%</span>
+          </div>
+          <div className="ae-auth-usage-bar-track">
+            <div
+              className={`ae-auth-usage-bar-fill${secondary.usedPercent >= 90 ? " ae-auth-usage-bar-fill--danger" : secondary.usedPercent >= 70 ? " ae-auth-usage-bar-fill--warn" : ""}`}
+              style={{ width: `${Math.min(secondary.usedPercent, 100)}%` }}
+            />
+          </div>
+          {secondary.resetsAt != null && (
+            <span className="ae-auth-usage-reset">
+              Resets {formatResetTime(secondary.resetsAt)}
+            </span>
+          )}
+        </div>
+      )}
+      {credits && credits.balance != null && (
+        <span className="ae-auth-usage-credits">
+          Credits: ${credits.balance}
+          {credits.unlimited ? " (unlimited)" : ""}
+        </span>
+      )}
+    </div>
+  );
+}
+
+function windowLabel(durationMins: number | undefined, fallback: string): string {
+  switch (durationMins) {
+    case 300:
+      return "5-hour";
+    case 10080:
+      return "Weekly";
+    case 43200:
+      return "Monthly";
+    default:
+      return fallback;
+  }
+}
+
+function formatResetTime(epochMs: number): string {
+  const ms = epochMs > 1e12 ? epochMs : epochMs * 1000;
+  const diff = ms - Date.now();
+  if (diff <= 0) return "now";
+  const mins = Math.ceil(diff / 60_000);
+  if (mins < 60) return `in ${mins}m`;
+  const hrs = Math.floor(mins / 60);
+  const remMins = mins % 60;
+  if (hrs < 24) return `in ${hrs}h ${remMins}m`;
+  const days = Math.floor(hrs / 24);
+  return `in ${days}d ${hrs % 24}h`;
 }
 
 function LoginStatus({

@@ -16,6 +16,7 @@ import {
   defaultProfileIdForTab,
   handleAuthProfileMessage,
   modelRegistryForModelId,
+  parseIdTokenEmail,
   refreshAuthServicesForTab,
 } from "./manager";
 import {
@@ -270,6 +271,26 @@ describe("auth profile manager", () => {
     expect(sent).toContainEqual(
       expect.objectContaining({ type: "auth_profiles" }),
     );
+  });
+
+  it("parses the email claim out of a JWT id_token", () => {
+    const payload = { email: "codex-user@example.com", sub: "abc" };
+    const encoded = Buffer.from(JSON.stringify(payload), "utf8")
+      .toString("base64")
+      .replace(/\+/g, "-")
+      .replace(/\//g, "_")
+      .replace(/=+$/, "");
+    const idToken = `header.${encoded}.signature`;
+
+    expect(parseIdTokenEmail(idToken)).toBe("codex-user@example.com");
+  });
+
+  it("returns undefined for malformed id_tokens or missing email", () => {
+    expect(parseIdTokenEmail("not-a-jwt")).toBeUndefined();
+    const noEmail = Buffer.from(JSON.stringify({ sub: "abc" }), "utf8")
+      .toString("base64url");
+    expect(parseIdTokenEmail(`header.${noEmail}.sig`)).toBeUndefined();
+    expect(parseIdTokenEmail("header.!!!notbase64!!!.sig")).toBeUndefined();
   });
 
   it("rejects deleting unknown or unsafe profile ids before removing files", async () => {

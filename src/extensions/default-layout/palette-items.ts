@@ -100,6 +100,7 @@ export const BUILTIN_KEYBINDINGS: BuiltinKeybinding[] = [
   { combo: "meta+shift+f", description: "Search across sessions" },
   { combo: "meta+shift+v", description: "Toggle Markdown preview" },
   { combo: "meta+,", description: "Open Settings" },
+  { combo: "meta+shift+a", description: "Toggle Accounts" },
   { combo: "meta+ctrl+f", description: "Toggle fullscreen (mac)" },
   { combo: "F11", description: "Toggle fullscreen" },
   { combo: "F12", description: "Toggle DevTools (debug builds)" },

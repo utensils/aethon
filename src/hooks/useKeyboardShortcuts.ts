@@ -72,6 +72,7 @@ export interface UseKeyboardShortcutsContext {
   focusActiveContextInput: () => void;
   exportActiveChatMarkdown: () => Promise<void>;
   pushNotification: (n: NotificationInput) => void;
+  toggleAccounts: () => void;
 }
 
 /**
@@ -350,6 +351,15 @@ export function useKeyboardShortcuts(ctx: UseKeyboardShortcutsContext): void {
           ctx.closeSettings();
           return;
         }
+        const authProfiles = state.authProfiles as
+          | { modal?: { open?: boolean } }
+          | undefined;
+        if (authProfiles?.modal?.open) {
+          e.preventDefault();
+          e.stopPropagation();
+          ctx.toggleAccounts();
+          return;
+        }
         if (activeAgentTabIsBusy(state)) {
           e.preventDefault();
           e.stopPropagation();
@@ -422,6 +432,13 @@ export function useKeyboardShortcuts(ctx: UseKeyboardShortcutsContext): void {
         invoke("toggle_fullscreen").catch((err: unknown) => {
           console.warn("toggle_fullscreen failed:", err);
         });
+        return;
+      }
+      // Cmd+Shift+A: toggle Accounts panel.
+      if (mod && e.shiftKey && !e.altKey && e.key.toLowerCase() === "a") {
+        e.preventDefault();
+        e.stopPropagation();
+        ctx.toggleAccounts();
         return;
       }
       // Cmd+Shift+S: export active agent chat as Markdown.

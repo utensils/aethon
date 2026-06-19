@@ -752,6 +752,17 @@ export default function App() {
     });
   }, [pushNotification, stateRef, updateActiveTab]);
 
+  const toggleAccounts = useCallback(() => {
+    setState((prev) => {
+      const auth = (prev.authProfiles ?? {}) as Record<string, unknown>;
+      const modal = (auth.modal ?? {}) as Record<string, unknown>;
+      return {
+        ...prev,
+        authProfiles: { ...auth, modal: { ...modal, open: !modal.open } },
+      };
+    });
+  }, [setState]);
+
   // Bridge IPC: spawns the agent on mount, runs the boot handshake
   // (start_agent → boot_layout → report), and routes every
   // `agent-response` event through the per-type handler registry under
@@ -849,6 +860,7 @@ export default function App() {
     focusActiveContextInput,
     exportActiveChatMarkdown,
     pushNotification,
+    toggleAccounts,
   });
 
   // window.aethon runtime API + dev-only __AETHON_* debug hooks.
