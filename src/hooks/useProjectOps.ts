@@ -281,6 +281,24 @@ export function useProjectOps(ctx: UseProjectOpsContext): UseProjectOpsActions {
     workspacePrompts,
   });
 
+  function projectIdsNeedingWorkspaceRefresh(
+    ps = projectsRef.current,
+  ): string[] {
+    const ids = new Set<string>();
+    if (ps.activeId) ids.add(ps.activeId);
+    for (const project of ps.projects) {
+      if (project.uiExpanded === true) ids.add(project.id);
+    }
+    return [...ids];
+  }
+
+  async function refreshVisibleProjectWorkspaces(): Promise<void> {
+    const ids = projectIdsNeedingWorkspaceRefresh();
+    for (const id of ids) {
+      await workspaceOps.refreshProjectWorkspaces(id);
+    }
+  }
+
   // Load projects once at boot. Mirrors into state on resolve so the
   // sidebar populates without requiring a React state owner for projects.
   useEffect(() => {
@@ -288,6 +306,7 @@ export function useProjectOps(ctx: UseProjectOpsContext): UseProjectOpsActions {
       const ps = await loadProjects();
       projectsRef.current = ps;
       projectsLoadedRef.current = true;
+      await refreshVisibleProjectWorkspaces();
       syncProjectsToState();
       void refreshAllGitStatus();
       const active = activeProject(ps);
@@ -319,6 +338,21 @@ export function useProjectOps(ctx: UseProjectOpsContext): UseProjectOpsActions {
       syncRecentSessionsToState();
       if (active) await restoreEditorTabs(active.id, active.path);
     })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    const refresh = () => {
+      if (!projectsLoadedRef.current || document.hidden) return;
+      void refreshVisibleProjectWorkspaces();
+    };
+    window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", refresh);
+    return () => {
+      window.removeEventListener("focus", refresh);
+      document.removeEventListener("visibilitychange", refresh);
+    };
+    // The hook is mounted once with stable App-root refs and actions.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

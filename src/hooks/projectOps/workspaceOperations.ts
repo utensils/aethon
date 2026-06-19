@@ -58,6 +58,7 @@ export function useWorkspaceOperations(
   const refreshDeps = {
     projectsRef: deps.projectsRef,
     lookups,
+    syncProjectsToState: deps.syncProjectsToState,
     persistProjects: deps.persistProjects,
     tabCleanup: tabCleanupDeps,
   };

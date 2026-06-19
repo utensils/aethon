@@ -31,6 +31,7 @@ pub struct GhBranchStatus {
     /// (gh missing) and `repo=None` (no GitHub remote) — those are
     /// healthy states, this one means the user should clean up the
     /// stale entry.
+    #[serde(rename = "workspaceBroken")]
     pub worktree_broken: bool,
 }
 
@@ -558,6 +559,18 @@ mod tests {
         assert!(json.get("defaultBranch").is_some());
         assert!(json.get("pushedAt").is_some());
         assert!(json.get("open_issues_count").is_none());
+    }
+
+    #[test]
+    fn gh_branch_status_serializes_workspace_broken_for_frontend() {
+        let status = GhBranchStatus {
+            worktree_broken: true,
+            ..GhBranchStatus::default()
+        };
+        let json = serde_json::to_value(&status).unwrap();
+        assert_eq!(json["workspaceBroken"], serde_json::json!(true));
+        assert!(json.get("worktreeBroken").is_none());
+        assert!(json.get("worktree_broken").is_none());
     }
 
     #[test]

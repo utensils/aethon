@@ -11,9 +11,10 @@ import {
 } from "@testing-library/react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 
-const { branchStatusMock, checksMock } = vi.hoisted(() => ({
+const { branchStatusMock, checksMock, worktreesMock } = vi.hoisted(() => ({
   branchStatusMock: vi.fn(),
   checksMock: vi.fn(),
+  worktreesMock: vi.fn(),
 }));
 
 vi.mock("../../../ghBranchStatusCache", () => ({
@@ -21,6 +22,9 @@ vi.mock("../../../ghBranchStatusCache", () => ({
 }));
 vi.mock("../../../ghChecksCache", () => ({
   getGhChecks: checksMock,
+}));
+vi.mock("../../../workspaces", () => ({
+  gitWorktrees: worktreesMock,
 }));
 vi.mock("@tauri-apps/plugin-opener", () => ({
   openUrl: vi.fn(),
@@ -38,6 +42,7 @@ afterEach(() => {
   vi.useRealTimers();
   branchStatusMock.mockReset();
   checksMock.mockReset();
+  worktreesMock.mockReset();
   vi.mocked(openUrl).mockReset();
   cleanup();
 });
@@ -102,6 +107,15 @@ describe("WorkspaceRow", () => {
       skipped: 0,
       checks: [],
     });
+    worktreesMock.mockResolvedValue([
+      {
+        path: "/repo-feature-x",
+        branch: "feature-x",
+        head: "abc123",
+        isMain: false,
+        locked: false,
+      },
+    ]);
   });
 
   it("emits switch-workspace on row click", () => {
@@ -393,6 +407,55 @@ describe("WorkspaceRow", () => {
     await waitFor(() => expect(branchStatusMock).toHaveBeenCalled());
     expect(checksMock).not.toHaveBeenCalled();
     expect(screen.queryByText(/#/)).toBeNull();
+  });
+
+  it("skips a focus-triggered PR status fetch when live git reports a different branch", async () => {
+    harness(wt());
+
+    await waitFor(() =>
+      expect(branchStatusMock).toHaveBeenCalledWith(
+        "/repo-feature-x",
+        "feature-x",
+      ),
+    );
+    branchStatusMock.mockClear();
+    checksMock.mockClear();
+    worktreesMock.mockResolvedValueOnce([
+      {
+        path: "/repo-feature-x",
+        branch: "fix/file-menu-exit",
+        head: "def456",
+        isMain: false,
+        locked: false,
+      },
+    ]);
+
+    window.dispatchEvent(new Event("focus"));
+
+    await waitFor(() => expect(worktreesMock).toHaveBeenCalledTimes(2));
+    expect(branchStatusMock).not.toHaveBeenCalled();
+    expect(checksMock).not.toHaveBeenCalled();
+  });
+
+  it("allows a PR status fetch when live git cannot match the row path", async () => {
+    worktreesMock.mockResolvedValueOnce([
+      {
+        path: "/private/tmp/repo-feature-x",
+        branch: "feature-x",
+        head: "abc123",
+        isMain: false,
+        locked: false,
+      },
+    ]);
+
+    harness(wt());
+
+    await waitFor(() =>
+      expect(branchStatusMock).toHaveBeenCalledWith(
+        "/repo-feature-x",
+        "feature-x",
+      ),
+    );
   });
 
   it("opens inline confirmation from the remove icon", () => {

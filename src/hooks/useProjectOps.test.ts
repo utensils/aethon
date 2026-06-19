@@ -9,6 +9,7 @@ import {
   type Tab,
 } from "../types/tab";
 import type { ProjectsState } from "../projects";
+import { _resetLocalHostCacheForTests } from "../hosts";
 import { installTauriMocks, clearTauriMocks } from "../test/tauriMocks";
 import { disposeEditorBuffer } from "../monaco/editor-buffers";
 import {
@@ -26,6 +27,8 @@ vi.mock("../monaco/editor-buffers", () => ({
 }));
 
 afterEach(() => {
+  delete (window as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__;
+  _resetLocalHostCacheForTests();
   clearTauriMocks();
 });
 
@@ -948,6 +951,118 @@ describe("useProjectOps overview terminal project switches", () => {
 });
 
 describe("useProjectOps workspace refresh", () => {
+  it("reconciles visible workspace branches from live git before mirroring boot sidebar state", async () => {
+    (window as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__ = {};
+    const harness = installTauriMocks();
+    harness.invoke.mockImplementation(
+      (cmd: string, args?: Record<string, unknown>) => {
+        if (cmd === "host_info") {
+          return Promise.resolve({ id: "local:test" });
+        }
+        if (cmd === "read_state") {
+          if (args?.name === "projects.json") {
+            return Promise.resolve(
+              JSON.stringify({
+                schemaVersion: 5,
+                projects: [
+                  {
+                    id: "project-1",
+                    label: "aethon",
+                    path: "/projects/aethon",
+                    lastUsed: 1,
+                    uiExpanded: true,
+                    hostId: "local:test",
+                  },
+                ],
+                activeId: "project-1",
+                activeWorkspaceId: "wt-stale",
+                activeHostId: "local:test",
+                workspacesByProject: {
+                  "project-1": [
+                    {
+                      id: "main",
+                      projectId: "project-1",
+                      path: "/projects/aethon",
+                      branch: "main",
+                      isMain: true,
+                    },
+                    {
+                      id: "wt-stale",
+                      projectId: "project-1",
+                      path: "/projects/aethon-feat-helios",
+                      branch: "feat/helios",
+                      isMain: false,
+                    },
+                  ],
+                },
+              }),
+            );
+          }
+          if (args?.name === "project-icons.json") {
+            return Promise.resolve("{}");
+          }
+        }
+        if (cmd === "git_worktrees") {
+          return Promise.resolve([
+            {
+              path: "/projects/aethon",
+              branch: "main",
+              head: "abc123",
+              isMain: true,
+              locked: false,
+            },
+            {
+              path: "/projects/aethon-feat-helios",
+              branch: "fix/file-menu-exit",
+              head: "def456",
+              isMain: false,
+              locked: false,
+            },
+          ]);
+        }
+        return Promise.resolve(undefined);
+      },
+    );
+
+    const { stateRef, setState } = renderProjectOps(makeProjectsState());
+
+    await waitFor(() => {
+      const sidebar = stateRef.current.sidebar as
+        | {
+            projects?: Array<{
+              id: string;
+              workspaces?: Array<{ id: string; branch: string | null }>;
+            }>;
+          }
+        | undefined;
+      const project = sidebar?.projects?.find((p) => p.id === "project-1");
+      const workspace = project?.workspaces?.find((w) => w.id === "wt-stale");
+      expect(workspace?.branch).toBe("fix/file-menu-exit");
+    });
+
+    const mirroredStaleBranch = setState.mock.calls.some((call) => {
+      const next = call[0];
+      if (typeof next !== "function") return false;
+      const mirrored = next({ tabs: [] }) as {
+        sidebar?: {
+          projects?: Array<{
+            workspaces?: Array<{ id: string; branch: string | null }>;
+          }>;
+        };
+      };
+      return mirrored.sidebar?.projects?.some((project) =>
+        project.workspaces?.some(
+          (workspace) =>
+            workspace.id === "wt-stale" && workspace.branch === "feat/helios",
+        ),
+      );
+    });
+    expect(mirroredStaleBranch).toBe(false);
+    expect(harness.invoke).toHaveBeenCalledWith("git_worktrees", {
+      projectPath: "/projects/aethon",
+    });
+  });
+
   it("refreshes workspaces when reselecting a project with cached rows", async () => {
     const harness = installTauriMocks();
     harness.invoke.mockImplementation((cmd: string) => {
@@ -986,6 +1101,79 @@ describe("useProjectOps workspace refresh", () => {
         projectPath: "/projects/aethon",
       });
     });
+  });
+
+  it("refreshes active and expanded workspace branches on window focus", async () => {
+    const harness = installTauriMocks();
+    harness.invoke.mockImplementation((cmd: string) => {
+      if (cmd === "git_worktrees") {
+        return Promise.resolve([
+          {
+            path: "/projects/aethon",
+            branch: "main",
+            head: "abc123",
+            isMain: true,
+            locked: false,
+          },
+          {
+            path: "/projects/aethon-feat-helios",
+            branch: "fix/file-menu-exit",
+            head: "def456",
+            isMain: false,
+            locked: false,
+          },
+        ]);
+      }
+      return Promise.resolve(undefined);
+    });
+    const staleWorkspace = {
+      id: "wt-stale",
+      projectId: "project-1",
+      path: "/projects/aethon-feat-helios",
+      branch: "feat/helios",
+      isMain: false,
+    };
+    const initial = makeProjectsState({
+      activeId: "project-1",
+      activeWorkspaceId: "wt-stale",
+      projects: [
+        {
+          id: "project-1",
+          label: "aethon",
+          path: "/projects/aethon",
+          lastUsed: 1,
+          uiExpanded: true,
+        },
+      ],
+      workspacesByProject: { "project-1": [staleWorkspace] },
+    });
+    const { projectsRef, stateRef } = renderProjectOps(initial);
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    projectsRef.current = initial;
+
+    window.dispatchEvent(new Event("focus"));
+
+    await waitFor(() => {
+      const workspace =
+        projectsRef.current.workspacesByProject["project-1"]?.find(
+          (w) => w.id === "wt-stale",
+        );
+      expect(workspace?.branch).toBe("fix/file-menu-exit");
+    });
+    const sidebar = stateRef.current.sidebar as
+      | {
+          projects?: Array<{
+            id: string;
+            workspaces?: Array<{ id: string; branch: string | null }>;
+          }>;
+        }
+      | undefined;
+    const project = sidebar?.projects?.find((p) => p.id === "project-1");
+    const workspace = project?.workspaces?.find((w) => w.id === "wt-stale");
+    expect(workspace?.branch).toBe("fix/file-menu-exit");
   });
 
   it("clears a stale active workspace missing from a fresh git listing", async () => {
