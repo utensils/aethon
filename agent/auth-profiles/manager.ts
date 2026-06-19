@@ -807,8 +807,6 @@ function handleDelete(
 }
 
 const CODEX_PROVIDER_ID = "openai-codex";
-const CODEX_RATE_LIMITS_URL =
-  "https://chatgpt.com/backend-api/codex/rate_limits";
 
 interface AuthProfileUsageWindow {
   usedPercent: number;
@@ -858,6 +856,95 @@ function parseUsageWindow(value: unknown): AuthProfileUsageWindow | undefined {
   return window;
 }
 
+function readCodexEmail(): string | undefined {
+  const codexHome =
+    process.env.CODEX_HOME ?? join(process.env.HOME ?? "", ".codex");
+  const authPath = join(codexHome, "auth.json");
+  try {
+    const data = JSON.parse(readFileSync(authPath, "utf8")) as Record<
+      string,
+      unknown
+    >;
+    const tokens = data.tokens as Record<string, unknown> | undefined;
+    const idToken =
+      typeof tokens?.id_token === "string" ? tokens.id_token : undefined;
+    return idToken ? parseIdTokenEmail(idToken) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function resolveCodexBinary(): string {
+  return (
+    process.env.BURNRATE_CODEX_BIN ??
+    process.env.CODEX_BIN ??
+    "codex"
+  );
+}
+
+async function fetchCodexRateLimits(): Promise<Record<string, unknown>> {
+  const { spawn } = await import("node:child_process");
+  return new Promise((resolve, reject) => {
+    const child = spawn(resolveCodexBinary(), [
+      "app-server",
+      "--listen",
+      "stdio://",
+    ]);
+    const timeout = setTimeout(() => {
+      child.kill();
+      reject(new Error("codex app-server timed out"));
+    }, 10_000);
+    let buffer = "";
+    child.stdout.on("data", (chunk: Buffer) => {
+      buffer += chunk.toString("utf8");
+      const lines = buffer.split("\n");
+      buffer = lines.pop() ?? "";
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        try {
+          const msg = JSON.parse(trimmed) as { id?: number; result?: unknown };
+          if (msg.id === 2 && msg.result) {
+            clearTimeout(timeout);
+            child.kill();
+            resolve(msg.result as Record<string, unknown>);
+          }
+        } catch {
+          /* non-JSON line, skip */
+        }
+      }
+    });
+    child.on("error", (err: Error) => {
+      clearTimeout(timeout);
+      reject(new Error(`codex not found: ${err.message}`));
+    });
+    child.on("close", (code: number | null) => {
+      clearTimeout(timeout);
+      reject(new Error(`codex exited with code ${code}`));
+    });
+    const init = JSON.stringify({
+      id: 1,
+      method: "initialize",
+      params: {
+        clientInfo: { name: "aethon", title: "Aethon", version: "0.1.0" },
+        capabilities: { experimentalApi: true },
+      },
+    });
+    const initialized = JSON.stringify({ method: "initialized" });
+    const read = JSON.stringify({
+      id: 2,
+      method: "account/rateLimits/read",
+    });
+    child.stdin.write(init + "\n");
+    setTimeout(() => {
+      child.stdin.write(initialized + "\n");
+      setTimeout(() => {
+        child.stdin.write(read + "\n");
+      }, 100);
+    }, 100);
+  });
+}
+
 async function handleFetchUsage(
   state: AethonAgentState,
   deps: Pick<DispatcherDeps, "send">,
@@ -867,45 +954,27 @@ async function handleFetchUsage(
   try {
     const profile = findProfile(state, profileId);
     if (!profile) throw new Error("unknown profileId");
-    const authPath = authProfileAuthPath(state.userDir, profile.id);
-    const parsed = JSON.parse(readFileSync(authPath, "utf8")) as Record<
-      string,
-      unknown
-    >;
-    const entry = parsed[profile.providerId];
-    if (!entry || typeof entry !== "object") {
-      throw new Error("no stored credentials for provider");
-    }
-    const creds = entry as Record<string, unknown>;
-    const accessToken =
-      typeof creds.access_token === "string" ? creds.access_token : undefined;
-    const idToken =
-      typeof creds.id_token === "string" ? creds.id_token : undefined;
-    const email = idToken ? parseIdTokenEmail(idToken) : undefined;
 
     const result: AuthProfileUsageMessage = {
       type: "auth_profile_usage",
       profileId: profile.id,
     };
-    if (email) result.email = email;
 
-    if (profile.providerId === CODEX_PROVIDER_ID && accessToken) {
-      const response = await fetch(CODEX_RATE_LIMITS_URL, {
-        headers: { Authorization: `Bearer ${accessToken}` },
-      });
-      if (!response.ok) {
-        throw new Error(
-          `rate_limits request failed: ${response.status} ${response.statusText}`,
-        );
+    if (profile.providerId === CODEX_PROVIDER_ID) {
+      const email = readCodexEmail();
+      if (email) result.email = email;
+
+      const body = await fetchCodexRateLimits();
+      const rateLimits = (body.rateLimits ?? body) as Record<string, unknown>;
+      if (typeof rateLimits.planType === "string") {
+        result.planType = rateLimits.planType;
       }
-      const body = (await response.json()) as Record<string, unknown>;
-      if (typeof body.planType === "string") result.planType = body.planType;
-      const primary = parseUsageWindow(body.primary);
+      const primary = parseUsageWindow(rateLimits.primary);
       if (primary) result.primary = primary;
-      const secondary = parseUsageWindow(body.secondary);
+      const secondary = parseUsageWindow(rateLimits.secondary);
       if (secondary) result.secondary = secondary;
-      if (body.credits && typeof body.credits === "object") {
-        const credits = body.credits as Record<string, unknown>;
+      if (rateLimits.credits && typeof rateLimits.credits === "object") {
+        const credits = rateLimits.credits as Record<string, unknown>;
         result.credits = {
           balance:
             typeof credits.balance === "string" ? credits.balance : undefined,
@@ -918,6 +987,30 @@ async function handleFetchUsage(
               ? credits.unlimited
               : undefined,
         };
+      }
+    } else {
+      const authPath = authProfileAuthPath(state.userDir, profile.id);
+      try {
+        const parsed = JSON.parse(readFileSync(authPath, "utf8")) as Record<
+          string,
+          unknown
+        >;
+        const entry = parsed[profile.providerId];
+        if (entry && typeof entry === "object") {
+          const creds = entry as Record<string, unknown>;
+          const idToken =
+            typeof creds.id_token === "string"
+              ? creds.id_token
+              : typeof creds.idToken === "string"
+                ? creds.idToken
+                : undefined;
+          if (idToken) {
+            const email = parseIdTokenEmail(idToken);
+            if (email) result.email = email;
+          }
+        }
+      } catch {
+        /* no credentials to read email from */
       }
     }
 
