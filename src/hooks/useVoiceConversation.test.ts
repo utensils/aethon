@@ -66,16 +66,23 @@ describe("useVoiceConversation", () => {
   });
   afterEach(() => cleanup());
 
-  it("runs a full turn: listen → transcribe → submit → speak → idle", async () => {
+  it("runs a full turn: tap → listen → transcribe → submit → speak → idle", async () => {
     const { result, submitText } = makeController(false);
 
+    // Auto off: entering lands paused, not recording.
     act(() => result.current.enter());
+    await flush();
+    expect(mocks.startVoiceRecording).not.toHaveBeenCalled();
+    expect(result.current.phase).toBe("idle");
+    expect(isConversationActive()).toBe(true);
+
+    // Tap "Speak" to open the mic for the first turn.
+    act(() => result.current.primaryAction());
     await flush();
     expect(mocks.startVoiceRecording).toHaveBeenCalledWith(
       "voice-lfm2-audio-llamacpp",
     );
     expect(result.current.phase).toBe("listening");
-    expect(isConversationActive()).toBe(true);
 
     act(() => result.current.primaryAction());
     await flush();
@@ -91,6 +98,29 @@ describe("useVoiceConversation", () => {
     act(() => ev.fn?.());
     await flush();
     expect(result.current.phase).toBe("idle");
+  });
+
+  it("does not open the mic on entry when auto-listen is off", async () => {
+    const { result } = makeController(false);
+
+    act(() => result.current.enter());
+    await flush();
+
+    expect(mocks.startVoiceRecording).not.toHaveBeenCalled();
+    expect(result.current.phase).toBe("idle");
+    expect(result.current.active).toBe(true);
+  });
+
+  it("opens the mic immediately on entry when auto-listen is on", async () => {
+    const { result } = makeController(true);
+
+    act(() => result.current.enter());
+    await flush();
+
+    expect(mocks.startVoiceRecording).toHaveBeenCalledWith(
+      "voice-lfm2-audio-llamacpp",
+    );
+    expect(result.current.phase).toBe("listening");
   });
 
   it("re-opens the mic after speaking in continuous mode", async () => {
@@ -157,7 +187,9 @@ describe("useVoiceConversation", () => {
     const { result } = makeController(false);
     act(() => result.current.enter());
     await flush();
-    act(() => result.current.primaryAction());
+    act(() => result.current.primaryAction()); // tap to start listening
+    await flush();
+    act(() => result.current.primaryAction()); // finish → submit → thinking
     await flush();
 
     act(() => emitAgentTurnComplete({ tabId: "other", text: "Not mine." }));
@@ -171,7 +203,9 @@ describe("useVoiceConversation", () => {
     mocks.stopAndTranscribeVoice.mockResolvedValueOnce("   ");
     act(() => result.current.enter());
     await flush();
-    act(() => result.current.primaryAction());
+    act(() => result.current.primaryAction()); // tap to start listening
+    await flush();
+    act(() => result.current.primaryAction()); // finish → empty → idle
     await flush();
     expect(submitText).not.toHaveBeenCalled();
     expect(result.current.phase).toBe("idle");
@@ -187,7 +221,8 @@ describe("useVoiceConversation", () => {
     );
     const { result } = makeController(false);
 
-    act(() => result.current.enter()); // first start — hangs in the open window
+    act(() => result.current.enter()); // paused (Auto off)
+    act(() => result.current.primaryAction()); // first start — hangs in the open window
     act(() => result.current.primaryAction()); // second tap during the window
     expect(mocks.startVoiceRecording).toHaveBeenCalledTimes(1);
 
@@ -201,6 +236,8 @@ describe("useVoiceConversation", () => {
   it("exit cancels recording/playback and clears the active flag", async () => {
     const { result } = makeController(false);
     act(() => result.current.enter());
+    await flush();
+    act(() => result.current.primaryAction()); // tap to start listening
     await flush();
 
     act(() => result.current.exit());
@@ -247,6 +284,8 @@ describe("useVoiceConversation", () => {
     const { result } = makeController(false);
     act(() => result.current.enter());
     await flush();
+    act(() => result.current.primaryAction()); // tap to start listening
+    await flush();
     act(() => result.current.primaryAction()); // finish → submit → thinking
     await flush();
     // An empty reply drops a non-continuous conversation back to idle.
@@ -266,7 +305,9 @@ describe("useVoiceConversation", () => {
     // Drive one turn so the conversation settles back to idle.
     act(() => result.current.enter());
     await flush();
-    act(() => result.current.primaryAction());
+    act(() => result.current.primaryAction()); // tap to start listening
+    await flush();
+    act(() => result.current.primaryAction()); // finish → thinking
     await flush();
     act(() => emitAgentTurnComplete({ tabId: "t1", text: "" }));
     await flush();
