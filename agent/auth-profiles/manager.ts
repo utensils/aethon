@@ -908,7 +908,10 @@ export async function tryAutoSwitchOnUsageLimit(
     tabId,
     message: `Switched to ${chosenProfile?.label ?? "another account"} — previous account hit its usage limit. Continuing…`,
   });
-  emitAuthProfiles(state, deps);
+  // NB: no full `auth_profiles` snapshot here. This may run in a tab worker
+  // whose `tabAuthProfileIds` is worker-local; emitting the snapshot would
+  // clobber the frontend's `activeByTab` for other tabs. The
+  // `auth_profile_changed` delta above updates just this tab's selection.
 
   // Drop the trailing error and re-run the last user turn on the new
   // account (same mechanism the retry path uses, but on fresh credentials).

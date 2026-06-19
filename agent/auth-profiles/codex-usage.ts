@@ -122,12 +122,17 @@ export function parseCodexUsageBody(
     | Record<string, unknown>
     | undefined;
   if (rateLimit && typeof rateLimit === "object") {
+    // `rate_limit_reached_type` appears either inside the rate-limit object
+    // or as a sibling at the body top level depending on the payload variant;
+    // a non-null/non-empty value means the account is exhausted.
+    const reachedType =
+      "rate_limit_reached_type" in rateLimit
+        ? rateLimit.rate_limit_reached_type
+        : body.rate_limit_reached_type;
     if (typeof rateLimit.limit_reached === "boolean") {
       result.limitReached = rateLimit.limit_reached;
-    } else if ("rate_limit_reached_type" in rateLimit) {
-      result.limitReached =
-        rateLimit.rate_limit_reached_type != null &&
-        rateLimit.rate_limit_reached_type !== "";
+    } else if (reachedType !== undefined) {
+      result.limitReached = reachedType != null && reachedType !== "";
     }
     if (typeof rateLimit.plan_type === "string" && !result.planType) {
       result.planType = rateLimit.plan_type;

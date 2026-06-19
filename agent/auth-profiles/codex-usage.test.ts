@@ -61,6 +61,16 @@ describe("parseCodexUsageBody", () => {
     expect(out.secondary?.usedPercent).toBe(7);
   });
 
+  it("reads rate_limit_reached_type from the body top level (sibling form)", () => {
+    const out = parseCodexUsageBody({
+      rate_limit_reached_type: "rate_limit_reached",
+      rate_limits: {
+        primary: { used_percent: 100, window_minutes: 300 },
+      },
+    });
+    expect(out.limitReached).toBe(true);
+  });
+
   it("treats a null rate_limit_reached_type as not limited", () => {
     const out = parseCodexUsageBody({
       rate_limits: {
