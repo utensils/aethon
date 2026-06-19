@@ -23,7 +23,9 @@ import {
   extractAgentEndError,
   formatAgentErrorMessage,
   isRetryableAgentEndError,
+  isUsageLimitError,
 } from "../agent-errors";
+import { tryAutoSwitchOnUsageLimit } from "../auth-profiles";
 import { logger } from "../logger";
 import type { AethonAgentState, TabRecord } from "../state";
 import {
@@ -496,11 +498,26 @@ export function handleSessionEvent(
         retryableFailure &&
         (retrying || scheduleAethonRetry(state, deps, rec, tabId));
       if (failedMessage && !keepTurnOpenForRetry) {
-        deps.send({
-          type: "error",
-          tabId,
-          message: formatAgentErrorMessage(failedMessage),
-        });
+        if (isUsageLimitError(failedMessage)) {
+          // Try to hop to an account with headroom and resume; only surface
+          // the (clean) error if every alternative is also exhausted.
+          const clean = formatAgentErrorMessage(failedMessage);
+          void tryAutoSwitchOnUsageLimit(state, deps, tabId).then(
+            (switched) => {
+              if (!switched) deps.send({ type: "error", tabId, message: clean });
+            },
+          );
+        } else {
+          deps.send({
+            type: "error",
+            tabId,
+            message: formatAgentErrorMessage(failedMessage),
+          });
+        }
+      } else if (!failedMessage) {
+        // Clean turn — reset the auto-switch loop guard so a future limit
+        // can switch accounts again.
+        rec.autoSwitchTried = undefined;
       }
       const startMs = state.turnStartTimes.get(tabId);
       state.turnStartTimes.delete(tabId);
@@ -576,15 +593,25 @@ export function handleSessionEvent(
       const ev = event as { success?: boolean; finalError?: string };
       cancelAethonRetry(rec);
       if (!ev.success && ev.finalError) {
-        // Usage-limit hits get a clean, self-contained message; transient
-        // failures keep the "auto-retry exhausted:" prefix so the user knows
-        // we already retried.
-        const clean = formatAgentErrorMessage(ev.finalError);
-        const message =
-          clean === ev.finalError
-            ? `auto-retry exhausted: ${ev.finalError}`
-            : clean;
-        deps.send({ type: "error", tabId, message });
+        const finalError = ev.finalError;
+        if (isUsageLimitError(finalError)) {
+          // Hop to an account with headroom and resume; only surface the
+          // clean error if every alternative is also exhausted.
+          const clean = formatAgentErrorMessage(finalError);
+          void tryAutoSwitchOnUsageLimit(state, deps, tabId).then(
+            (switched) => {
+              if (!switched) deps.send({ type: "error", tabId, message: clean });
+            },
+          );
+        } else {
+          // Transient failures keep the "auto-retry exhausted:" prefix so the
+          // user knows we already retried.
+          deps.send({
+            type: "error",
+            tabId,
+            message: `auto-retry exhausted: ${finalError}`,
+          });
+        }
         rec.agentEndFired = true;
         rec.promptInFlight = false;
         if (state.currentAgentTabId === tabId) {

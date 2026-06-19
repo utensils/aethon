@@ -13,6 +13,7 @@ import type { DispatcherDeps, InboundMessage } from "../dispatcherTypes";
 import { emitGlobalReady } from "../dispatcherTypes";
 import { clearPendingContextUsageEmit } from "../context-usage";
 import { ensureTab } from "../tab-lifecycle";
+import { removeTrailingFailureMessage } from "../tab-lifecycle/retry";
 import {
   authProfileAuthPath,
   createProfileMeta,
@@ -23,6 +24,7 @@ import {
   type AuthProfileMeta,
   type AuthProfilesState,
 } from "./store";
+import { makeCodexLimitProbe, pickAvailableAccount } from "./auto-switch";
 
 export interface AuthProfileServices {
   authStorage: AuthStorage;
@@ -815,6 +817,102 @@ async function handleApplyForTab(
     initialModel: nextModel || previousModel,
   });
   markProfileUsed(state, profile.id);
+}
+
+interface ContinuableSession {
+  agent?: { continue?: () => Promise<void> };
+}
+
+/**
+ * Recover from a usage-limit hit by transparently switching the tab to
+ * another account that still has headroom, then re-running the failed turn.
+ * Runs inside the bridge that owns the tab's session (so the re-run uses the
+ * new credentials). Returns `true` when it switched + resumed — the caller
+ * then suppresses the error so the turn "continues on its own". Returns
+ * `false` when no alternative account is available (caller surfaces the
+ * clean error).
+ *
+ * Loop-safe: each bounced account is recorded on the tab record and skipped
+ * on subsequent hits within the same prompt; a clean turn clears the set.
+ */
+export async function tryAutoSwitchOnUsageLimit(
+  state: AethonAgentState,
+  deps: DispatcherDeps,
+  tabId: string,
+): Promise<boolean> {
+  const existing = state.tabs.get(tabId);
+  if (!existing) return false;
+  const currentId = state.tabAuthProfileIds.get(tabId);
+  const current = currentId
+    ? state.authProfiles.profiles.find((p) => p.id === currentId)
+    : undefined;
+  const provider =
+    current?.providerId ?? existing.session.model?.provider ?? undefined;
+  if (provider !== CODEX_PROVIDER_ID) return false;
+
+  const tried = existing.autoSwitchTried ?? new Set<string>();
+  if (currentId) tried.add(currentId);
+
+  const chosen = await pickAvailableAccount(
+    state.authProfiles.profiles,
+    provider,
+    currentId,
+    tried,
+    makeCodexLimitProbe(state.userDir),
+  );
+  if (!chosen) return false;
+  tried.add(chosen);
+
+  const chosenProfile = state.authProfiles.profiles.find((p) => p.id === chosen);
+  const previousModel = existing.session.model;
+  const cwd = state.tabProjectCwds.get(tabId);
+  clearPendingContextUsageEmit(existing);
+  state.tabs.delete(tabId);
+  state.tabAuthProfileIds.set(tabId, chosen);
+  const services = servicesForProfile(state, chosen, { forceRefresh: true });
+  const nextModel =
+    previousModel &&
+    services.modelRegistry.find(previousModel.provider, previousModel.id);
+  const rec = await ensureTab(state, deps, tabId, {
+    cwdOverride: cwd,
+    initialModel: nextModel || previousModel,
+  });
+  rec.autoSwitchTried = tried;
+  markProfileUsed(state, chosen);
+
+  deps.send({
+    type: "auth_profile_changed",
+    tabId,
+    profileId: chosen,
+    model: rec.session.model
+      ? `${rec.session.model.provider}/${rec.session.model.id}`
+      : "",
+  });
+  deps.send({
+    type: "notice",
+    tabId,
+    message: `Switched to ${chosenProfile?.label ?? "another account"} — previous account hit its usage limit. Continuing…`,
+  });
+  emitAuthProfiles(state, deps);
+
+  // Drop the trailing error and re-run the last user turn on the new
+  // account (same mechanism the retry path uses, but on fresh credentials).
+  removeTrailingFailureMessage(rec.session);
+  const agent = (rec.session as ContinuableSession).agent;
+  const continueTurn = agent?.continue;
+  if (typeof continueTurn !== "function") return false;
+  rec.promptInFlight = true;
+  rec.agentEndFired = false;
+  state.currentAgentTabId = tabId;
+  void state.tabContext.run(tabId, () => continueTurn.call(agent)).catch(
+    (err: unknown) => {
+      rec.promptInFlight = false;
+      const message = err instanceof Error ? err.message : String(err);
+      deps.send({ type: "error", tabId, message: `auto-switch: ${message}` });
+      deps.send({ type: "response_end", tabId });
+    },
+  );
+  return true;
 }
 
 function handleSetDefault(
