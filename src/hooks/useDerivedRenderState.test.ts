@@ -261,8 +261,8 @@ describe("useDerivedRenderState", () => {
         state: {
           tabs: [mainTab],
           activeTabId: "m",
-          // bucket-independent running set: the backgrounded workspace turn.
-          agentRunningTabs: { w: true },
+          // bucket-independent running set: host + background workspace turns.
+          agentRunningTabs: { m: true, w: true },
           persistedTabBuckets: {
             "p1::workspace::wt-1": { tabs: [bgTab], activeTabId: "w" },
           },
@@ -288,21 +288,25 @@ describe("useDerivedRenderState", () => {
         projects: {
           agent: { status: string };
           agentRollup: { status: string };
-          workspaces: { id: string; agent?: { status: string } }[];
+          workspaces: {
+            id: string;
+            agent?: { status: string; runningCount: number };
+          }[];
         }[];
       }
     ).projects;
-    // Main scope has an idle session (mainTab is not running).
-    expect(projects[0].agent.status).toBe("idle-with-session");
+    // Main scope sees the host workspace turn.
+    expect(projects[0].agent.status).toBe("running");
     // The workspace row reports "running" even though its tab is stashed —
     // liveness comes from the running set, not the bucket's stale waiting.
     const wt1 = projects[0].workspaces.find((w) => w.id === "wt-1");
     expect(wt1?.agent?.status).toBe("running");
     // Rollup is running (a workspace turn is in flight).
     expect(projects[0].agentRollup.status).toBe("running");
-    // The main workspace row stays dot-free (activity shown on project line).
+    // The main workspace row mirrors host-session activity, matching worktree rows.
     const wtMain = projects[0].workspaces.find((w) => w.id === "wt-main");
-    expect(wtMain && "agent" in wtMain).toBe(false);
+    expect(wtMain?.agent?.status).toBe("running");
+    expect(wtMain?.agent?.runningCount).toBe(1);
   });
 
   it("overlays completed background agent attention across stashed buckets", () => {
