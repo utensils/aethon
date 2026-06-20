@@ -46,6 +46,7 @@ export interface UseOsEdgesContext {
   toggleFilesSidebar: () => void;
   togglePlanMode: () => void;
   openSettings: (section?: string) => void;
+  openScheduledTasks: () => void;
 
   // Notifications.
   pushNotification: (n: NotificationInput) => string;

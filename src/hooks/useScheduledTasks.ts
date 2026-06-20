@@ -65,7 +65,7 @@ export function useScheduledTasks({
 
     const offChanged = listen<ScheduledTaskRecord[]>(
       "scheduled-tasks-changed",
-      (event) => mergeTasks(setState, event.payload),
+      (event) => replaceTasks(setState, event.payload),
     );
     const offFired = listen<ScheduledTaskFiredEvent>(
       "scheduled-task-fired",
@@ -151,11 +151,7 @@ function mergeTasks(
       {};
     const byId = new Map((cur.tasks ?? []).map((task) => [task.id, task]));
     for (const task of incoming) byId.set(task.id, task);
-    const tasks = [...byId.values()].sort((a, b) => {
-      const nextA = a.nextRunAt ?? Number.MAX_SAFE_INTEGER;
-      const nextB = b.nextRunAt ?? Number.MAX_SAFE_INTEGER;
-      return nextA - nextB || b.createdAt - a.createdAt;
-    });
+    const tasks = sortTasks([...byId.values()]);
     if (sameScheduledTaskList(cur.tasks ?? [], tasks)) {
       return prev;
     }
@@ -166,6 +162,36 @@ function mergeTasks(
         tasks,
       },
     };
+  });
+}
+
+function replaceTasks(
+  setState: UseScheduledTasksOptions["setState"],
+  incoming: ScheduledTaskRecord[],
+): void {
+  setState((prev) => {
+    const cur =
+      (prev.scheduledTasks as { tasks?: ScheduledTaskRecord[] } | undefined) ??
+      {};
+    const tasks = sortTasks(incoming);
+    if (sameScheduledTaskList(cur.tasks ?? [], tasks)) {
+      return prev;
+    }
+    return {
+      ...prev,
+      scheduledTasks: {
+        ...cur,
+        tasks,
+      },
+    };
+  });
+}
+
+function sortTasks(tasks: ScheduledTaskRecord[]): ScheduledTaskRecord[] {
+  return [...tasks].sort((a, b) => {
+    const nextA = a.nextRunAt ?? Number.MAX_SAFE_INTEGER;
+    const nextB = b.nextRunAt ?? Number.MAX_SAFE_INTEGER;
+    return nextA - nextB || b.createdAt - a.createdAt;
   });
 }
 

@@ -540,6 +540,16 @@ export default function App() {
     newShellTabOnOverviewOpen: () => newShellTab(),
   });
 
+  const openScheduledTasks = useCallback(() => {
+    setState((prev) => ({
+      ...prev,
+      scheduledTasks: {
+        ...((prev.scheduledTasks ?? {}) as Record<string, unknown>),
+        open: true,
+      },
+    }));
+  }, [setState]);
+
   const { slashContext, persistLocalChatMessage } = useAppSlashCommandContext({
     bootLayout: BOOT_LAYOUT,
     setState,
@@ -857,6 +867,7 @@ export default function App() {
     toggleFocusComposerTerminal,
     toggleSettings,
     closeSettings,
+    openScheduledTasks,
     focusActiveContextInput,
     exportActiveChatMarkdown,
     pushNotification,
@@ -929,6 +940,7 @@ export default function App() {
     toggleFilesSidebar,
     togglePlanMode,
     openSettings,
+    openScheduledTasks,
     pushNotification,
     dismissNotification,
     checkForUpdates,

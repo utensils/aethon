@@ -90,6 +90,9 @@ pub fn install_app_menu(
     // still present for discoverability and pointer access.
     let toggle_plan_mode =
         MenuItemBuilder::with_id("toggle_plan_mode", "Toggle Plan Mode").build(app)?;
+    let scheduled_tasks = MenuItemBuilder::with_id("scheduled_tasks", "Scheduled Tasks…")
+        .accelerator("CmdOrCtrl+Shift+L")
+        .build(app)?;
     let check_updates =
         MenuItemBuilder::with_id("check_updates", "Check for Updates…").build(app)?;
 
@@ -147,6 +150,7 @@ pub fn install_app_menu(
         .item(&clear_chat)
         .item(&stop_prompt)
         .item(&toggle_plan_mode)
+        .item(&scheduled_tasks)
         .build()?;
     #[cfg(not(target_os = "macos"))]
     let view_menu = SubmenuBuilder::new(app, "View")
@@ -156,6 +160,7 @@ pub fn install_app_menu(
         .item(&clear_chat)
         .item(&stop_prompt)
         .item(&toggle_plan_mode)
+        .item(&scheduled_tasks)
         .separator()
         .item(&check_updates)
         .build()?;

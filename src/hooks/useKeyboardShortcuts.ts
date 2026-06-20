@@ -69,6 +69,7 @@ export interface UseKeyboardShortcutsContext {
   toggleFocusComposerTerminal: () => void;
   toggleSettings: () => void;
   closeSettings: () => void;
+  openScheduledTasks: () => void;
   focusActiveContextInput: () => void;
   exportActiveChatMarkdown: () => Promise<void>;
   pushNotification: (n: NotificationInput) => void;
@@ -412,6 +413,13 @@ export function useKeyboardShortcuts(ctx: UseKeyboardShortcutsContext): void {
         e.preventDefault();
         e.stopPropagation();
         ctx.toggleSettings();
+        return;
+      }
+      // Cmd+Shift+L: open Scheduled Tasks.
+      if (mod && !e.altKey && e.shiftKey && e.key.toLowerCase() === "l") {
+        e.preventDefault();
+        e.stopPropagation();
+        ctx.openScheduledTasks();
         return;
       }
       // Cmd+L: focus active tab's primary input (composer / shell xterm).

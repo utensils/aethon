@@ -13,6 +13,7 @@ export interface MenuDeps {
   toggleFilesSidebar: () => void;
   togglePlanMode: () => void;
   openSettings: (section?: string) => void;
+  openScheduledTasks: () => void;
   clearChat: () => void;
   stopPrompt: () => Promise<void>;
   checkForUpdates: () => Promise<void>;
@@ -44,6 +45,7 @@ export function subscribeMenu(deps: MenuDeps): () => void {
     toggleFilesSidebar,
     togglePlanMode,
     openSettings,
+    openScheduledTasks,
     clearChat,
     stopPrompt,
     checkForUpdates,
@@ -116,6 +118,9 @@ export function subscribeMenu(deps: MenuDeps): () => void {
         break;
       case "toggle_plan_mode":
         togglePlanMode();
+        break;
+      case "scheduled_tasks":
+        openScheduledTasks();
         break;
       case "manage_extensions":
         openSettings("extensions");

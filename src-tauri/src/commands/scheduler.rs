@@ -484,6 +484,31 @@ pub(crate) fn scheduled_task_cancel(
 }
 
 #[tauri::command]
+pub(crate) fn scheduled_task_delete(
+    id: String,
+    state: State<'_, ScheduledTasksState>,
+    app: AppHandle,
+) -> Result<ScheduledTaskRecord, String> {
+    ensure_loaded(&state, &app)?;
+    let removed = {
+        let mut inner = state.lock();
+        let task = inner
+            .tasks
+            .get(&id)
+            .ok_or_else(|| format!("unknown task: {id}"))?;
+        if task.status == ScheduledTaskStatus::Running {
+            return Err("cannot delete a running task; stop or wait for completion".to_string());
+        }
+        inner
+            .tasks
+            .remove(&id)
+            .ok_or_else(|| format!("unknown task: {id}"))?
+    };
+    persist_emit_notify(&state, &app)?;
+    Ok(removed)
+}
+
+#[tauri::command]
 pub(crate) async fn scheduled_task_run_now(
     id: String,
     state: State<'_, ScheduledTasksState>,

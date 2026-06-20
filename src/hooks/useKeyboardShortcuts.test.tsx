@@ -50,6 +50,7 @@ function buildContext(
     toggleFocusComposerTerminal: vi.fn(),
     toggleSettings: vi.fn(),
     closeSettings: vi.fn(),
+    openScheduledTasks: vi.fn(),
     focusActiveContextInput: vi.fn(),
     exportActiveChatMarkdown: vi.fn(() => Promise.resolve()),
     pushNotification: vi.fn(),
@@ -95,6 +96,20 @@ describe("useKeyboardShortcuts built-in handling", () => {
     });
 
     expect(ctx.toggleTerminalAndFocus).not.toHaveBeenCalled();
+  });
+
+  it("opens Scheduled Tasks with Cmd+Shift+L", () => {
+    const ctx = buildContext({});
+    render(<Harness ctx={ctx} />);
+
+    fireEvent.keyDown(document, {
+      key: "L",
+      metaKey: true,
+      shiftKey: true,
+    });
+
+    expect(ctx.openScheduledTasks).toHaveBeenCalledTimes(1);
+    expect(ctx.focusActiveContextInput).not.toHaveBeenCalled();
   });
 
   it("toggles plan mode on Shift+Tab", () => {

@@ -18,6 +18,7 @@ import type { AuthProfilesUiState } from "../auth-profiles";
 import {
   cancelScheduledTask,
   createScheduledTask,
+  deleteScheduledTask,
   listScheduledTasks,
   pauseScheduledTask,
   resolveLoopPrompt,
@@ -327,7 +328,9 @@ export function useAppSlashCommandContext({
         const activeId = stateRef.current.activeTabId;
         const tab = tabs.find((t) => t.id === activeId);
         if (!tab || tab.kind !== "agent") {
-          throw new Error("Open an agent tab before creating a scheduled task.");
+          throw new Error(
+            "Open an agent tab before creating a scheduled task.",
+          );
         }
         const project = activeProject(projectsRef.current);
         const cwd =
@@ -379,6 +382,7 @@ export function useAppSlashCommandContext({
       pauseScheduledTask,
       resumeScheduledTask,
       cancelScheduledTask,
+      deleteScheduledTask,
       activeTabId: () => {
         const id = stateRef.current.activeTabId;
         return typeof id === "string" && id.length > 0 ? id : null;

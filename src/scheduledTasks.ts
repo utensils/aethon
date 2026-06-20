@@ -130,6 +130,12 @@ export async function cancelScheduledTask(
   return await invoke<ScheduledTaskRecord>("scheduled_task_cancel", { id });
 }
 
+export async function deleteScheduledTask(
+  id: string,
+): Promise<ScheduledTaskRecord> {
+  return await invoke<ScheduledTaskRecord>("scheduled_task_delete", { id });
+}
+
 export async function runScheduledTaskNow(
   id: string,
 ): Promise<ScheduledTaskRecord> {
@@ -182,9 +188,12 @@ export async function failRunningScheduledTasksForTab(input: {
 export async function resolveLoopPrompt(
   cwd?: string | null,
 ): Promise<LoopPromptResolution> {
-  return await invoke<LoopPromptResolution>("scheduled_task_resolve_loop_prompt", {
-    cwd: cwd || null,
-  });
+  return await invoke<LoopPromptResolution>(
+    "scheduled_task_resolve_loop_prompt",
+    {
+      cwd: cwd || null,
+    },
+  );
 }
 
 export function parseLoopArgs(args: string): ParsedLoopCommand {
@@ -242,10 +251,14 @@ export function parseLoopArgs(args: string): ParsedLoopCommand {
   };
 }
 
-function parseInterval(raw: string): { ok: true; ms: number } | { ok: false; error: string } {
+function parseInterval(
+  raw: string,
+): { ok: true; ms: number } | { ok: false; error: string } {
   const match = raw
     .trim()
-    .match(/^(\d+)\s*(s|sec|secs|second|seconds|m|min|mins|minute|minutes|h|hr|hrs|hour|hours|d|day|days)$/i);
+    .match(
+      /^(\d+)\s*(s|sec|secs|second|seconds|m|min|mins|minute|minutes|h|hr|hrs|hour|hours|d|day|days)$/i,
+    );
   if (!match) return { ok: false, error: `Invalid interval: ${raw}` };
   const count = Number(match[1]);
   const unit = match[2].toLowerCase();
@@ -277,7 +290,9 @@ export function formatIntervalLabel(ms: number): string {
 }
 
 export function formatTaskStatus(task: ScheduledTaskRecord): string {
-  const next = task.nextRunAt ? ` next ${formatRelativeTime(task.nextRunAt)}` : "";
+  const next = task.nextRunAt
+    ? ` next ${formatRelativeTime(task.nextRunAt)}`
+    : "";
   const error = task.lastError ? ` - ${task.lastError}` : "";
   return `${task.status}${next}${error}`;
 }

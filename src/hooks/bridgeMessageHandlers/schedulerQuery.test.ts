@@ -44,12 +44,64 @@ describe("handleSchedulerQuery", () => {
         },
       },
     );
+    expect(mocks.ackMutation).toHaveBeenCalledWith("m1", true, undefined, task);
+  });
+
+  it("routes list to scheduled task listing", async () => {
+    const { ctx, mocks } = buildHandlerFixture();
+    const tasks = [{ id: "task-1", status: "scheduled" }];
+    harness.invoke.mockResolvedValueOnce(tasks);
+    handleSchedulerQuery(
+      { type: "scheduler_query", op: "list", mutationId: "m-list" },
+      ctx,
+    );
+    await Promise.resolve();
+    await Promise.resolve();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(harness.invoke).toHaveBeenCalledWith("scheduled_tasks_list");
     expect(mocks.ackMutation).toHaveBeenCalledWith(
-      "m1",
+      "m-list",
       true,
       undefined,
-      task,
+      tasks,
     );
+  });
+
+  it("routes task management ops by task id", async () => {
+    const cases = [
+      ["cancel", "scheduled_task_cancel"],
+      ["delete", "scheduled_task_delete"],
+      ["pause", "scheduled_task_pause"],
+      ["resume", "scheduled_task_resume"],
+      ["run_now", "scheduled_task_run_now"],
+    ] as const;
+
+    for (const [op, command] of cases) {
+      clearTauriMocks();
+      harness = installTauriMocks();
+      const { ctx, mocks } = buildHandlerFixture();
+      const task = { id: "task-1", status: op };
+      harness.invoke.mockResolvedValueOnce(task);
+      handleSchedulerQuery(
+        {
+          type: "scheduler_query",
+          op,
+          mutationId: `m-${op}`,
+          args: { taskId: "task-1" },
+        },
+        ctx,
+      );
+      await Promise.resolve();
+      await Promise.resolve();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(harness.invoke).toHaveBeenCalledWith(command, { id: "task-1" });
+      expect(mocks.ackMutation).toHaveBeenCalledWith(
+        `m-${op}`,
+        true,
+        undefined,
+        task,
+      );
+    }
   });
 
   it("acks failure for unknown ops", async () => {

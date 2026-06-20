@@ -5,6 +5,44 @@ import {
   type SlashCommandContext,
 } from "./slashCommands";
 
+function makeSlashContext(
+  overrides: Partial<SlashCommandContext> = {},
+): SlashCommandContext {
+  return {
+    appendSystem: () => {},
+    notify: () => {},
+    clearChat: () => {},
+    setTheme: () => {},
+    listThemes: () => [],
+    setModel: async () => {},
+    resetLayout: () => {},
+    listExtensions: () => [],
+    installExtension: () => Promise.resolve(""),
+    listModels: () => [],
+    openLogin: () => {},
+    listAuthProfiles: () => [],
+    useAuthProfile: () => Promise.resolve(),
+    setDefaultAuthProfile: () => Promise.resolve(),
+    toggleTerminal: () => {},
+    toggleSidebar: () => {},
+    toggleFilesSidebar: () => {},
+    activateLayout: () => false,
+    listLayouts: () => [],
+    pickProject: () => Promise.resolve(null),
+    openProject: () => "",
+    setActiveProject: () => false,
+    clearProject: () => {},
+    removeProject: () => false,
+    listProjects: () => [],
+    activeProject: () => null,
+    reloadAgent: () => Promise.resolve(),
+    runNativeCommand: () => Promise.resolve(),
+    renameSession: () => Promise.resolve(),
+    activeTabId: () => "default",
+    ...overrides,
+  };
+}
+
 describe("parseSlashCommand", () => {
   it("returns null for plain text", () => {
     expect(parseSlashCommand("hello world")).toBeNull();
@@ -286,9 +324,7 @@ describe("buildBuiltinSlashCommands", () => {
       renameSession: () => Promise.resolve(),
       activeTabId: () => "tab-7",
     };
-    const login = buildBuiltinSlashCommands().find(
-      (c) => c.name === "login",
-    )!;
+    const login = buildBuiltinSlashCommands().find((c) => c.name === "login")!;
 
     await login.run("", ctx);
     await login.run("use claude-work", ctx);
@@ -343,6 +379,93 @@ describe("buildBuiltinSlashCommands", () => {
     await reload.run("", ctx);
     expect(reloadCalls).toBe(1);
     expect(titles).toContain("Reloading agent…");
+  });
+
+  it("/loop without args opens scheduled tasks without creating a default loop", async () => {
+    const system: string[] = [];
+    let opened = 0;
+    let creates = 0;
+    const ctx = makeSlashContext({
+      appendSystem: (text) => system.push(text),
+      openScheduledTasks: () => {
+        opened += 1;
+      },
+      createScheduledTask: async () => {
+        creates += 1;
+        throw new Error("should not create");
+      },
+    });
+    const loop = buildBuiltinSlashCommands().find((c) => c.name === "loop")!;
+
+    await loop.run("", ctx);
+
+    expect(opened).toBe(1);
+    expect(creates).toBe(0);
+    expect(system[0]).toContain("No loop scheduled");
+  });
+
+  it("/loop with args confirms the scheduled loop in chat", async () => {
+    const system: string[] = [];
+    const notifications: string[] = [];
+    const created: unknown[] = [];
+    const ctx = makeSlashContext({
+      appendSystem: (text) => system.push(text),
+      notify: (input) => notifications.push(input.title),
+      createScheduledTask: async (input) => {
+        created.push(input);
+        return {
+          id: "abcdef123456",
+          label: "sync from origin main",
+          mode: "loopFixed",
+          schedule: { kind: "interval", intervalMs: 300_000, label: "5m" },
+          visiblePrompt: "sync from origin main",
+        } as never;
+      },
+    });
+    const loop = buildBuiltinSlashCommands().find((c) => c.name === "loop")!;
+
+    await loop.run("5m sync from origin main", ctx);
+
+    expect(created).toEqual([
+      {
+        mode: "loopFixed",
+        schedule: { kind: "interval", intervalMs: 300_000, label: "5m" },
+        prompt: "sync from origin main",
+      },
+    ]);
+    expect(notifications).toContain("Loop scheduled");
+    expect(system[0]).toContain("Loop scheduled (every 5m)");
+    expect(system[0]).toContain("Prompt: sync from origin main");
+  });
+
+  it("/tasks delete invokes true deletion instead of cancel", async () => {
+    const calls: string[] = [];
+    const notifications: string[] = [];
+    const ctx = makeSlashContext({
+      notify: (input) => notifications.push(input.title),
+      listScheduledTasks: async () =>
+        [
+          {
+            id: "abcdef123456",
+            label: "old loop",
+            status: "cancelled",
+          },
+        ] as never,
+      cancelScheduledTask: async (id) => {
+        calls.push(`cancel:${id}`);
+        return { id, label: "old loop", status: "cancelled" } as never;
+      },
+      deleteScheduledTask: async (id) => {
+        calls.push(`delete:${id}`);
+        return { id, label: "old loop", status: "cancelled" } as never;
+      },
+    });
+    const tasks = buildBuiltinSlashCommands().find((c) => c.name === "tasks")!;
+
+    await tasks.run("delete abcdef12", ctx);
+
+    expect(calls).toEqual(["delete:abcdef123456"]);
+    expect(notifications).toEqual(["Task cancelled"]);
   });
 
   it("/context routes through the native command bridge", async () => {

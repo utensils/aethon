@@ -5,7 +5,7 @@ import type { Tab } from "../../types/tab";
 import {
   cancelScheduledTask,
   createScheduledTask,
-  formatRelativeTime,
+  deleteScheduledTask,
   formatTaskStatus,
   parseLoopArgs,
   pauseScheduledTask,
@@ -259,67 +259,90 @@ export function ScheduledTasksPanel({ state, onEvent }: BuiltinComponentProps) {
             {tasks.length === 0 ? (
               <div className="ae-scheduled-empty">No scheduled tasks.</div>
             ) : (
-              tasks.map((task) => (
-                <article key={task.id} className="ae-scheduled-row">
-                  <div className="ae-scheduled-row-main">
-                    <div className="ae-scheduled-title">
-                      <strong>{task.label}</strong>
-                      <code>{task.id.slice(0, 8)}</code>
+              tasks.map((task) => {
+                const terminal = isTerminalTask(task);
+                const canPause = !terminal && task.status !== "running";
+                const canResume =
+                  !terminal &&
+                  (task.status === "paused" || task.status === "failed");
+                return (
+                  <article key={task.id} className="ae-scheduled-row">
+                    <div className="ae-scheduled-row-main">
+                      <div className="ae-scheduled-title">
+                        <strong>{task.label}</strong>
+                        <code>{task.id.slice(0, 8)}</code>
+                      </div>
+                      <div className="ae-scheduled-meta">
+                        <span>{task.mode}</span>
+                        <span>{formatTaskStatus(task)}</span>
+                      </div>
+                      <div className="ae-scheduled-prompt">
+                        {task.visiblePrompt}
+                      </div>
                     </div>
-                    <div className="ae-scheduled-meta">
-                      <span>{task.mode}</span>
-                      <span>{formatTaskStatus(task)}</span>
-                      {task.nextRunAt ? (
-                        <span>{formatRelativeTime(task.nextRunAt)}</span>
-                      ) : null}
-                    </div>
-                    <div className="ae-scheduled-prompt">
-                      {task.visiblePrompt}
-                    </div>
-                  </div>
-                  <div className="ae-scheduled-row-actions">
-                    <button
-                      type="button"
-                      title="Run now"
-                      onClick={() => void act(runScheduledTaskNow, task.id)}
-                      disabled={busy || task.status === "running"}
-                    >
-                      Run
-                    </button>
-                    {task.status === "paused" || task.status === "failed" ? (
+                    <div className="ae-scheduled-row-actions">
                       <button
                         type="button"
-                        title="Resume"
-                        onClick={() => void act(resumeScheduledTask, task.id)}
-                        disabled={busy}
-                      >
-                        Resume
-                      </button>
-                    ) : (
-                      <button
-                        type="button"
-                        title="Pause"
-                        onClick={() => void act(pauseScheduledTask, task.id)}
+                        title="Run now"
+                        onClick={() => void act(runScheduledTaskNow, task.id)}
                         disabled={busy || task.status === "running"}
                       >
-                        Pause
+                        Run
                       </button>
-                    )}
-                    <button
-                      type="button"
-                      title="Cancel"
-                      onClick={() => void act(cancelScheduledTask, task.id)}
-                      disabled={busy || task.status === "running"}
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                </article>
-              ))
+                      {canResume ? (
+                        <button
+                          type="button"
+                          title="Resume"
+                          onClick={() => void act(resumeScheduledTask, task.id)}
+                          disabled={busy}
+                        >
+                          Resume
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          title="Pause"
+                          onClick={() => void act(pauseScheduledTask, task.id)}
+                          disabled={busy || !canPause}
+                        >
+                          Pause
+                        </button>
+                      )}
+                      {terminal ? (
+                        <button
+                          type="button"
+                          title="Delete"
+                          onClick={() => void act(deleteScheduledTask, task.id)}
+                          disabled={busy}
+                        >
+                          Delete
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          title="Cancel"
+                          onClick={() => void act(cancelScheduledTask, task.id)}
+                          disabled={busy || task.status === "running"}
+                        >
+                          Cancel
+                        </button>
+                      )}
+                    </div>
+                  </article>
+                );
+              })
             )}
           </section>
         </div>
       </div>
     </div>
+  );
+}
+
+function isTerminalTask(task: ScheduledTaskRecord): boolean {
+  return (
+    task.status === "cancelled" ||
+    task.status === "completed" ||
+    task.status === "expired"
   );
 }
