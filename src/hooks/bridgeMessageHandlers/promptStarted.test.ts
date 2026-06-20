@@ -106,12 +106,21 @@ describe("handlePromptStarted", () => {
     ]);
   });
 
-  it("schedules a hang-warn notification after hangWarnMs", () => {
+  it("schedules an actionable hang-warn notification with session context after hangWarnMs", () => {
     const tabId = "default";
     const { ctx, mocks } = buildHandlerFixture({
       state: {
         activeTabId: tabId,
-        tabs: [{ ...makeEmptyTab(tabId, "Tab 1"), waiting: true }],
+        tabs: [
+          {
+            ...makeEmptyTab(tabId, "Tab 1"),
+            waiting: true,
+            model: "gpt-5",
+            cwd: "/Users/jamesbrink/Projects/utensils/aethon",
+            queuedMessages: [{ id: "q1", content: "next" }],
+            queueCount: 1,
+          },
+        ],
       },
     });
     handlePromptStarted({ type: "prompt_started", tabId }, ctx);
@@ -120,8 +129,15 @@ describe("handlePromptStarted", () => {
     expect(mocks.pushNotification).toHaveBeenCalledWith(
       expect.objectContaining({
         id: `ae-hang-warn:${tabId}`,
-        title: "Still working…",
+        title: "Tab 1 is still working (gpt-5)",
+        message:
+          "This session has been running longer than expected. Working directory: .../utensils/aethon. 1 queued message waiting.",
         kind: "warning",
+        actions: [
+          { label: "Open session", action: `activate-tab:${tabId}` },
+          { label: "Stop", action: `hang-warn:stop:${tabId}` },
+          { label: "Force restart", action: "hang-warn:force-restart" },
+        ],
       }),
     );
     expect(ctx.hangWarnActiveRef.current.has(tabId)).toBe(true);
