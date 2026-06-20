@@ -84,10 +84,29 @@ export function useFrontendStateMirror(
         "/tabs": tabs.map((t) => ({
           id: t.id,
           label: t.label,
+          kind: t.kind,
+          cwd: t.cwd,
           model: t.model ?? "",
+          waiting: t.waiting === true,
+          authProfileId: t.authProfileId,
           active: t.id === (state.activeTabId as string | undefined),
         })),
       };
+      invoke("control_update_state", {
+        snapshot: {
+          location: typeof window !== "undefined" ? window.location.href : null,
+          status: state.status ?? "",
+          connection: state.connection ?? "disconnected",
+          waiting: state.waiting === true,
+          model: state.model ?? "",
+          activeTabId: state.activeTabId ?? null,
+          authProfiles: state.authProfiles ?? { profiles: [] },
+          models: sidebar.models ?? [],
+          tabs: slices["/tabs"],
+        },
+      }).catch(() => {
+        // Older app builds or early boot before the command is registered.
+      });
       const last = lastFrontendStateRef.current;
       const next: Record<string, string> = { ...last };
       let changed = false;

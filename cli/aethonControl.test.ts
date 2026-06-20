@@ -1,6 +1,7 @@
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { createServer, type Server, type Socket } from "node:net";
 import { describe, expect, it } from "vitest";
 import {
   activeTargetFromState,
@@ -11,6 +12,7 @@ import {
   planSkillInstall,
 } from "./aethonControl.ts";
 import { resolveDebugPort } from "./debugClient.ts";
+import { AethonControlClient, readControlInfo } from "./controlClient.ts";
 
 describe("aethonctl helpers", () => {
   it("builds the same two-step account switch used by the UI for tab workers", () => {
@@ -116,5 +118,48 @@ describe("aethonctl helpers", () => {
     mkdirSync(join(home, ".aethon"));
     writeFileSync(join(home, ".aethon", "dev-info.json"), JSON.stringify({ debugPort: 20123 }));
     expect(resolveDebugPort({ home, env: {} })).toBe(20123);
+  });
+
+  it("reads release control info and sends token-authenticated socket requests", async () => {
+    const root = mkdtempSync(join(tmpdir(), "aethon-control-"));
+    const controlDir = join(root, ".aethon", "control");
+    mkdirSync(controlDir, { recursive: true });
+    const socketPath = join(controlDir, "control.sock");
+    const tokenPath = join(controlDir, "token");
+    writeFileSync(tokenPath, "test-token");
+    writeFileSync(
+      join(controlDir, "control.json"),
+      JSON.stringify({
+        protocolVersion: 1,
+        mode: "local",
+        socketPath,
+        tokenPath,
+        pid: 123,
+        version: "0.0.0-test",
+        instanceId: "instance",
+      }),
+    );
+    rmSync(socketPath, { force: true });
+    const server: Server = createServer((socket: Socket) => {
+      let body = "";
+      socket.on("data", (chunk) => {
+        body += chunk.toString("utf8");
+        if (!body.includes("\n")) return;
+        const request = JSON.parse(body) as { token: string; method: string };
+        socket.end(JSON.stringify({ ok: true, result: request }) + "\n");
+      });
+    });
+    await new Promise<void>((resolve) => server.listen(socketPath, resolve));
+    try {
+      expect(readControlInfo({ home: root })?.socketPath).toBe(socketPath);
+      const client = new AethonControlClient({ home: root });
+      await expect(client.request("status")).resolves.toEqual({
+        token: "test-token",
+        method: "status",
+        params: {},
+      });
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
   });
 });

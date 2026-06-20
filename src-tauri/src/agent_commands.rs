@@ -49,6 +49,13 @@ pub(crate) struct SendMessageRequest {
     /// Per-tab plan-mode toggle. Forwarded to the agent so mutating tools can
     /// be blocked while the user is asking for analysis/design only.
     plan_mode: Option<bool>,
+    /// Per-tab auth profile selected in the UI/CLI. Forwarded so a respawned
+    /// worker adopts the tab's configured account before constructing its
+    /// model registry.
+    auth_profile_id: Option<String>,
+    /// Opaque release-control request id. The bridge echoes it on lifecycle
+    /// events so external callers can wait for the specific turn they sent.
+    control_request_id: Option<String>,
 }
 
 #[tauri::command]
@@ -91,6 +98,16 @@ pub(crate) async fn send_message(
     }
     if let Some(plan_mode) = request.plan_mode {
         payload["planMode"] = serde_json::Value::Bool(plan_mode);
+    }
+    if let Some(auth_profile_id) = request.auth_profile_id
+        && !auth_profile_id.is_empty()
+    {
+        payload["authProfileId"] = serde_json::Value::String(auth_profile_id);
+    }
+    if let Some(control_request_id) = request.control_request_id
+        && !control_request_id.is_empty()
+    {
+        payload["controlRequestId"] = serde_json::Value::String(control_request_id);
     }
     let images = attachments_to_agent_images(&app, request.attachments.unwrap_or_default())?;
     if !images.is_empty() {

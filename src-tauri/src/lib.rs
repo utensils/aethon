@@ -34,6 +34,7 @@ mod agent_commands;
 pub(crate) mod agent_process;
 mod boot_probation;
 mod commands;
+mod control;
 mod devshell;
 mod env;
 mod helpers;
@@ -141,8 +142,10 @@ pub fn run() {
             );
         }
     }
+    let control_state = Arc::new(control::ControlState::default());
     let builder = builder
         .manage(agent_process::AgentProcesses::new())
+        .manage(Arc::clone(&control_state))
         .manage(shell::ShellRegistry::new())
         .manage(commands::fs::FsWatchState::default())
         .manage(commands::git::GitFetchState::default())
@@ -186,6 +189,8 @@ pub fn run() {
             agent_commands::agent_diagnostics,
             agent_commands::reconcile_agent_workers,
             agent_commands::dispatch_a2ui_event,
+            control::control_update_state,
+            control::control_request_complete,
             paste::save_paste_image,
             paste::read_paste_image_base64,
             commands::config::read_state,
@@ -314,11 +319,12 @@ pub fn run() {
         ]);
 
     let app = builder
-        .setup(|app| {
+        .setup(move |app| {
             agent_process::cleanup_orphaned_dev_agents();
             if let Some(watcher) = commands::extensions::start_agent_watcher(app.handle().clone()) {
                 app.manage(watcher);
             }
+            control::start_control_server(app.handle().clone(), Arc::clone(&control_state));
             #[cfg(debug_assertions)]
             debug::start_debug_server(app.handle().clone());
 

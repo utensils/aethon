@@ -42,6 +42,8 @@ export interface InboundMessage {
   hardEnforce?: boolean;
   /** Per-tab plan-mode toggle, carried on `chat`. */
   planMode?: boolean;
+  /** Opaque id supplied by release-control clients for turn-specific waits. */
+  controlRequestId?: string;
   /** Native scheduled-task metadata carried on scheduler-fired chat turns. */
   scheduledTaskId?: string;
   scheduledRunId?: string;

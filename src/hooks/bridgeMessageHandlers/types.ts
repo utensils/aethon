@@ -86,6 +86,7 @@ export interface BridgeMessageContext {
       restoredSession?: boolean;
       cwd?: string;
       scrollToMatch?: string;
+      model?: string;
     },
   ) => void;
   /** Open (or focus) a Monaco editor tab. Used by the agent-side

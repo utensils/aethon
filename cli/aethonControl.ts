@@ -89,14 +89,14 @@ export function buildAccountSwitchPayloads(
 export function skillMarkdown(commandName = "aethonctl"): string {
   return `---
 name: aethon-control
-description: Control a running Aethon dev application from the command line. Inspect state, dispatch agent prompts, switch configured accounts, and install this skill.
+description: Control a running Aethon application from the command line. Inspect state, dispatch agent prompts, switch configured accounts, and install this skill.
 when_to_use: Use when you need to drive or inspect Aethon from an agent session without manual UI interaction.
 allowed-tools: Bash
 ---
 
 # Aethon Control
 
-Use \`${commandName}\` to control the running Aethon dev app over its local debug bridge.
+Use \`${commandName}\` to control the running Aethon app over its local authenticated control socket.
 
 Core commands:
 
@@ -107,14 +107,12 @@ ${commandName} models
 ${commandName} accounts list
 ${commandName} accounts use <profile-id> --tab active
 ${commandName} chat send "implement the next step" --account <profile-id> --wait
-${commandName} agent command '{"type":"stop","tabId":"active"}'
-${commandName} state /authProfiles --json
-${commandName} invoke agent_diagnostics '{}'
+${commandName} agent stop --tab active
 \`\`\`
 
 Account rule: when dispatching to Codex-backed models, choose the intended configured account explicitly with \`--account <profile-id>\` or run \`accounts use\` first. The CLI applies the same global plus tab-worker account switch payloads as the Aethon UI.
 
-The app must be running as a dev build. The CLI reads \`~/.aethon/dev-info.json\` for the debug port, or use \`AETHON_DEBUG_PORT\` / \`--port\`.
+Release builds are supported. The CLI reads \`~/.aethon/control/control.json\` and authenticates with the per-launch token in \`~/.aethon/control/token\`. Debug-only commands such as \`eval\` and raw \`invoke\` require \`--transport debug\`.
 `;
 }
 
