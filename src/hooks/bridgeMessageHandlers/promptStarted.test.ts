@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { handlePromptStarted } from "./promptStarted";
+import { refreshHangWarn, scheduleHangWarnRefresh } from "./hangWarn";
 import { buildHandlerFixture } from "./testFixtures";
 import { makeEmptyTab } from "../../types/tab";
 
@@ -131,7 +132,7 @@ describe("handlePromptStarted", () => {
         id: `ae-hang-warn:${tabId}`,
         title: "Tab 1 is still working (gpt-5)",
         message:
-          "This session has been running longer than expected. Working directory: …/utensils/aethon. 1 queued message waiting.",
+          "This session has not shown activity for a while. Working directory: …/utensils/aethon. 1 queued message waiting.",
         kind: "warning",
         actions: [
           { label: "Open session", action: `activate-tab:${tabId}` },
@@ -141,5 +142,77 @@ describe("handlePromptStarted", () => {
       }),
     );
     expect(ctx.hangWarnActiveRef.current.has(tabId)).toBe(true);
+  });
+
+  it("refreshes the hang-warn timer on live activity instead of warning during a healthy long turn", () => {
+    const tabId = "default";
+    const { ctx, mocks } = buildHandlerFixture({
+      state: {
+        activeTabId: tabId,
+        tabs: [{ ...makeEmptyTab(tabId, "Tab 1"), waiting: true }],
+      },
+    });
+    handlePromptStarted({ type: "prompt_started", tabId }, ctx);
+
+    vi.advanceTimersByTime(ctx.hangWarnMs - 1);
+    refreshHangWarn(ctx, tabId);
+    vi.advanceTimersByTime(1);
+    expect(mocks.pushNotification).not.toHaveBeenCalled();
+
+    vi.advanceTimersByTime(ctx.hangWarnMs - 2);
+    expect(mocks.pushNotification).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1);
+    expect(mocks.pushNotification).toHaveBeenCalledTimes(1);
+  });
+
+  it("dismisses an active hang-warn notification when activity resumes", () => {
+    const tabId = "default";
+    const { ctx, mocks } = buildHandlerFixture({
+      state: {
+        activeTabId: tabId,
+        tabs: [{ ...makeEmptyTab(tabId, "Tab 1"), waiting: true }],
+      },
+    });
+    handlePromptStarted({ type: "prompt_started", tabId }, ctx);
+    vi.advanceTimersByTime(ctx.hangWarnMs);
+    expect(mocks.pushNotification).toHaveBeenCalledTimes(1);
+    expect(ctx.hangWarnActiveRef.current.has(tabId)).toBe(true);
+
+    refreshHangWarn(ctx, tabId);
+
+    expect(mocks.dismissNotification).toHaveBeenCalledWith(
+      `ae-hang-warn:${tabId}`,
+    );
+    expect(ctx.hangWarnActiveRef.current.has(tabId)).toBe(false);
+    expect(ctx.hangWarnTimersRef.current.has(tabId)).toBe(true);
+  });
+
+  it("coalesces streamed activity refreshes to one timer re-arm per frame", () => {
+    const tabId = "default";
+    const { ctx, mocks } = buildHandlerFixture({
+      state: {
+        activeTabId: tabId,
+        tabs: [{ ...makeEmptyTab(tabId, "Tab 1"), waiting: true }],
+      },
+    });
+    handlePromptStarted({ type: "prompt_started", tabId }, ctx);
+    const originalTimer = ctx.hangWarnTimersRef.current.get(tabId);
+    expect(originalTimer).toBeDefined();
+
+    scheduleHangWarnRefresh(ctx, tabId);
+    scheduleHangWarnRefresh(ctx, tabId);
+
+    expect(ctx.hangWarnTimersRef.current.has(tabId)).toBe(false);
+    vi.advanceTimersByTime(15);
+    expect(ctx.hangWarnTimersRef.current.has(tabId)).toBe(false);
+    vi.advanceTimersByTime(1);
+
+    const refreshedTimer = ctx.hangWarnTimersRef.current.get(tabId);
+    expect(refreshedTimer).toBeDefined();
+    expect(refreshedTimer).not.toBe(originalTimer);
+    vi.advanceTimersByTime(ctx.hangWarnMs - 1);
+    expect(mocks.pushNotification).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1);
+    expect(mocks.pushNotification).toHaveBeenCalledTimes(1);
   });
 });

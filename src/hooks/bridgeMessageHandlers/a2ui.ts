@@ -3,6 +3,7 @@ import type { Tab } from "../../types/tab";
 import { closeRunningToolCards } from "../../utils/agentBusy";
 import { toolCardIdentityFromId } from "../../utils/toolCardIdentity";
 import type { BridgeMessageHandler } from "./types";
+import { clearHangWarn } from "./hangWarn";
 import { flushResponseDeltas } from "./responseDelta";
 
 function completedToolCard(payload: A2UIPayload): A2UIComponent | undefined {
@@ -250,5 +251,6 @@ export const handleA2ui: BridgeMessageHandler = (data, ctx) => {
       delete next[tabId];
       return { ...prev, agentRunningTabs: next };
     });
+    clearHangWarn(ctx, tabId);
   }
 };

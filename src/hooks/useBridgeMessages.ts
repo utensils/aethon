@@ -7,6 +7,7 @@ import {
   type BridgeMessage,
   type BridgeMessageContext,
 } from "./bridgeMessageHandlers";
+import { refreshHangWarnForBridgeMessage } from "./bridgeMessageHandlers/hangWarn";
 
 export interface UseBridgeMessagesOptions {
   /** Everything handlers close over. The hook layers `ackMutation`,
@@ -260,6 +261,7 @@ export function useBridgeMessages(
           hangWarnMs: opts.hangWarnMs ?? DEFAULT_HANG_WARN_MS,
           bootLayout: opts.bootLayout,
         };
+        refreshHangWarnForBridgeMessage(data, fullCtx);
         handler(data, fullCtx);
       } catch {
         // Non-JSON line from the bridge — ignore.
