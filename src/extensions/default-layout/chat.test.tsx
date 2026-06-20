@@ -23,6 +23,7 @@ const { openUrl } = vi.hoisted(() => ({
 
 const virtuosoMockState = vi.hoisted(
   (): {
+    alignToBottom?: unknown;
     followOutput?: unknown;
     scrollToCalls: unknown[];
     scrollToIndexCalls: unknown[];
@@ -32,12 +33,19 @@ const virtuosoMockState = vi.hoisted(
     rangeChanged?: (range: { startIndex: number; endIndex: number }) => void;
     totalListHeightChanged?: (height: number) => void;
   } => ({
+    alignToBottom: undefined,
     followOutput: undefined,
     scrollToCalls: [],
     scrollToIndexCalls: [],
     atBottomStateChange: undefined,
     rangeChanged: undefined,
     totalListHeightChanged: undefined,
+  }),
+);
+
+const resizeObserverMockState = vi.hoisted(
+  (): { callbacks: Array<ResizeObserverCallback> } => ({
+    callbacks: [],
   }),
 );
 
@@ -70,6 +78,7 @@ vi.mock("react-virtuoso", () => ({
         rangeChanged,
         scrollerRef,
         totalListHeightChanged,
+        alignToBottom,
         followOutput,
       }: {
         data?: Array<{ id?: string }>;
@@ -86,11 +95,13 @@ vi.mock("react-virtuoso", () => ({
         }) => void;
         scrollerRef?: (ref: HTMLElement | null) => void;
         totalListHeightChanged?: (height: number) => void;
+        alignToBottom?: unknown;
         followOutput?: unknown;
       },
       ref,
     ) => {
       const Footer = components?.Footer;
+      virtuosoMockState.alignToBottom = alignToBottom;
       virtuosoMockState.followOutput = followOutput;
       virtuosoMockState.atBottomStateChange = atBottomStateChange;
       virtuosoMockState.rangeChanged = rangeChanged;
@@ -151,16 +162,28 @@ import { invoke } from "@tauri-apps/api/core";
 
 const invokeMock = invoke as unknown as ReturnType<typeof vi.fn>;
 
-class ResizeObserverMock {
+class ResizeObserverMock implements ResizeObserver {
+  private callback: ResizeObserverCallback;
+
+  constructor(callback: ResizeObserverCallback) {
+    this.callback = callback;
+    resizeObserverMockState.callbacks.push(callback);
+  }
+
   observe = vi.fn();
   unobserve = vi.fn();
-  disconnect = vi.fn();
+  disconnect = vi.fn(() => {
+    resizeObserverMockState.callbacks =
+      resizeObserverMockState.callbacks.filter((cb) => cb !== this.callback);
+  });
 }
 
 beforeEach(() => {
   vi.stubGlobal("ResizeObserver", ResizeObserverMock);
+  resizeObserverMockState.callbacks = [];
   openUrl.mockResolvedValue(undefined);
   virtuosoMockState.followOutput = undefined;
+  virtuosoMockState.alignToBottom = undefined;
   virtuosoMockState.scrollToCalls = [];
   virtuosoMockState.scrollToIndexCalls = [];
 });
@@ -250,6 +273,29 @@ function setScrollTop(el: HTMLElement, top: number) {
     writable: true,
     configurable: true,
   });
+}
+
+function setScrollerMetrics(
+  el: HTMLElement,
+  metrics: Partial<{
+    scrollTop: number;
+    scrollHeight: number;
+    clientHeight: number;
+  }>,
+) {
+  for (const [key, value] of Object.entries(metrics)) {
+    Object.defineProperty(el, key, {
+      value,
+      writable: key === "scrollTop",
+      configurable: true,
+    });
+  }
+}
+
+function triggerResizeObservers() {
+  for (const callback of resizeObserverMockState.callbacks) {
+    callback([], {} as ResizeObserver);
+  }
 }
 
 // Simulate a genuine user scroll-away: a gesture (wheel) then a scroll event at
@@ -636,7 +682,7 @@ describe("ChatInput", () => {
     ).toBeNull();
   });
 
-  it("starts pinned to latest: pill hidden, Virtuoso followOutput disabled", () => {
+  it("starts pinned to latest without Virtuoso's zoom-sensitive auto-follow props", () => {
     renderHistory({
       messages: [
         { id: "1", role: "user", text: "start" },
@@ -647,9 +693,11 @@ describe("ChatInput", () => {
     expect(
       screen.queryByRole("button", { name: "Scroll to latest message" }),
     ).toBeNull();
-    // The controller owns scrolling; Virtuoso's own follow is off so it never
-    // double-scrolls or emits spurious not-at-bottom on reflow.
+    // The controller owns scrolling; Virtuoso's own follow/bottom-align paths
+    // are off so they cannot mix root CSS zoom with scroll geometry and strand
+    // the terminal-close view above latest.
     expect(virtuosoMockState.followOutput).toBe(false);
+    expect(virtuosoMockState.alignToBottom).toBeUndefined();
   });
 
   it("shows the pill and stops following when the user scrolls up", () => {
@@ -728,6 +776,184 @@ describe("ChatInput", () => {
     expect(scroller.scrollTop).toBe(scroller.scrollHeight);
   });
 
+  it("re-pins to the bottom on viewport resize while following", () => {
+    renderHistory({
+      messages: [
+        { id: "1", role: "user", text: "start" },
+        { id: "2", role: "agent", text: "streaming update" },
+      ],
+    });
+
+    const scroller = screen.getByTestId("virtuoso-mock");
+    setScrollTop(scroller, 100);
+    const before = virtuosoMockState.scrollToCalls.length;
+
+    act(() => triggerResizeObservers());
+
+    expect(virtuosoMockState.scrollToCalls.length).toBeGreaterThan(before);
+    expect(virtuosoMockState.scrollToCalls).toContainEqual({
+      top: Number.MAX_SAFE_INTEGER,
+    });
+    expect(scroller.scrollTop).toBe(scroller.scrollHeight);
+  });
+
+  it("stays pinned through terminal close and reopen viewport changes", () => {
+    renderHistory({
+      messages: [
+        { id: "1", role: "user", text: "start" },
+        { id: "2", role: "agent", text: "streaming update" },
+      ],
+    });
+
+    const scroller = screen.getByTestId("virtuoso-mock");
+    setScrollerMetrics(scroller, {
+      scrollHeight: 2000,
+      clientHeight: 500,
+      scrollTop: 1500,
+    });
+    const before = virtuosoMockState.scrollToCalls.length;
+
+    // Terminal closes: chat viewport expands.
+    setScrollerMetrics(scroller, { clientHeight: 900, scrollTop: 1100 });
+    act(() => triggerResizeObservers());
+    expect(virtuosoMockState.scrollToCalls.length).toBeGreaterThan(before);
+    expect(scroller.scrollTop).toBe(scroller.scrollHeight);
+
+    const afterClose = virtuosoMockState.scrollToCalls.length;
+    // Terminal reopens: chat viewport shrinks again.
+    setScrollerMetrics(scroller, { clientHeight: 500, scrollTop: 1500 });
+    act(() => triggerResizeObservers());
+    expect(virtuosoMockState.scrollToCalls.length).toBeGreaterThan(afterClose);
+    expect(scroller.scrollTop).toBe(scroller.scrollHeight);
+    expect(
+      screen.queryByRole("button", { name: "Scroll to latest message" }),
+    ).toBeNull();
+  });
+
+  it("keeps pinning after terminal close while Virtuoso settles delayed height", () => {
+    vi.useFakeTimers();
+    const messages = [
+      { id: "1", role: "user", text: "start" },
+      { id: "2", role: "agent", text: "streaming update" },
+    ];
+    const view = (terminalOpen: boolean) => (
+      <ChatHistory
+        component={{
+          id: "chat-history",
+          type: "chat-history",
+          props: { messages: { $ref: "/messages" } },
+        }}
+        state={{
+          messages,
+          terminal: { open: terminalOpen },
+          layout: {
+            rows: terminalOpen
+              ? "38px 38px minmax(0,1fr) 366px auto auto"
+              : "38px 38px minmax(0,1fr) 0px auto auto",
+          },
+        }}
+        onEvent={vi.fn()}
+      />
+    );
+    const { rerender } = render(view(true));
+    const scroller = screen.getByTestId("virtuoso-mock");
+    setScrollerMetrics(scroller, {
+      scrollHeight: 3000,
+      clientHeight: 500,
+      scrollTop: 2500,
+    });
+
+    // Terminal closes and the viewport expands immediately, but the real
+    // Virtuoso/WebKit stack can publish its final scrollHeight later.
+    rerender(view(false));
+    setScrollerMetrics(scroller, { clientHeight: 900, scrollTop: 2100 });
+    act(() => {
+      vi.advanceTimersByTime(200);
+    });
+
+    setScrollerMetrics(scroller, {
+      scrollHeight: 3604,
+      scrollTop: scroller.scrollTop,
+    });
+    act(() => {
+      vi.advanceTimersByTime(450);
+    });
+
+    expect(scroller.scrollTop).toBe(scroller.scrollHeight);
+    expect(
+      screen.queryByRole("button", { name: "Scroll to latest message" }),
+    ).toBeNull();
+  });
+
+  it("stays pinned on repeated terminal row toggles even without ResizeObserver", () => {
+    const messages = [
+      { id: "1", role: "user", text: "start" },
+      { id: "2", role: "agent", text: "streaming update" },
+    ];
+    const view = (terminalOpen: boolean) => (
+      <ChatHistory
+        component={{
+          id: "chat-history",
+          type: "chat-history",
+          props: { messages: { $ref: "/messages" } },
+        }}
+        state={{
+          messages,
+          terminal: { open: terminalOpen },
+          layout: {
+            rows: terminalOpen
+              ? "38px 38px minmax(0,1fr) 366px auto auto"
+              : "38px 38px minmax(0,1fr) 0px auto auto",
+          },
+        }}
+        onEvent={vi.fn()}
+      />
+    );
+    const { rerender } = render(view(true));
+    const scroller = screen.getByTestId("virtuoso-mock");
+
+    setScrollerMetrics(scroller, {
+      scrollHeight: 2200,
+      clientHeight: 500,
+      scrollTop: 1700,
+    });
+    const before = virtuosoMockState.scrollToCalls.length;
+
+    rerender(view(false));
+    setScrollerMetrics(scroller, { clientHeight: 900, scrollTop: 700 });
+    rerender(view(true));
+    setScrollerMetrics(scroller, { clientHeight: 500, scrollTop: 1700 });
+    rerender(view(false));
+
+    expect(virtuosoMockState.scrollToCalls.length).toBeGreaterThan(before + 1);
+    expect(virtuosoMockState.scrollToCalls).toContainEqual({
+      top: Number.MAX_SAFE_INTEGER,
+    });
+    expect(
+      screen.queryByRole("button", { name: "Scroll to latest message" }),
+    ).toBeNull();
+  });
+
+  it("does NOT re-pin on viewport resize after the user scrolled away", () => {
+    renderHistory({
+      messages: [
+        { id: "1", role: "user", text: "start" },
+        { id: "2", role: "agent", text: "streaming update" },
+      ],
+    });
+
+    const scroller = screen.getByTestId("virtuoso-mock");
+    act(() => userScrollUp(scroller));
+    const before = virtuosoMockState.scrollToCalls.length;
+
+    act(() => triggerResizeObservers());
+
+    expect(virtuosoMockState.scrollToCalls.length).toBe(before);
+    expect(
+      screen.getByRole("button", { name: "Scroll to latest message" }),
+    ).toBeTruthy();
+  });
+
   it("does NOT re-pin on content growth after the user scrolled away", () => {
     renderHistory({
       messages: [
@@ -784,6 +1010,92 @@ describe("ChatInput", () => {
     expect(virtuosoMockState.scrollToCalls).toContainEqual({
       top: Number.MAX_SAFE_INTEGER,
     });
+    expect(
+      screen.queryByRole("button", { name: "Scroll to latest message" }),
+    ).toBeNull();
+  });
+
+  it("resumes following when a user message and first agent row append together", () => {
+    const messages = [
+      { id: "1", role: "user", text: "start" },
+      { id: "2", role: "agent", text: "previous answer" },
+    ];
+    const { onEvent, rerender } = renderHistory({ messages });
+
+    const scroller = screen.getByTestId("virtuoso-mock");
+    act(() => userScrollUp(scroller));
+    expect(
+      screen.getByRole("button", { name: "Scroll to latest message" }),
+    ).toBeTruthy();
+    const before = virtuosoMockState.scrollToCalls.length;
+
+    rerender(
+      <ChatHistory
+        component={{
+          id: "chat-history",
+          type: "chat-history",
+          props: { messages: { $ref: "/messages" } },
+        }}
+        state={{
+          messages: [
+            ...messages,
+            { id: "3", role: "user", text: "follow this new prompt" },
+            { id: "4", role: "agent", text: "starting work" },
+          ],
+        }}
+        onEvent={onEvent}
+      />,
+    );
+
+    expect(virtuosoMockState.scrollToCalls.length).toBeGreaterThan(before);
+    expect(virtuosoMockState.scrollToCalls).toContainEqual({
+      top: Number.MAX_SAFE_INTEGER,
+    });
+    expect(
+      screen.queryByRole("button", { name: "Scroll to latest message" }),
+    ).toBeNull();
+  });
+
+  it("keeps pinning after a user send while Virtuoso settles delayed measurements", () => {
+    vi.useFakeTimers();
+    const messages = [
+      { id: "1", role: "user", text: "start" },
+      { id: "2", role: "agent", text: "previous answer" },
+    ];
+    const { onEvent, rerender } = renderHistory({ messages });
+
+    const scroller = screen.getByTestId("virtuoso-mock");
+    act(() => userScrollUp(scroller));
+    expect(
+      screen.getByRole("button", { name: "Scroll to latest message" }),
+    ).toBeTruthy();
+
+    rerender(
+      <ChatHistory
+        component={{
+          id: "chat-history",
+          type: "chat-history",
+          props: { messages: { $ref: "/messages" } },
+        }}
+        state={{
+          messages: [
+            ...messages,
+            { id: "3", role: "user", text: "follow this new prompt" },
+          ],
+        }}
+        onEvent={onEvent}
+      />,
+    );
+
+    setScrollerMetrics(scroller, {
+      scrollHeight: scroller.scrollHeight + 600,
+      scrollTop: scroller.scrollTop,
+    });
+    act(() => {
+      vi.advanceTimersByTime(200);
+    });
+
+    expect(scroller.scrollTop).toBe(scroller.scrollHeight);
     expect(
       screen.queryByRole("button", { name: "Scroll to latest message" }),
     ).toBeNull();

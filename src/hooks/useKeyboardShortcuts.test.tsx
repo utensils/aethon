@@ -51,6 +51,7 @@ function buildContext(
     toggleSettings: vi.fn(),
     closeSettings: vi.fn(),
     openScheduledTasks: vi.fn(),
+    closeScheduledTasks: vi.fn(),
     focusActiveContextInput: vi.fn(),
     exportActiveChatMarkdown: vi.fn(() => Promise.resolve()),
     pushNotification: vi.fn(),
@@ -165,6 +166,22 @@ describe("useKeyboardShortcuts built-in handling", () => {
 
     expect(ctx.closePalette).toHaveBeenCalledTimes(1);
     expect(ctx.closeSettings).not.toHaveBeenCalled();
+  });
+
+  it("closes Scheduled Tasks before stopping a busy agent", () => {
+    const ctx = buildContext({
+      activeTabId: "agent-1",
+      palette: { open: false },
+      settings: { open: false },
+      scheduledTasks: { open: true },
+      tabs: [{ id: "agent-1", kind: "agent", label: "Tab 1", waiting: true }],
+    });
+    render(<Harness ctx={ctx} />);
+
+    fireEvent.keyDown(document, { key: "Escape" });
+
+    expect(ctx.closeScheduledTasks).toHaveBeenCalledTimes(1);
+    expect(ctx.stopPrompt).not.toHaveBeenCalled();
   });
 
   it("stops a busy active agent tab when no overlay is open", () => {

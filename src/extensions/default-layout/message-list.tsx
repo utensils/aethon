@@ -718,6 +718,7 @@ function VirtualMessageList({
   const [following, setFollowingState] = useState(initialFollowing);
   const followingRef = useRef(initialFollowing);
   const [canScroll, setCanScroll] = useState(false);
+  const [scrollerEl, setScrollerEl] = useState<HTMLElement | null>(null);
   const scrollerElRef = useRef<HTMLElement | null>(null);
   // Set by a user gesture (wheel/touch/scroll-key); the next scroll event reads
   // and clears it. Distinguishes a real scroll-away from our own re-pins.
@@ -766,6 +767,11 @@ function VirtualMessageList({
     toolCalls: visibility.toolCalls,
     thinking: visibility.thinking,
   });
+  const terminalOpen = Boolean(
+    (state.terminal as { open?: boolean } | undefined)?.open,
+  );
+  const layoutRows =
+    (state.layout as { rows?: unknown } | undefined)?.rows ?? null;
 
   const setFollowing = useCallback((next: boolean) => {
     followingRef.current = next;
@@ -781,16 +787,33 @@ function VirtualMessageList({
     );
   }, []);
 
-  const scrollToBottom = useCallback(() => {
+  const scrollToBottom = useCallback((settleMs = 150) => {
     // Scroll to the true bottom of the scroller — this includes the footer's
     // live subtree / typing indicator, which sit below the last data row.
-    virtuosoRef.current?.scrollTo({ top: Number.MAX_SAFE_INTEGER });
     const pinDomScroller = () => {
+      const lastIndex = Math.max(0, groupsRef.current.length - 1);
+      virtuosoRef.current?.scrollToIndex({ index: lastIndex, align: "end" });
+      virtuosoRef.current?.scrollTo({ top: Number.MAX_SAFE_INTEGER });
       const el = scrollerElRef.current;
       if (el) el.scrollTop = el.scrollHeight;
     };
+    const pinIfStillFollowing = () => {
+      if (followingRef.current) pinDomScroller();
+    };
     pinDomScroller();
-    window.requestAnimationFrame(pinDomScroller);
+    const startedAt =
+      typeof performance === "undefined" ? Date.now() : performance.now();
+    const now = () =>
+      typeof performance === "undefined" ? Date.now() : performance.now();
+    const frame = () => {
+      if (!followingRef.current) return;
+      pinDomScroller();
+      if (now() - startedAt < settleMs) window.requestAnimationFrame(frame);
+    };
+    window.requestAnimationFrame(frame);
+    for (const delay of [50, 150, 300, 600, 900]) {
+      if (delay <= settleMs) window.setTimeout(pinIfStillFollowing, delay);
+    }
   }, []);
 
   const markUserScrollIntent = useCallback((event: Event) => {
@@ -862,6 +885,7 @@ function VirtualMessageList({
           ? ref
           : null;
       scrollerElRef.current = el;
+      setScrollerEl(el);
       if (el) {
         el.addEventListener("scroll", handleScroll, { passive: true });
         addUserScrollIntentListeners(el, markUserScrollIntent);
@@ -895,6 +919,29 @@ function VirtualMessageList({
       }
     };
   }, [handleScroll, markUserScrollIntent]);
+
+  // Terminal open/resize changes the chat viewport height without changing the
+  // list height, so Virtuoso's totalListHeightChanged callback never fires. If
+  // the user is following the transcript, keep the bottom pinned through that
+  // viewport resize; if they intentionally scrolled up, preserve their anchor.
+  useLayoutEffect(() => {
+    if (!scrollerEl || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => {
+      updateCanScroll();
+      if (followingRef.current) scrollToBottom(900);
+    });
+    observer.observe(scrollerEl);
+    return () => observer.disconnect();
+  }, [scrollerEl, scrollToBottom, updateCanScroll]);
+
+  // The workstation grid row string is the source of truth for terminal
+  // open/close height. ResizeObserver is useful but not sufficient on WebKit:
+  // repeated 0px ↔ Npx terminal toggles can leave Virtuoso visually unpinned
+  // while our follow flag is still true. Treat the state transition itself as
+  // a follow-preserving resize signal.
+  useLayoutEffect(() => {
+    if (followingRef.current) scrollToBottom(900);
+  }, [layoutRows, scrollToBottom, scrollerEl, terminalOpen]);
 
   // Jump to the newest message matching the search needle and flash it. Virtuoso
   // mounts the target row even when it's far offscreen, so no DOM walk is needed.
@@ -1046,14 +1093,23 @@ function VirtualMessageList({
   // transcript should resume following even if the user had been reading above
   // the bottom before they sent it. Streaming output still respects manual
   // scroll-away because only a newly appended user message reaches this branch.
+  // Batched updates can append the user message and the first agent/tool row in
+  // one render, so scan everything appended after the previous tail instead of
+  // checking only the latest row.
   useLayoutEffect(() => {
     const latest = messages[messages.length - 1];
     const previousId = prevLastMessageId.current;
     prevLastMessageId.current = latest?.id;
-    if (!latest || latest.id === previousId || latest.role !== "user") return;
+    if (!latest || latest.id === previousId) return;
+    const previousIndex = previousId
+      ? messages.findIndex((message) => message.id === previousId)
+      : -1;
+    const appended =
+      previousIndex >= 0 ? messages.slice(previousIndex + 1) : messages;
+    if (!appended.some((message) => message.role === "user")) return;
     if (tabId !== undefined) tabScrollCache.delete(tabId);
     if (!followingRef.current) setFollowing(true);
-    scrollToBottom();
+    scrollToBottom(900);
   }, [messages, scrollToBottom, setFollowing, tabId]);
 
   // Toggling a transcript filter (tool-call grouping / thinking visibility)
@@ -1113,10 +1169,6 @@ function VirtualMessageList({
         ref={virtuosoRef}
         className={className}
         style={{ flex: 1, minHeight: 0 }}
-        // Short transcripts (content < viewport) sit flush at the BOTTOM, just
-        // above the composer — the chat convention — instead of floating at the
-        // top with a gap. No effect once the list overflows.
-        alignToBottom
         data={groups}
         computeItemKey={(index, g) => (g ? groupKey(g) : String(index))}
         itemContent={itemContent}

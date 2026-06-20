@@ -70,6 +70,7 @@ export interface UseKeyboardShortcutsContext {
   toggleSettings: () => void;
   closeSettings: () => void;
   openScheduledTasks: () => void;
+  closeScheduledTasks: () => void;
   focusActiveContextInput: () => void;
   exportActiveChatMarkdown: () => Promise<void>;
   pushNotification: (n: NotificationInput) => void;
@@ -357,6 +358,15 @@ export function useKeyboardShortcuts(ctx: UseKeyboardShortcutsContext): void {
           e.preventDefault();
           e.stopPropagation();
           ctx.closeSettings();
+          return;
+        }
+        const scheduledTasks = state.scheduledTasks as
+          | { open?: boolean }
+          | undefined;
+        if (scheduledTasks?.open) {
+          e.preventDefault();
+          e.stopPropagation();
+          ctx.closeScheduledTasks();
           return;
         }
         const authProfiles = state.authProfiles as

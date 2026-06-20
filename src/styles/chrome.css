@@ -2402,6 +2402,14 @@ body.ae-resizing-sidebar .a2ui-layout {
   overscroll-behavior: none;
   padding: 0;
   background: var(--bg);
+  /*
+   * react-virtuoso mixes DOM scroll offsets with measured row geometry. WebKit
+   * reports those in different coordinate spaces under html-level CSS zoom,
+   * leaving the feed unable to reach the visual bottom after viewport resizes
+   * such as terminal panel close. Keep the virtual scroller's math unzoomed,
+   * then re-apply the app zoom to each rendered row below.
+   */
+  zoom: calc(1 / var(--app-ui-scale, 1));
 }
 
 .a2ui-canvas-empty {
@@ -3423,6 +3431,7 @@ body.ae-resizing-sidebar .a2ui-layout {
   overscroll-behavior: none;
   padding: 0;
   contain: layout style;
+  zoom: calc(1 / var(--app-ui-scale, 1));
 }
 
 /* Empty state renders without Virtuoso, so it keeps the old centering box. */
@@ -3458,10 +3467,12 @@ body.ae-resizing-sidebar .a2ui-layout {
 
 .a2ui-canvas-scroller .a2ui-msg-row {
   padding-inline: 20px;
+  zoom: var(--app-ui-scale, 1);
 }
 
 .a2ui-chat-history .a2ui-msg-row {
   padding-inline: 12px;
+  zoom: var(--app-ui-scale, 1);
 }
 
 .a2ui-canvas-scroller .a2ui-msg-row-first {

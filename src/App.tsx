@@ -550,6 +550,16 @@ export default function App() {
     }));
   }, [setState]);
 
+  const closeScheduledTasks = useCallback(() => {
+    setState((prev) => ({
+      ...prev,
+      scheduledTasks: {
+        ...((prev.scheduledTasks ?? {}) as Record<string, unknown>),
+        open: false,
+      },
+    }));
+  }, [setState]);
+
   const { slashContext, persistLocalChatMessage } = useAppSlashCommandContext({
     bootLayout: BOOT_LAYOUT,
     setState,
@@ -868,6 +878,7 @@ export default function App() {
     toggleSettings,
     closeSettings,
     openScheduledTasks,
+    closeScheduledTasks,
     focusActiveContextInput,
     exportActiveChatMarkdown,
     pushNotification,
