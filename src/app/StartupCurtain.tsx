@@ -1,5 +1,10 @@
 import { useId } from "react";
-import type { WorkspaceStartupView } from "../hooks/useWorkspaceStartup";
+import type {
+  WorkspaceStartupTask,
+  WorkspaceStartupView,
+} from "../hooks/useWorkspaceStartup";
+
+const DEVSHELL_STARTUP_TASK_ID = "aethon-devshell";
 
 export interface StartupCurtainProps {
   logoUrl: string;
@@ -79,9 +84,9 @@ export function StartupCurtain({
               <div className="ae-startup-task" key={task.id}>
                 <span className={`ae-startup-task-dot is-${task.state}`} />
                 <span>{task.label}</span>
-                {!task.required ? (
-                  <span className="ae-startup-task-meta">optional</span>
-                ) : null}
+                <span className="ae-startup-task-meta">
+                  {startupTaskMeta(task)}
+                </span>
               </div>
             ))
           )}
@@ -116,4 +121,18 @@ export function StartupCurtain({
       </div>
     </div>
   );
+}
+
+function startupTaskMeta(task: WorkspaceStartupTask): string {
+  switch (task.state) {
+    case "running":
+      return task.id === DEVSHELL_STARTUP_TASK_ID ? "checking dev shell" : "running";
+    case "ready":
+      return "ready";
+    case "failed":
+      return task.required ? "failed" : "non-blocking failed";
+    case "idle":
+    default:
+      return "waiting";
+  }
 }

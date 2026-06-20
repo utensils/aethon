@@ -66,4 +66,40 @@ describe("StartupCurtain", () => {
     expect(html).toContain("Skip startup");
     expect(html).not.toContain(">Continue<");
   });
+
+  it("shows useful progress metadata instead of optional flags", () => {
+    const html = renderToStaticMarkup(
+      <StartupCurtain
+        logoUrl="/logo.svg"
+        startup={{
+          output: "",
+          entry: {
+            root: "/repo",
+            fingerprint: "abc",
+            state: "running",
+            approved: true,
+            commands: [
+              {
+                id: "aethon-devshell",
+                label: "Prepare environment",
+                required: false,
+                state: "running",
+              },
+              {
+                id: "deps",
+                label: "Install dependencies",
+                required: true,
+                state: "idle",
+              },
+            ],
+          },
+        }}
+      />,
+    );
+
+    expect(html).toContain("Prepare environment");
+    expect(html).toContain("checking dev shell");
+    expect(html).toContain("waiting");
+    expect(html).not.toContain("optional");
+  });
 });
