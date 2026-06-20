@@ -95,6 +95,48 @@ function hasText(value: unknown): boolean {
   return typeof value === "string" && value.length > 0;
 }
 
+const pendingRefreshes = new Map<string, BridgeMessageContext>();
+let refreshScheduled = false;
+
+function scheduleRefreshFlush() {
+  if (refreshScheduled) return;
+  refreshScheduled = true;
+  const flush = () => {
+    refreshScheduled = false;
+    const pending = [...pendingRefreshes];
+    pendingRefreshes.clear();
+    for (const [tabId, ctx] of pending) {
+      const tab = tabById(ctx, tabId);
+      if (tab?.waiting) armHangWarn(ctx, tabId);
+    }
+  };
+  if (typeof window !== "undefined" && "requestAnimationFrame" in window) {
+    window.requestAnimationFrame(flush);
+  } else {
+    setTimeout(flush, 16);
+  }
+}
+
+export function scheduleHangWarnRefresh(
+  ctx: BridgeMessageContext,
+  tabId: string,
+): void {
+  const handle = ctx.hangWarnTimersRef.current.get(tabId);
+  const wasActive = ctx.hangWarnActiveRef.current.has(tabId);
+  if (handle === undefined && !wasActive) return;
+
+  if (handle !== undefined) {
+    clearTimeout(handle);
+    ctx.hangWarnTimersRef.current.delete(tabId);
+  }
+  if (wasActive) {
+    ctx.hangWarnActiveRef.current.delete(tabId);
+    ctx.dismissNotification(ctx.hangWarnNotifId(tabId));
+  }
+  pendingRefreshes.set(tabId, ctx);
+  scheduleRefreshFlush();
+}
+
 export function bridgeMessageRefreshesHangWarn(
   message: BridgeMessage,
 ): boolean {
@@ -109,7 +151,7 @@ export function bridgeMessageRefreshesHangWarn(
     case "subagent_progress":
       return true;
     case "notice":
-      return message.busy === true;
+      return message.busy === true || hasText(message.message);
     default:
       return false;
   }
@@ -120,5 +162,8 @@ export function refreshHangWarnForBridgeMessage(
   ctx: BridgeMessageContext,
 ): void {
   if (!bridgeMessageRefreshesHangWarn(message)) return;
-  refreshHangWarn(ctx, (message.tabId as string | undefined) ?? "default");
+  scheduleHangWarnRefresh(
+    ctx,
+    (message.tabId as string | undefined) ?? "default",
+  );
 }

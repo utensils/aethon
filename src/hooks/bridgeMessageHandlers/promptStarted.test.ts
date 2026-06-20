@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { handlePromptStarted } from "./promptStarted";
-import { refreshHangWarn } from "./hangWarn";
+import { refreshHangWarn, scheduleHangWarnRefresh } from "./hangWarn";
 import { buildHandlerFixture } from "./testFixtures";
 import { makeEmptyTab } from "../../types/tab";
 
@@ -185,5 +185,34 @@ describe("handlePromptStarted", () => {
     );
     expect(ctx.hangWarnActiveRef.current.has(tabId)).toBe(false);
     expect(ctx.hangWarnTimersRef.current.has(tabId)).toBe(true);
+  });
+
+  it("coalesces streamed activity refreshes to one timer re-arm per frame", () => {
+    const tabId = "default";
+    const { ctx, mocks } = buildHandlerFixture({
+      state: {
+        activeTabId: tabId,
+        tabs: [{ ...makeEmptyTab(tabId, "Tab 1"), waiting: true }],
+      },
+    });
+    handlePromptStarted({ type: "prompt_started", tabId }, ctx);
+    const originalTimer = ctx.hangWarnTimersRef.current.get(tabId);
+    expect(originalTimer).toBeDefined();
+
+    scheduleHangWarnRefresh(ctx, tabId);
+    scheduleHangWarnRefresh(ctx, tabId);
+
+    expect(ctx.hangWarnTimersRef.current.has(tabId)).toBe(false);
+    vi.advanceTimersByTime(15);
+    expect(ctx.hangWarnTimersRef.current.has(tabId)).toBe(false);
+    vi.advanceTimersByTime(1);
+
+    const refreshedTimer = ctx.hangWarnTimersRef.current.get(tabId);
+    expect(refreshedTimer).toBeDefined();
+    expect(refreshedTimer).not.toBe(originalTimer);
+    vi.advanceTimersByTime(ctx.hangWarnMs - 1);
+    expect(mocks.pushNotification).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1);
+    expect(mocks.pushNotification).toHaveBeenCalledTimes(1);
   });
 });

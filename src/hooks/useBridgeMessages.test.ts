@@ -137,6 +137,12 @@ describe("bridgeMessageRefreshesHangWarn", () => {
     expect(bridgeMessageRefreshesHangWarn({ type: "subagent_progress" })).toBe(
       true,
     );
+    expect(
+      bridgeMessageRefreshesHangWarn({
+        type: "notice",
+        message: "compaction complete",
+      }),
+    ).toBe(true);
   });
 
   test("ignores lifecycle and empty progress messages", () => {
