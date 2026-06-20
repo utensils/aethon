@@ -1,4 +1,5 @@
 import { closeRunningToolCards } from "../../utils/agentBusy";
+import { clearHangWarn } from "./hangWarn";
 import type { BridgeMessageHandler } from "./types";
 
 export const handleError: BridgeMessageHandler = (data, ctx) => {
@@ -29,4 +30,5 @@ export const handleError: BridgeMessageHandler = (data, ctx) => {
   if (ctx.stateRef.current.activeTabId === tabId) {
     ctx.setStatusFlags({ status: "error" });
   }
+  clearHangWarn(ctx, tabId);
 };

@@ -1,4 +1,5 @@
 import { closeRunningToolCards } from "../../utils/agentBusy";
+import { clearHangWarn } from "./hangWarn";
 import type { BridgeMessageHandler } from "./types";
 
 /** Legacy single-shot response (kept so old bridge builds still render). */
@@ -30,5 +31,6 @@ export const handleResponse: BridgeMessageHandler = (data, ctx) => {
       delete next[tabId];
       return { ...prev, agentRunningTabs: next };
     });
+    clearHangWarn(ctx, tabId);
   }
 };

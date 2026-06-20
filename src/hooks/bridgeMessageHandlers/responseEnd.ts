@@ -2,6 +2,7 @@ import { closeRunningToolCards } from "../../utils/agentBusy";
 import { emitAgentTurnComplete } from "../../utils/agentTurnEvents";
 import { lastAgentText } from "../../utils/messages";
 import type { BridgeMessageHandler } from "./types";
+import { clearHangWarn } from "./hangWarn";
 import { flushResponseDeltas } from "./responseDelta";
 
 export const handleResponseEnd: BridgeMessageHandler = (data, ctx) => {
@@ -66,16 +67,7 @@ export const handleResponseEnd: BridgeMessageHandler = (data, ctx) => {
   // Clear the hang-warn timer and dismiss this tab's notification (if it
   // appeared). Per-tab id so an unrelated tab's response_end doesn't
   // dismiss a still-hung tab's warning.
-  {
-    const h = ctx.hangWarnTimersRef.current.get(tabId);
-    if (h !== undefined) {
-      clearTimeout(h);
-      ctx.hangWarnTimersRef.current.delete(tabId);
-    }
-    if (ctx.hangWarnActiveRef.current.delete(tabId)) {
-      ctx.dismissNotification(ctx.hangWarnNotifId(tabId));
-    }
-  }
+  clearHangWarn(ctx, tabId);
   // Fire native OS notification when an agent turn completes while the
   // window is unfocused (or the originating tab isn't active). Only for
   // "real" turns (≥ notifyMinDurationSeconds) and only if the user hasn't

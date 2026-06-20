@@ -3,6 +3,7 @@ import {
   bridgeDispatchDecision,
   createBridgePayloadPump,
 } from "./useBridgeMessages";
+import { bridgeMessageRefreshesHangWarn } from "./bridgeMessageHandlers/hangWarn";
 
 const activeTabs = () => new Set(["tab-active", "tab-two"]);
 
@@ -115,5 +116,41 @@ describe("createBridgePayloadPump", () => {
     vi.runOnlyPendingTimers();
 
     expect(processed).toEqual([]);
+  });
+});
+
+describe("bridgeMessageRefreshesHangWarn", () => {
+  test("treats visible agent progress as watchdog activity", () => {
+    expect(
+      bridgeMessageRefreshesHangWarn({
+        type: "response_delta",
+        content: "working",
+      }),
+    ).toBe(true);
+    expect(
+      bridgeMessageRefreshesHangWarn({
+        type: "terminal_output",
+        content: "stdout",
+      }),
+    ).toBe(true);
+    expect(bridgeMessageRefreshesHangWarn({ type: "a2ui" })).toBe(true);
+    expect(bridgeMessageRefreshesHangWarn({ type: "subagent_progress" })).toBe(
+      true,
+    );
+  });
+
+  test("ignores lifecycle and empty progress messages", () => {
+    expect(bridgeMessageRefreshesHangWarn({ type: "prompt_started" })).toBe(
+      false,
+    );
+    expect(bridgeMessageRefreshesHangWarn({ type: "response_end" })).toBe(
+      false,
+    );
+    expect(
+      bridgeMessageRefreshesHangWarn({
+        type: "response_delta",
+        content: "",
+      }),
+    ).toBe(false);
   });
 });

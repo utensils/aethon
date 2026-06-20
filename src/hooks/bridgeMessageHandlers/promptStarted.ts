@@ -1,32 +1,5 @@
-import type { Tab } from "../../types/tab";
 import type { BridgeMessageHandler } from "./types";
-
-function shortPath(path: string | undefined): string | undefined {
-  if (!path) return undefined;
-  const parts = path.split(/[\\/]+/).filter(Boolean);
-  if (parts.length <= 2) return path;
-  return `…/${parts.slice(-2).join("/")}`;
-}
-
-function hangWarnTitle(tab: Tab): string {
-  const label = tab.label?.trim() || "Agent session";
-  const model = tab.model?.trim();
-  return model
-    ? `${label} is still working (${model})`
-    : `${label} is still working`;
-}
-
-function hangWarnMessage(tab: Tab): string {
-  const cwd = shortPath(tab.cwd);
-  const bits = ["This session has been running longer than expected."];
-  if (cwd) bits.push(`Working directory: ${cwd}.`);
-  if (tab.queueCount > 0) {
-    bits.push(
-      `${tab.queueCount} queued message${tab.queueCount === 1 ? "" : "s"} waiting.`,
-    );
-  }
-  return bits.join(" ");
-}
+import { armHangWarn } from "./hangWarn";
 
 /** Bridge tells us a prompt has begun. Sent for handler-driven
  *  ctx.pi.prompt AND every queue-drained turn (source: "queue") so Stop
@@ -90,32 +63,7 @@ export const handlePromptStarted: BridgeMessageHandler = (data, ctx) => {
   if (ctx.stateRef.current.activeTabId === tabId) {
     ctx.setState((prev) => ({ ...prev, status: "thinking…" }));
   }
-  // Start hang-warn timer. Reset if a queue-drained prompt_started fires
-  // for the same tab (the 30s clock restarts on each new turn).
-  {
-    const prev = ctx.hangWarnTimersRef.current.get(tabId);
-    if (prev !== undefined) clearTimeout(prev);
-    const handle = setTimeout(() => {
-      ctx.hangWarnTimersRef.current.delete(tabId);
-      const cur = ctx.stateRef.current;
-      if ((cur.activeTabId as string | undefined) !== tabId) return;
-      const tabs = (cur.tabs as Tab[] | undefined) ?? [];
-      const tab = tabs.find((t) => t.id === tabId);
-      if (!tab?.waiting) return;
-      ctx.hangWarnActiveRef.current.add(tabId);
-      ctx.pushNotification({
-        id: ctx.hangWarnNotifId(tabId),
-        title: hangWarnTitle(tab),
-        message: hangWarnMessage(tab),
-        kind: "warning",
-        durationMs: null,
-        actions: [
-          { label: "Open session", action: `activate-tab:${tabId}` },
-          { label: "Stop", action: `hang-warn:stop:${tabId}` },
-          { label: "Force restart", action: "hang-warn:force-restart" },
-        ],
-      });
-    }, ctx.hangWarnMs);
-    ctx.hangWarnTimersRef.current.set(tabId, handle);
-  }
+  // Start the silence watchdog. Progress events refresh this timer, so the
+  // warning means "no agent activity lately" rather than "long healthy turn".
+  armHangWarn(ctx, tabId);
 };
