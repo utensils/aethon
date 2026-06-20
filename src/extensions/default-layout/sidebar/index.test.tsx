@@ -334,6 +334,53 @@ describe("Sidebar extension controls", () => {
 });
 
 describe("Sidebar project menu", () => {
+  it("renders host workspace agent activity on the expanded main workspace row", () => {
+    renderSidebar({
+      props: {
+        sections: [
+          {
+            id: "projects",
+            title: "projects",
+            items: [
+              {
+                id: "project-1",
+                label: "aethon",
+                expanded: true,
+                workspaces: [
+                  {
+                    id: "main",
+                    label: "main",
+                    branch: "main",
+                    path: "/repo",
+                    active: false,
+                    isMain: true,
+                    agent: {
+                      status: "running",
+                      activeCount: 1,
+                      runningCount: 1,
+                    },
+                  },
+                  {
+                    id: "wt-1",
+                    label: "feature-x",
+                    branch: "feature-x",
+                    path: "/repo-feature-x",
+                    active: false,
+                    isMain: false,
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+    });
+
+    expect(screen.getByText("main").closest(".ae-workspace-row")).toBeTruthy();
+    const dot = screen.getByLabelText("Agent running");
+    expect(dot.closest(".ae-workspace-row")?.textContent).toContain("main");
+  });
+
   it("starts inline workspace rename from the context menu without prompt", () => {
     vi.useFakeTimers();
     const prompt = vi.spyOn(window, "prompt").mockReturnValue("prompt label");

@@ -567,9 +567,7 @@ function SidebarSectionBlock({
             // "no extra workspaces" and the chevron is meaningless.
             // Surface the chevron only when workspaces.length > 1.
             const hasExtraWorkspaces = !!workspaces && workspaces.length > 1;
-            const extraWorkspaces = hasExtraWorkspaces
-              ? workspaces.filter((w) => !w.isMain)
-              : [];
+            const visibleWorkspaces = hasExtraWorkspaces ? workspaces : [];
             return (
               <Fragment key={item.id}>
                 <ItemRow
@@ -617,7 +615,7 @@ function SidebarSectionBlock({
                   trailingControl={trailingControl}
                 />
                 {hasExtraWorkspaces && expanded
-                  ? extraWorkspaces.map((wt) => (
+                  ? visibleWorkspaces.map((wt) => (
                       <WorkspaceRow
                         key={wt.id}
                         item={wt}
