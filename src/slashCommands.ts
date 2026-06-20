@@ -102,6 +102,7 @@ export interface SlashCommandContext {
   pauseScheduledTask?: (id: string) => Promise<ScheduledTaskRecord>;
   resumeScheduledTask?: (id: string) => Promise<ScheduledTaskRecord>;
   cancelScheduledTask?: (id: string) => Promise<ScheduledTaskRecord>;
+  deleteScheduledTask?: (id: string) => Promise<ScheduledTaskRecord>;
   /** Currently active tab id, or null when none. Used by `/rename` so
    *  no-arg target inference can hit the right session. */
   activeTabId: () => string | null;
@@ -419,7 +420,8 @@ export function buildBuiltinSlashCommands(): SlashCommand[] {
     },
     {
       name: "export",
-      description: "Export the pi session as HTML, or JSONL when path ends in .jsonl",
+      description:
+        "Export the pi session as HTML, or JSONL when path ends in .jsonl",
       usage: "[path.html|path.jsonl]",
       run: (args, ctx) => ctx.runNativeCommand("export", args),
     },
@@ -428,6 +430,13 @@ export function buildBuiltinSlashCommands(): SlashCommand[] {
       description: "Run a repeated scheduled task in this session",
       usage: "[interval] [prompt]",
       run: async (args, ctx) => {
+        if (!args.trim()) {
+          ctx.openScheduledTasks?.();
+          ctx.appendSystem(
+            "No loop scheduled. Use `/loop <prompt>` for a self-paced loop, `/loop <interval> <prompt>` for a fixed loop, or create one from Scheduled Tasks.",
+          );
+          return;
+        }
         const parsed = parseLoopArgs(args);
         if (!parsed.ok) {
           ctx.notify({
@@ -446,11 +455,18 @@ export function buildBuiltinSlashCommands(): SlashCommand[] {
             schedule: parsed.schedule,
             prompt: parsed.prompt,
           });
+          const cadence =
+            task.mode === "loopFixed" && task.schedule.kind === "interval"
+              ? `every ${task.schedule.label}`
+              : "self-paced";
           ctx.notify({
             title: "Loop scheduled",
             message: `${task.label} (${task.id.slice(0, 8)})`,
             kind: "success",
           });
+          ctx.appendSystem(
+            `Loop scheduled (${cadence}): ${task.label}\nPrompt: ${task.visiblePrompt}`,
+          );
         } catch (err) {
           ctx.notify({
             title: "Loop failed",
@@ -463,7 +479,7 @@ export function buildBuiltinSlashCommands(): SlashCommand[] {
     {
       name: "tasks",
       description: "Open or control Scheduled Tasks",
-      usage: "[list|run|pause|resume|cancel <id>]",
+      usage: "[list|run|pause|resume|cancel|delete <id>]",
       run: async (args, ctx) => {
         const [subRaw, ...rest] = args.trim().split(/\s+/).filter(Boolean);
         const sub = subRaw?.toLowerCase();
@@ -519,22 +535,25 @@ export function buildBuiltinSlashCommands(): SlashCommand[] {
               ? ctx.pauseScheduledTask
               : sub === "resume"
                 ? ctx.resumeScheduledTask
-                : sub === "cancel" || sub === "delete" || sub === "stop"
-                  ? ctx.cancelScheduledTask
-                  : null;
+                : sub === "delete"
+                  ? ctx.deleteScheduledTask
+                  : sub === "cancel" || sub === "stop"
+                    ? ctx.cancelScheduledTask
+                    : null;
         if (!action) {
           ctx.notify({
             title: `Unknown tasks command: ${sub}`,
-            message: "Usage: /tasks [list|run|pause|resume|cancel <id>]",
+            message: "Usage: /tasks [list|run|pause|resume|cancel|delete <id>]",
             kind: "error",
           });
           return;
         }
         const updated = await action(task.id);
+        const deleted = sub === "delete";
         ctx.notify({
-          title: `Task ${updated.status}`,
+          title: deleted ? "Task deleted" : `Task ${updated.status}`,
           message: updated.label,
-          kind: updated.status === "failed" ? "error" : "success",
+          kind: !deleted && updated.status === "failed" ? "error" : "success",
         });
       },
     },

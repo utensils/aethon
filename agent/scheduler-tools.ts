@@ -72,11 +72,98 @@ const CompleteLoopTaskParams = Type.Object({
 });
 type CompleteLoopTaskParamsT = Static<typeof CompleteLoopTaskParams>;
 
+const ManageScheduledTasksParams = Type.Object({
+  action: Type.Union(
+    [
+      Type.Literal("list"),
+      Type.Literal("cancel"),
+      Type.Literal("delete"),
+      Type.Literal("pause"),
+      Type.Literal("resume"),
+      Type.Literal("run"),
+    ],
+    {
+      description:
+        "Scheduler action. Use list first when task ids are unknown. Use cancel with all=true to stop cancellable loop tasks, or delete with all=true to remove non-running loop records.",
+    },
+  ),
+  taskId: Type.Optional(
+    Type.String({
+      description:
+        "Full task id or unique task id prefix for cancel, delete, pause, resume, or run.",
+    }),
+  ),
+  all: Type.Optional(
+    Type.Boolean({
+      description:
+        "Apply cancel/pause/resume/delete to all matching loop tasks. Delete skips running tasks. Not supported for run.",
+    }),
+  ),
+});
+type ManageScheduledTasksParamsT = Static<typeof ManageScheduledTasksParams>;
+
 export function buildSchedulerTools(
   state: AethonAgentState,
   deps: DispatcherDeps,
   tabId: string,
 ): ToolDefinition[] {
+  const manageTasksTool = defineTool({
+    name: "manageScheduledTasks",
+    label: "Manage scheduled tasks",
+    description:
+      "List, cancel, pause, resume, or run Aethon scheduled tasks and loops. Use this for user requests like stop all loops or show scheduled tasks.",
+    promptSnippet:
+      "manageScheduledTasks: list or manage Aethon scheduled tasks by id, prefix, or all loops",
+    parameters: ManageScheduledTasksParams,
+    async execute(_callId: string, params: ManageScheduledTasksParamsT) {
+      const tasks = await listTasks(state, deps);
+      if (params.action === "list") {
+        return {
+          content: [{ type: "text" as const, text: summarizeTasks(tasks) }],
+          details: { tasks },
+        };
+      }
+      if (params.all === true) {
+        if (params.action === "run") {
+          throw new Error("run does not support all=true");
+        }
+        const targets = tasks.filter((task) =>
+          isBulkManageTarget(task, params.action),
+        );
+        const results = [];
+        for (const task of targets) {
+          results.push(await manageTask(state, deps, params.action, task.id));
+        }
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text:
+                results.length === 0
+                  ? `no active loops to ${params.action}`
+                  : `${params.action} applied to ${results.length} loop task${results.length === 1 ? "" : "s"}`,
+            },
+          ],
+          details: { tasks: results },
+        };
+      }
+      if (!params.taskId?.trim()) {
+        throw new Error("taskId or all=true required");
+      }
+      const target = resolveTask(tasks, params.taskId);
+      const updated = await manageTask(state, deps, params.action, target.id);
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: `${params.action} applied to ${taskTitle(updated)}`,
+          },
+        ],
+        details: updated,
+      };
+    },
+  }) as ToolDefinition;
+
   const scheduleNextTool = defineTool({
     name: "scheduleNextLoopWakeup",
     label: "Schedule next loop wakeup",
@@ -146,5 +233,89 @@ export function buildSchedulerTools(
     },
   }) as ToolDefinition;
 
-  return [scheduleNextTool, completeLoopTool];
+  return [manageTasksTool, scheduleNextTool, completeLoopTool];
+}
+
+interface ScheduledTaskShape {
+  id: string;
+  label?: string;
+  mode?: string;
+  status?: string;
+  nextRunAt?: number | null;
+  promptSource?: string;
+}
+
+async function listTasks(
+  state: AethonAgentState,
+  deps: DispatcherDeps,
+): Promise<ScheduledTaskShape[]> {
+  const r = await schedulerQuery(state, deps, "list", {});
+  if (!r.ok) throw new Error(r.error ?? "unknown scheduler error");
+  if (!Array.isArray(r.data)) return [];
+  return r.data.filter(isScheduledTaskShape);
+}
+
+async function manageTask(
+  state: AethonAgentState,
+  deps: DispatcherDeps,
+  action: Exclude<ManageScheduledTasksParamsT["action"], "list">,
+  taskId: string,
+): Promise<ScheduledTaskShape> {
+  const op = action === "run" ? "run_now" : action;
+  const r = await schedulerQuery(state, deps, op, { taskId });
+  if (!r.ok) throw new Error(r.error ?? "unknown scheduler error");
+  if (!isScheduledTaskShape(r.data)) {
+    throw new Error(`scheduler ${action} returned an invalid task`);
+  }
+  return r.data;
+}
+
+function isScheduledTaskShape(value: unknown): value is ScheduledTaskShape {
+  if (!value || typeof value !== "object") return false;
+  const rec = value as ScheduledTaskShape;
+  return typeof rec.id === "string" && rec.id.length > 0;
+}
+
+function resolveTask(
+  tasks: ScheduledTaskShape[],
+  prefix: string,
+): ScheduledTaskShape {
+  const needle = prefix.trim();
+  const matches = tasks.filter((task) => task.id.startsWith(needle));
+  if (matches.length === 1) return matches[0];
+  if (matches.length === 0)
+    throw new Error(`unknown scheduled task: ${needle}`);
+  throw new Error(`ambiguous scheduled task prefix: ${needle}`);
+}
+
+function isLoopTask(task: ScheduledTaskShape): boolean {
+  return task.mode === "loopFixed" || task.mode === "loopSelfPaced";
+}
+
+function isBulkManageTarget(
+  task: ScheduledTaskShape,
+  action: Exclude<ManageScheduledTasksParamsT["action"], "list">,
+): boolean {
+  if (!isLoopTask(task)) return false;
+  if (task.status === "running") return false;
+  if (action === "delete") return true;
+  return !isTerminalStatus(task.status);
+}
+
+function isTerminalStatus(status: string | undefined): boolean {
+  return (
+    status === "cancelled" || status === "completed" || status === "expired"
+  );
+}
+
+function summarizeTasks(tasks: ScheduledTaskShape[]): string {
+  if (tasks.length === 0) return "no scheduled tasks";
+  return tasks.map(taskTitle).join("\n");
+}
+
+function taskTitle(task: ScheduledTaskShape): string {
+  const status = task.status ? ` (${task.status})` : "";
+  const mode = task.mode ? ` ${task.mode}` : "";
+  const label = task.label ? ` ${task.label}` : "";
+  return `${task.id.slice(0, 8)}${mode}${status}${label}`.trim();
 }

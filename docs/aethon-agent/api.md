@@ -538,18 +538,19 @@ built-in behavior. Built-ins without an override are:
 | `Cmd+.`                     | Stop current prompt                  |
 | `Shift+Tab`                 | Toggle Plan mode                     |
 | `Cmd+Shift+M`               | Toggle voice input                   |
+| `Cmd+Shift+L`               | Open Scheduled Tasks                 |
 | `Cmd+=` / `Cmd+-`           | UI zoom controls                     |
 | `Cmd+0`                     | Toggle composer / terminal focus     |
 | `Cmd+Shift+0`               | Reset zoom                           |
 
 ```ts
 globalThis.aethon.registerKeybinding({
-  combo: "Cmd+Shift+L",
+  combo: "Cmd+Option+L",
   action: "summarize-log",
   description: "Summarize the current bash output",
 });
 globalThis.aethon.onEvent(
-  { componentType: "keybinding", descendantId: "meta+shift+l" },
+  { componentType: "keybinding", descendantId: "meta+alt+l" },
   async (_event, ctx) => {
     await ctx.pi.prompt("Summarize the recent bash output in 3 bullets.");
   },
@@ -558,7 +559,7 @@ globalThis.aethon.onEvent(
 
 The `descendantId` matches the canonical combo (lowercased modifiers in
 `meta/ctrl/alt/shift` order, then key). To remove a binding:
-`globalThis.aethon.unregisterKeybinding("Cmd+Shift+L")`.
+`globalThis.aethon.unregisterKeybinding("Cmd+Option+L")`.
 
 ### `registerTheme({ id, label?, vars })`
 

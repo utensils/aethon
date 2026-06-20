@@ -92,6 +92,7 @@ export function useOsEdges(ctx: UseOsEdgesContext): void {
         toggleFilesSidebar: ctx.toggleFilesSidebar,
         togglePlanMode: ctx.togglePlanMode,
         openSettings: ctx.openSettings,
+        openScheduledTasks: ctx.openScheduledTasks,
         clearChat: ctx.clearChat,
         stopPrompt: ctx.stopPrompt,
         checkForUpdates: ctx.checkForUpdates,

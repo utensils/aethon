@@ -54,9 +54,174 @@ describe("buildSchedulerTools", () => {
       )
         .map((tool) => tool.name)
         .sort(),
-    ).toEqual(["completeLoopTask", "scheduleNextLoopWakeup"]);
+    ).toEqual([
+      "completeLoopTask",
+      "manageScheduledTasks",
+      "scheduleNextLoopWakeup",
+    ]);
   });
 });
+
+describe("manageScheduledTasks", () => {
+  it("lists scheduled tasks through the scheduler query bridge", async () => {
+    const { state, sent, deps } = makeFixture();
+    markFrontendReady(state);
+    const tool = buildSchedulerTools(state, deps, "tab-1").find(
+      (candidate) => candidate.name === "manageScheduledTasks",
+    );
+    if (!tool) throw new Error("tool not found");
+
+    const resultPromise = tool.execute("call-1", { action: "list" });
+
+    const msg = sent.at(-1);
+    expect(msg).toMatchObject({
+      type: "scheduler_query",
+      op: "list",
+      args: {},
+    });
+    ackMutation(state, msg?.mutationId as string, true, undefined, [
+      { id: "task-1", label: "ping", mode: "loopFixed", status: "scheduled" },
+    ]);
+    await expect(resultPromise).resolves.toMatchObject({
+      details: {
+        tasks: [
+          {
+            id: "task-1",
+            label: "ping",
+            mode: "loopFixed",
+            status: "scheduled",
+          },
+        ],
+      },
+    });
+  });
+
+  it("cancels all non-terminal loop tasks", async () => {
+    const { state, sent, deps } = makeFixture();
+    markFrontendReady(state);
+    const tool = buildSchedulerTools(state, deps, "tab-1").find(
+      (candidate) => candidate.name === "manageScheduledTasks",
+    );
+    if (!tool) throw new Error("tool not found");
+
+    const resultPromise = tool.execute("call-1", {
+      action: "cancel",
+      all: true,
+    });
+
+    let msg = sent.at(-1);
+    expect(msg).toMatchObject({ type: "scheduler_query", op: "list" });
+    ackMutation(state, msg?.mutationId as string, true, undefined, [
+      { id: "loop-1", label: "ping", mode: "loopFixed", status: "scheduled" },
+      {
+        id: "loop-2",
+        label: "old",
+        mode: "loopSelfPaced",
+        status: "cancelled",
+      },
+      {
+        id: "loop-3",
+        label: "busy",
+        mode: "loopSelfPaced",
+        status: "running",
+      },
+      { id: "shot-1", label: "once", mode: "oneShot", status: "scheduled" },
+    ]);
+    await waitForSentCount(sent, 2);
+
+    msg = sent.at(-1);
+    expect(msg).toMatchObject({
+      type: "scheduler_query",
+      op: "cancel",
+      args: { taskId: "loop-1" },
+    });
+    ackMutation(state, msg?.mutationId as string, true, undefined, {
+      id: "loop-1",
+      label: "ping",
+      mode: "loopFixed",
+      status: "cancelled",
+    });
+
+    await expect(resultPromise).resolves.toMatchObject({
+      details: { tasks: [{ id: "loop-1", status: "cancelled" }] },
+    });
+  });
+
+  it("deletes all non-running loop records including cancelled ones", async () => {
+    const { state, sent, deps } = makeFixture();
+    markFrontendReady(state);
+    const tool = buildSchedulerTools(state, deps, "tab-1").find(
+      (candidate) => candidate.name === "manageScheduledTasks",
+    );
+    if (!tool) throw new Error("tool not found");
+
+    const resultPromise = tool.execute("call-1", {
+      action: "delete",
+      all: true,
+    });
+
+    let msg = sent.at(-1);
+    expect(msg).toMatchObject({ type: "scheduler_query", op: "list" });
+    ackMutation(state, msg?.mutationId as string, true, undefined, [
+      { id: "loop-1", label: "ping", mode: "loopFixed", status: "scheduled" },
+      {
+        id: "loop-2",
+        label: "old",
+        mode: "loopSelfPaced",
+        status: "cancelled",
+      },
+      {
+        id: "loop-3",
+        label: "busy",
+        mode: "loopSelfPaced",
+        status: "running",
+      },
+    ]);
+    await waitForSentCount(sent, 2);
+
+    msg = sent.at(-1);
+    expect(msg).toMatchObject({
+      type: "scheduler_query",
+      op: "delete",
+      args: { taskId: "loop-1" },
+    });
+    ackMutation(state, msg?.mutationId as string, true, undefined, {
+      id: "loop-1",
+      label: "ping",
+      mode: "loopFixed",
+      status: "scheduled",
+    });
+    await waitForSentCount(sent, 3);
+
+    msg = sent.at(-1);
+    expect(msg).toMatchObject({
+      type: "scheduler_query",
+      op: "delete",
+      args: { taskId: "loop-2" },
+    });
+    ackMutation(state, msg?.mutationId as string, true, undefined, {
+      id: "loop-2",
+      label: "old",
+      mode: "loopSelfPaced",
+      status: "cancelled",
+    });
+
+    await expect(resultPromise).resolves.toMatchObject({
+      details: {
+        tasks: [
+          { id: "loop-1", mode: "loopFixed" },
+          { id: "loop-2", mode: "loopSelfPaced" },
+        ],
+      },
+    });
+  });
+});
+
+async function waitForSentCount(sent: unknown[], count: number): Promise<void> {
+  for (let i = 0; i < 10 && sent.length < count; i += 1) {
+    await Promise.resolve();
+  }
+}
 
 describe("scheduleNextLoopWakeup", () => {
   it("sends a scheduler query and marks the current scheduled run", async () => {

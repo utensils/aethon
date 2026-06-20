@@ -49,6 +49,7 @@ the same combos under `Ctrl` (`Cmd+T` ≡ `Ctrl+T`).
 | `Cmd+,`       | Open Settings panel.                                                                                      |
 | `Cmd+Shift+A` | Toggle the Accounts panel (per-provider auth profiles + usage).                                           |
 | `Cmd+Shift+F` | Cross-session search overlay.                                                                             |
+| `Cmd+Shift+L` | Open Scheduled Tasks.                                                                                     |
 | `Esc`         | Close palette / settings / search / accounts overlay (when open).                                         |
 
 ## Editor

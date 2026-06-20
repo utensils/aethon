@@ -88,6 +88,7 @@ export const BUILTIN_KEYBINDINGS: BuiltinKeybinding[] = [
     description: "Toggle focus between composer and terminal",
   },
   { combo: "meta+l", description: "Focus active tab's input" },
+  { combo: "meta+shift+l", description: "Open Scheduled Tasks" },
   { combo: "meta+b", description: "Toggle left sidebar (projects)" },
   { combo: "meta+d", description: "Toggle right sidebar (files)" },
   { combo: "meta+k", description: "Clear chat" },
