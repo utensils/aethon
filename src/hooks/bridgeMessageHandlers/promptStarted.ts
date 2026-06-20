@@ -3,9 +3,9 @@ import type { BridgeMessageHandler } from "./types";
 
 function shortPath(path: string | undefined): string | undefined {
   if (!path) return undefined;
-  const parts = path.split("/").filter(Boolean);
+  const parts = path.split(/[\\/]+/).filter(Boolean);
   if (parts.length <= 2) return path;
-  return `.../${parts.slice(-2).join("/")}`;
+  return `…/${parts.slice(-2).join("/")}`;
 }
 
 function hangWarnTitle(tab: Tab): string {

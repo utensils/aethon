@@ -116,7 +116,7 @@ describe("handlePromptStarted", () => {
             ...makeEmptyTab(tabId, "Tab 1"),
             waiting: true,
             model: "gpt-5",
-            cwd: "/Users/jamesbrink/Projects/utensils/aethon",
+            cwd: "C:\\Users\\jamesbrink\\Projects\\utensils\\aethon",
             queuedMessages: [{ id: "q1", content: "next" }],
             queueCount: 1,
           },
@@ -131,7 +131,7 @@ describe("handlePromptStarted", () => {
         id: `ae-hang-warn:${tabId}`,
         title: "Tab 1 is still working (gpt-5)",
         message:
-          "This session has been running longer than expected. Working directory: .../utensils/aethon. 1 queued message waiting.",
+          "This session has been running longer than expected. Working directory: …/utensils/aethon. 1 queued message waiting.",
         kind: "warning",
         actions: [
           { label: "Open session", action: `activate-tab:${tabId}` },
