@@ -1,6 +1,33 @@
 import type { Tab } from "../../types/tab";
 import type { BridgeMessageHandler } from "./types";
 
+function shortPath(path: string | undefined): string | undefined {
+  if (!path) return undefined;
+  const parts = path.split(/[\\/]+/).filter(Boolean);
+  if (parts.length <= 2) return path;
+  return `…/${parts.slice(-2).join("/")}`;
+}
+
+function hangWarnTitle(tab: Tab): string {
+  const label = tab.label?.trim() || "Agent session";
+  const model = tab.model?.trim();
+  return model
+    ? `${label} is still working (${model})`
+    : `${label} is still working`;
+}
+
+function hangWarnMessage(tab: Tab): string {
+  const cwd = shortPath(tab.cwd);
+  const bits = ["This session has been running longer than expected."];
+  if (cwd) bits.push(`Working directory: ${cwd}.`);
+  if (tab.queueCount > 0) {
+    bits.push(
+      `${tab.queueCount} queued message${tab.queueCount === 1 ? "" : "s"} waiting.`,
+    );
+  }
+  return bits.join(" ");
+}
+
 /** Bridge tells us a prompt has begun. Sent for handler-driven
  *  ctx.pi.prompt AND every queue-drained turn (source: "queue") so Stop
  *  stays visible across followUp boundaries instead of flashing back to
@@ -78,11 +105,12 @@ export const handlePromptStarted: BridgeMessageHandler = (data, ctx) => {
       ctx.hangWarnActiveRef.current.add(tabId);
       ctx.pushNotification({
         id: ctx.hangWarnNotifId(tabId),
-        title: "Still working…",
-        message: "The agent is taking longer than expected.",
+        title: hangWarnTitle(tab),
+        message: hangWarnMessage(tab),
         kind: "warning",
         durationMs: null,
         actions: [
+          { label: "Open session", action: `activate-tab:${tabId}` },
           { label: "Stop", action: `hang-warn:stop:${tabId}` },
           { label: "Force restart", action: "hang-warn:force-restart" },
         ],
