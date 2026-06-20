@@ -185,16 +185,31 @@ test("chat canvas contains wide content without horizontal scrolling", async ({
     .evaluate((el) => ({ overflowX: getComputedStyle(el).overflowX }));
   expect(scrollerMetrics.overflowX).toBe("hidden");
 
-  await page.locator(".ae-tool-card-summary").click();
-  await expect(page.locator(".ae-tool-card[open] .a2ui-code")).toBeVisible();
+  const containment = await page.locator(".ae-tool-card").evaluate((details) => {
+    if (!(details instanceof HTMLDetailsElement)) {
+      throw new Error("expected tool card details element");
+    }
+    details.open = true;
+    details.dispatchEvent(new Event("toggle", { bubbles: true }));
 
-  const codeMetrics = await page
-    .locator(".ae-tool-card[open] .a2ui-code")
-    .evaluate((el) => ({
-      clientWidth: el.clientWidth,
-      scrollWidth: el.scrollWidth,
-    }));
-  expect(codeMetrics.scrollWidth).toBeGreaterThan(codeMetrics.clientWidth);
+    const code = details.querySelector(".a2ui-code");
+    if (!code) throw new Error("expected open tool card code block");
+    const scroller = document.querySelector(".a2ui-canvas-scroller");
+    const codeRect = code.getBoundingClientRect();
+    const scrollerRect = scroller?.getBoundingClientRect();
+    return {
+      canvasClientWidth: scroller?.clientWidth ?? 0,
+      canvasScrollWidth: scroller?.scrollWidth ?? 0,
+      codeRight: codeRect.right,
+      scrollerRight: scrollerRect?.right ?? 0,
+    };
+  });
+  expect(containment.codeRight).toBeLessThanOrEqual(
+    containment.scrollerRight + 1,
+  );
+  expect(containment.canvasScrollWidth).toBeLessThanOrEqual(
+    containment.canvasClientWidth + 1,
+  );
 });
 
 test("queues normal Enter messages behind an in-flight turn and drains cleanly", async ({

@@ -723,6 +723,9 @@ function VirtualMessageList({
   // Set by a user gesture (wheel/touch/scroll-key); the next scroll event reads
   // and clears it. Distinguishes a real scroll-away from our own re-pins.
   const userScrollRef = useRef(false);
+  const pinRafRef = useRef<number | null>(null);
+  const pinDeadlineRef = useRef(0);
+  const pinTimeoutsRef = useRef<number[]>([]);
   const [flashIndex, setFlashIndex] = useState<number | null>(null);
   const prevScrollToMatch = useRef<string | undefined>(undefined);
   const prevLastMessageId = useRef(messages[messages.length - 1]?.id);
@@ -788,32 +791,71 @@ function VirtualMessageList({
   }, []);
 
   const scrollToBottom = useCallback((settleMs = 150) => {
+    const startedAt =
+      typeof performance === "undefined" ? Date.now() : performance.now();
+    const now = () =>
+      typeof performance === "undefined" ? Date.now() : performance.now();
+    pinDeadlineRef.current = Math.max(
+      pinDeadlineRef.current,
+      startedAt + settleMs,
+    );
+
     // Scroll to the true bottom of the scroller — this includes the footer's
     // live subtree / typing indicator, which sit below the last data row.
     const pinDomScroller = () => {
+      const el = scrollerElRef.current;
+      const bottomGap = el
+        ? el.scrollHeight - el.clientHeight - el.scrollTop
+        : Number.POSITIVE_INFINITY;
+      if (bottomGap <= 2) {
+        updateCanScroll();
+        return;
+      }
       const lastIndex = Math.max(0, groupsRef.current.length - 1);
       virtuosoRef.current?.scrollToIndex({ index: lastIndex, align: "end" });
       virtuosoRef.current?.scrollTo({ top: Number.MAX_SAFE_INTEGER });
-      const el = scrollerElRef.current;
       if (el) el.scrollTop = el.scrollHeight;
+      updateCanScroll();
     };
     const pinIfStillFollowing = () => {
       if (followingRef.current) pinDomScroller();
     };
     pinDomScroller();
-    const startedAt =
-      typeof performance === "undefined" ? Date.now() : performance.now();
-    const now = () =>
-      typeof performance === "undefined" ? Date.now() : performance.now();
     const frame = () => {
+      pinRafRef.current = null;
       if (!followingRef.current) return;
       pinDomScroller();
-      if (now() - startedAt < settleMs) window.requestAnimationFrame(frame);
+      if (now() < pinDeadlineRef.current) {
+        pinRafRef.current = window.requestAnimationFrame(frame);
+      }
     };
-    window.requestAnimationFrame(frame);
-    for (const delay of [50, 150, 300, 600, 900]) {
-      if (delay <= settleMs) window.setTimeout(pinIfStillFollowing, delay);
+    if (pinRafRef.current === null) {
+      pinRafRef.current = window.requestAnimationFrame(frame);
     }
+    for (const timeoutId of pinTimeoutsRef.current) {
+      window.clearTimeout(timeoutId);
+    }
+    pinTimeoutsRef.current = [];
+    for (const delay of [50, 150, 300, 600, 900]) {
+      if (delay <= settleMs) {
+        pinTimeoutsRef.current.push(
+          window.setTimeout(pinIfStillFollowing, delay),
+        );
+      }
+    }
+  }, [updateCanScroll]);
+
+  useEffect(() => {
+    return () => {
+      if (pinRafRef.current !== null) {
+        window.cancelAnimationFrame(pinRafRef.current);
+        pinRafRef.current = null;
+      }
+      for (const timeoutId of pinTimeoutsRef.current) {
+        window.clearTimeout(timeoutId);
+      }
+      pinTimeoutsRef.current = [];
+    };
   }, []);
 
   const markUserScrollIntent = useCallback((event: Event) => {

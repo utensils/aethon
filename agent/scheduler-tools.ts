@@ -84,13 +84,13 @@ const ManageScheduledTasksParams = Type.Object({
     ],
     {
       description:
-        "Scheduler action. Use list first when task ids are unknown. Use cancel with all=true to stop active loop tasks, or delete with all=true to remove loop records.",
+        "Scheduler action. Use list first when task ids are unknown. Use cancel with all=true to stop cancellable loop tasks, or delete with all=true to remove non-running loop records.",
     },
   ),
   taskId: Type.Optional(
     Type.String({
       description:
-        "Full task id or unique task id prefix for cancel, pause, resume, or run.",
+        "Full task id or unique task id prefix for cancel, delete, pause, resume, or run.",
     }),
   ),
   all: Type.Optional(

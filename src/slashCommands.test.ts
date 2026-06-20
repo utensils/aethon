@@ -390,9 +390,9 @@ describe("buildBuiltinSlashCommands", () => {
       openScheduledTasks: () => {
         opened += 1;
       },
-      createScheduledTask: async () => {
+      createScheduledTask: () => {
         creates += 1;
-        throw new Error("should not create");
+        return Promise.reject(new Error("should not create"));
       },
     });
     const loop = buildBuiltinSlashCommands().find((c) => c.name === "loop")!;
@@ -411,15 +411,15 @@ describe("buildBuiltinSlashCommands", () => {
     const ctx = makeSlashContext({
       appendSystem: (text) => system.push(text),
       notify: (input) => notifications.push(input.title),
-      createScheduledTask: async (input) => {
+      createScheduledTask: (input) => {
         created.push(input);
-        return {
+        return Promise.resolve({
           id: "abcdef123456",
           label: "sync from origin main",
           mode: "loopFixed",
           schedule: { kind: "interval", intervalMs: 300_000, label: "5m" },
           visiblePrompt: "sync from origin main",
-        } as never;
+        } as never);
       },
     });
     const loop = buildBuiltinSlashCommands().find((c) => c.name === "loop")!;
@@ -443,21 +443,29 @@ describe("buildBuiltinSlashCommands", () => {
     const notifications: string[] = [];
     const ctx = makeSlashContext({
       notify: (input) => notifications.push(input.title),
-      listScheduledTasks: async () =>
-        [
+      listScheduledTasks: () =>
+        Promise.resolve([
           {
             id: "abcdef123456",
             label: "old loop",
             status: "cancelled",
           },
-        ] as never,
-      cancelScheduledTask: async (id) => {
+        ] as never),
+      cancelScheduledTask: (id) => {
         calls.push(`cancel:${id}`);
-        return { id, label: "old loop", status: "cancelled" } as never;
+        return Promise.resolve({
+          id,
+          label: "old loop",
+          status: "cancelled",
+        } as never);
       },
-      deleteScheduledTask: async (id) => {
+      deleteScheduledTask: (id) => {
         calls.push(`delete:${id}`);
-        return { id, label: "old loop", status: "cancelled" } as never;
+        return Promise.resolve({
+          id,
+          label: "old loop",
+          status: "cancelled",
+        } as never);
       },
     });
     const tasks = buildBuiltinSlashCommands().find((c) => c.name === "tasks")!;
@@ -465,7 +473,7 @@ describe("buildBuiltinSlashCommands", () => {
     await tasks.run("delete abcdef12", ctx);
 
     expect(calls).toEqual(["delete:abcdef123456"]);
-    expect(notifications).toEqual(["Task cancelled"]);
+    expect(notifications).toEqual(["Task deleted"]);
   });
 
   it("/context routes through the native command bridge", async () => {

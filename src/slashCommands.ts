@@ -549,10 +549,11 @@ export function buildBuiltinSlashCommands(): SlashCommand[] {
           return;
         }
         const updated = await action(task.id);
+        const deleted = sub === "delete";
         ctx.notify({
-          title: `Task ${updated.status}`,
+          title: deleted ? "Task deleted" : `Task ${updated.status}`,
           message: updated.label,
-          kind: updated.status === "failed" ? "error" : "success",
+          kind: !deleted && updated.status === "failed" ? "error" : "success",
         });
       },
     },
