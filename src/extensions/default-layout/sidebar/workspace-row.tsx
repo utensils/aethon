@@ -56,9 +56,7 @@ export interface WorkspaceSidebarItem {
   pendingState?: "queued" | "starting" | "removing" | "succeeded" | "failed";
   pendingError?: string;
   locked?: boolean;
-  /** Live agent-activity for this workspace's session scope. Only attached
-   *  to non-main rows (the main workspace shares the project path, so its
-   *  activity surfaces on the project line instead). */
+  /** Live agent-activity for this workspace's session scope. */
   agent?: AgentActivitySummary;
 }
 
