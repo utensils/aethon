@@ -45,6 +45,7 @@ export default tseslint.config(
             // tseslint disallows `**` here; one level of nesting matches
             // the bridge's actual layout (no deeper subtrees).
             "agent/*/*.ts",
+            "cli/*.test.ts",
             "eslint.config.js",
             "*.{js,mjs,cjs}",
           ],

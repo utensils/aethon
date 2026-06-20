@@ -8,6 +8,7 @@
 
     "moduleResolution": "bundler",
     "allowImportingTsExtensions": true,
+    "types": ["node"],
     "verbatimModuleSyntax": true,
     "moduleDetection": "force",
     "noEmit": true,
@@ -19,5 +20,6 @@
     "noFallthroughCasesInSwitch": true,
     "noUncheckedSideEffectImports": true
   },
-  "include": ["vite.config.ts"]
+  "include": ["vite.config.ts", "cli/**/*.ts"],
+  "exclude": ["cli/**/*.test.ts"]
 }
