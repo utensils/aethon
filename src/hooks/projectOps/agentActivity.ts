@@ -72,7 +72,7 @@ interface ProjectLike {
 }
 
 /** A sidebar project item with agent-activity overlaid. The workspace shape is
- *  preserved apart from an optional `agent` summary added on non-main rows. */
+ *  preserved apart from an optional `agent` summary added on workspace rows. */
 export type WithAgentActivity<P extends ProjectLike> = Omit<P, "workspaces"> & {
   agent: AgentActivitySummary;
   agentRollup: AgentActivitySummary;
@@ -85,11 +85,12 @@ export type WithAgentActivity<P extends ProjectLike> = Omit<P, "workspaces"> & {
  *
  *  Scoping rules:
  *   - A non-main workspace row gets the agent tabs whose cwd matches its path.
+ *   - A main workspace row gets the agent tabs for the project's host path,
+ *     matching non-main workspace rows so expanded host sessions show the
+ *     same activity indicator as worktree sessions.
  *   - The project line gets its "main scope" tabs: agent tabs with this
  *     `projectId` whose cwd is NOT one of the project's non-main workspaces
- *     (so a main-workspace session surfaces on the project line and the main
- *     workspace row stays dot-free — they share a path and would otherwise
- *     double up).
+ *     (so a main-workspace session still surfaces on the project line).
  *   - `agentRollup` summarises main ∪ every workspace, used when the project
  *     row is collapsed so a hidden active workspace still shows a dot.
  *
@@ -130,9 +131,6 @@ export function attachAgentActivity<P extends ProjectLike>(
     }
 
     const nextWorkspaces = workspaces.map((w) => {
-      // Main workspace shares the project path — its activity is already
-      // surfaced on the project line, so leave its row dot-free.
-      if (w.isMain) return w;
       const wtTabs = tabsByCwd.get(normalizeSessionPath(w.path)) ?? [];
       return {
         ...w,

@@ -85,14 +85,14 @@ describe("attachAgentActivity", () => {
     })),
   });
 
-  it("scopes main-path tabs to the project line, leaving the main workspace dot-free", () => {
+  it("scopes main-path tabs to both the project line and main workspace row", () => {
     const projects = [project([{ id: "wt-main", path: "/p", isMain: true }])];
     const tabs = [agentTab("a", "proj", "/p")];
     const [out] = attachAgentActivity(projects, tabs, new Set(["a"]));
     expect(out.agent.status).toBe("running");
     expect(out.agentRollup.status).toBe("running");
-    // Main workspace row carries no agent summary (no double dot).
-    expect("agent" in out.workspaces[0]).toBe(false);
+    expect(out.workspaces[0].agent?.status).toBe("running");
+    expect(out.workspaces[0].agent?.runningCount).toBe(1);
   });
 
   it("scopes workspace-path tabs to that workspace row", () => {
