@@ -128,6 +128,7 @@ runtime API below and report failures through normal tool errors.
 - \`aethon.registerTheme({id, label?, vars})\` — register a CSS color scheme.
   vars is a map of CSS custom properties (\`--bg\`, \`--text\`, \`--accent\`, …).
 - \`aethon.windows.openCanvas({id?, title?, components?, state?, width?, height?, x?, y?, focus?, restoreOnLaunch?})\` — open a native OS window that renders bare A2UI canvas content. Use this for custom/exploratory UI unless the main layout is explicitly requested.
+- \`aethon.windows.openTerminal({id?, title?, cwd?, command?, args?})\` — create a private PTY shell and open an interactive native terminal window.
 - \`aethon.windows.emitCanvas/appendCanvas/patchCanvas/clearCanvas/setState(id, ...)\` — update a window's canvas or window-local JSON Pointer state.
 - \`aethon.windows.list/get/getState/getCanvas/focus/close/setTitle(...)\` — inspect and manage native canvas windows.
 - \`aethon.sessions.list/getActive/getMessages/getTranscript/on\` — list sessions, read supported message transcripts, and subscribe to session/message invalidation events for extension apps.
@@ -145,7 +146,7 @@ Advanced (read \`$AETHON_DOCS_DIR/api.md\` for full details):
 - \`aethon.canvas.*\` — progressive canvas UI (emit, append, patch, clear)
 - \`aethon.windows.*\` — native A2UI canvas windows for isolated custom surfaces
 - \`aethon.editor.*\` — open or focus files in the Monaco editor
-- \`aethon.shells.*\` — read/write shared PTY shell tabs
+- \`aethon.shells.*\` — create PTY shell tabs and read/write shared shell tabs
 - \`aethon.sessions.*\` — supported session/message transcript APIs
 - \`aethon.tasks.*\` — launch background tasks in workspaces
 - \`aethon.dashboard.*\` — project dashboard data (repo overview, issues)

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
+import { emit, listen } from "@tauri-apps/api/event";
 import A2UIRenderer from "./components/A2UIRenderer";
 import { ExtensionRegistry } from "./extensions/ExtensionRegistry";
 import { ExtensionRegistryProvider } from "./extensions/ExtensionRegistryProvider";
@@ -10,6 +10,7 @@ import {
   type ExtensionFrontendModule,
 } from "./extensions/extensionFrontendLoader";
 import { injectThemeStyle } from "./hooks/extensionsHydration/themes";
+import { TERMINAL_REPLAY_MAX } from "./hooks/useTabs";
 import {
   replayHighlightGrammars,
   type ExtensionHighlightGrammar,
@@ -19,6 +20,8 @@ import {
   normalizeWindowState,
   type NativeCanvasWindowRecord,
 } from "./nativeWindows";
+import { cycleShareMode, type ShareMode } from "./utils/shareMode";
+import type { A2UIComponent } from "./types/a2ui";
 
 export interface NativeCanvasWindowAppProps {
   id: string;
@@ -30,6 +33,21 @@ type BridgeHydrationMessage = {
 };
 
 const SAVE_DEBOUNCE_MS = 150;
+
+function shellShareModeFromRecord(
+  record: NativeCanvasWindowRecord | null,
+  tabId: string,
+): ShareMode {
+  const tabs =
+    (normalizeWindowState(record?.state).tabs as
+      | Array<Record<string, unknown>>
+      | undefined) ?? [];
+  const tab = tabs.find((item) => item.id === tabId);
+  const shell = tab?.shell;
+  if (!shell || typeof shell !== "object") return "private";
+  const mode = (shell as Record<string, unknown>).shareMode;
+  return typeof mode === "string" ? (mode as ShareMode) : "private";
+}
 
 export default function NativeCanvasWindowApp({
   id,
@@ -50,6 +68,11 @@ export default function NativeCanvasWindowApp({
     recordRef.current = next;
     setError(null);
     setRecord(next);
+    if (next) {
+      emit("native-canvas-window-ready", { id: next.id }).catch(() => {
+        /* readiness is best-effort; callers also have bounded waits */
+      });
+    }
   }, []);
 
   const scheduleSave = useCallback((next: NativeCanvasWindowRecord) => {
@@ -169,6 +192,49 @@ export default function NativeCanvasWindowApp({
   );
 
   useEffect(() => {
+    const unlisten = listen<{ tabId: string; content: string }>(
+      "shell-output",
+      (event) => {
+        const { tabId, content } = event.payload;
+        if (!tabId || typeof content !== "string" || content.length === 0) {
+          return;
+        }
+        const currentState = normalizeWindowState(recordRef.current?.state);
+        const tabs = currentState.tabs;
+        if (!Array.isArray(tabs) || !tabs.some((tab) => tab?.id === tabId)) {
+          return;
+        }
+        window.dispatchEvent(
+          new CustomEvent(`aethon:shell-output:${tabId}`, { detail: content }),
+        );
+        updateRecord((prev) => {
+          const state = normalizeWindowState(prev.state);
+          const prevTabs = state.tabs;
+          if (!Array.isArray(prevTabs)) return prev;
+          let matched = false;
+          const nextTabs = prevTabs.map((tab) => {
+            if (!tab || typeof tab !== "object" || tab.id !== tabId) return tab;
+            matched = true;
+            const next = `${String(tab.terminalBuffer ?? "")}${content}`;
+            return {
+              ...tab,
+              terminalBuffer:
+                next.length > TERMINAL_REPLAY_MAX
+                  ? next.slice(next.length - TERMINAL_REPLAY_MAX)
+                  : next,
+            };
+          });
+          if (!matched) return prev;
+          return { ...prev, state: { ...state, tabs: nextTabs } };
+        });
+      },
+    );
+    return () => {
+      unlisten.then((fn) => fn());
+    };
+  }, [updateRecord]);
+
+  useEffect(() => {
     let disposed = false;
     invoke<NativeCanvasWindowRecord | null>("native_window_get_canvas", { id })
       .then((next) => {
@@ -251,6 +317,61 @@ export default function NativeCanvasWindowApp({
     [updateRecord],
   );
 
+  const handleA2UIEvent = useCallback(
+    (component: A2UIComponent, eventType: string, data?: unknown) => {
+      if (
+        component.type !== "shell-canvas" ||
+        eventType !== "cycle-share-mode"
+      ) {
+        return false;
+      }
+      const payload =
+        data && typeof data === "object"
+          ? (data as Record<string, unknown>)
+          : {};
+      const tabId = typeof payload.tabId === "string" ? payload.tabId : "";
+      if (!tabId) return true;
+      const nextMode = cycleShareMode(
+        shellShareModeFromRecord(recordRef.current, tabId),
+      );
+      invoke<ShareMode>("shell_set_share_mode", { tabId, mode: nextMode })
+        .then((applied) => {
+          emit("native-terminal-share-mode", {
+            tabId,
+            shareMode: applied,
+          }).catch(() => {
+            /* main app mirror is best-effort; Rust remains authoritative */
+          });
+          updateRecord((prev) => ({
+            ...prev,
+            state: {
+              ...normalizeWindowState(prev.state),
+              tabs: (
+                (normalizeWindowState(prev.state).tabs as
+                  | Array<Record<string, unknown>>
+                  | undefined) ?? []
+              ).map((tab) =>
+                tab.id === tabId && tab.shell && typeof tab.shell === "object"
+                  ? {
+                      ...tab,
+                      shell: {
+                        ...(tab.shell as Record<string, unknown>),
+                        shareMode: applied,
+                      },
+                    }
+                  : tab,
+              ),
+            },
+          }));
+        })
+        .catch((err) => {
+          setError(err instanceof Error ? err.message : String(err));
+        });
+      return true;
+    },
+    [updateRecord],
+  );
+
   if (error) {
     return (
       <div className="app ae-native-canvas-window">
@@ -277,6 +398,7 @@ export default function NativeCanvasWindowApp({
           payload={{ components: record.components }}
           state={record.state}
           onStateChange={handleStateChange}
+          onEvent={handleA2UIEvent}
           tabId={record.tabId}
           surfaceId={canvasWindowSurfaceId(record.id)}
           windowId={record.id}

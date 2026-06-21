@@ -105,7 +105,46 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+function shellResizeCalls() {
+  return vi
+    .mocked(invoke)
+    .mock.calls.filter(([command]) => command === "shell_resize");
+}
+
 describe("ShellCanvas zoom synchronization", () => {
+  it("does not replay an immediate duplicate resize for already-running shells", async () => {
+    const state = {
+      tabs: [
+        {
+          id: "shell-1",
+          kind: "shell",
+          shell: {
+            cwd: "/repo",
+            command: "zsh",
+            shareMode: "private",
+            shellState: "running",
+          },
+        },
+      ],
+    };
+
+    render(
+      <ShellCanvas
+        component={{
+          id: "shell-canvas",
+          type: "shell-canvas",
+          props: { tabId: "shell-1", fontSize: 13 },
+        }}
+        state={state}
+        onEvent={vi.fn()}
+      />,
+    );
+
+    await waitFor(() => expect(shellResizeCalls()).toHaveLength(1));
+    await Promise.resolve();
+    expect(shellResizeCalls()).toHaveLength(1);
+  });
+
   it("refits xterm and resizes the PTY when app zoom changes", async () => {
     const state = {
       tabs: [

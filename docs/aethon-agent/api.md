@@ -215,6 +215,10 @@ API:
   creates or updates a native window. Ids must match `/^[A-Za-z][\w-]*$/`.
   Size defaults to `900x650`; windows restore on app relaunch unless
   `restoreOnLaunch: false`.
+- `openTerminal({ id?, title?, cwd?, command?, args?, width?, height?, x?, y?, focus? })`
+  creates a private PTY shell and opens an interactive native terminal window
+  backed by the built-in `shell-canvas` component. Terminal windows are
+  non-restoring so app relaunches never reopen a terminal without a backing PTY.
 - `list()` returns open window summaries.
 - `get(id)` returns the full native canvas window record.
 - `getState(id)` returns the window-local JSON Pointer state object.
@@ -715,7 +719,7 @@ fast and tolerate missed intermediate streaming deltas. For large transcript
 visualizers, treat the event as an invalidation signal and call
 `getMessages()` or `getTranscript()` to resync.
 
-### `shells.list / shells.read / shells.write`
+### `shells.create / shells.list / shells.read / shells.write`
 
 Opt-in agent ↔ shell-tab sharing (M6 P2). The `shells` namespace exposes
 the user's shareable PTY-backed shell tabs. The user picks who can see
@@ -724,6 +728,9 @@ returns tabs whose mode is `read`, `read-write`, or
 `read-write-trusted`. Private tabs are invisible.
 
 ```ts
+aethon.shells.create({ cwd: "/repo", command: "zsh" });
+// → { ok: true, data: { tabId, cwd, command, args, shareMode: "private" } }
+
 aethon.shells.list();
 // → { ok: true, data: [{ tabId, cwd, command, shareMode }, …] }
 
@@ -748,14 +755,22 @@ that would be denied.
 Writes inject keystrokes verbatim — include `\n` to submit a command.
 In `read-write` mode, every call pops an Allow / Deny toast and resolves
 when the user clicks (or auto-denies after ~4m30s). In
-`read-write-trusted` the prompt is skipped. The bridge waits for the
-frontend handshake before resolving any of these calls; calls placed
-during register-time return `frontend_not_ready` rather than dangling.
+`read-write-trusted` the prompt is skipped. Shells created by
+`shells.create()` are always private until the user changes the visible
+share-mode badge; agent-facing APIs cannot seed or escalate sharing. The
+bridge waits for the frontend handshake before resolving any of these calls;
+calls placed during register-time return `frontend_not_ready` rather than
+dangling.
 
 The same surface is exposed to event-handler `ctx` as `ctx.shells.*`
 so handlers can read or drive shells without going through the global.
 Tools `listShells` / `readShell` / `writeShell` register automatically;
 the model can use them via the standard tool-use protocol.
+
+For app-like terminals, `aethon.windows.openTerminal({ id?, title?, cwd?, command?, args? })`
+creates a private PTY shell and opens a non-restoring native canvas window with
+an interactive `shell-canvas` bound to that shell. Use `aethon.shells.read/write`
+only after the user chooses an appropriate opt-in mode.
 
 ### `editor.openFile`
 

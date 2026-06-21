@@ -16,6 +16,7 @@ export interface ShellsApiDeps {
 }
 
 const SHELL_WRITE_ACK_TIMEOUT_MS = 5 * 60 * 1000; // 5 min — user may step away
+const SHELL_CREATE_ACK_TIMEOUT_MS = 60_000;
 const MUTATION_ACK_TIMEOUT_MS_DEFAULT = 5_000;
 
 export function buildShellsApi(
@@ -24,7 +25,7 @@ export function buildShellsApi(
 ): ShellsApi {
   // -- shells.list/read/write --------------------------------------------
   async function shellQuery(
-    op: "list" | "read" | "write",
+    op: "list" | "create" | "read" | "write",
     args: Record<string, unknown> = {},
     timeoutMs?: number,
   ): Promise<MutationResult> {
@@ -45,6 +46,34 @@ export function buildShellsApi(
 
   return {
     list: () => shellQuery("list"),
+    create: (input = {}) => {
+      const args = input && typeof input === "object" ? input : {};
+      return shellQuery(
+        "create",
+        {
+          ...(typeof args.tabId === "string" && args.tabId.trim()
+            ? { tabId: args.tabId.trim() }
+            : {}),
+          ...(typeof args.cwd === "string" && args.cwd.length > 0
+            ? { cwd: args.cwd }
+            : {}),
+          ...(typeof args.command === "string" && args.command.length > 0
+            ? { command: args.command }
+            : {}),
+          ...(Array.isArray(args.args) &&
+          args.args.every((a) => typeof a === "string")
+            ? { args: args.args }
+            : {}),
+          ...(typeof args.activate === "boolean"
+            ? { activate: args.activate }
+            : {}),
+          ...(typeof args.inheritEnv === "boolean"
+            ? { inheritEnv: args.inheritEnv }
+            : {}),
+        },
+        SHELL_CREATE_ACK_TIMEOUT_MS,
+      );
+    },
     read: (input) => {
       if (!input || typeof input.tabId !== "string" || !input.tabId) {
         return Promise.resolve({ ok: false, error: "tabId required" });

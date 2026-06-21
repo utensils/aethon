@@ -107,3 +107,33 @@ export function syncNativeWindowsToState(
 export function canvasWindowSurfaceId(id: string): string {
   return `${CANVAS_WINDOW_SURFACE_PREFIX}${id}`;
 }
+
+export function terminalShellTabIds(
+  record: NativeCanvasWindowRecord | undefined,
+): string[] {
+  if (!record) return [];
+  const componentIds = new Set<string>();
+  for (const component of record.components) {
+    if (
+      component &&
+      typeof component === "object" &&
+      (component as { type?: unknown }).type === "shell-canvas"
+    ) {
+      const props = (component as { props?: Record<string, unknown> }).props;
+      if (typeof props?.tabId === "string") componentIds.add(props.tabId);
+    }
+  }
+  if (componentIds.size === 0) return [];
+  const tabs = (record.state as { tabs?: unknown }).tabs;
+  if (!Array.isArray(tabs)) return [];
+  return tabs
+    .filter(
+      (tab): tab is { id: string; kind?: string } =>
+        Boolean(tab) &&
+        typeof tab === "object" &&
+        typeof (tab as { id?: unknown }).id === "string" &&
+        componentIds.has((tab as { id: string }).id) &&
+        (tab as { kind?: unknown }).kind === "shell",
+    )
+    .map((tab) => tab.id);
+}

@@ -90,6 +90,14 @@ const BUILTIN_SLASH_NAMES = new Set([
 
 export interface ShellsApi {
   list(): Promise<MutationResult>;
+  create(input?: {
+    tabId?: string;
+    cwd?: string;
+    command?: string;
+    args?: string[];
+    activate?: boolean;
+    inheritEnv?: boolean;
+  }): Promise<MutationResult>;
   read(input: {
     tabId: string;
     sinceTotal?: number;
@@ -165,6 +173,21 @@ export interface WindowsApi {
     focus?: boolean;
     restoreOnLaunch?: boolean;
     tabId?: string;
+  }): Promise<MutationResult>;
+  openTerminal(input?: {
+    id?: string;
+    title?: string;
+    shellTabId?: string;
+    cwd?: string;
+    command?: string;
+    args?: string[];
+    activateShell?: boolean;
+    width?: number;
+    height?: number;
+    x?: number;
+    y?: number;
+    focus?: boolean;
+    restoreOnLaunch?: false;
   }): Promise<MutationResult>;
   list(): Promise<MutationResult>;
   get(id: string): Promise<MutationResult>;

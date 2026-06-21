@@ -15,10 +15,7 @@ import { FitAddon } from "@xterm/addon-fit";
 import { WebglAddon } from "@xterm/addon-webgl";
 import "@xterm/xterm/css/xterm.css";
 
-import type {
-  NumberValue,
-  StringValue,
-} from "../../../types/a2ui";
+import type { NumberValue, StringValue } from "../../../types/a2ui";
 import type { ShareMode } from "../../../utils/shareMode";
 import { resolveNumber, resolveString } from "../../../utils/dataBinding";
 import { RegistryComponent } from "../../../components/A2UIRenderer";
@@ -38,15 +35,15 @@ import {
   TERMINAL_UI_SCALE_SETTLE_MS,
 } from "../terminal-helpers";
 import { registerTerminalUrlLinks } from "../terminal-linkifier";
-import {
-  decideShellResize,
-  shouldSkipResize,
-  type ShellDims,
-} from "./resize";
+import { decideShellResize, shouldSkipResize, type ShellDims } from "./resize";
 
 const TERMINAL_PTY_RESIZE_SETTLE_MS = 120;
 
-export function ShellCanvas({ component, state, onEvent }: BuiltinComponentProps) {
+export function ShellCanvas({
+  component,
+  state,
+  onEvent,
+}: BuiltinComponentProps) {
   const props = component.props as {
     /** Shell tab id this canvas is bound to. Resolved via $ref so the
      *  layout can pass `/activeTabId` and have the canvas track the
@@ -70,9 +67,10 @@ export function ShellCanvas({ component, state, onEvent }: BuiltinComponentProps
     shareMode?: ShareMode;
     shellState?: string;
   };
-  const tabs = (state["tabs"] as
-    | Array<{ id: string; kind?: string; shell?: ShellMetaShape }>
-    | undefined) ?? [];
+  const tabs =
+    (state["tabs"] as
+      | Array<{ id: string; kind?: string; shell?: ShellMetaShape }>
+      | undefined) ?? [];
   const boundTab = tabs.find((t) => t.id === tabId);
   const shell = boundTab?.shell;
 
@@ -84,6 +82,8 @@ export function ShellCanvas({ component, state, onEvent }: BuiltinComponentProps
   // Live cols×rows for the status line. Updated in the same ResizeObserver
   // callback that resizes the PTY so the displayed value never drifts.
   const [dims, setDims] = useState<{ cols: number; rows: number } | null>(null);
+  const shellStateRef = useRef({ tabId, shellState: shell?.shellState });
+  const resizeReplayPendingRef = useRef(false);
   useEffect(() => {
     tabIdRef.current = tabId;
   }, [tabId]);
@@ -255,7 +255,10 @@ export function ShellCanvas({ component, state, onEvent }: BuiltinComponentProps
     // Replay any already-buffered scrollback (when the tab was mounted
     // after some output had already streamed). App.tsx writes buffer to
     // /tabs/<idx>/terminalBuffer; we read it via state.
-    const tabs = (state["tabs"] as Array<{ id: string; terminalBuffer?: string }> | undefined) ?? [];
+    const tabs =
+      (state["tabs"] as
+        | Array<{ id: string; terminalBuffer?: string }>
+        | undefined) ?? [];
     const tab = tabs.find((t) => t.id === tabId);
     if (tab?.terminalBuffer) term.write(tab.terminalBuffer);
 
@@ -277,12 +280,38 @@ export function ShellCanvas({ component, state, onEvent }: BuiltinComponentProps
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tabId]);
 
+  useEffect(() => {
+    const previous = shellStateRef.current;
+    const sameTab = previous.tabId === tabId;
+    resizeReplayPendingRef.current =
+      sameTab &&
+      previous.shellState !== "running" &&
+      shell?.shellState === "running";
+    shellStateRef.current = { tabId, shellState: shell?.shellState };
+  }, [shell?.shellState, tabId]);
+
+  useEffect(() => {
+    if (
+      shell?.shellState !== "running" ||
+      !tabId ||
+      !dims ||
+      !resizeReplayPendingRef.current
+    ) {
+      return;
+    }
+    resizeReplayPendingRef.current = false;
+    void invoke("shell_resize", {
+      tabId,
+      cols: dims.cols,
+      rows: dims.rows,
+    }).catch(() => {
+      /* PTY may have exited between state update and replay */
+    });
+  }, [dims, shell?.shellState, tabId]);
+
   return (
     <div className="ae-shell-canvas-wrap" style={{ gridArea: "canvas" }}>
-      <div
-        ref={containerRef}
-        className="ae-shell-canvas-term"
-      />
+      <div ref={containerRef} className="ae-shell-canvas-term" />
       <ShellStatusBar
         cwd={shell?.cwd ?? ""}
         command={shell?.command ?? ""}
@@ -325,10 +354,7 @@ function ShellStatusBar(props: {
   }, [cwd]);
   // Live shareMode + tabId pass through componentProps; both the default
   // React badge and any override template see them via component.props.
-  const badgeProps = useMemo(
-    () => ({ shareMode, tabId }),
-    [shareMode, tabId],
-  );
+  const badgeProps = useMemo(() => ({ shareMode, tabId }), [shareMode, tabId]);
   // Adapter: the default React badge fires `cycle-share-mode`, which
   // App.tsx routes from the surrounding shell-canvas. Re-emit through
   // the parent BuiltinComponentProps onEvent so it lands on the
@@ -369,11 +395,15 @@ function ShellStatusBar(props: {
       )}
       {command && (
         <>
-          <span className="ae-shell-status-sep" aria-hidden="true">·</span>
+          <span className="ae-shell-status-sep" aria-hidden="true">
+            ·
+          </span>
           <span className="ae-shell-status-cmd">{command}</span>
         </>
       )}
-      <span className="ae-shell-status-sep" aria-hidden="true">·</span>
+      <span className="ae-shell-status-sep" aria-hidden="true">
+        ·
+      </span>
       <RegistryComponent
         type="share-mode-badge"
         state={state}

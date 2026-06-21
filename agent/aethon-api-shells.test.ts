@@ -65,6 +65,52 @@ describe("buildShellsApi", () => {
     }
   });
 
+  it("create uses a startup-sized timeout", async () => {
+    vi.useFakeTimers();
+    try {
+      const { state, sent, api } = makeFixture();
+      markFrontendReady(state);
+      let settled = false;
+      const p = api.create({ cwd: "/repo" }).then((result) => {
+        settled = true;
+        return result;
+      });
+      expect(sent.at(-1)).toMatchObject({ op: "create" });
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(settled).toBe(false);
+      await vi.advanceTimersByTimeAsync(55_000);
+      await expect(p).resolves.toEqual({ ok: false, error: "timeout" });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("create forwards shell creation queries", async () => {
+    const { state, sent, api } = makeFixture();
+    markFrontendReady(state);
+    const p = api.create({
+      cwd: "/repo",
+      command: "zsh",
+      args: ["-l"],
+      activate: false,
+    });
+    const msg = sent.at(-1)!;
+    expect(msg).toMatchObject({
+      type: "shell_query",
+      op: "create",
+      args: {
+        cwd: "/repo",
+        command: "zsh",
+        args: ["-l"],
+        activate: false,
+      },
+    });
+    ackMutation(state, msg.mutationId as string, true, undefined, {
+      tabId: "shell-1",
+    });
+    await expect(p).resolves.toEqual({ ok: true, data: { tabId: "shell-1" } });
+  });
+
   it("read forwards a shell_query with optional bounds once ready", async () => {
     const { state, sent, api } = makeFixture();
     markFrontendReady(state);
@@ -75,7 +121,9 @@ describe("buildShellsApi", () => {
       op: "read",
       args: { tabId: "tab-1", sinceTotal: 10, maxBytes: 256 },
     });
-    ackMutation(state, msg.mutationId as string, true, undefined, { lines: [] });
+    ackMutation(state, msg.mutationId as string, true, undefined, {
+      lines: [],
+    });
     await expect(p).resolves.toEqual({ ok: true, data: { lines: [] } });
   });
 

@@ -16,7 +16,7 @@
  *  shape Tauri's `listen` callback expects. */
 import { vi, type Mock } from "vitest";
 import { invoke as realInvoke } from "@tauri-apps/api/core";
-import { listen as realListen } from "@tauri-apps/api/event";
+import { emit as realEmit, listen as realListen } from "@tauri-apps/api/event";
 
 type ListenCallback<T = unknown> = (event: { payload: T }) => void;
 
@@ -26,6 +26,8 @@ export interface TauriMockHarness {
   /** The mocked `listen`. Use `harness.listen.mock.calls` to assert
    *  registrations; prefer `fireEvent` for delivering payloads. */
   listen: Mock;
+  /** The mocked `emit`. */
+  emit: Mock;
   /** Fire a synthetic event to every handler registered via `listen` for
    *  the given event name. Returns the number of handlers invoked. */
   fireEvent: <T = unknown>(name: string, payload: T) => number;
@@ -40,12 +42,15 @@ export interface TauriMockHarness {
 export function installTauriMocks(): TauriMockHarness {
   const invoke = realInvoke as unknown as Mock;
   const listen = realListen as unknown as Mock;
+  const emit = realEmit as unknown as Mock;
   const handlers = new Map<string, Set<ListenCallback>>();
 
   const reset = () => {
     invoke.mockReset();
     invoke.mockImplementation(() => Promise.resolve(undefined));
     listen.mockReset();
+    emit.mockReset();
+    emit.mockImplementation(() => Promise.resolve());
     listen.mockImplementation((name: string, cb: ListenCallback) => {
       let bucket = handlers.get(name);
       if (!bucket) {
@@ -62,14 +67,14 @@ export function installTauriMocks(): TauriMockHarness {
 
   reset();
 
-  const fireEvent = <T,>(name: string, payload: T): number => {
+  const fireEvent = <T>(name: string, payload: T): number => {
     const bucket = handlers.get(name);
     if (!bucket || bucket.size === 0) return 0;
     for (const cb of bucket) cb({ payload });
     return bucket.size;
   };
 
-  return { invoke, listen, fireEvent, handlers, reset };
+  return { invoke, listen, emit, fireEvent, handlers, reset };
 }
 
 /** Restore the default no-op behavior. Call from `afterEach` if the harness
@@ -79,6 +84,11 @@ export function clearTauriMocks(): void {
   vi.restoreAllMocks();
   // Re-install the default no-ops so other mocks layered on top of the
   // setup mock module don't crash when subsequent tests import `invoke`.
-  (realInvoke as unknown as Mock).mockImplementation(() => Promise.resolve(undefined));
-  (realListen as unknown as Mock).mockImplementation(() => Promise.resolve(() => {}));
+  (realInvoke as unknown as Mock).mockImplementation(() =>
+    Promise.resolve(undefined),
+  );
+  (realListen as unknown as Mock).mockImplementation(() =>
+    Promise.resolve(() => {}),
+  );
+  (realEmit as unknown as Mock).mockImplementation(() => Promise.resolve());
 }
