@@ -238,7 +238,6 @@ function compactionPhase(
   if (
     typeof event.errorMessage === "string" ||
     event.aborted === true ||
-    (event.type === "compaction_end" && event.result === undefined) ||
     type.includes("fail") ||
     type.includes("error")
   ) {
@@ -263,9 +262,6 @@ function compactionFailureMessage(
   }
   if (event.aborted === true) {
     return "Context compaction cancelled.";
-  }
-  if (event.type === "compaction_end" && event.result === undefined) {
-    return "Context compaction failed: no summary produced.";
   }
   const reason =
     typeof event.error === "string"
@@ -449,18 +445,6 @@ function handleContextOverflowCompactionEvent(
     return;
   }
   if (rec.contextOverflowRecoveryFallbackRunning) return;
-  if (event.aborted === true || event.result === undefined) {
-    deps.send({
-      type: "error",
-      tabId,
-      message:
-        event.aborted === true
-          ? "Context overflow recovery cancelled during compaction."
-          : "Context overflow recovery failed: compaction produced no summary.",
-    });
-    finalizeFailedTurn(state, deps, tabId, failedMessage);
-    return;
-  }
   if (event.willRetry === true) return;
   void continueAfterContextCompaction(state, deps, tabId, failedMessage);
 }

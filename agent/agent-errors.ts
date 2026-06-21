@@ -61,9 +61,9 @@ export function isRetryableAgentEndError(message: string): boolean {
 
 /**
  * Turn a raw agent error string into a clean, user-facing message. Today
- * this special-cases the Codex usage-limit 429 (whose payload is a wall of
- * JSON + X-Codex-* headers) into a short sentence with the reset countdown
- * and a hint to switch accounts. Everything else passes through unchanged.
+ * this special-cases Codex usage-limit 429s and context-window overflow
+ * failures whose raw provider payloads are otherwise noisy and hard to act on.
+ * Everything else passes through unchanged.
  *
  * Reusable: any surface that renders an agent error can call this.
  */
