@@ -55,6 +55,43 @@ function makeState(userDir = tempUserDir()): AethonAgentState {
   } as unknown as AethonAgentState;
 }
 
+/**
+ * Augment a bare {@link makeState} with the empty extension collections that
+ * the `ready` handshake (`emitGlobalReady` → `emitReady`) serializes, so a
+ * handler that ends by emitting `ready` can run without a half-built state.
+ * Kept out of `makeState` so tests that deliberately rely on a minimal state
+ * (e.g. forcing a session-refresh failure) are unaffected.
+ */
+function withReadyState(state: AethonAgentState): AethonAgentState {
+  Object.assign(state as unknown as Record<string, unknown>, {
+    tabProjectCwds: new Map(),
+    cachedModels: [],
+    extensionComponents: new Map(),
+    extensionStateTree: {},
+    extensionStateKeys: new Set(),
+    perTabExtState: new Map(),
+    extensionLayout: null,
+    pendingLayoutPatches: [],
+    extensionThemes: new Map(),
+    extensionSlashCommands: new Map(),
+    piSlashCommands: [],
+    piSkills: [],
+    extensionKeybindings: new Map(),
+    extensionMenuItems: new Map(),
+    extensionEventRoutes: new Map(),
+    extensionLayouts: new Map(),
+    extensionFrontendModules: new Map(),
+    extensionHighlightGrammars: new Map(),
+    loadedExtensions: new Map(),
+    projectExtensionRoots: new Map(),
+    loadFailures: new Map(),
+    disabledExtensions: new Set(),
+    disabledExtensionMeta: new Map(),
+    discoveredTabs: [],
+  });
+  return state;
+}
+
 function fakeTab(model: string, promptInFlight = false): TabRecord {
   const [provider, ...rest] = model.split("/");
   return {
@@ -267,6 +304,41 @@ describe("auth profile manager", () => {
         message: expect.stringContaining(
           "auth_profile_api_key_save: refresh session:",
         ),
+      }),
+    );
+    expect(sent).toContainEqual(
+      expect.objectContaining({ type: "auth_profiles" }),
+    );
+  });
+
+  it("auth_profile_use_for_tab records a worker tab without rebuilding the global session", async () => {
+    const userDir = tempUserDir();
+    const state = withReadyState(makeState(userDir));
+    const profileId = addProfile(state, "openai-codex", "Codex Two");
+    saveAuthProfilesState(userDir, state.authProfiles);
+    const sent: Record<string, unknown>[] = [];
+    const deps = {
+      send: (m: Record<string, unknown>) => sent.push(m),
+    } as DispatcherDeps;
+
+    await handleAuthProfileMessage(state, deps, {
+      type: "auth_profile_use_for_tab",
+      tabId: "tab-worker",
+      profileId,
+    });
+
+    // The mapping is recorded and surfaced, but the global bridge must NOT
+    // spawn a session for the worker-owned tab (that blocks on a devshell
+    // prepare it can't satisfy) and must NOT emit a model override (which would
+    // silently reset the tab's model). The worker's apply owns the session.
+    expect(state.tabAuthProfileIds.get("tab-worker")).toBe(profileId);
+    expect(state.tabs.has("tab-worker")).toBe(false);
+    expect(sent).toContainEqual(
+      expect.objectContaining({
+        type: "auth_profile_changed",
+        tabId: "tab-worker",
+        profileId,
+        model: "",
       }),
     );
     expect(sent).toContainEqual(

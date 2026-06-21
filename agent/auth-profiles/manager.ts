@@ -746,27 +746,51 @@ async function handleUseForTab(
     });
     return;
   }
-  const previousModel = existing?.session.model;
-  const cwd = state.tabProjectCwds.get(tabId);
-  if (existing) clearPendingContextUsageEmit(existing);
-  state.tabs.delete(tabId);
   state.tabAuthProfileIds.set(tabId, profile.id);
-  const services = servicesForProfile(state, profile.id, { forceRefresh: true });
-  const nextModel =
-    previousModel &&
-    services.modelRegistry.find(previousModel.provider, previousModel.id);
-  const rec = await ensureTab(state, deps, tabId, {
-    cwdOverride: cwd,
-    initialModel: nextModel || previousModel,
-  });
   markProfileUsed(state, profile.id);
+
+  // The global bridge owns ONLY the default tab's session. Every non-default
+  // tab runs its prompts in a per-tab worker bridge that rebuilds its own
+  // session against the new account via `auth_profile_apply` (which this same
+  // switch relays tab-scoped). Recreating the session here for a worker tab
+  // would (a) spawn a spurious duplicate session on the global bridge, (b)
+  // block the global message loop on an `ensureDevshellPrepared` for a cwd the
+  // global bridge doesn't own — frequently timing out — which makes the whole
+  // account switch appear to hang, and (c) emit the duplicate session's model
+  // back as `auth_profile_changed.model`, silently resetting the tab's model.
+  // So only rebuild the session for the default tab; for worker tabs just
+  // record the mapping and let the worker's apply handle the session.
+  let changedModel = "";
+  if (tabId === "default") {
+    const previousModel = existing?.session.model;
+    const cwd = state.tabProjectCwds.get(tabId);
+    if (existing) clearPendingContextUsageEmit(existing);
+    state.tabs.delete(tabId);
+    const services = servicesForProfile(state, profile.id, {
+      forceRefresh: true,
+    });
+    const nextModel =
+      previousModel &&
+      services.modelRegistry.find(previousModel.provider, previousModel.id);
+    const rec = await ensureTab(state, deps, tabId, {
+      cwdOverride: cwd,
+      initialModel: nextModel || previousModel,
+    });
+    changedModel = rec.session.model
+      ? `${rec.session.model.provider}/${rec.session.model.id}`
+      : "";
+  } else {
+    // Warm the profile's services so a later global read (usage fetch, model
+    // registry) sees the freshly-selected creds — without touching the tab's
+    // session or model (the worker owns those).
+    servicesForProfile(state, profile.id, { forceRefresh: true });
+  }
+
   deps.send({
     type: "auth_profile_changed",
     tabId,
     profileId: profile.id,
-    model: rec.session.model
-      ? `${rec.session.model.provider}/${rec.session.model.id}`
-      : "",
+    model: changedModel,
   });
   emitAuthProfiles(state, deps);
   await emitGlobalReady(state, deps);
