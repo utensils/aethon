@@ -129,7 +129,7 @@ runtime API below and report failures through normal tool errors.
   vars is a map of CSS custom properties (\`--bg\`, \`--text\`, \`--accent\`, …).
 - \`aethon.windows.openCanvas({id?, title?, components?, state?, width?, height?, x?, y?, focus?, restoreOnLaunch?})\` — open a native OS window that renders bare A2UI canvas content. Use this for custom/exploratory UI unless the main layout is explicitly requested.
 - \`aethon.windows.emitCanvas/appendCanvas/patchCanvas/clearCanvas/setState(id, ...)\` — update a window's canvas or window-local JSON Pointer state.
-- \`aethon.windows.list/focus/close/setTitle(...)\` — manage native canvas windows.
+- \`aethon.windows.list/get/getState/getCanvas/focus/close/setTitle(...)\` — inspect and manage native canvas windows.
 - \`aethon.sessions.list/getActive/getMessages/getTranscript/on\` — list sessions, read supported message transcripts, and subscribe to session/message invalidation events for extension apps.
 
 Introspection (read-only):
@@ -222,7 +222,8 @@ Four places can register Aethon UI via \`globalThis.aethon\`:
 2. **\`<project>/.aethon/extensions/<name>.ts\`** — project-local Aethon
    extensions discovered from the selected cwd up to its nearest git root.
    Use this when the UI should travel with a repository.
-3. **\`$AETHON_USER_DIR/extensions/node_modules/<pkg>/\`** — npm-distributed
+3. **\`$AETHON_USER_DIR/extensions/node_modules/<pkg>/\`** or
+   **\`$AETHON_USER_DIR/extensions/<pkg>/\`** — npm-distributed or local-dev
    Aethon extension packages with an \`aethon\` field in package.json.
    Install in-app with \`/extensions install <npm-package|git-url>\`, or
    from a shell with \`npm install --prefix $AETHON_USER_DIR/extensions <pkg>\`.

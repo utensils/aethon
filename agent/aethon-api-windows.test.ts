@@ -97,6 +97,39 @@ describe("buildWindowsApi", () => {
     expect(sent).toHaveLength(0);
   });
 
+  it("get/getState/getCanvas forward read queries for a window id", async () => {
+    const { state, sent, api } = makeFixture();
+    markFrontendReady(state);
+
+    const p = api.get("Workpad");
+    await Promise.resolve();
+    let msg = sent.at(-1)!;
+    expect(msg).toMatchObject({
+      type: "native_window_query",
+      op: "get",
+      args: { id: "Workpad" },
+    });
+    ackMutation(state, msg.mutationId as string, true, undefined, {
+      id: "Workpad",
+      label: "aethon-canvas-Workpad",
+      kind: "canvas",
+      title: "Workpad",
+      components: [],
+      state: { count: 1 },
+    });
+    await expect(p).resolves.toMatchObject({ ok: true });
+
+    void api.getState("Workpad");
+    await Promise.resolve();
+    msg = sent.at(-1)!;
+    expect(msg).toMatchObject({ op: "get_state", args: { id: "Workpad" } });
+
+    void api.getCanvas("Workpad");
+    await Promise.resolve();
+    msg = sent.at(-1)!;
+    expect(msg).toMatchObject({ op: "get_canvas", args: { id: "Workpad" } });
+  });
+
   it("list replaces the known window summary cache", async () => {
     const { state, sent, api } = makeFixture();
     state.nativeWindows.set("Old", {

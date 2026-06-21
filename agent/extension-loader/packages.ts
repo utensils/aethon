@@ -11,7 +11,7 @@
  * so the sidebar's Failures group can render the user-facing message.
  */
 
-import { readdir } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { logger } from "../logger";
@@ -39,13 +39,21 @@ interface LoadPackagesOptions {
   }) => void;
 }
 
+interface PackageManifest {
+  name?: string;
+  aethon?: { entry?: string; frontendEntry?: string };
+}
+
 interface PackageCandidate {
   name: string;
   dir: string;
-  manifest: {
-    name?: string;
-    aethon?: { entry?: string; frontendEntry?: string };
-  };
+  manifest: PackageManifest;
+}
+
+interface PackageManifestFailure {
+  name: string;
+  path: string;
+  error: string;
 }
 
 export async function loadAethonExtensionPackages(
@@ -55,54 +63,99 @@ export async function loadAethonExtensionPackages(
   registry: Map<string, ExtensionSource>,
   options?: LoadPackagesOptions,
 ): Promise<void> {
-  const extensionsRoot = join(state.userDir, "extensions", "node_modules");
-  const candidates: PackageCandidate[] = [];
+  const candidates = new Map<string, PackageCandidate>();
 
   async function readManifest(
     packageDir: string,
-  ): Promise<PackageCandidate | null> {
+    fallbackName: string,
+  ): Promise<PackageCandidate | PackageManifestFailure | null> {
+    const pkgPath = join(packageDir, "package.json");
     try {
-      const pkgPath = join(packageDir, "package.json");
-      const text = await Bun.file(pkgPath).text();
-      const manifest = JSON.parse(text) as PackageCandidate["manifest"];
+      const text = await readFile(pkgPath, "utf8");
+      const manifest = JSON.parse(text) as PackageManifest;
       if (!manifest.aethon) return null;
-      return { name: manifest.name ?? packageDir, dir: packageDir, manifest };
-    } catch {
-      return null;
+      return { name: manifest.name ?? fallbackName, dir: packageDir, manifest };
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code === "ENOENT" || code === "ENOTDIR") return null;
+      return {
+        name: fallbackName,
+        path: pkgPath,
+        error: `package.json: ${(err as Error).message}`,
+      };
     }
   }
 
-  let entries: string[];
-  try {
-    entries = await readdir(extensionsRoot);
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
-      logger
-        .scope("ext-package")
-        .warn(`readdir ${extensionsRoot}: ${(err as Error).message}`);
-    }
-    return;
+  function recordManifestFailure(failure: PackageManifestFailure) {
+    logger.scope("ext-package").warn(`${failure.name}: ${failure.error}`);
+    deps.send({
+      type: "extension_lifecycle",
+      name: failure.name,
+      source: "extension-package",
+      status: "failed",
+      error: failure.error,
+      path: failure.path,
+    });
+    options?.onFailure?.({
+      name: failure.name,
+      source: "extension-package",
+      status: "failed",
+      error: failure.error,
+      path: failure.path,
+    });
   }
-  for (const entry of entries) {
-    const entryPath = join(extensionsRoot, entry);
-    if (entry.startsWith("@")) {
-      // Scoped namespace — recurse one level.
-      let scoped: string[];
-      try {
-        scoped = await readdir(entryPath);
-      } catch {
-        continue;
-      }
-      for (const sub of scoped) {
-        const c = await readManifest(join(entryPath, sub));
-        if (c) candidates.push(c);
-      }
+
+  async function maybeAddPackage(packageDir: string, fallbackName: string) {
+    const result = await readManifest(packageDir, fallbackName);
+    if (!result) return;
+    if ("manifest" in result) {
+      if (!candidates.has(result.name)) candidates.set(result.name, result);
     } else {
-      const c = await readManifest(entryPath);
-      if (c) candidates.push(c);
+      recordManifestFailure(result);
     }
   }
-  for (const c of candidates) {
+
+  async function discoverPackages(
+    root: string,
+    options?: { skipNodeModules?: boolean },
+  ) {
+    let entries: string[];
+    try {
+      entries = await readdir(root);
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
+        logger
+          .scope("ext-package")
+          .warn(`readdir ${root}: ${(err as Error).message}`);
+      }
+      return;
+    }
+    for (const entry of entries) {
+      if (options?.skipNodeModules && entry === "node_modules") continue;
+      const entryPath = join(root, entry);
+      if (entry.startsWith("@")) {
+        // Scoped namespace — recurse one level.
+        let scoped: string[];
+        try {
+          scoped = await readdir(entryPath);
+        } catch {
+          continue;
+        }
+        for (const sub of scoped) {
+          await maybeAddPackage(join(entryPath, sub), `${entry}/${sub}`);
+        }
+      } else {
+        await maybeAddPackage(entryPath, entry);
+      }
+    }
+  }
+
+  await discoverPackages(join(state.userDir, "extensions"), {
+    skipNodeModules: true,
+  });
+  await discoverPackages(join(state.userDir, "extensions", "node_modules"));
+
+  for (const c of candidates.values()) {
     if (state.disabledExtensions.has(c.name)) {
       logger.scope("ext-package").info(`${c.name}: disabled by user, skipping`);
       deps.send({
@@ -116,7 +169,9 @@ export async function loadAethonExtensionPackages(
     }
     const entry = c.manifest.aethon?.entry;
     if (typeof entry !== "string" || entry.length === 0) {
-      logger.scope("ext-package").warn(`${c.name}: aethon.entry not set, skipping`);
+      logger
+        .scope("ext-package")
+        .warn(`${c.name}: aethon.entry not set, skipping`);
       deps.send({
         type: "extension_lifecycle",
         name: c.name,
@@ -189,7 +244,7 @@ export async function loadAethonExtensionPackages(
       ) {
         const fePath = join(c.dir, frontendEntry);
         try {
-          const code = await Bun.file(fePath).text();
+          const code = await readFile(fePath, "utf8");
           options.onFrontendEntry({
             name: c.name,
             entryPath: fePath,

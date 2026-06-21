@@ -141,6 +141,9 @@ interface AethonWindowsApi {
     restoreOnLaunch?: boolean;
   }): AethonMutationResult;
   list(): AethonMutationResult<AethonNativeCanvasWindowSummary[]>;
+  get(id: string): AethonMutationResult<unknown>;
+  getState(id: string): AethonMutationResult<unknown>;
+  getCanvas(id: string): AethonMutationResult<{ components: unknown[] }>;
   focus(id: string): AethonMutationResult;
   close(id: string): AethonMutationResult;
   setTitle(id: string, title: string): AethonMutationResult;

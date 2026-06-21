@@ -167,6 +167,9 @@ export interface WindowsApi {
     tabId?: string;
   }): Promise<MutationResult>;
   list(): Promise<MutationResult>;
+  get(id: string): Promise<MutationResult>;
+  getState(id: string): Promise<MutationResult>;
+  getCanvas(id: string): Promise<MutationResult>;
   focus(id: string): Promise<MutationResult>;
   close(id: string): Promise<MutationResult>;
   setTitle(id: string, title: string): Promise<MutationResult>;

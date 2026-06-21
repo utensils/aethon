@@ -31,9 +31,23 @@ function requireId(args: Record<string, unknown>): string {
 function recordFromRef(
   ctx: BridgeMessageContext,
   id: string,
-): NativeCanvasWindowRecord {
-  const record = ctx.nativeWindowsRef.current.get(id);
+): NativeCanvasWindowRecord | undefined {
+  return ctx.nativeWindowsRef.current.get(id);
+}
+
+async function getRecord(
+  ctx: BridgeMessageContext,
+  id: string,
+): Promise<NativeCanvasWindowRecord> {
+  const cached = recordFromRef(ctx, id);
+  if (cached) return cached;
+  const record = await invoke<NativeCanvasWindowRecord | null>(
+    "native_window_get_canvas",
+    { id },
+  );
   if (!record) throw new Error(`window not found: ${id}`);
+  ctx.nativeWindowsRef.current.set(record.id, record);
+  syncNativeWindowsToState(ctx.setState, ctx.nativeWindowsRef);
   return record;
 }
 
@@ -90,6 +104,18 @@ export const handleNativeWindowQuery: BridgeMessageHandler = (data, ctx) => {
       return records;
     }
 
+    if (op === "get") {
+      return await getRecord(ctx, requireId(args));
+    }
+
+    if (op === "get_state") {
+      return (await getRecord(ctx, requireId(args))).state ?? {};
+    }
+
+    if (op === "get_canvas") {
+      return { components: (await getRecord(ctx, requireId(args))).components };
+    }
+
     if (op === "focus") {
       await invoke("native_window_focus", { id: requireId(args) });
       return { ok: true };
@@ -118,7 +144,7 @@ export const handleNativeWindowQuery: BridgeMessageHandler = (data, ctx) => {
 
     if (op === "emit_canvas") {
       const id = requireId(args);
-      const record = recordFromRef(ctx, id);
+      const record = await getRecord(ctx, id);
       return await persistRecord(ctx, {
         ...record,
         components: normalizeCanvasComponents(args.components),
@@ -127,7 +153,7 @@ export const handleNativeWindowQuery: BridgeMessageHandler = (data, ctx) => {
 
     if (op === "append_canvas") {
       const id = requireId(args);
-      const record = recordFromRef(ctx, id);
+      const record = await getRecord(ctx, id);
       const additions = normalizeCanvasComponents(args.components);
       if (additions.length === 0) return record;
       return await persistRecord(ctx, {
@@ -138,7 +164,7 @@ export const handleNativeWindowQuery: BridgeMessageHandler = (data, ctx) => {
 
     if (op === "patch_canvas") {
       const id = requireId(args);
-      const record = recordFromRef(ctx, id);
+      const record = await getRecord(ctx, id);
       const path = normalizePointer(args.path);
       const canvasPath = path.startsWith("/components")
         ? path.slice("/components".length) || "/"
@@ -156,13 +182,13 @@ export const handleNativeWindowQuery: BridgeMessageHandler = (data, ctx) => {
 
     if (op === "clear_canvas") {
       const id = requireId(args);
-      const record = recordFromRef(ctx, id);
+      const record = await getRecord(ctx, id);
       return await persistRecord(ctx, { ...record, components: [] });
     }
 
     if (op === "set_state") {
       const id = requireId(args);
-      const record = recordFromRef(ctx, id);
+      const record = await getRecord(ctx, id);
       const path = normalizePointer(args.path);
       return await persistRecord(ctx, {
         ...record,

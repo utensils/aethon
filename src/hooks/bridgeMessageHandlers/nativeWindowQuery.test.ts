@@ -102,6 +102,90 @@ describe("handleNativeWindowQuery", () => {
     );
   });
 
+  it("falls back to Rust-owned records for read queries", async () => {
+    const { ctx, mocks } = buildHandlerFixture();
+    harness.invoke.mockResolvedValueOnce(record);
+
+    handleNativeWindowQuery(
+      {
+        type: "native_window_query",
+        op: "get",
+        mutationId: "m-get-rust",
+        args: { id: "Workpad" },
+      },
+      ctx,
+    );
+
+    await vi.waitFor(() =>
+      expect(harness.invoke).toHaveBeenCalledWith("native_window_get_canvas", {
+        id: "Workpad",
+      }),
+    );
+    await vi.waitFor(() =>
+      expect(mocks.ackMutation).toHaveBeenCalledWith(
+        "m-get-rust",
+        true,
+        undefined,
+        record,
+      ),
+    );
+    expect(ctx.nativeWindowsRef.current.get("Workpad")).toEqual(record);
+  });
+
+  it("returns window record, state, and canvas for read queries", async () => {
+    const { ctx, mocks } = buildHandlerFixture();
+    ctx.nativeWindowsRef.current.set("Workpad", record);
+
+    handleNativeWindowQuery(
+      {
+        type: "native_window_query",
+        op: "get",
+        mutationId: "m-get",
+        args: { id: "Workpad" },
+      },
+      ctx,
+    );
+    handleNativeWindowQuery(
+      {
+        type: "native_window_query",
+        op: "get_state",
+        mutationId: "m-state",
+        args: { id: "Workpad" },
+      },
+      ctx,
+    );
+    handleNativeWindowQuery(
+      {
+        type: "native_window_query",
+        op: "get_canvas",
+        mutationId: "m-canvas",
+        args: { id: "Workpad" },
+      },
+      ctx,
+    );
+
+    await vi.waitFor(() =>
+      expect(mocks.ackMutation).toHaveBeenCalledWith(
+        "m-get",
+        true,
+        undefined,
+        record,
+      ),
+    );
+    expect(mocks.ackMutation).toHaveBeenCalledWith(
+      "m-state",
+      true,
+      undefined,
+      record.state,
+    );
+    expect(mocks.ackMutation).toHaveBeenCalledWith(
+      "m-canvas",
+      true,
+      undefined,
+      { components: record.components },
+    );
+  });
+
   it("lists windows as a plain record array", async () => {
     const { ctx, mocks } = buildHandlerFixture();
     harness.invoke.mockResolvedValueOnce([record]);
@@ -152,6 +236,7 @@ describe("handleNativeWindowQuery", () => {
 
   it("acks failure for missing windows", async () => {
     const { ctx, mocks } = buildHandlerFixture();
+    harness.invoke.mockResolvedValueOnce(null);
     handleNativeWindowQuery(
       {
         type: "native_window_query",
@@ -161,12 +246,12 @@ describe("handleNativeWindowQuery", () => {
       },
       ctx,
     );
-    await Promise.resolve();
-    await Promise.resolve();
-    expect(mocks.ackMutation).toHaveBeenCalledWith(
-      "m4",
-      false,
-      "window not found: Missing",
+    await vi.waitFor(() =>
+      expect(mocks.ackMutation).toHaveBeenCalledWith(
+        "m4",
+        false,
+        "window not found: Missing",
+      ),
     );
   });
 });

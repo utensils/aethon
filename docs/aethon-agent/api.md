@@ -173,7 +173,7 @@ write targets the _current_ active tab as of the call, not the active
 tab at apply time. If the user switches tabs mid-call the result lands
 on the originally-selected tab.
 
-### `windows.openCanvas / emitCanvas / setState / list / focus / close`
+### `windows.openCanvas / get / emitCanvas / setState / list / focus / close`
 
 Native canvas windows are separate OS windows that host bare A2UI content.
 Use them for exploratory dashboards, custom workpads, visual inspectors,
@@ -216,6 +216,9 @@ API:
   Size defaults to `900x650`; windows restore on app relaunch unless
   `restoreOnLaunch: false`.
 - `list()` returns open window summaries.
+- `get(id)` returns the full native canvas window record.
+- `getState(id)` returns the window-local JSON Pointer state object.
+- `getCanvas(id)` returns `{ components }` for the window-local A2UI payload.
 - `focus(id)`, `close(id)`, and `setTitle(id, title)` control the native
   window.
 - `emitCanvas(id, components)`, `appendCanvas(id, components)`,
@@ -471,8 +474,8 @@ the full set of modules replaces the previous set. Components from a
 removed module are unregistered; components from a re-evaluated module
 replace their prior bindings (so `npm install --prefix
 ~/.aethon/extensions <pkg>` hot-reloads cleanly). Errors per module are
-caught and surfaced as a system notice; one broken module can't kill
-the others.
+caught and surfaced as a system notice and in frontend state at
+`/extensionFrontendModules`; one broken module can't kill the others.
 
 **Trust.** Same model as bridge-side extension code: the user installed
 the package, they trust it. `new Function` is essentially eval — no
@@ -482,7 +485,10 @@ threat model.
 
 `RuntimeSnapshot.frontendModules` lists `{ name, entryPath, bytes }`
 for each shipped module — code body omitted (read it from
-`entryPath` if you need to inspect).
+`entryPath` if you need to inspect). The frontend mirror also exposes
+`RuntimeSnapshot.uiState["/extensionFrontendModules"]` as an array of
+`{ name, status, componentTypes, error? }`, reflecting browser-side
+registration/evaluation status for React frontend components.
 
 ### `registerMenuItem({ label, action, location?, id?, parent? })` / `unregisterMenuItem(id)`
 

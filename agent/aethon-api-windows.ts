@@ -24,6 +24,9 @@ const WINDOW_LONG_ACK_TIMEOUT_MS = 30_000;
 type NativeWindowOp =
   | "open_canvas"
   | "list"
+  | "get"
+  | "get_state"
+  | "get_canvas"
   | "focus"
   | "close"
   | "set_title"
@@ -146,6 +149,24 @@ export function buildWindowsApi(
           ? { ...result, data: [...state.nativeWindows.values()] }
           : result,
       );
+    },
+    get(id) {
+      if (!idRequired(id)) {
+        return Promise.resolve({ ok: false, error: "id required" });
+      }
+      return windowQuery("get", { id });
+    },
+    getState(id) {
+      if (!idRequired(id)) {
+        return Promise.resolve({ ok: false, error: "id required" });
+      }
+      return windowQuery("get_state", { id });
+    },
+    getCanvas(id) {
+      if (!idRequired(id)) {
+        return Promise.resolve({ ok: false, error: "id required" });
+      }
+      return windowQuery("get_canvas", { id });
     },
     focus(id) {
       if (!idRequired(id)) {

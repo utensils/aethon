@@ -75,6 +75,8 @@ per bridge process and appear in `listExtensions()` with source
 
 ## npm-Distributed Extension Package
 
+Installed packages live under `node_modules`:
+
 ```
 ~/.aethon/extensions/node_modules/@vendor/aethon-pretty-themes/
 ├── package.json
@@ -103,9 +105,13 @@ npm install --prefix ~/.aethon/extensions @vendor/aethon-pretty-themes
 The in-app installer also accepts GitHub shorthands and git URLs, for
 example `/extensions install github:vendor/aethon-pretty-themes`. After
 install, the current agent sidecar is restarted so the next request
-loads the new package. The bridge walks `~/.aethon/extensions/node_modules/`
-(including `@scope` namespaces), finds packages with an `aethon` field,
-imports `aethon.entry`, and calls `register(api)`.
+loads the new package. The bridge walks both
+`~/.aethon/extensions/node_modules/` and direct local package folders
+such as `~/.aethon/extensions/my-dev-extension/` (including `@scope`
+namespaces in both locations), finds packages with an `aethon` field,
+imports `aethon.entry`, and calls `register(api)`. Direct package
+folders are useful while developing an extension before publishing or
+installing it through npm.
 
 ## API Surface
 
