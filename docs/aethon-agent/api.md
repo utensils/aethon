@@ -663,6 +663,52 @@ switched", "Update available"). Don't use them for chat content — push
 into the conversation via `ctx.pi.notify(...)` if a message belongs in
 history.
 
+### `sessions.list / getActive / getMessages / getTranscript / on`
+
+Supported session/chat introspection for extension apps. Use this instead of
+reading `~/.aethon/sessions/<id>/` files directly or expecting full message
+bodies under `getFrontendState('/messages')`.
+
+```ts
+const sessions = await aethon.sessions.list();
+// [{ id, label, active, model, cwd, messageCount, updatedAt? }, …]
+
+const active = await aethon.sessions.getActive();
+// { id, label, active: true, … } | null
+
+const messages = await aethon.sessions.getMessages(active.id, { limit: 100 });
+// [{ id, role: "user" | "agent" | "system", content, text?, thinking?, createdAt?, a2ui? }, …]
+
+const markdown = await aethon.sessions.getTranscript(active.id);
+```
+
+`list()` merges live bridge sessions, frontend-visible tab metadata, and
+durable sessions discovered at startup. `getMessages()` prefers live pi
+session messages when the session is open, and otherwise uses Aethon's
+supported transcript parser over the durable local session logs. `limit`
+returns the most recent N messages.
+
+Live subscriptions are available for app-like windows that should refresh
+without polling:
+
+```ts
+const off = aethon.sessions.on("messageAppended", ({ sessionId, message }) => {
+  console.log("new message", sessionId, message.content);
+});
+
+aethon.sessions.on("activeChanged", ({ sessionId, session }) => {});
+aethon.sessions.on("messageUpdated", ({ sessionId, messageId, message }) => {});
+aethon.sessions.on("sessionChanged", ({ session }) => {});
+
+// Later:
+off();
+```
+
+Session events are best-effort extension notifications; handlers should be
+fast and tolerate missed intermediate streaming deltas. For large transcript
+visualizers, treat the event as an invalidation signal and call
+`getMessages()` or `getTranscript()` to resync.
+
 ### `shells.list / shells.read / shells.write`
 
 Opt-in agent ↔ shell-tab sharing (M6 P2). The `shells` namespace exposes
@@ -972,6 +1018,10 @@ globalThis.aethon.getFrontendState("/sidebar/themes"); // theme list
 globalThis.aethon.getFrontendState("/messagesCount"); // active tab message count
 ```
 
+Message bodies are intentionally not mirrored through `getFrontendState()`;
+use `await aethon.sessions.getMessages(sessionId)` or
+`await aethon.sessions.getTranscript(sessionId)` for supported chat access.
+
 The frontend pushes patches into the bridge whenever these slices change,
 so the bridge sees the live UI state — not just what extensions have
 written via `setState`. Best-effort mirror; small lag (<100 ms) is normal
@@ -1006,6 +1056,7 @@ One-call summary suitable for chat output:
     "/tabs": [...],
     "/draft": "",
     "/messagesCount": 0,
+    "/nativeWindows": [...],
   },
 }
 ```

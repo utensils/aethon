@@ -3,7 +3,10 @@ import type { ChatMessage } from "../../types/a2ui";
 
 export interface AgentStderrDeps {
   appendMessage: (msg: ChatMessage, tabId?: string) => void;
-  persistLocalChatMessage: (msg: ChatMessage, tabId: string) => void;
+  persistLocalChatMessage: (
+    msg: ChatMessage,
+    tabId: string,
+  ) => Promise<boolean>;
 }
 
 export function tabIdFromAgentStderr(text: string): string | undefined {

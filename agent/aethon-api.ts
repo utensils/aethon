@@ -54,6 +54,7 @@ import type { RuntimeSnapshot } from "./system-prompt";
 import { buildShellsApi } from "./aethon-api-shells";
 import { buildDashboardApi, buildTasksApi } from "./aethon-api-dashboard";
 import { buildEditorApi } from "./aethon-api-editor";
+import { buildSessionsApi, type SessionsApi } from "./aethon-api-sessions";
 import { buildWindowsApi } from "./aethon-api-windows";
 
 export interface AethonApiDeps {
@@ -230,6 +231,7 @@ export interface AethonApi {
   tasks: TasksApi;
   dashboard: DashboardApi;
   editor: EditorApi;
+  sessions: SessionsApi;
   windows: WindowsApi;
 }
 
@@ -469,6 +471,7 @@ export function buildAethonApi(
   const tasks = buildTasksApi(state, queryDeps);
   const dashboard = buildDashboardApi(state, queryDeps);
   const editor = buildEditorApi(state, queryDeps);
+  const sessions = buildSessionsApi(state);
   const windows = buildWindowsApi(state, queryDeps);
 
   return {
@@ -525,6 +528,7 @@ export function buildAethonApi(
     tasks,
     dashboard,
     editor,
+    sessions,
     windows,
   };
 }

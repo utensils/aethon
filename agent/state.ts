@@ -464,6 +464,10 @@ export class AethonAgentState {
   /** Per-tab wall-clock turn start times. Set in agent_start, consumed in
    *  agent_end to compute durationMs. */
   readonly turnStartTimes = new Map<string, number>();
+  /** Session/message ids already emitted through aethon.sessions events.
+   *  Lets local transcript persistence skip duplicate append events for
+   *  assistant bubbles that were already announced while streaming. */
+  readonly emittedSessionMessageIds = new Set<string>();
   /** Cached model picker. First populated when the default tab is created. */
   cachedModels: ModelDescriptor[] = [];
 
@@ -532,6 +536,13 @@ export class AethonAgentState {
     RegisteredHighlightGrammar
   >();
   readonly nativeWindows = new Map<string, NativeCanvasWindowSummary>();
+  /** Extension subscriptions registered through `aethon.sessions.on(...)`.
+   *  Kept loosely typed here to avoid a state.ts -> aethon-api-sessions.ts
+   *  runtime cycle; the API module narrows event names/payloads. */
+  readonly sessionEventHandlers = new Map<
+    string,
+    Set<(payload: unknown) => void>
+  >();
   readonly a2uiEventHandlers: {
     match: A2UIEventMatch;
     handler: A2UIEventHandler;

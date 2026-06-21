@@ -91,7 +91,7 @@ function buildContext(overrides: Record<string, unknown> = {}): {
           setTheme: vi.fn(),
           setModel: vi.fn(),
         }) as unknown as ReturnType<UseChatContext["slashContext"]>,
-      persistLocalChatMessage: vi.fn(),
+      persistLocalChatMessage: vi.fn().mockResolvedValue(true),
       recordProjectModel,
       piDefaultModelRef,
     },
@@ -139,12 +139,30 @@ describe("useChat setModel", () => {
         mode: "normal",
         model: "anthropic/claude-opus-4-7",
         planMode: false,
+        suppressUserSessionEvent: true,
       },
     });
     expect((stateRef.current.tabs as Tab[])[0].messages.at(-1)).toMatchObject({
       role: "user",
       text: "hello",
       delivery: "sent",
+    });
+  });
+
+  it("lets the bridge emit the user session event when local mirroring fails", async () => {
+    const { ctx } = buildContext();
+    ctx.persistLocalChatMessage = vi.fn().mockResolvedValue(false);
+    const { result } = renderHook(() => useChat(ctx));
+
+    await act(async () => {
+      await result.current.sendChat("hello");
+    });
+
+    expect(invoke).toHaveBeenCalledWith("send_message", {
+      request: expect.objectContaining({
+        message: "hello",
+        suppressUserSessionEvent: false,
+      }),
     });
   });
 
@@ -264,6 +282,7 @@ describe("useChat setModel", () => {
         model: "openai-codex/gpt-5.5",
         thinkingLevel: "high",
         planMode: false,
+        suppressUserSessionEvent: true,
       },
     });
   });
@@ -294,6 +313,7 @@ describe("useChat setModel", () => {
         attachments: [attachment],
         model: "anthropic/claude-opus-4-7",
         planMode: false,
+        suppressUserSessionEvent: true,
       },
     });
     const tab = (stateRef.current.tabs as Tab[])[0];
@@ -331,6 +351,7 @@ describe("useChat setModel", () => {
         cwd: "/projects/aethon-fix-86",
         model: "anthropic/claude-opus-4-7",
         planMode: false,
+        suppressUserSessionEvent: true,
       },
     });
     const tabs = stateRef.current.tabs as Tab[];
@@ -379,6 +400,7 @@ describe("useChat setModel", () => {
         mode: "normal",
         model: "anthropic/claude-opus-4-7",
         planMode: false,
+        suppressUserSessionEvent: true,
       },
     });
     const tabs = stateRef.current.tabs as Tab[];
@@ -419,6 +441,7 @@ describe("useChat setModel", () => {
         mode: "steer",
         model: "anthropic/claude-opus-4-7",
         planMode: false,
+        suppressUserSessionEvent: true,
       },
     });
   });
@@ -737,6 +760,7 @@ describe("useChat setModel", () => {
         mode: "normal",
         model: "anthropic/claude-opus-4-7",
         planMode: false,
+        suppressUserSessionEvent: true,
       },
     });
     const tab = (stateRef.current.tabs as Tab[])[0];
@@ -786,6 +810,7 @@ describe("useChat setModel", () => {
         mode: "steer",
         model: "anthropic/claude-opus-4-7",
         planMode: false,
+        suppressUserSessionEvent: true,
       },
     });
     expect((stateRef.current.tabs as Tab[])[0].messages.at(-1)).toMatchObject({

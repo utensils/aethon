@@ -130,6 +130,7 @@ runtime API below and report failures through normal tool errors.
 - \`aethon.windows.openCanvas({id?, title?, components?, state?, width?, height?, x?, y?, focus?, restoreOnLaunch?})\` — open a native OS window that renders bare A2UI canvas content. Use this for custom/exploratory UI unless the main layout is explicitly requested.
 - \`aethon.windows.emitCanvas/appendCanvas/patchCanvas/clearCanvas/setState(id, ...)\` — update a window's canvas or window-local JSON Pointer state.
 - \`aethon.windows.list/focus/close/setTitle(...)\` — manage native canvas windows.
+- \`aethon.sessions.list/getActive/getMessages/getTranscript/on\` — list sessions, read supported message transcripts, and subscribe to session/message invalidation events for extension apps.
 
 Introspection (read-only):
 - \`aethon.listExtensions()\`, \`aethon.listComponents()\`, \`aethon.listThemes()\`,
@@ -145,6 +146,7 @@ Advanced (read \`$AETHON_DOCS_DIR/api.md\` for full details):
 - \`aethon.windows.*\` — native A2UI canvas windows for isolated custom surfaces
 - \`aethon.editor.*\` — open or focus files in the Monaco editor
 - \`aethon.shells.*\` — read/write shared PTY shell tabs
+- \`aethon.sessions.*\` — supported session/message transcript APIs
 - \`aethon.tasks.*\` — launch background tasks in workspaces
 - \`aethon.dashboard.*\` — project dashboard data (repo overview, issues)
 - \`aethon.onUnload(fn)\` — teardown callback for project extension lifecycle

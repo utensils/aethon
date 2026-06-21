@@ -26,6 +26,7 @@ import {
   runtimeConfigFromConfig,
 } from "./runtime-config";
 import { handleForkSession, handleRollbackSession } from "./session-branch";
+import { handleMirroredTabsChanged } from "./aethon-api-sessions";
 import { handleNativeSlashCommand } from "./nativeSlash";
 import { handleSetProject } from "./projectLifecycle";
 import { handleAuthProfileMessage } from "./auth-profiles";
@@ -236,9 +237,14 @@ export async function dispatchInboundMessage(
         break;
       case "frontend_state_patch":
         if (!msg.path || typeof msg.path !== "string") break;
-        state.frontendState.set(msg.path, msg.value);
-        if (msg.path === "/nativeWindows") {
-          mirrorNativeWindowsFromFrontend(state, msg.value);
+        {
+          const previous = state.frontendState.get(msg.path);
+          state.frontendState.set(msg.path, msg.value);
+          if (msg.path === "/nativeWindows") {
+            mirrorNativeWindowsFromFrontend(state, msg.value);
+          } else if (msg.path === "/tabs") {
+            handleMirroredTabsChanged(state, previous, msg.value);
+          }
         }
         deps.scheduleStateFileWrite();
         break;

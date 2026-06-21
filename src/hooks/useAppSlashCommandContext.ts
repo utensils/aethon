@@ -60,7 +60,10 @@ export interface UseAppSlashCommandContextOptions {
 
 export interface AppSlashCommandContextResult {
   slashContext: () => SlashCommandContext;
-  persistLocalChatMessage: (msg: ChatMessage, tabId: string) => void;
+  persistLocalChatMessage: (
+    msg: ChatMessage,
+    tabId: string,
+  ) => Promise<boolean>;
 }
 
 export function useAppSlashCommandContext({
@@ -100,9 +103,9 @@ export function useAppSlashCommandContext({
         !a2ui &&
         attachments.length === 0
       ) {
-        return;
+        return Promise.resolve(true);
       }
-      invoke("agent_command", {
+      return invoke("agent_command", {
         payload: JSON.stringify({
           type: "local_chat_message",
           tabId,
@@ -125,9 +128,12 @@ export function useAppSlashCommandContext({
                 : Date.now(),
           },
         }),
-      }).catch(() => {
-        /* bridge gone — visible state remains in-memory until reload */
-      });
+      })
+        .then(() => true)
+        .catch(() => {
+          /* bridge gone — visible state remains in-memory until reload */
+          return false;
+        });
     },
     [],
   );
