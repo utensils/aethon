@@ -516,6 +516,34 @@ function activeAgentIdFromMirroredTabs(value: unknown): string | undefined {
   return undefined;
 }
 
+function mirroredAgentTabsById(
+  value: unknown,
+): Map<string, FrontendTabSummary> {
+  const tabs = new Map<string, FrontendTabSummary>();
+  if (!Array.isArray(value)) return tabs;
+  for (const item of value) {
+    if (!item || typeof item !== "object") continue;
+    const tab = item as FrontendTabSummary;
+    if (typeof tab.id === "string" && isAgentFrontendTab(tab)) {
+      tabs.set(tab.id, tab);
+    }
+  }
+  return tabs;
+}
+
+function sessionMetadataChanged(
+  previous: FrontendTabSummary | undefined,
+  next: FrontendTabSummary,
+): boolean {
+  if (!previous) return true;
+  return (
+    previous.label !== next.label ||
+    previous.model !== next.model ||
+    previous.cwd !== next.cwd ||
+    previous.active !== next.active
+  );
+}
+
 export function handleMirroredTabsChanged(
   state: AethonAgentState,
   previous: unknown,
@@ -534,10 +562,12 @@ export function handleMirroredTabsChanged(
       ...(session ? { session } : {}),
     });
   }
+  const previousTabs = mirroredAgentTabsById(previous);
   for (const item of next) {
     if (!item || typeof item !== "object") continue;
     const tab = item as FrontendTabSummary;
     if (typeof tab.id !== "string" || !isAgentFrontendTab(tab)) continue;
+    if (!sessionMetadataChanged(previousTabs.get(tab.id), tab)) continue;
     const session = listSessionSummaries(state).find((s) => s.id === tab.id);
     if (session) emitSessionEvent(state, "sessionChanged", { session });
   }

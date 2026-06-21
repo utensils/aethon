@@ -4,7 +4,10 @@ import { tmpdir } from "node:os";
 import { describe, expect, it } from "vitest";
 import { AethonAgentState, type AethonAgentStateOptions } from "./state";
 import { buildAethonApi } from "./aethon-api";
-import { emitSessionEvent } from "./aethon-api-sessions";
+import {
+  emitSessionEvent,
+  handleMirroredTabsChanged,
+} from "./aethon-api-sessions";
 import type { RuntimeSnapshot } from "./system-prompt";
 
 function opts(root: string): AethonAgentStateOptions {
@@ -476,6 +479,101 @@ describe("aethon.sessions API", () => {
     await Promise.resolve();
 
     expect(calls).toHaveLength(1);
+  });
+
+  it("does not emit sessionChanged for waiting-only frontend tab patches", async () => {
+    const { state, api } = await makeFixture();
+    state.tabs.set("live", fakeTabRecord() as never);
+    state.frontendState.set("/tabs", [
+      {
+        id: "live",
+        label: "Live",
+        kind: "agent",
+        cwd: "/repo",
+        model: "openai/gpt-test",
+        active: true,
+        waiting: false,
+      },
+    ]);
+    const calls: unknown[] = [];
+    api.sessions.on("sessionChanged", (payload) => calls.push(payload));
+
+    handleMirroredTabsChanged(
+      state,
+      [
+        {
+          id: "live",
+          label: "Live",
+          kind: "agent",
+          cwd: "/repo",
+          model: "openai/gpt-test",
+          active: true,
+          waiting: false,
+        },
+      ],
+      [
+        {
+          id: "live",
+          label: "Live",
+          kind: "agent",
+          cwd: "/repo",
+          model: "openai/gpt-test",
+          active: true,
+          waiting: true,
+        },
+      ],
+    );
+    await Promise.resolve();
+
+    expect(calls).toEqual([]);
+  });
+
+  it("emits sessionChanged for stable frontend tab metadata patches", async () => {
+    const { state, api } = await makeFixture();
+    state.tabs.set("live", fakeTabRecord() as never);
+    state.frontendState.set("/tabs", [
+      {
+        id: "live",
+        label: "Renamed",
+        kind: "agent",
+        cwd: "/repo",
+        model: "openai/gpt-test",
+        active: true,
+      },
+    ]);
+    const calls: unknown[] = [];
+    api.sessions.on("sessionChanged", (payload) => calls.push(payload));
+
+    handleMirroredTabsChanged(
+      state,
+      [
+        {
+          id: "live",
+          label: "Live",
+          kind: "agent",
+          cwd: "/repo",
+          model: "openai/gpt-test",
+          active: true,
+        },
+      ],
+      [
+        {
+          id: "live",
+          label: "Renamed",
+          kind: "agent",
+          cwd: "/repo",
+          model: "openai/gpt-test",
+          active: true,
+        },
+      ],
+    );
+    await Promise.resolve();
+
+    expect(calls).toEqual([
+      expect.objectContaining({
+        session: expect.objectContaining({ id: "live", label: "Renamed" }),
+      }),
+    ]);
   });
 
   it("registers project-scoped subscriptions for project unload cleanup", async () => {

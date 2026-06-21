@@ -66,7 +66,11 @@ async function waitForNativeCanvasReady(id: string): Promise<void> {
       finish();
     })
       .then((unlisten) => {
-        cleanup = unlisten;
+        if (done) {
+          unlisten();
+        } else {
+          cleanup = unlisten;
+        }
       })
       .catch(() => {
         clearTimeout(timer);
@@ -218,6 +222,7 @@ export const handleNativeWindowQuery: BridgeMessageHandler = (data, ctx) => {
           ]),
           state: normalizeWindowState({
             ...asRecord(args.state),
+            ownedShellTabIds: [shell.tabId],
             tabs: shellTab ? [shellTab] : [],
           }),
         };
@@ -238,6 +243,7 @@ export const handleNativeWindowQuery: BridgeMessageHandler = (data, ctx) => {
             ...record,
             state: normalizeWindowState({
               ...asRecord(record.state),
+              ownedShellTabIds: [shell.tabId],
               tabs: [runningShellTab],
             }),
           });

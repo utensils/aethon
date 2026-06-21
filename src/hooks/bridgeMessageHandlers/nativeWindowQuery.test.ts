@@ -180,6 +180,7 @@ describe("handleNativeWindowQuery", () => {
           ],
           restoreOnLaunch: false,
           state: expect.objectContaining({
+            ownedShellTabIds: ["shell-term"],
             tabs: [
               expect.objectContaining({ id: "shell-term", kind: "shell" }),
             ],
@@ -337,6 +338,7 @@ describe("handleNativeWindowQuery", () => {
         },
       ],
       state: {
+        ownedShellTabIds: ["shell-term"],
         tabs: [{ id: "shell-term", kind: "shell" }],
       },
     };
@@ -377,6 +379,56 @@ describe("handleNativeWindowQuery", () => {
     expect(ctx.stateRef.current.terminalPanel).toEqual({
       activeSubId: "agent-bash",
     });
+  });
+
+  it("does not close shell-canvas tabs that are not explicitly owned by the native window", async () => {
+    const terminalRecord: NativeCanvasWindowRecord = {
+      ...record,
+      id: "Viewer",
+      label: "aethon-canvas-Viewer",
+      components: [
+        {
+          id: "terminal-view",
+          type: "shell-canvas",
+          props: { tabId: "existing-shell" },
+        },
+      ],
+      state: {
+        tabs: [{ id: "existing-shell", kind: "shell" }],
+      },
+    };
+    const { ctx, mocks } = buildHandlerFixture({
+      state: {
+        tabs: [{ id: "existing-shell", kind: "shell" }],
+        terminalPanel: { activeSubId: "existing-shell" },
+      },
+    });
+    ctx.nativeWindowsRef.current.set("Viewer", terminalRecord);
+
+    handleNativeWindowQuery(
+      {
+        type: "native_window_query",
+        op: "close",
+        mutationId: "m-close-viewer",
+        args: { id: "Viewer" },
+      },
+      ctx,
+    );
+
+    await vi.waitFor(() =>
+      expect(mocks.ackMutation).toHaveBeenCalledWith(
+        "m-close-viewer",
+        true,
+        undefined,
+        { ok: true },
+      ),
+    );
+    expect(harness.invoke).not.toHaveBeenCalledWith("shell_close", {
+      tabId: "existing-shell",
+    });
+    expect(ctx.stateRef.current.tabs).toEqual([
+      { id: "existing-shell", kind: "shell" },
+    ]);
   });
 
   it("returns window record, state, and canvas for read queries", async () => {
