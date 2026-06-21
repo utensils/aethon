@@ -35,10 +35,14 @@ export async function handleChat(
   msg: InboundMessage,
 ): Promise<void> {
   const tabId = msg.tabId ?? "default";
+  const controlRequestId =
+    typeof msg.controlRequestId === "string" && msg.controlRequestId.length > 0
+      ? msg.controlRequestId
+      : undefined;
   const scheduledRun = scheduledRunFromMessage(msg);
   if (!msg.content) {
     completeScheduledRun(deps, tabId, scheduledRun, false, "chat: missing content");
-    deps.send({ type: "error", message: "chat: missing content" });
+    deps.send({ type: "error", message: "chat: missing content", controlRequestId });
     return;
   }
   chatLog.info(`received tabId=${tabId} chars=${msg.content.length}`);
@@ -156,6 +160,7 @@ export async function handleChat(
       type: "error",
       tabId,
       message: `file references: ${message}`,
+      ...(controlRequestId ? { controlRequestId } : {}),
     });
     completeScheduledRun(deps, tabId, scheduledRun, false, message);
     if (scheduledRun) tab.scheduledRun = undefined;
@@ -177,7 +182,12 @@ export async function handleChat(
       )
       .catch((err: unknown) => {
         const message = err instanceof Error ? err.message : String(err);
-        deps.send({ type: "error", tabId, message: `steer: ${message}` });
+        deps.send({
+          type: "error",
+          tabId,
+          message: `steer: ${message}`,
+          ...(controlRequestId ? { controlRequestId } : {}),
+        });
         completeScheduledRun(deps, tabId, scheduledRun, false, message);
         if (scheduledRun) tab.scheduledRun = undefined;
       });
@@ -200,7 +210,12 @@ export async function handleChat(
           tabId,
           queued: tab.queuedCount,
         });
-        deps.send({ type: "error", tabId, message: `followUp: ${message}` });
+        deps.send({
+          type: "error",
+          tabId,
+          message: `followUp: ${message}`,
+          ...(controlRequestId ? { controlRequestId } : {}),
+        });
         completeScheduledRun(deps, tabId, scheduledRun, false, message);
         if (scheduledRun) tab.scheduledRun = undefined;
       });
@@ -217,7 +232,12 @@ export async function handleChat(
   // it a normal prompt only shows "running" for the active workspace (which
   // infers it from the optimistic `waiting` flag). `source: "chat"` keeps the
   // handler from running its queue-promotion branch.
-  deps.send({ type: "prompt_started", tabId, source: "chat" });
+  deps.send({
+    type: "prompt_started",
+    tabId,
+    source: "chat",
+    ...(controlRequestId ? { controlRequestId } : {}),
+  });
   state.tabContext
     .run(tabId, () =>
       images.length > 0
@@ -226,7 +246,12 @@ export async function handleChat(
     )
     .catch((err: unknown) => {
       const message = err instanceof Error ? err.message : String(err);
-      deps.send({ type: "error", tabId, message: `prompt: ${message}` });
+      deps.send({
+        type: "error",
+        tabId,
+        message: `prompt: ${message}`,
+        ...(controlRequestId ? { controlRequestId } : {}),
+      });
       completeScheduledRun(deps, tabId, scheduledRun, false, message);
       if (scheduledRun) tab.scheduledRun = undefined;
     })
@@ -234,7 +259,11 @@ export async function handleChat(
       const stillStreamingOrRetrying = isUnderlyingSessionBusy(tab);
       if (!tab.agentEndFired && !stillStreamingOrRetrying) {
         tab.promptInFlight = false;
-        deps.send({ type: "response_end", tabId });
+        deps.send({
+          type: "response_end",
+          tabId,
+          ...(controlRequestId ? { controlRequestId } : {}),
+        });
         completeScheduledRun(deps, tabId, tab.scheduledRun, true);
         tab.scheduledRun = undefined;
       }

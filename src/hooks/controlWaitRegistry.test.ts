@@ -1,0 +1,72 @@
+import { describe, expect, it, vi } from "vitest";
+import {
+  cancelControlWait,
+  hasControlTurnStarted,
+  markControlTurnStarted,
+  registerControlWait,
+  resolveControlWait,
+} from "./controlWaitRegistry";
+
+describe("controlWaitRegistry", () => {
+  it("resolves a registered wait when the turn completes", async () => {
+    const pending = registerControlWait("req-1", "t1", 10_000);
+    expect(resolveControlWait("req-1", "completed", "t1")).toBe(true);
+    await expect(pending).resolves.toMatchObject({
+      waiting: false,
+      outcome: "completed",
+      tabId: "t1",
+    });
+  });
+
+  it("surfaces an error outcome with its message", async () => {
+    const pending = registerControlWait("req-2", "t1", 10_000);
+    resolveControlWait("req-2", "error", "t1", "boom");
+    await expect(pending).resolves.toMatchObject({
+      waiting: false,
+      outcome: "error",
+      error: "boom",
+    });
+  });
+
+  it("resolves as a timeout when the turn never ends", async () => {
+    vi.useFakeTimers();
+    try {
+      const pending = registerControlWait("req-3", "t1", 1_000);
+      vi.advanceTimersByTime(1_001);
+      await expect(pending).resolves.toMatchObject({
+        waiting: true,
+        outcome: "timeout",
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("is a no-op for an unknown id", () => {
+    expect(resolveControlWait("never-registered", "completed", "t1")).toBe(
+      false,
+    );
+  });
+
+  it("cancel resolves the waiter as a timeout so it can't leak", async () => {
+    const pending = registerControlWait("req-4", "t1", 10_000);
+    cancelControlWait("req-4");
+    await expect(pending).resolves.toMatchObject({
+      waiting: true,
+      outcome: "timeout",
+    });
+  });
+
+  it("tracks whether a real turn started for a registered id", () => {
+    expect(hasControlTurnStarted("req-5")).toBe(false);
+    const pending = registerControlWait("req-5", "t1", 10_000);
+    expect(hasControlTurnStarted("req-5")).toBe(false);
+    markControlTurnStarted("req-5");
+    expect(hasControlTurnStarted("req-5")).toBe(true);
+    // markControlTurnStarted is a no-op for unknown ids.
+    markControlTurnStarted("not-registered");
+    expect(hasControlTurnStarted("not-registered")).toBe(false);
+    resolveControlWait("req-5", "completed", "t1");
+    return pending;
+  });
+});

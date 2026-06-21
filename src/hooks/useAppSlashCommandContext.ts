@@ -14,7 +14,11 @@ import type { SlashCommandContext } from "../slashCommands";
 import type { ExtensionRegistry } from "../extensions/ExtensionRegistry";
 import type { LayoutCatalogueEntry } from "../extensions/default-layout";
 import type { NotificationInput } from "./useNotifications";
-import type { AuthProfilesUiState } from "../auth-profiles";
+import {
+  resolveAccountSwitchTarget,
+  switchAccountForTab,
+  type AuthProfilesUiState,
+} from "../auth-profiles";
 import {
   cancelScheduledTask,
   createScheduledTask,
@@ -220,16 +224,24 @@ export function useAppSlashCommandContext({
           (p) => p.id === idOrLabel || p.label === idOrLabel,
         );
         if (!profile) throw new Error(`Unknown account: ${idOrLabel}`);
-        const activeId = stateRef.current.activeTabId;
-        await invoke("agent_command", {
-          payload: JSON.stringify({
-            type: "auth_profile_use_for_tab",
-            tabId:
-              typeof activeId === "string" && activeId.length > 0
-                ? activeId
-                : "default",
-            profileId: profile.id,
-          }),
+        const activeId =
+          typeof stateRef.current.activeTabId === "string"
+            ? stateRef.current.activeTabId
+            : undefined;
+        // Route through the shared switch so a non-default (worker) tab also
+        // gets the tab-scoped `auth_profile_apply` — `auth_profile_use_for_tab`
+        // alone updates only the global mapping, leaving the worker on the old
+        // account for its next prompt.
+        const target = resolveAccountSwitchTarget(
+          (stateRef.current.tabs as Tab[] | undefined) ?? [],
+          activeId,
+        );
+        if (target.busy) {
+          throw new Error("Stop the current prompt before switching accounts");
+        }
+        await switchAccountForTab(target.tabId, profile.id, {
+          cwd: target.cwd,
+          model: target.model,
         });
       },
       setDefaultAuthProfile: async (idOrLabel: string) => {

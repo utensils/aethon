@@ -44,7 +44,12 @@ export default defineConfig({
     // per-file basis with `// @vitest-environment jsdom` at the top —
     // vitest 4 dropped environmentMatchGlobs in favor of the directive.
     environment: "node",
-    include: ["src/**/*.test.ts", "src/**/*.test.tsx", "agent/**/*.test.ts"],
+    include: [
+      "src/**/*.test.ts",
+      "src/**/*.test.tsx",
+      "agent/**/*.test.ts",
+      "cli/**/*.test.ts",
+    ],
     setupFiles: ["src/test/setup.ts"],
     coverage: {
       provider: "v8",

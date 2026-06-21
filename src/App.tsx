@@ -30,6 +30,7 @@ import { useWorkspacePrompts } from "./hooks/useWorkspacePrompts";
 import { useFocus } from "./hooks/useFocus";
 import { useChat } from "./hooks/useChat";
 import { useQueuedDispatch } from "./hooks/useQueuedDispatch";
+import { useControlRequests } from "./hooks/useControlRequests";
 import { useFrontendStateMirror } from "./hooks/useFrontendStateMirror";
 import { usePersistEditorTabs } from "./hooks/usePersistEditorTabs";
 import { useUiOverlays } from "./hooks/useUiOverlays";
@@ -622,6 +623,17 @@ export default function App() {
     recordProjectModel,
     piDefaultModelRef,
     findTabById: findTabRouted,
+  });
+
+  useControlRequests({
+    stateRef,
+    pendingTabOpens,
+    newTab,
+    closeTabNow,
+    setActiveTab,
+    updateTab: updateTabRouted,
+    sendChat,
+    stopPrompt,
   });
 
   useScheduledTasks({

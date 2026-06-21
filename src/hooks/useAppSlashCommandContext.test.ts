@@ -246,4 +246,84 @@ describe("useAppSlashCommandContext", () => {
       },
     ]);
   });
+
+  it("login `use` switches a worker tab via both use_for_tab and apply", async () => {
+    const { result } = renderHook(() =>
+      useAppSlashCommandContext({
+        bootLayout: { components: [] },
+        setState: vi.fn(),
+        setLayout: vi.fn(),
+        stateRef: ref({
+          activeTabId: "tab-1",
+          tabs: [
+            {
+              id: "tab-1",
+              kind: "agent",
+              cwd: "/repo",
+              model: "openai-codex/gpt-5.5",
+              waiting: false,
+              messages: [],
+              queueCount: 0,
+              queuedMessages: [],
+            },
+          ],
+          authProfiles: {
+            profiles: [
+              {
+                id: "openai-codex-secondary",
+                label: "Secondary",
+                providerId: "openai-codex",
+                kind: "oauth",
+                createdAt: 1,
+                updatedAt: 1,
+              },
+            ],
+          },
+        }),
+        projectsRef: ref(makeProjects()),
+        layoutCatalogueRef: ref([]),
+        registry: new ExtensionRegistry(),
+        appendMessage: vi.fn(),
+        pushNotification: vi.fn(() => "toast-1"),
+        clearChat: vi.fn(),
+        setTheme: vi.fn(),
+        listThemes: vi.fn(() => []),
+        setModel: vi.fn(() => Promise.resolve()),
+        toggleTerminal: vi.fn(),
+        toggleSidebar: vi.fn(),
+        toggleFilesSidebar: vi.fn(),
+        activateLayoutById: vi.fn(() => true),
+        openProjectFromPicker: vi.fn(() => Promise.resolve(null)),
+        openProjectByPath: vi.fn((path: string) => path),
+        setActiveProjectById: vi.fn(() => true),
+        clearActiveProject: vi.fn(),
+        removeProjectById: vi.fn(() => true),
+      }),
+    );
+
+    await act(async () => {
+      await result.current
+        .slashContext()
+        .useAuthProfile("openai-codex-secondary");
+    });
+
+    // A worker tab needs both the global mapping AND the tab-scoped worker
+    // re-auth; use_for_tab alone would leave the worker on the old account.
+    expect(invokeMock).toHaveBeenCalledWith("agent_command", {
+      payload: JSON.stringify({
+        type: "auth_profile_use_for_tab",
+        tabId: "tab-1",
+        profileId: "openai-codex-secondary",
+      }),
+    });
+    expect(invokeMock).toHaveBeenCalledWith("agent_command", {
+      payload: JSON.stringify({
+        type: "auth_profile_apply",
+        tabId: "tab-1",
+        profileId: "openai-codex-secondary",
+        cwd: "/repo",
+        model: "openai-codex/gpt-5.5",
+      }),
+    });
+  });
 });

@@ -115,6 +115,7 @@ export interface UseChatActions {
       tabId?: string;
       attachments?: ChatAttachment[];
       bridgeText?: string;
+      controlRequestId?: string;
     },
   ) => Promise<void>;
   setModel: (id: string) => Promise<void>;
@@ -472,6 +473,7 @@ export function useChat(ctx: UseChatContext): UseChatActions {
       tabId?: string;
       attachments?: ChatAttachment[];
       bridgeText?: string;
+      controlRequestId?: string;
     },
   ) {
     const trimmed = text.trim();
@@ -661,6 +663,9 @@ export function useChat(ctx: UseChatContext): UseChatActions {
           // default (which could be the account the user switched away from).
           ...(targetTab?.authProfileId
             ? { authProfileId: targetTab.authProfileId }
+            : {}),
+          ...(options?.controlRequestId
+            ? { controlRequestId: options.controlRequestId }
             : {}),
         },
       });

@@ -87,6 +87,7 @@ export interface UseTabsActions {
       restoredSession?: boolean;
       cwd?: string;
       scrollToMatch?: string;
+      model?: string;
     },
   ) => void;
   newShellTab: (options?: {

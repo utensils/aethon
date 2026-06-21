@@ -1,10 +1,16 @@
 import { closeRunningToolCards } from "../../utils/agentBusy";
+import { resolveControlWait } from "../controlWaitRegistry";
 import { clearHangWarn } from "./hangWarn";
 import type { BridgeMessageHandler } from "./types";
 
 export const handleError: BridgeMessageHandler = (data, ctx) => {
   const message = (data.message as string) ?? "unknown error";
   const tabId = (data.tabId as string | undefined) ?? "default";
+  // A control-dispatched turn that errors must unblock its `--wait` caller too,
+  // surfacing the failure rather than hanging until the timeout.
+  if (typeof data.controlRequestId === "string" && data.controlRequestId) {
+    resolveControlWait(data.controlRequestId, "error", tabId, message);
+  }
   ctx.activeResponseIdRef.current = null;
   ctx.appendMessage(
     { id: crypto.randomUUID(), role: "agent", text: `Error: ${message}` },

@@ -1,3 +1,4 @@
+import { markControlTurnStarted } from "../controlWaitRegistry";
 import type { BridgeMessageHandler } from "./types";
 import { armHangWarn } from "./hangWarn";
 
@@ -9,6 +10,12 @@ import { armHangWarn } from "./hangWarn";
  *  bar text only flips for the active tab. */
 export const handlePromptStarted: BridgeMessageHandler = (data, ctx) => {
   const tabId = (data.tabId as string | undefined) ?? "default";
+  // A control-dispatched send that produced a real turn echoes its id here.
+  // The wait fallback uses this to tell a genuine turn apart from a locally
+  // handled slash command (which never reaches the bridge).
+  if (typeof data.controlRequestId === "string" && data.controlRequestId) {
+    markControlTurnStarted(data.controlRequestId);
+  }
   // Record turn start so response_end can compute duration and decide
   // whether to fire the OS completion notification.
   ctx.turnStartedAtRef.current.set(tabId, Date.now());

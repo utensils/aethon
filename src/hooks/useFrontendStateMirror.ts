@@ -29,6 +29,7 @@ export function useFrontendStateMirror(
 ): void {
   const { state } = ctx;
   const lastFrontendStateRef = useRef<Record<string, string>>({});
+  const lastControlSnapshotRef = useRef<string>("");
   const frontendPatchTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
@@ -84,10 +85,40 @@ export function useFrontendStateMirror(
         "/tabs": tabs.map((t) => ({
           id: t.id,
           label: t.label,
+          kind: t.kind,
+          cwd: t.cwd,
           model: t.model ?? "",
+          waiting: t.waiting === true,
+          authProfileId: t.authProfileId,
           active: t.id === (state.activeTabId as string | undefined),
         })),
       };
+      // Mirror the control snapshot, but only when it actually changed.
+      // Without this diff-gate every state tick (composer keystroke, streaming
+      // delta) would re-push an identical full snapshot — the same churn the
+      // per-slice patches below take pains to avoid.
+      const controlSnapshot = {
+        location: typeof window !== "undefined" ? window.location.href : null,
+        status: state.status ?? "",
+        connection: state.connection ?? "disconnected",
+        waiting: state.waiting === true,
+        model: state.model ?? "",
+        activeTabId: state.activeTabId ?? null,
+        authProfiles: state.authProfiles ?? { profiles: [] },
+        models: sidebar.models ?? [],
+        tabs: slices["/tabs"],
+      };
+      const controlSerialized = JSON.stringify(controlSnapshot);
+      if (controlSerialized !== lastControlSnapshotRef.current) {
+        lastControlSnapshotRef.current = controlSerialized;
+        invoke("control_update_state", { snapshot: controlSnapshot }).catch(
+          () => {
+            // Older app builds or early boot before the command is registered;
+            // reset so the next change re-pushes.
+            lastControlSnapshotRef.current = "";
+          },
+        );
+      }
       const last = lastFrontendStateRef.current;
       const next: Record<string, string> = { ...last };
       let changed = false;
