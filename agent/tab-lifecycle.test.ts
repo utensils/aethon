@@ -1235,6 +1235,198 @@ describe("handleSessionEvent", () => {
     }
   });
 
+  it("agent_end for Codex context overflow keeps the turn open, compacts, and resumes", async () => {
+    vi.useFakeTimers();
+    try {
+      const f = makeFixture();
+      const rec = fakeRec("openai-codex/gpt-5.5");
+      const failure = {
+        role: "assistant",
+        stopReason: "error",
+        errorMessage:
+          'Codex error: {"type":"error","error":{"type":"invalid_request_error","code":"context_length_exceeded","message":"Your input exceeds the context window of this model. Please adjust your input and try again.","param":"input"},"sequence_number":2}',
+      };
+      const compact = vi.fn(() => Promise.resolve({ tokensBefore: 159_747 }));
+      const agent = {
+        state: { messages: [{ role: "user" }, failure] },
+        resumed: false,
+        continue: vi.fn(function (this: { resumed: boolean }) {
+          this.resumed = true;
+          return Promise.resolve();
+        }),
+      };
+      rec.promptInFlight = true;
+      rec.session = {
+        ...rec.session,
+        compact,
+        agent,
+      } as TabRecord["session"];
+      f.state.tabs.set("tab-1", rec);
+      f.state.currentAgentTabId = "tab-1";
+
+      handleSessionEvent(f.state, f.deps, rec, "tab-1", {
+        type: "agent_end",
+        messages: [failure],
+      });
+
+      expect(rec.promptInFlight).toBe(true);
+      expect(rec.agentEndFired).toBe(false);
+      expect(f.state.currentAgentTabId).toBe("tab-1");
+      expect(f.sent).toContainEqual({
+        type: "notice",
+        tabId: "tab-1",
+        busy: true,
+        message:
+          "Context window exceeded. Compacting context and resuming automatically.",
+      });
+      expect(f.sent.some((m) => m.type === "error")).toBe(false);
+      expect(f.sent.some((m) => m.type === "response_end")).toBe(false);
+      expect(
+        (rec.session as never as { agent: { state: { messages: unknown[] } } })
+          .agent.state.messages,
+      ).toEqual([{ role: "user" }, failure]);
+
+      await vi.advanceTimersByTimeAsync(250);
+
+      expect(compact).toHaveBeenCalledOnce();
+      expect(agent.continue).toHaveBeenCalledOnce();
+      expect(agent.resumed).toBe(true);
+      expect(
+        (rec.session as never as { agent: { state: { messages: unknown[] } } })
+          .agent.state.messages,
+      ).toEqual([{ role: "user" }]);
+      expect(f.sent.some((m) => m.type === "response_end")).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("resumes after overflow compaction when pi does not mark willRetry", async () => {
+    vi.useFakeTimers();
+    try {
+      const f = makeFixture();
+      const rec = fakeRec("openai-codex/gpt-5.5");
+      const failure = {
+        role: "assistant",
+        stopReason: "error",
+        errorMessage:
+          'Codex error: {"type":"error","error":{"type":"invalid_request_error","code":"context_length_exceeded","message":"Your input exceeds the context window of this model. Please adjust your input and try again.","param":"input"},"sequence_number":2}',
+      };
+      const compact = vi.fn(() => Promise.resolve({ tokensBefore: 159_747 }));
+      const agent = {
+        state: { messages: [{ role: "user" }, failure] },
+        resumed: false,
+        continue: vi.fn(function (this: { resumed: boolean }) {
+          this.resumed = true;
+          return Promise.resolve();
+        }),
+      };
+      rec.promptInFlight = true;
+      rec.session = {
+        ...rec.session,
+        compact,
+        agent,
+      } as TabRecord["session"];
+      f.state.tabs.set("tab-1", rec);
+
+      handleSessionEvent(f.state, f.deps, rec, "tab-1", {
+        type: "agent_end",
+        messages: [failure],
+      });
+      handleSessionEvent(f.state, f.deps, rec, "tab-1", {
+        type: "compaction_start",
+        reason: "overflow",
+      });
+      expect(
+        (rec.session as never as { agent: { state: { messages: unknown[] } } })
+          .agent.state.messages,
+      ).toEqual([{ role: "user" }, failure]);
+      await vi.advanceTimersByTimeAsync(250);
+      expect(compact).not.toHaveBeenCalled();
+
+      handleSessionEvent(f.state, f.deps, rec, "tab-1", {
+        type: "compaction_end",
+        reason: "overflow",
+        result: { tokensBefore: 159_747 },
+        willRetry: false,
+      });
+      await Promise.resolve();
+
+      expect(agent.continue).toHaveBeenCalledOnce();
+      expect(agent.resumed).toBe(true);
+      expect(f.sent.some((m) => m.type === "response_end")).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not resume after overflow compaction is aborted", async () => {
+    vi.useFakeTimers();
+    try {
+      const f = makeFixture();
+      const rec = fakeRec("openai-codex/gpt-5.5");
+      const failure = {
+        role: "assistant",
+        stopReason: "error",
+        errorMessage:
+          'Codex error: {"type":"error","error":{"type":"invalid_request_error","code":"context_length_exceeded","message":"Your input exceeds the context window of this model. Please adjust your input and try again.","param":"input"},"sequence_number":2}',
+      };
+      const compact = vi.fn(() => Promise.resolve({ tokensBefore: 159_747 }));
+      const continueRun = vi.fn(() => Promise.resolve());
+      rec.promptInFlight = true;
+      rec.session = {
+        ...rec.session,
+        compact,
+        agent: {
+          state: { messages: [{ role: "user" }, failure] },
+          continue: continueRun,
+        },
+      } as TabRecord["session"];
+      f.state.tabs.set("tab-1", rec);
+
+      handleSessionEvent(f.state, f.deps, rec, "tab-1", {
+        type: "agent_end",
+        messages: [failure],
+      });
+      handleSessionEvent(f.state, f.deps, rec, "tab-1", {
+        type: "compaction_start",
+        reason: "overflow",
+      });
+      handleSessionEvent(f.state, f.deps, rec, "tab-1", {
+        type: "compaction_end",
+        reason: "overflow",
+        result: undefined,
+        aborted: true,
+        willRetry: false,
+      });
+      await Promise.resolve();
+
+      expect(compact).not.toHaveBeenCalled();
+      expect(continueRun).not.toHaveBeenCalled();
+      expect(f.sent).toContainEqual({
+        type: "notice",
+        tabId: "tab-1",
+        message: "Context compaction cancelled.",
+      });
+      expect(f.sent).toContainEqual({
+        type: "error",
+        tabId: "tab-1",
+        message: "Context overflow recovery cancelled during compaction.",
+      });
+      expect(f.sent).toContainEqual({ type: "response_end", tabId: "tab-1" });
+      expect(
+        f.sent.some(
+          (m) => m.type === "notice" && m.message === "Context compacted",
+        ),
+      ).toBe(false);
+      expect(rec.promptInFlight).toBe(false);
+      await vi.advanceTimersByTimeAsync(250);
+      expect(compact).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("agent_end during auto-retry surfaces non-retryable failures and ends the turn", () => {
     const f = makeFixture();
     const rec = fakeRec();

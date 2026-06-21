@@ -298,6 +298,14 @@ export interface TabRecord {
   aethonRetryAttempt?: number;
   aethonRetryInFlight?: boolean;
   aethonRetryTimer?: ReturnType<typeof setTimeout>;
+  /** Context-overflow recovery state for provider errors that need a
+   *  compact-and-resume turn instead of surfacing as terminal failures. */
+  contextOverflowRecoveryAttempted?: boolean;
+  contextOverflowRecoveryInFlight?: boolean;
+  contextOverflowRecoveryCompactionStarted?: boolean;
+  contextOverflowRecoveryFallbackRunning?: boolean;
+  contextOverflowRecoveryTimer?: ReturnType<typeof setTimeout>;
+  contextOverflowRecoveryErrorMessage?: string;
   /** Auth profile ids already tried by the usage-limit auto-switch for the
    *  current prompt. Prevents looping back onto an account we just bounced
    *  off; cleared on the next successful (non-error) turn. */

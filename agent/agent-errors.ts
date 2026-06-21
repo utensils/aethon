@@ -45,6 +45,13 @@ export function isUsageLimitError(message: string): boolean {
   return /usage_limit_reached|usage limit has been reached/i.test(message);
 }
 
+export function isContextLengthExceededError(message: string): boolean {
+  if (isUsageLimitError(message)) return false;
+  return /context[_ ]length[_ ]exceeded|exceeds the context window|context window[^.]*exceeded/i.test(
+    message,
+  );
+}
+
 export function isRetryableAgentEndError(message: string): boolean {
   // Usage-limit 429s carry "429" so they'd otherwise look retryable; bail
   // first so we don't waste the retry budget on an unrecoverable quota hit.
@@ -61,6 +68,9 @@ export function isRetryableAgentEndError(message: string): boolean {
  * Reusable: any surface that renders an agent error can call this.
  */
 export function formatAgentErrorMessage(raw: string): string {
+  if (isContextLengthExceededError(raw)) {
+    return "Context window exceeded. Compacting context and resuming automatically.";
+  }
   if (!isUsageLimitError(raw)) return raw;
   const resetsInSeconds = readNumericField(raw, "resets_in_seconds");
   const planType = readStringField(raw, "plan_type");
