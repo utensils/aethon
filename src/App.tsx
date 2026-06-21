@@ -43,6 +43,7 @@ import {
   projectIdFromBucketKey,
   workspaceIdFromBucketKey,
 } from "./hooks/useProjectOps";
+import type { TabBucket } from "./hooks/projectOps/types";
 import { useOsEdges } from "./hooks/useOsEdges";
 import {
   buildInitialAppStore,
@@ -119,6 +120,7 @@ export default function App() {
   const nativeWindowsRef = useRef<Map<string, NativeCanvasWindowRecord>>(
     new Map(),
   );
+  const tabBucketsRef = useRef<Map<string, TabBucket>>(new Map());
 
   // Active layout payload — replaceable. Extensions can swap the chrome wholesale
   // by calling window.aethon.setLayout(payload), or register a new extension via
@@ -347,6 +349,7 @@ export default function App() {
     appendSystem: (text) => chatActionsRef.current.appendSystem(text),
     promptCloseShellTabConfirmation,
     projectsRef,
+    tabBucketsRef,
     piDefaultModelRef,
     clearActiveProject: () => projectOpsHandleRef.current.clearActiveProject(),
     setActiveProjectById: (id) =>
@@ -422,7 +425,6 @@ export default function App() {
   const {
     projectsLoadedRef,
     allDiscoveredSessionsRef,
-    tabBucketsRef,
     buildSidebarHistory,
     knownTabIds,
     scopedDiscoveredSessions,
@@ -452,6 +454,7 @@ export default function App() {
     setState,
     stateRef,
     projectsRef,
+    tabBucketsRef,
     piDefaultModelRef,
     gitStatusRef,
     refreshGitStatusFor,

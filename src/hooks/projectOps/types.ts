@@ -39,6 +39,9 @@ export interface UseProjectOpsContext {
   /** Owned at App-root so useTabs can share the same ref without a
    *  shadow. The hook mutates `.current` in place. */
   projectsRef: MutableRefObject<ProjectsState>;
+  /** Shared per-project/workspace tab buckets. App owns this so useTabs can
+   *  prune closed visible tabs from the same mirror useProjectOps switches. */
+  tabBucketsRef?: MutableRefObject<Map<string, TabBucket>>;
   /** Pi's default model from the last `ready` event. Owned at App-root
    *  so tab creation can use the same shared default elsewhere. */
   piDefaultModelRef: MutableRefObject<string>;

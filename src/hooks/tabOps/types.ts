@@ -1,6 +1,7 @@
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 import type { EditorMeta, ShellMeta, Tab } from "../../types/tab";
 import type { ProjectsState } from "../../projects";
+import type { TabBucket } from "../projectOps/types";
 
 /** Bridge-discovered persistent session awaiting restore.
  *  Surfaced by useProjectOps; useTabs.autoRestoreDiscoveredSessions
@@ -37,6 +38,9 @@ export interface UseTabsContext {
   /** Live ref to projects state so newTab/newShellTab inherit the active
    *  project's path as cwd. Project bucket swap stays in App.tsx. */
   projectsRef: MutableRefObject<ProjectsState>;
+  /** Shared project/workspace tab buckets. Individual close operations prune
+   *  this mirror so a later workspace switch cannot resurrect closed tabs. */
+  tabBucketsRef?: MutableRefObject<Map<string, TabBucket>>;
   /** Default model id from pi `ready`. New tabs inherit this when no per-
    *  tab model has been set, preventing a blank picker on race startup. */
   piDefaultModelRef: MutableRefObject<string>;
