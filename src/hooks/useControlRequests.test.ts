@@ -231,6 +231,52 @@ describe("useControlRequests", () => {
     );
   });
 
+  it("returns promptly for a waited send that produces no turn (local slash)", async () => {
+    // `chat send --wait /clear` is handled locally by sendChat: no bridge turn,
+    // the tab never goes busy, and no controlRequestId is ever echoed. The wait
+    // must return via the grace path instead of blocking to the full timeout.
+    const stateRef = { current: { activeTabId: "t1", tabs: [tab()] } };
+    const sendChat = vi.fn(() => Promise.resolve());
+    renderHook(() =>
+      useControlRequests({
+        stateRef,
+        pendingTabOpens: { current: new Map() },
+        newTab: vi.fn(),
+        closeTabNow: vi.fn(),
+        setActiveTab: vi.fn(),
+        updateTab: vi.fn(),
+        sendChat,
+        stopPrompt: vi.fn(),
+      }),
+    );
+
+    harness.fireEvent("control-request", {
+      requestId: "control-local",
+      method: "chat.send",
+      params: {
+        message: "/clear",
+        tabId: "active",
+        wait: true,
+        timeoutMs: 600_000,
+      },
+    });
+
+    await waitFor(
+      () =>
+        expect(harness.invoke).toHaveBeenCalledWith(
+          "control_request_complete",
+          expect.objectContaining({
+            requestId: "control-local",
+            success: true,
+            data: expect.objectContaining({
+              wait: expect.objectContaining({ outcome: "idle" }),
+            }),
+          }),
+        ),
+      { timeout: 4000 },
+    );
+  });
+
   it("applies --plan / --thinking-level onto the target tab before dispatch", async () => {
     const stateRef = { current: { activeTabId: "t1", tabs: [tab()] } };
     const updateTab = vi.fn();

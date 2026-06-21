@@ -12,7 +12,7 @@
 export interface ControlWaitResult {
   waiting: boolean;
   tabId: string;
-  outcome: "completed" | "error" | "timeout";
+  outcome: "completed" | "error" | "timeout" | "idle";
   elapsedMs: number;
   error?: string;
 }
@@ -20,6 +20,9 @@ export interface ControlWaitResult {
 interface PendingControlWait {
   tabId: string;
   startedAt: number;
+  /** Set once the bridge echoes a `prompt_started` for this id, i.e. the send
+   *  actually produced an agent turn (vs. a locally-handled slash command). */
+  turnStarted: boolean;
   resolve: (result: ControlWaitResult) => void;
   timer: ReturnType<typeof setTimeout>;
 }
@@ -60,8 +63,30 @@ export function registerControlWait(
     // Don't keep the process alive on this timer (no-op in the browser, guards
     // any node-based test runner).
     (timer as { unref?: () => void }).unref?.();
-    pending.set(requestId, { tabId, startedAt: now, resolve, timer });
+    pending.set(requestId, {
+      tabId,
+      startedAt: now,
+      turnStarted: false,
+      resolve,
+      timer,
+    });
   });
+}
+
+/**
+ * Mark that the bridge echoed a `prompt_started` for this control turn — i.e.
+ * the send produced a real agent turn. The idle-poll fallback uses this to tell
+ * a genuine (possibly unobservable) turn apart from a locally-handled slash
+ * command that never reaches the bridge. A no-op for unknown ids.
+ */
+export function markControlTurnStarted(requestId: string): void {
+  const entry = pending.get(requestId);
+  if (entry) entry.turnStarted = true;
+}
+
+/** True once a `prompt_started` has been seen for this id. */
+export function hasControlTurnStarted(requestId: string): boolean {
+  return pending.get(requestId)?.turnStarted ?? false;
 }
 
 /**

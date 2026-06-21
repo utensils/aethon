@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   cancelControlWait,
+  hasControlTurnStarted,
+  markControlTurnStarted,
   registerControlWait,
   resolveControlWait,
 } from "./controlWaitRegistry";
@@ -53,5 +55,18 @@ describe("controlWaitRegistry", () => {
       waiting: true,
       outcome: "timeout",
     });
+  });
+
+  it("tracks whether a real turn started for a registered id", () => {
+    expect(hasControlTurnStarted("req-5")).toBe(false);
+    const pending = registerControlWait("req-5", "t1", 10_000);
+    expect(hasControlTurnStarted("req-5")).toBe(false);
+    markControlTurnStarted("req-5");
+    expect(hasControlTurnStarted("req-5")).toBe(true);
+    // markControlTurnStarted is a no-op for unknown ids.
+    markControlTurnStarted("not-registered");
+    expect(hasControlTurnStarted("not-registered")).toBe(false);
+    resolveControlWait("req-5", "completed", "t1");
+    return pending;
   });
 });

@@ -9,6 +9,7 @@ import { OVERVIEW_TAB_ID, type Tab } from "../types/tab";
 import { isAgentTabBusy } from "../utils/agentBusy";
 import {
   cancelControlWait,
+  hasControlTurnStarted,
   registerControlWait,
   type ControlWaitResult,
 } from "./controlWaitRegistry";
@@ -17,6 +18,12 @@ import {
  *  not pass `timeoutMs`. Generous because real agent turns routinely run for
  *  minutes; the caller can always Ctrl-C the CLI. */
 const DEFAULT_WAIT_MS = 30 * 60 * 1000;
+
+/** Window the idle poll allows for a `prompt_started` to arrive (or the tab to
+ *  go busy) before concluding the send produced no agent turn — e.g. a locally
+ *  handled slash command like `/clear`. Long enough to absorb bridge latency,
+ *  short enough that such a `--wait` returns promptly. */
+const NO_TURN_GRACE_MS = 1500;
 
 export interface ControlRequestPayload {
   requestId: string;
@@ -253,14 +260,30 @@ async function raceControlWait(
     while (!stopped && Date.now() - start < timeoutMs) {
       const busy = isControlTabBusy(ctx.stateRef.current, tabId);
       sawBusy = sawBusy || busy;
-      // Only a busy→idle transition counts: the never-busy case belongs to the
-      // deterministic waiter (a non-queued turn echoes its id), so we must not
-      // short-circuit "idle" here and return mid-turn.
+      // A busy→idle transition means a queued turn drained.
       if (!busy && sawBusy) {
         return {
           waiting: false,
           tabId,
           outcome: "completed",
+          elapsedMs: Date.now() - start,
+        };
+      }
+      // No turn was produced: the tab never went busy AND the bridge never
+      // echoed a prompt_started for this id within the grace window — i.e. a
+      // locally handled slash command (e.g. `/clear`). Return promptly instead
+      // of blocking to the full timeout. A genuine turn (even on an
+      // unobservable tab) sets turnStarted, so this can't fire mid-turn — the
+      // deterministic waiter resolves those.
+      if (
+        !sawBusy &&
+        !hasControlTurnStarted(requestId) &&
+        Date.now() - start > NO_TURN_GRACE_MS
+      ) {
+        return {
+          waiting: false,
+          tabId,
+          outcome: "idle",
           elapsedMs: Date.now() - start,
         };
       }
