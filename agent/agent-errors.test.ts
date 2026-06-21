@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   extractAgentEndError,
   formatAgentErrorMessage,
+  isContextLengthExceededError,
   isRetryableAgentEndError,
   isUsageLimitError,
 } from "./agent-errors";
@@ -10,6 +11,9 @@ import {
 // the agent surfaces when an account hits its quota.
 const CODEX_USAGE_LIMIT_RAW =
   'Codex error: {"type":"error","error":{"type":"usage_limit_reached","message":"The usage limit has been reached","plan_type":"pro","resets_at":1781838269,"resets_in_seconds":1621},"status_code":429,"headers":{"X-Codex-Primary-Used-Percent":"100"}}';
+
+const CODEX_CONTEXT_LENGTH_RAW =
+  'Codex error: {"type":"error","error":{"type":"invalid_request_error","code":"context_length_exceeded","message":"Your input exceeds the context window of this model. Please adjust your input and try again.","param":"input"},"sequence_number":2}';
 
 describe("extractAgentEndError", () => {
   it("returns undefined for an empty or missing list", () => {
@@ -86,6 +90,24 @@ describe("isRetryableAgentEndError", () => {
   });
 });
 
+describe("isContextLengthExceededError", () => {
+  it("detects Codex context_length_exceeded payloads", () => {
+    expect(isContextLengthExceededError(CODEX_CONTEXT_LENGTH_RAW)).toBe(true);
+  });
+
+  it("detects the human-readable Codex context-window phrasing", () => {
+    expect(
+      isContextLengthExceededError(
+        "Your input exceeds the context window of this model.",
+      ),
+    ).toBe(true);
+  });
+
+  it("does not confuse usage-limit errors with context overflow", () => {
+    expect(isContextLengthExceededError(CODEX_USAGE_LIMIT_RAW)).toBe(false);
+  });
+});
+
 describe("isUsageLimitError", () => {
   it("detects the Codex usage_limit_reached payload", () => {
     expect(isUsageLimitError(CODEX_USAGE_LIMIT_RAW)).toBe(true);
@@ -112,7 +134,16 @@ describe("formatAgentErrorMessage", () => {
     expect(out).not.toContain("status_code");
   });
 
-  it("passes non-usage-limit errors through unchanged", () => {
+  it("rewrites a raw Codex context-length payload into a clean recovery message", () => {
+    const out = formatAgentErrorMessage(CODEX_CONTEXT_LENGTH_RAW);
+    expect(out).toBe(
+      "Context window exceeded. Compacting context and resuming automatically.",
+    );
+    expect(out).not.toContain("context_length_exceeded");
+    expect(out).not.toContain("sequence_number");
+  });
+
+  it("passes unrelated non-usage-limit errors through unchanged", () => {
     const raw = "Your credit balance is too low to access the Anthropic API.";
     expect(formatAgentErrorMessage(raw)).toBe(raw);
   });

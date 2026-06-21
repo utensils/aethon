@@ -21,6 +21,7 @@ import {
 } from "./subagents/steer";
 import { getSubagentsForCwd } from "./subagents";
 import { emitContextUsage } from "./context-usage";
+import { resetContextOverflowRecovery } from "./context-overflow-recovery";
 import { supportsCodexFastMode } from "./codex-fast-mode";
 import {
   FileReferenceError,
@@ -28,6 +29,7 @@ import {
 } from "./file-references";
 import { emitSessionEvent } from "./aethon-api-sessions";
 import { logger } from "./logger";
+import { isUnderlyingSessionBusy } from "./session-busy";
 
 const chatLog = logger.scope("chat");
 
@@ -342,18 +344,6 @@ function completeScheduledRun(
   });
 }
 
-function isUnderlyingSessionBusy(tab: TabRecord): boolean {
-  const sessionFlags = tab.session as {
-    isStreaming?: unknown;
-    isRetrying?: unknown;
-  };
-  return (
-    tab.aethonRetryInFlight === true ||
-    sessionFlags.isStreaming === true ||
-    sessionFlags.isRetrying === true
-  );
-}
-
 function normalizeImages(images: InboundMessage["images"]): ImageContent[] {
   if (!Array.isArray(images)) return [];
   return images
@@ -569,10 +559,28 @@ export function handleStop(
       /* best effort */
     }
   }
+  const wasContextOverflowRecovery =
+    tab.contextOverflowRecoveryInFlight === true;
   tab.queuedCount = 0;
   cancelAethonRetry(tab);
+  resetContextOverflowRecovery(tab);
   deps.send({ type: "queue_reset", tabId });
   cancelRunningToolCards(deps, tab, tabId);
+  if (
+    typeof (tab.session as { abortCompaction?: () => unknown })
+      .abortCompaction === "function"
+  ) {
+    try {
+      (tab.session as { abortCompaction: () => unknown }).abortCompaction();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      deps.send({
+        type: "error",
+        tabId,
+        message: `abort compaction: ${message}`,
+      });
+    }
+  }
   if (
     typeof (tab.session as { abortBash?: () => unknown }).abortBash ===
     "function"
@@ -588,4 +596,12 @@ export function handleStop(
     const message = err instanceof Error ? err.message : String(err);
     deps.send({ type: "error", tabId, message: `abort: ${message}` });
   });
+  if (wasContextOverflowRecovery) {
+    tab.promptInFlight = false;
+    tab.agentEndFired = true;
+    if (state.currentAgentTabId === tabId) {
+      state.currentAgentTabId = undefined;
+    }
+    deps.send({ type: "response_end", tabId });
+  }
 }

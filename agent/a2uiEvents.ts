@@ -6,6 +6,7 @@ import {
   type InboundMessage,
 } from "./dispatcherTypes";
 import { setState, makeCanvasApi } from "./state-mutation";
+import { isUnderlyingSessionBusy } from "./session-busy";
 import { ensureTab, modelKey } from "./tab-lifecycle";
 
 export async function handleA2UIEvent(
@@ -124,11 +125,12 @@ function buildPiHandlerCtx(
         });
         throw err;
       } finally {
-        if (!handlerTab.agentEndFired) {
+        const stillStreamingOrRetrying = isUnderlyingSessionBusy(handlerTab);
+        if (!handlerTab.agentEndFired && !stillStreamingOrRetrying) {
           handlerTab.promptInFlight = false;
           deps.send({ type: "response_end", tabId: handlerTabId });
         }
-        if (state.currentAgentTabId === handlerTabId) {
+        if (state.currentAgentTabId === handlerTabId && !stillStreamingOrRetrying) {
           state.currentAgentTabId = undefined;
         }
         maybeExitForReload(state, deps);
