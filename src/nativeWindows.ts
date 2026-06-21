@@ -107,3 +107,15 @@ export function syncNativeWindowsToState(
 export function canvasWindowSurfaceId(id: string): string {
   return `${CANVAS_WINDOW_SURFACE_PREFIX}${id}`;
 }
+
+export function terminalShellTabIds(
+  record: NativeCanvasWindowRecord | undefined,
+): string[] {
+  if (!record) return [];
+  const owned = (record.state as { ownedShellTabIds?: unknown })
+    .ownedShellTabIds;
+  if (!Array.isArray(owned)) return [];
+  return [
+    ...new Set(owned.filter((id): id is string => typeof id === "string")),
+  ];
+}

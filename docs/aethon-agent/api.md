@@ -173,7 +173,7 @@ write targets the _current_ active tab as of the call, not the active
 tab at apply time. If the user switches tabs mid-call the result lands
 on the originally-selected tab.
 
-### `windows.openCanvas / emitCanvas / setState / list / focus / close`
+### `windows.openCanvas / get / emitCanvas / setState / list / focus / close`
 
 Native canvas windows are separate OS windows that host bare A2UI content.
 Use them for exploratory dashboards, custom workpads, visual inspectors,
@@ -215,7 +215,14 @@ API:
   creates or updates a native window. Ids must match `/^[A-Za-z][\w-]*$/`.
   Size defaults to `900x650`; windows restore on app relaunch unless
   `restoreOnLaunch: false`.
+- `openTerminal({ id?, title?, cwd?, command?, args?, width?, height?, x?, y?, focus? })`
+  creates a private PTY shell and opens an interactive native terminal window
+  backed by the built-in `shell-canvas` component. Terminal windows are
+  non-restoring so app relaunches never reopen a terminal without a backing PTY.
 - `list()` returns open window summaries.
+- `get(id)` returns the full native canvas window record.
+- `getState(id)` returns the window-local JSON Pointer state object.
+- `getCanvas(id)` returns `{ components }` for the window-local A2UI payload.
 - `focus(id)`, `close(id)`, and `setTitle(id, title)` control the native
   window.
 - `emitCanvas(id, components)`, `appendCanvas(id, components)`,
@@ -471,8 +478,8 @@ the full set of modules replaces the previous set. Components from a
 removed module are unregistered; components from a re-evaluated module
 replace their prior bindings (so `npm install --prefix
 ~/.aethon/extensions <pkg>` hot-reloads cleanly). Errors per module are
-caught and surfaced as a system notice; one broken module can't kill
-the others.
+caught and surfaced as a system notice and in frontend state at
+`/extensionFrontendModules`; one broken module can't kill the others.
 
 **Trust.** Same model as bridge-side extension code: the user installed
 the package, they trust it. `new Function` is essentially eval — no
@@ -482,7 +489,10 @@ threat model.
 
 `RuntimeSnapshot.frontendModules` lists `{ name, entryPath, bytes }`
 for each shipped module — code body omitted (read it from
-`entryPath` if you need to inspect).
+`entryPath` if you need to inspect). The frontend mirror also exposes
+`RuntimeSnapshot.uiState["/extensionFrontendModules"]` as an array of
+`{ name, status, componentTypes, error? }`, reflecting browser-side
+registration/evaluation status for React frontend components.
 
 ### `registerMenuItem({ label, action, location?, id?, parent? })` / `unregisterMenuItem(id)`
 
@@ -663,7 +673,53 @@ switched", "Update available"). Don't use them for chat content — push
 into the conversation via `ctx.pi.notify(...)` if a message belongs in
 history.
 
-### `shells.list / shells.read / shells.write`
+### `sessions.list / getActive / getMessages / getTranscript / on`
+
+Supported session/chat introspection for extension apps. Use this instead of
+reading `~/.aethon/sessions/<id>/` files directly or expecting full message
+bodies under `getFrontendState('/messages')`.
+
+```ts
+const sessions = await aethon.sessions.list();
+// [{ id, label, active, model, cwd, messageCount, updatedAt? }, …]
+
+const active = await aethon.sessions.getActive();
+// { id, label, active: true, … } | null
+
+const messages = await aethon.sessions.getMessages(active.id, { limit: 100 });
+// [{ id, role: "user" | "agent" | "system", content, text?, thinking?, createdAt?, a2ui? }, …]
+
+const markdown = await aethon.sessions.getTranscript(active.id);
+```
+
+`list()` merges live bridge sessions, frontend-visible tab metadata, and
+durable sessions discovered at startup. `getMessages()` prefers live pi
+session messages when the session is open, and otherwise uses Aethon's
+supported transcript parser over the durable local session logs. `limit`
+returns the most recent N messages.
+
+Live subscriptions are available for app-like windows that should refresh
+without polling:
+
+```ts
+const off = aethon.sessions.on("messageAppended", ({ sessionId, message }) => {
+  console.log("new message", sessionId, message.content);
+});
+
+aethon.sessions.on("activeChanged", ({ sessionId, session }) => {});
+aethon.sessions.on("messageUpdated", ({ sessionId, messageId, message }) => {});
+aethon.sessions.on("sessionChanged", ({ session }) => {});
+
+// Later:
+off();
+```
+
+Session events are best-effort extension notifications; handlers should be
+fast and tolerate missed intermediate streaming deltas. For large transcript
+visualizers, treat the event as an invalidation signal and call
+`getMessages()` or `getTranscript()` to resync.
+
+### `shells.create / shells.list / shells.read / shells.write`
 
 Opt-in agent ↔ shell-tab sharing (M6 P2). The `shells` namespace exposes
 the user's shareable PTY-backed shell tabs. The user picks who can see
@@ -672,6 +728,9 @@ returns tabs whose mode is `read`, `read-write`, or
 `read-write-trusted`. Private tabs are invisible.
 
 ```ts
+aethon.shells.create({ cwd: "/repo", command: "zsh" });
+// → { ok: true, data: { tabId, cwd, command, args, shareMode: "private" } }
+
 aethon.shells.list();
 // → { ok: true, data: [{ tabId, cwd, command, shareMode }, …] }
 
@@ -696,14 +755,22 @@ that would be denied.
 Writes inject keystrokes verbatim — include `\n` to submit a command.
 In `read-write` mode, every call pops an Allow / Deny toast and resolves
 when the user clicks (or auto-denies after ~4m30s). In
-`read-write-trusted` the prompt is skipped. The bridge waits for the
-frontend handshake before resolving any of these calls; calls placed
-during register-time return `frontend_not_ready` rather than dangling.
+`read-write-trusted` the prompt is skipped. Shells created by
+`shells.create()` are always private until the user changes the visible
+share-mode badge; agent-facing APIs cannot seed or escalate sharing. The
+bridge waits for the frontend handshake before resolving any of these calls;
+calls placed during register-time return `frontend_not_ready` rather than
+dangling.
 
 The same surface is exposed to event-handler `ctx` as `ctx.shells.*`
 so handlers can read or drive shells without going through the global.
 Tools `listShells` / `readShell` / `writeShell` register automatically;
 the model can use them via the standard tool-use protocol.
+
+For app-like terminals, `aethon.windows.openTerminal({ id?, title?, cwd?, command?, args? })`
+creates a private PTY shell and opens a non-restoring native canvas window with
+an interactive `shell-canvas` bound to that shell. Use `aethon.shells.read/write`
+only after the user chooses an appropriate opt-in mode.
 
 ### `editor.openFile`
 
@@ -972,6 +1039,10 @@ globalThis.aethon.getFrontendState("/sidebar/themes"); // theme list
 globalThis.aethon.getFrontendState("/messagesCount"); // active tab message count
 ```
 
+Message bodies are intentionally not mirrored through `getFrontendState()`;
+use `await aethon.sessions.getMessages(sessionId)` or
+`await aethon.sessions.getTranscript(sessionId)` for supported chat access.
+
 The frontend pushes patches into the bridge whenever these slices change,
 so the bridge sees the live UI state — not just what extensions have
 written via `setState`. Best-effort mirror; small lag (<100 ms) is normal
@@ -1006,6 +1077,7 @@ One-call summary suitable for chat output:
     "/tabs": [...],
     "/draft": "",
     "/messagesCount": 0,
+    "/nativeWindows": [...],
   },
 }
 ```

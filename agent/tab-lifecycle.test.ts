@@ -788,9 +788,14 @@ describe("handleSessionEvent", () => {
     });
   });
 
-  it("agent_end emits missing final text when streaming only delivered thinking", () => {
+  it("agent_end emits missing final text when streaming only delivered thinking", async () => {
     const f = makeFixture();
     const rec = fakeRec();
+    const sessionEvents: unknown[] = [];
+    f.state.sessionEventHandlers.set(
+      "messageUpdated",
+      new Set([(payload) => sessionEvents.push(payload)]),
+    );
     rec.promptInFlight = true;
 
     handleSessionEvent(f.state, f.deps, rec, "tab-1", {
@@ -832,6 +837,16 @@ describe("handleSessionEvent", () => {
     );
     expect(finalTextIndex).toBeGreaterThan(-1);
     expect(finalTextIndex).toBeLessThan(responseEndIndex);
+    await Promise.resolve();
+    expect(sessionEvents).toEqual([
+      expect.objectContaining({
+        sessionId: "tab-1",
+        message: expect.objectContaining({
+          role: "agent",
+          content: "No. The PR did not add a rake task.",
+        }),
+      }),
+    ]);
   });
 
   it("agent_end only emits the unstreamed suffix of final text", () => {

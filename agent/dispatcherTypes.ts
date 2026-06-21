@@ -44,6 +44,8 @@ export interface InboundMessage {
   planMode?: boolean;
   /** Opaque id supplied by release-control clients for turn-specific waits. */
   controlRequestId?: string;
+  /** Frontend already emitted the visible user bubble through local_chat_message. */
+  suppressUserSessionEvent?: boolean;
   /** Native scheduled-task metadata carried on scheduler-fired chat turns. */
   scheduledTaskId?: string;
   scheduledRunId?: string;

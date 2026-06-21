@@ -20,6 +20,7 @@ import {
   handleStop,
   unloadProjectExtensions,
 } from "./dispatcher";
+import { emitSessionEvent } from "./aethon-api-sessions";
 import { handleSetExtensionDisabled } from "./extensionControl";
 import { projectDisplayName } from "./projectLifecycle";
 
@@ -396,9 +397,7 @@ describe("handleChat", () => {
     expect(f.sent).toContainEqual({ type: "queued", tabId: "tab-1" });
     // A queued message must NOT announce a fresh turn start — the
     // queue-drained agent_start emits prompt_started later instead.
-    expect(
-      f.sent.some((m) => m.type === "prompt_started"),
-    ).toBe(false);
+    expect(f.sent.some((m) => m.type === "prompt_started")).toBe(false);
   });
 
   it("announces prompt_started for a normal turn so backgrounded workspaces show a running dot", async () => {
@@ -626,6 +625,110 @@ describe("handleChat", () => {
     expect(promptCalls).toEqual([]);
     expect(followUpCalls).toEqual([["update?"]]);
     expect(f.sent).toContainEqual({ type: "queued", tabId: "tab-1" });
+  });
+
+  it("does not emit hidden scheduler prompts as direct user events", async () => {
+    const f = makeFixture();
+    const events: unknown[] = [];
+    f.state.tabs.set("tab-1", fakeTabRecord());
+    f.state.sessionEventHandlers.set(
+      "messageAppended",
+      new Set([(payload) => events.push(payload)]),
+    );
+
+    await handleChat(f.state, f.deps, {
+      type: "chat",
+      content:
+        "This is an Aethon scheduled task run.\n\nUser request:\nvisible",
+      tabId: "tab-1",
+      mode: "normal",
+      scheduledTaskId: "task-1",
+      scheduledRunId: "run-1",
+      scheduledVisiblePrompt: "visible",
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(events).toEqual([]);
+  });
+
+  it("does not re-append already streamed assistant messages from local persistence", async () => {
+    const f = makeFixture({
+      sessionsDir: mkdtempSync(join(tmpdir(), "aethon-local-")),
+    });
+    const events: unknown[] = [];
+    emitSessionEvent(f.state, "messageUpdated", {
+      sessionId: "tab-1",
+      messageId: "agent-1",
+      message: { id: "agent-1", role: "agent", content: "hi", text: "hi" },
+    });
+    f.state.sessionEventHandlers.set(
+      "messageAppended",
+      new Set([(payload) => events.push(payload)]),
+    );
+
+    await dispatchInboundMessage(
+      f.state,
+      f.deps,
+      fakeAethonApi(),
+      fakeExtensionApi,
+      {
+        type: "local_chat_message",
+        tabId: "tab-1",
+        payload: { id: "agent-1", role: "agent", text: "hi!" },
+      },
+    );
+
+    expect(events).toEqual([]);
+  });
+
+  it("emits session user events for direct chat unless frontend already mirrored it", async () => {
+    const f = makeFixture();
+    const events: unknown[] = [];
+    const tab = fakeTabRecord({
+      session: {
+        prompt: () => new Promise<void>(() => {}),
+        followUp: () => Promise.resolve(),
+        steer: () => Promise.resolve(),
+      } as unknown as TabRecord["session"],
+    });
+    f.state.tabs.set("tab-1", tab);
+    f.state.sessionEventHandlers.set(
+      "messageAppended",
+      new Set([(payload) => events.push(payload)]),
+    );
+
+    await handleChat(f.state, f.deps, {
+      type: "chat",
+      content: "direct prompt",
+      tabId: "tab-1",
+      mode: "normal",
+      planMode: true,
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(events).toEqual([
+      expect.objectContaining({
+        sessionId: "tab-1",
+        message: expect.objectContaining({
+          role: "user",
+          content: "direct prompt",
+        }),
+      }),
+    ]);
+
+    await handleChat(f.state, f.deps, {
+      type: "chat",
+      content: "frontend prompt",
+      tabId: "tab-1",
+      mode: "normal",
+      suppressUserSessionEvent: true,
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(events).toHaveLength(1);
   });
 
   it("passes image attachments to prompt, steer, and followUp", async () => {

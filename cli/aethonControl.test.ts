@@ -1,4 +1,10 @@
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync } from "node:fs";
+import {
+  mkdtempSync,
+  mkdirSync,
+  readFileSync,
+  writeFileSync,
+  rmSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createServer, type Server, type Socket } from "node:net";
@@ -39,13 +45,15 @@ describe("aethonctl helpers", () => {
   });
 
   it("keeps default account switches on the global bridge", () => {
-    expect(buildAccountSwitchPayloads("primary", { tabId: "default" })).toEqual([
-      {
-        type: "auth_profile_use_for_tab",
-        tabId: "default",
-        profileId: "primary",
-      },
-    ]);
+    expect(buildAccountSwitchPayloads("primary", { tabId: "default" })).toEqual(
+      [
+        {
+          type: "auth_profile_use_for_tab",
+          tabId: "default",
+          profileId: "primary",
+        },
+      ],
+    );
   });
 
   it("resolves active tabs from object-shaped app state", () => {
@@ -74,25 +82,34 @@ describe("aethonctl helpers", () => {
   it("falls back to default when the active surface is not an agent tab", () => {
     expect(
       activeTargetFromState(
-        { activeTabId: "shell", tabs: { shell: { id: "shell", kind: "shell" } } },
+        {
+          activeTabId: "shell",
+          tabs: { shell: { id: "shell", kind: "shell" } },
+        },
         "active",
       ),
     ).toEqual({ tabId: "default" });
   });
 
   it("keeps explicit tab ids even when the frontend snapshot is stale", () => {
-    expect(activeTargetFromState({ activeTabId: "other", tabs: [] }, "new-tab")).toEqual({
+    expect(
+      activeTargetFromState({ activeTabId: "other", tabs: [] }, "new-tab"),
+    ).toEqual({
       tabId: "new-tab",
     });
   });
 
   it("reads JSON Pointer state paths", () => {
-    expect(jsonPointerGet({ a: { "b/c": ["zero", "one"] } }, "/a/b~1c/1")).toBe("one");
+    expect(jsonPointerGet({ a: { "b/c": ["zero", "one"] } }, "/a/b~1c/1")).toBe(
+      "one",
+    );
   });
 
   it("normalizes object and array tab containers", () => {
     expect(normalizeTabs({ a: { id: "a" } })).toEqual([{ id: "a" }]);
-    expect(normalizeTabs([{ id: "b", label: "Bee" }])).toEqual([{ id: "b", label: "Bee" }]);
+    expect(normalizeTabs([{ id: "b", label: "Bee" }])).toEqual([
+      { id: "b", label: "Bee" },
+    ]);
   });
 
   it("plans project skill installs using claude plus generic agents targets", () => {
@@ -106,7 +123,11 @@ describe("aethonctl helpers", () => {
 
   it("writes skill files with account guidance", () => {
     const root = mkdtempSync(join(tmpdir(), "aethon-skill-"));
-    const plan = planSkillInstall({ targets: ["codex"], project: true, dir: root });
+    const plan = planSkillInstall({
+      targets: ["codex"],
+      project: true,
+      dir: root,
+    });
     const [path] = installSkill(plan, true);
     const body = readFileSync(path, "utf8");
     expect(body).toContain("accounts use <profile-id>");
@@ -116,7 +137,10 @@ describe("aethonctl helpers", () => {
   it("resolves debug port from the conventional dev-info file", () => {
     const home = mkdtempSync(join(tmpdir(), "aethon-home-"));
     mkdirSync(join(home, ".aethon"));
-    writeFileSync(join(home, ".aethon", "dev-info.json"), JSON.stringify({ debugPort: 20123 }));
+    writeFileSync(
+      join(home, ".aethon", "dev-info.json"),
+      JSON.stringify({ debugPort: 20123 }),
+    );
     expect(resolveDebugPort({ home, env: {} })).toBe(20123);
   });
 
@@ -151,8 +175,11 @@ describe("aethonctl helpers", () => {
     });
     await new Promise<void>((resolve) => server.listen(socketPath, resolve));
     try {
-      expect(readControlInfo({ home: root })?.socketPath).toBe(socketPath);
-      const client = new AethonControlClient({ home: root });
+      const testEnv: NodeJS.ProcessEnv = {};
+      expect(readControlInfo({ home: root, env: testEnv })?.socketPath).toBe(
+        socketPath,
+      );
+      const client = new AethonControlClient({ home: root, env: testEnv });
       await expect(client.request("status")).resolves.toEqual({
         token: "test-token",
         method: "status",

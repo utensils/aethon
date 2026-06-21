@@ -77,6 +77,7 @@ describe("buildAethonApi", () => {
     expect(typeof api.canvas).toBe("object");
     expect(typeof api.shells).toBe("object");
     expect(typeof api.editor).toBe("object");
+    expect(typeof api.sessions).toBe("object");
     expect(typeof api.windows).toBe("object");
   });
 

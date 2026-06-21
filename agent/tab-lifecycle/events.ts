@@ -26,6 +26,7 @@ import {
   isUsageLimitError,
 } from "../agent-errors";
 import { tryAutoSwitchOnUsageLimit } from "../auth-profiles";
+import { emitSessionEvent } from "../aethon-api-sessions";
 import { logger } from "../logger";
 import type { AethonAgentState, TabRecord } from "../state";
 import {
@@ -132,6 +133,36 @@ function rememberResponseDelta(
   }
 }
 
+function emitResponseSessionEvent(
+  state: AethonAgentState,
+  rec: TabRecord,
+  tabId: string,
+  messageId: string,
+  previousMessageId: string | undefined,
+): void {
+  const message = {
+    id: messageId,
+    role: "agent" as const,
+    content: rec.activeResponseText ?? "",
+    ...(rec.activeResponseText ? { text: rec.activeResponseText } : {}),
+    ...(rec.activeResponseThinking
+      ? { thinking: rec.activeResponseThinking }
+      : {}),
+  };
+  if (previousMessageId !== messageId) {
+    emitSessionEvent(state, "messageAppended", {
+      sessionId: tabId,
+      message,
+    });
+  } else {
+    emitSessionEvent(state, "messageUpdated", {
+      sessionId: tabId,
+      messageId,
+      message,
+    });
+  }
+}
+
 function assistantMessageCanonicalId(message: {
   id?: unknown;
   messageId?: unknown;
@@ -154,6 +185,7 @@ function missingSuffix(
 }
 
 function emitFinalAssistantContent(
+  state: AethonAgentState,
   deps: TabLifecycleDeps,
   rec: TabRecord,
   tabId: string,
@@ -169,6 +201,7 @@ function emitFinalAssistantContent(
   const finalText = textFromContent(assistant.content);
   if (!finalThinking && !finalText) return;
 
+  const previousMessageId = rec.activeResponseMessageId;
   const messageId =
     rec.activeResponseMessageId ??
     startResponseSegment(rec, assistantMessageCanonicalId(assistant));
@@ -185,6 +218,7 @@ function emitFinalAssistantContent(
       channel: "thinking",
     });
     rememberResponseDelta(rec, "thinking", thinkingDelta);
+    emitResponseSessionEvent(state, rec, tabId, messageId, previousMessageId);
   }
   const textDelta = missingSuffix(finalText, rec.activeResponseText);
   if (textDelta) {
@@ -195,7 +229,9 @@ function emitFinalAssistantContent(
       content: textDelta,
       channel: "text",
     });
+    const beforeTextMessageId = thinkingDelta ? messageId : previousMessageId;
     rememberResponseDelta(rec, "text", textDelta);
+    emitResponseSessionEvent(state, rec, tabId, messageId, beforeTextMessageId);
   }
 }
 
@@ -313,14 +349,23 @@ export function handleSessionEvent(
       ) {
         const delta = ame.delta ?? "";
         if (delta) {
+          const previousMessageId = rec.activeResponseMessageId;
+          const messageId = responseMessageId(rec, ame);
           deps.send({
             type: "response_delta",
             tabId,
-            messageId: responseMessageId(rec, ame),
+            messageId,
             content: delta,
             channel,
           });
           rememberResponseDelta(rec, channel, delta);
+          emitResponseSessionEvent(
+            state,
+            rec,
+            tabId,
+            messageId,
+            previousMessageId,
+          );
           addLiveContextUsageEstimate(rec, delta);
           emitContextUsageThrottled(state, deps, tabId, rec);
         }
@@ -565,7 +610,7 @@ export function handleSessionEvent(
         if (state.currentAgentTabId === tabId) {
           state.currentAgentTabId = undefined;
         }
-        emitFinalAssistantContent(deps, rec, tabId, lastAssistant);
+        emitFinalAssistantContent(state, deps, rec, tabId, lastAssistant);
         rollResponseMessage(rec);
         clearLiveContextUsageEstimate(rec);
         emitContextUsage(state, deps, tabId, rec);
@@ -573,7 +618,13 @@ export function handleSessionEvent(
         // rollback / fork affordances work without a reload.
         emitEntryIds(deps, rec, tabId);
         deps.send({ type: "response_end", tabId });
-        emitScheduledRunComplete(deps, rec, tabId, !failedMessage, failedMessage);
+        emitScheduledRunComplete(
+          deps,
+          rec,
+          tabId,
+          !failedMessage,
+          failedMessage,
+        );
       }
       break;
     }

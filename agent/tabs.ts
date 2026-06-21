@@ -15,6 +15,10 @@ import { ensureTab, tabSessionDir } from "./tab-lifecycle";
 import { unloadProjectExtensions } from "./projectLifecycle";
 import { modelRegistryForModelId } from "./auth-profiles";
 import { clearPendingContextUsageEmit } from "./context-usage";
+import {
+  emitSessionEvent,
+  hasEmittedSessionMessage,
+} from "./aethon-api-sessions";
 import { setSessionLabelForTab } from "./session-label";
 
 export async function handleTabOpen(
@@ -255,11 +259,12 @@ export async function handleLocalChatMessage(
       (tabId === "default"
         ? (state.currentProjectCwd ?? process.cwd())
         : undefined);
-    await appendLocalChatMessage(tabSessionDir(state, tabId), {
-      id:
-        typeof record.id === "string" && record.id.length > 0
-          ? record.id
-          : randomUUID(),
+    const id =
+      typeof record.id === "string" && record.id.length > 0
+        ? record.id
+        : randomUUID();
+    const persisted = {
+      id,
       role,
       ...(hasText ? { text } : {}),
       ...(hasThinking ? { thinking } : {}),
@@ -269,6 +274,23 @@ export async function handleLocalChatMessage(
       ...(typeof record.createdAt === "number"
         ? { createdAt: record.createdAt }
         : {}),
+    };
+    await appendLocalChatMessage(tabSessionDir(state, tabId), persisted);
+    if (hasEmittedSessionMessage(state, tabId, id)) return;
+    emitSessionEvent(state, "messageAppended", {
+      sessionId: tabId,
+      message: {
+        id,
+        role,
+        content: hasText ? text : "",
+        ...(hasText ? { text } : {}),
+        ...(hasThinking ? { thinking } : {}),
+        ...(attachments.length > 0 ? { attachments } : {}),
+        ...(a2ui ? { a2ui } : {}),
+        ...(typeof record.createdAt === "number"
+          ? { createdAt: record.createdAt }
+          : {}),
+      },
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

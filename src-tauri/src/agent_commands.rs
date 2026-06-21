@@ -56,6 +56,10 @@ pub(crate) struct SendMessageRequest {
     /// Opaque release-control request id. The bridge echoes it on lifecycle
     /// events so external callers can wait for the specific turn they sent.
     control_request_id: Option<String>,
+    /// Frontend already mirrored the visible user bubble through
+    /// local_chat_message; forwarded so the bridge doesn't emit a duplicate
+    /// session message event for extension subscribers.
+    suppress_user_session_event: Option<bool>,
 }
 
 #[tauri::command]
@@ -108,6 +112,9 @@ pub(crate) async fn send_message(
         && !control_request_id.is_empty()
     {
         payload["controlRequestId"] = serde_json::Value::String(control_request_id);
+    }
+    if let Some(suppress) = request.suppress_user_session_event {
+        payload["suppressUserSessionEvent"] = serde_json::Value::Bool(suppress);
     }
     let images = attachments_to_agent_images(&app, request.attachments.unwrap_or_default())?;
     if !images.is_empty() {

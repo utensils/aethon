@@ -19,6 +19,7 @@ import {
   RESERVED_THEME_IDS,
   discoverPersistedTabs,
   loadAethonExtensionDirectory,
+  loadAethonExtensionPackages,
   loadAethonExtensions,
   loadProjectAethonExtensions,
   normalizeTheme,
@@ -75,13 +76,19 @@ describe("normalizeTheme", () => {
         "--text": 12, // non-string value dropped
       },
     });
-    expect(t).toEqual({ id: "twilight", label: "twilight", vars: { "--bg": "#000" } });
+    expect(t).toEqual({
+      id: "twilight",
+      label: "twilight",
+      vars: { "--bg": "#000" },
+    });
   });
 
   it("trims label", () => {
-    expect(normalizeTheme({ id: "x", label: "  X  ", vars: {} })).toMatchObject({
-      label: "X",
-    });
+    expect(normalizeTheme({ id: "x", label: "  X  ", vars: {} })).toMatchObject(
+      {
+        label: "X",
+      },
+    );
   });
 
   it("RESERVED_THEME_IDS exported", () => {
@@ -100,9 +107,9 @@ describe("projectExtensionDisplayName", () => {
   });
 
   it("falls back to projectName:base when scope is empty", () => {
-    expect(projectExtensionDisplayName("/", "/.aethon/extensions", "x.ts")).toBe(
-      "project:x",
-    );
+    expect(
+      projectExtensionDisplayName("/", "/.aethon/extensions", "x.ts"),
+    ).toBe("project:x");
   });
 });
 
@@ -124,11 +131,14 @@ describe("discoverPersistedTabs", () => {
       const defaultFile = join(sessionsDir, "default", "1.jsonl");
       const aFile = join(sessionsDir, "tab-a", "1.jsonl");
       const bFile = join(sessionsDir, "tab-b", "1.jsonl");
-      writeFileSync(defaultFile, `${JSON.stringify({
-        type: "session",
-        id: "default",
-        cwd: "/tmp/default",
-      })}\n`);
+      writeFileSync(
+        defaultFile,
+        `${JSON.stringify({
+          type: "session",
+          id: "default",
+          cwd: "/tmp/default",
+        })}\n`,
+      );
       writeFileSync(aFile, "");
       writeFileSync(bFile, "");
       const stateOpts = makeOpts(root);
@@ -161,9 +171,7 @@ describe("refreshPersistedTabs", () => {
       stateOpts.sessionsDir = join(root, "sessions-as-file");
       writeFileSync(stateOpts.sessionsDir, "not a directory");
       const state = new AethonAgentState(stateOpts);
-      const existing = [
-        { tabId: "existing", lastModified: 123, cwd: "/proj" },
-      ];
+      const existing = [{ tabId: "existing", lastModified: 123, cwd: "/proj" }];
       state.discoveredTabs = existing;
 
       expect(await refreshPersistedTabs(state)).toBe(existing);
@@ -197,9 +205,7 @@ describe("loadAethonExtensions", () => {
       await loadAethonExtensions(f.state, f.deps, api, registry);
       expect(seen).toEqual({ type: "hello", template: { type: "card" } });
       expect(registry.get("hello")).toBe("directory");
-      const lifecycle = f.sent.find(
-        (m) => m.type === "extension_lifecycle",
-      );
+      const lifecycle = f.sent.find((m) => m.type === "extension_lifecycle");
       expect(lifecycle).toMatchObject({ status: "loaded", name: "hello" });
     } finally {
       rmSync(root, { recursive: true, force: true });
@@ -326,6 +332,98 @@ describe("loadAethonExtensions", () => {
         (m) => m.type === "extension_lifecycle" && m.status === "failed",
       ).length;
       expect(failuresAfterSecond).toBe(1);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("loadAethonExtensionPackages", () => {
+  it("loads package folders placed directly under ~/.aethon/extensions", async () => {
+    const root = mkdtempSync(join(tmpdir(), "aethon-pkg-"));
+    try {
+      const pkgDir = join(root, "extensions", "direct-package");
+      mkdirSync(pkgDir, { recursive: true });
+      writeFileSync(
+        join(pkgDir, "package.json"),
+        JSON.stringify({
+          name: "direct-package",
+          aethon: { entry: "./index.mjs", frontendEntry: "./frontend.js" },
+        }),
+      );
+      writeFileSync(
+        join(pkgDir, "index.mjs"),
+        `export function register(api) { api.registerTheme({ id: "direct-pkg", vars: { "--bg": "#000" } }); }`,
+      );
+      writeFileSync(join(pkgDir, "frontend.js"), `// frontend`);
+      const f = makeFixture(root);
+      const frontendEntries: {
+        name: string;
+        entryPath: string;
+        code: string;
+      }[] = [];
+
+      await loadAethonExtensionPackages(
+        f.state,
+        f.deps,
+        {
+          registerTheme(theme) {
+            f.state.extensionThemes.set(theme.id, theme);
+            return Promise.resolve({ ok: true });
+          },
+        } as unknown as AethonExtensionApi,
+        f.state.loadedExtensions,
+        { onFrontendEntry: (entry) => frontendEntries.push(entry) },
+      );
+
+      expect(f.state.loadedExtensions.get("direct-package")).toBe(
+        "extension-package",
+      );
+      expect(f.state.extensionThemes.has("direct-pkg")).toBe(true);
+      expect(frontendEntries).toEqual([
+        expect.objectContaining({
+          name: "direct-package",
+          code: "// frontend",
+        }),
+      ]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("surfaces malformed direct package manifests as load failures", async () => {
+    const root = mkdtempSync(join(tmpdir(), "aethon-pkg-"));
+    try {
+      const pkgDir = join(root, "extensions", "broken-package");
+      mkdirSync(pkgDir, { recursive: true });
+      writeFileSync(join(pkgDir, "package.json"), `{ nope`);
+      const f = makeFixture(root);
+      const failures: Record<string, unknown>[] = [];
+
+      await loadAethonExtensionPackages(
+        f.state,
+        f.deps,
+        {} as AethonExtensionApi,
+        f.state.loadedExtensions,
+        { onFailure: (failure) => failures.push(failure) },
+      );
+
+      expect(failures).toEqual([
+        expect.objectContaining({
+          name: "broken-package",
+          source: "extension-package",
+          status: "failed",
+          path: join(pkgDir, "package.json"),
+        }),
+      ]);
+      expect(f.sent).toContainEqual(
+        expect.objectContaining({
+          type: "extension_lifecycle",
+          name: "broken-package",
+          source: "extension-package",
+          status: "failed",
+        }),
+      );
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

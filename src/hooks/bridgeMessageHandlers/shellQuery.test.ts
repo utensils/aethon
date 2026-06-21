@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { handleShellQuery } from "./shellQuery";
 import { buildHandlerFixture } from "./testFixtures";
 import { clearTauriMocks, installTauriMocks } from "../../test/tauriMocks";
@@ -26,6 +26,137 @@ describe("handleShellQuery", () => {
       "tab-1",
       "tab-2",
     ]);
+  });
+
+  it("creates shell tabs without opening the terminal panel by default", async () => {
+    const { ctx, mocks } = buildHandlerFixture({
+      state: { tabs: [], terminal: { open: false }, terminalPanel: {} },
+    });
+    harness.invoke.mockResolvedValueOnce(undefined);
+
+    handleShellQuery(
+      {
+        type: "shell_query",
+        op: "create",
+        mutationId: "m-create",
+        args: {
+          tabId: "shell-test",
+          cwd: "/repo",
+          command: "zsh",
+          args: ["-l"],
+          shareMode: "read-write-trusted",
+          activate: false,
+        },
+      },
+      ctx,
+    );
+
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(harness.invoke).toHaveBeenCalledWith("shell_open", {
+      args: {
+        tabId: "shell-test",
+        command: "zsh",
+        args: ["-l"],
+        cwd: "/repo",
+      },
+    });
+    expect(ctx.stateRef.current).toMatchObject({
+      terminal: { open: false },
+      terminalPanel: {},
+      tabs: [
+        expect.objectContaining({
+          id: "shell-test",
+          kind: "shell",
+          terminalBuffer: "",
+          shell: expect.objectContaining({
+            cwd: "/repo",
+            command: "zsh",
+            args: ["-l"],
+            shareMode: "private",
+            shellState: "running",
+          }),
+        }),
+      ],
+    });
+    await vi.waitFor(() =>
+      expect(mocks.ackMutation).toHaveBeenCalledWith(
+        "m-create",
+        true,
+        undefined,
+        expect.objectContaining({ tabId: "shell-test" }),
+      ),
+    );
+  });
+
+  it("resets active sub-tab when activated shell creation fails", async () => {
+    const { ctx, mocks } = buildHandlerFixture({
+      state: { tabs: [], terminalPanel: {}, terminal: { open: false } },
+    });
+    harness.invoke.mockRejectedValueOnce(new Error("spawn failed"));
+
+    handleShellQuery(
+      {
+        type: "shell_query",
+        op: "create",
+        mutationId: "m-fail",
+        args: { tabId: "shell-fail", activate: true },
+      },
+      ctx,
+    );
+
+    await vi.waitFor(() =>
+      expect(mocks.ackMutation).toHaveBeenCalledWith(
+        "m-fail",
+        false,
+        "spawn failed",
+      ),
+    );
+    expect(ctx.stateRef.current).toMatchObject({
+      tabs: [],
+      terminalPanel: { activeSubId: "agent-bash" },
+      terminal: { open: true },
+    });
+  });
+
+  it("rejects duplicate shell ids without mutating existing tabs", async () => {
+    const existing = {
+      id: "shell-test",
+      label: "Existing",
+      kind: "shell",
+      terminalBuffer: "keep",
+      shell: {
+        cwd: "/old",
+        command: "zsh",
+        args: [],
+        shareMode: "read",
+        shellState: "running",
+      },
+    };
+    const { ctx, mocks } = buildHandlerFixture({ state: { tabs: [existing] } });
+
+    handleShellQuery(
+      {
+        type: "shell_query",
+        op: "create",
+        mutationId: "m-dup",
+        args: { tabId: "shell-test", cwd: "/repo" },
+      },
+      ctx,
+    );
+
+    await vi.waitFor(() =>
+      expect(mocks.ackMutation).toHaveBeenCalledWith(
+        "m-dup",
+        false,
+        "shell tab already exists: shell-test",
+      ),
+    );
+    expect(harness.invoke).not.toHaveBeenCalledWith(
+      "shell_open",
+      expect.anything(),
+    );
+    expect(ctx.stateRef.current.tabs).toEqual([existing]);
   });
 
   it("acks failure for unknown ops", async () => {

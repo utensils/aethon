@@ -69,6 +69,7 @@ export function useFrontendStateMirror(
         "/draft": state.draft ?? "",
         "/messagesCount": messagesCount,
         "/nativeWindows": state.nativeWindows ?? [],
+        "/extensionFrontendModules": state.extensionFrontendModules ?? [],
         "/scheduledTasks": scheduledTasks.map((task) => ({
           id: task.id,
           label: task.label,

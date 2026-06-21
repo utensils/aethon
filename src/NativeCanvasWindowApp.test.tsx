@@ -34,6 +34,28 @@ describe("NativeCanvasWindowApp", () => {
 
   beforeEach(() => {
     harness = installTauriMocks();
+    Object.defineProperty(window, "matchMedia", {
+      configurable: true,
+      value: vi.fn(() => ({
+        matches: false,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        addListener: vi.fn(),
+        removeListener: vi.fn(),
+      })),
+    });
+    class ResizeObserverStub {
+      observe = vi.fn();
+      disconnect = vi.fn();
+    }
+    Object.defineProperty(window, "ResizeObserver", {
+      configurable: true,
+      value: ResizeObserverStub,
+    });
+    Object.defineProperty(globalThis, "ResizeObserver", {
+      configurable: true,
+      value: window.ResizeObserver,
+    });
   });
 
   afterEach(() => {
@@ -67,6 +89,96 @@ describe("NativeCanvasWindowApp", () => {
     expect(harness.invoke).not.toHaveBeenCalledWith("start_agent");
     expect(harness.invoke).toHaveBeenCalledWith("agent_command", {
       payload: JSON.stringify({ type: "report" }),
+    });
+  });
+
+  it("ignores shell output for windows that do not own the shell tab", async () => {
+    const saved: NativeCanvasWindowRecord[] = [];
+    harness.invoke.mockImplementation((command, args) => {
+      if (command === "native_window_get_canvas")
+        return Promise.resolve(baseRecord);
+      if (command === "native_window_save_canvas") {
+        saved.push(args.record);
+        return Promise.resolve(args.record);
+      }
+      return Promise.resolve(undefined);
+    });
+
+    render(<NativeCanvasWindowApp id="Workpad" />);
+    await screen.findByPlaceholderText("Draft");
+
+    act(() => {
+      harness.fireEvent("shell-output", {
+        tabId: "shell-elsewhere",
+        content: "hi",
+      });
+    });
+    await Promise.resolve();
+
+    expect(saved).toHaveLength(0);
+  });
+
+  it("routes shell-canvas share-mode badge clicks inside native windows", async () => {
+    const saved: NativeCanvasWindowRecord[] = [];
+    harness.invoke.mockImplementation((command, args) => {
+      if (command === "native_window_get_canvas") {
+        return Promise.resolve({
+          ...baseRecord,
+          components: [
+            {
+              id: "terminal",
+              type: "shell-canvas",
+              props: { tabId: "shell-1" },
+            },
+          ],
+          state: {
+            tabs: [
+              {
+                id: "shell-1",
+                label: "Shell 1",
+                kind: "shell",
+                terminalBuffer: "",
+                shell: {
+                  cwd: "/repo",
+                  command: "zsh",
+                  args: [],
+                  shareMode: "private",
+                  shellState: "running",
+                },
+              },
+            ],
+          },
+        });
+      }
+      if (command === "shell_set_share_mode") return Promise.resolve("read");
+      if (command === "native_window_save_canvas") {
+        saved.push(args.record);
+        return Promise.resolve(args.record);
+      }
+      return Promise.resolve(undefined);
+    });
+
+    render(<NativeCanvasWindowApp id="Workpad" />);
+
+    const badge = await screen.findByRole("button", {
+      name: /Share mode: private/i,
+    });
+    fireEvent.click(badge);
+
+    await waitFor(() =>
+      expect(harness.invoke).toHaveBeenCalledWith("shell_set_share_mode", {
+        tabId: "shell-1",
+        mode: "read",
+      }),
+    );
+    await waitFor(() => expect(saved.length).toBeGreaterThan(0));
+    expect(saved.at(-1)?.state).toMatchObject({
+      tabs: [
+        expect.objectContaining({
+          id: "shell-1",
+          shell: expect.objectContaining({ shareMode: "read" }),
+        }),
+      ],
     });
   });
 

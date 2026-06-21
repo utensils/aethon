@@ -20,10 +20,15 @@ export interface WindowsApiDeps {
 
 const MUTATION_ACK_TIMEOUT_MS_DEFAULT = 5_000;
 const WINDOW_LONG_ACK_TIMEOUT_MS = 30_000;
+const WINDOW_TERMINAL_ACK_TIMEOUT_MS = 60_000;
 
 type NativeWindowOp =
   | "open_canvas"
+  | "open_terminal"
   | "list"
+  | "get"
+  | "get_state"
+  | "get_canvas"
   | "focus"
   | "close"
   | "set_title"
@@ -140,12 +145,38 @@ export function buildWindowsApi(
       if (typeof args.tabId !== "string") args.tabId = ownerTabId(state);
       return windowQuery("open_canvas", args, WINDOW_LONG_ACK_TIMEOUT_MS);
     },
+    openTerminal(input = {}) {
+      const args =
+        input && typeof input === "object"
+          ? { ...(input as Record<string, unknown>) }
+          : {};
+      if (typeof args.tabId !== "string") args.tabId = ownerTabId(state);
+      return windowQuery("open_terminal", args, WINDOW_TERMINAL_ACK_TIMEOUT_MS);
+    },
     list() {
       return windowQuery("list").then((result) =>
         result.ok
           ? { ...result, data: [...state.nativeWindows.values()] }
           : result,
       );
+    },
+    get(id) {
+      if (!idRequired(id)) {
+        return Promise.resolve({ ok: false, error: "id required" });
+      }
+      return windowQuery("get", { id });
+    },
+    getState(id) {
+      if (!idRequired(id)) {
+        return Promise.resolve({ ok: false, error: "id required" });
+      }
+      return windowQuery("get_state", { id });
+    },
+    getCanvas(id) {
+      if (!idRequired(id)) {
+        return Promise.resolve({ ok: false, error: "id required" });
+      }
+      return windowQuery("get_canvas", { id });
     },
     focus(id) {
       if (!idRequired(id)) {

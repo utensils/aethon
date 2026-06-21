@@ -22,7 +22,10 @@ export interface UseScheduledTasksOptions {
       | ((prev: Record<string, unknown>) => Record<string, unknown>),
   ) => void;
   appendMessage: (msg: ChatMessage, tabId?: string) => void;
-  persistLocalChatMessage: (msg: ChatMessage, tabId: string) => void;
+  persistLocalChatMessage: (
+    msg: ChatMessage,
+    tabId: string,
+  ) => Promise<boolean>;
   pushNotification: (input: {
     title: string;
     message?: string;

@@ -54,6 +54,7 @@ import type { RuntimeSnapshot } from "./system-prompt";
 import { buildShellsApi } from "./aethon-api-shells";
 import { buildDashboardApi, buildTasksApi } from "./aethon-api-dashboard";
 import { buildEditorApi } from "./aethon-api-editor";
+import { buildSessionsApi, type SessionsApi } from "./aethon-api-sessions";
 import { buildWindowsApi } from "./aethon-api-windows";
 
 export interface AethonApiDeps {
@@ -89,6 +90,14 @@ const BUILTIN_SLASH_NAMES = new Set([
 
 export interface ShellsApi {
   list(): Promise<MutationResult>;
+  create(input?: {
+    tabId?: string;
+    cwd?: string;
+    command?: string;
+    args?: string[];
+    activate?: boolean;
+    inheritEnv?: boolean;
+  }): Promise<MutationResult>;
   read(input: {
     tabId: string;
     sinceTotal?: number;
@@ -165,7 +174,25 @@ export interface WindowsApi {
     restoreOnLaunch?: boolean;
     tabId?: string;
   }): Promise<MutationResult>;
+  openTerminal(input?: {
+    id?: string;
+    title?: string;
+    shellTabId?: string;
+    cwd?: string;
+    command?: string;
+    args?: string[];
+    activateShell?: boolean;
+    width?: number;
+    height?: number;
+    x?: number;
+    y?: number;
+    focus?: boolean;
+    restoreOnLaunch?: false;
+  }): Promise<MutationResult>;
   list(): Promise<MutationResult>;
+  get(id: string): Promise<MutationResult>;
+  getState(id: string): Promise<MutationResult>;
+  getCanvas(id: string): Promise<MutationResult>;
   focus(id: string): Promise<MutationResult>;
   close(id: string): Promise<MutationResult>;
   setTitle(id: string, title: string): Promise<MutationResult>;
@@ -230,6 +257,7 @@ export interface AethonApi {
   tasks: TasksApi;
   dashboard: DashboardApi;
   editor: EditorApi;
+  sessions: SessionsApi;
   windows: WindowsApi;
 }
 
@@ -469,6 +497,7 @@ export function buildAethonApi(
   const tasks = buildTasksApi(state, queryDeps);
   const dashboard = buildDashboardApi(state, queryDeps);
   const editor = buildEditorApi(state, queryDeps);
+  const sessions = buildSessionsApi(state);
   const windows = buildWindowsApi(state, queryDeps);
 
   return {
@@ -525,6 +554,7 @@ export function buildAethonApi(
     tasks,
     dashboard,
     editor,
+    sessions,
     windows,
   };
 }

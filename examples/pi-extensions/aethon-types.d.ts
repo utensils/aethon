@@ -117,6 +117,33 @@ interface AethonEditorApi {
   }): Promise<{ ok: boolean; error?: string; data?: unknown }>;
 }
 
+type AethonShareMode = "private" | "read" | "read-write" | "read-write-trusted";
+
+interface AethonShellSummary {
+  tabId: string;
+  cwd?: string;
+  command?: string;
+  shareMode?: AethonShareMode;
+}
+
+interface AethonShellsApi {
+  create(input?: {
+    tabId?: string;
+    cwd?: string;
+    command?: string;
+    args?: string[];
+    activate?: boolean;
+    inheritEnv?: boolean;
+  }): AethonMutationResult<AethonShellSummary>;
+  list(): AethonMutationResult<AethonShellSummary[]>;
+  read(input: {
+    tabId: string;
+    sinceTotal?: number;
+    maxBytes?: number;
+  }): AethonMutationResult<unknown>;
+  write(input: { tabId: string; text: string }): AethonMutationResult;
+}
+
 interface AethonNativeCanvasWindowSummary {
   id: string;
   label: string;
@@ -140,7 +167,24 @@ interface AethonWindowsApi {
     focus?: boolean;
     restoreOnLaunch?: boolean;
   }): AethonMutationResult;
+  openTerminal(input?: {
+    id?: string;
+    title?: string;
+    shellTabId?: string;
+    cwd?: string;
+    command?: string;
+    args?: string[];
+    width?: number;
+    height?: number;
+    x?: number;
+    y?: number;
+    focus?: boolean;
+    restoreOnLaunch?: false;
+  }): AethonMutationResult;
   list(): AethonMutationResult<AethonNativeCanvasWindowSummary[]>;
+  get(id: string): AethonMutationResult<unknown>;
+  getState(id: string): AethonMutationResult<unknown>;
+  getCanvas(id: string): AethonMutationResult<{ components: unknown[] }>;
   focus(id: string): AethonMutationResult;
   close(id: string): AethonMutationResult;
   setTitle(id: string, title: string): AethonMutationResult;
@@ -182,6 +226,8 @@ interface AethonEventCtx {
   canvas: AethonCanvasApi;
   /** Native canvas window API. */
   windows: AethonWindowsApi;
+  /** PTY-backed shell APIs. */
+  shells: AethonShellsApi;
   /** Present when this handler was invoked by a native canvas window. */
   window?: AethonWindowHandlerCtx;
 }
@@ -282,6 +328,9 @@ declare global {
 
         /** Native OS windows that render bare A2UI canvas content. */
         windows: AethonWindowsApi;
+
+        /** PTY-backed shell tab creation and opt-in shell read/write APIs. */
+        shells: AethonShellsApi;
 
         /**
          * Agent-side Monaco editor actions. `openFile` validates through

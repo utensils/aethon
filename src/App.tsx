@@ -8,6 +8,7 @@ import { BOOT_LAYOUT, hangWarnNotifId } from "./app/bootConstants";
 import { useAppForwardRefs } from "./app/useAppForwardRefs";
 import type { A2UIPayload } from "./types/a2ui";
 import type { Tab } from "./types/tab";
+import type { ShareMode } from "./utils/shareMode";
 import { useZoomAndTheme } from "./hooks/useZoomAndTheme";
 import { useSpeakReplies } from "./hooks/useSpeakReplies";
 import { useShellConsent } from "./hooks/useShellConsent";
@@ -66,6 +67,7 @@ import { useScheduledTasks } from "./hooks/useScheduledTasks";
 import { closeAllWorkspaceSessions } from "./hooks/tabOps/closeWorkspaceSessions";
 import {
   syncNativeWindowsToState as syncNativeWindowsToStateSlice,
+  terminalShellTabIds,
   type NativeCanvasWindowRecord,
 } from "./nativeWindows";
 import { writeState } from "./persist";
@@ -176,21 +178,60 @@ export default function App() {
         syncNativeWindowsToState();
       },
     );
+    const unlistenShareMode = listen<{
+      tabId?: string;
+      shareMode?: ShareMode;
+    }>("native-terminal-share-mode", (event) => {
+      const { tabId, shareMode } = event.payload ?? {};
+      if (typeof tabId !== "string" || typeof shareMode !== "string") return;
+      setState((prev) => ({
+        ...prev,
+        tabs: ((prev.tabs as Tab[] | undefined) ?? []).map((tab) =>
+          tab.id === tabId && tab.kind === "shell" && tab.shell
+            ? { ...tab, shell: { ...tab.shell, shareMode } }
+            : tab,
+        ),
+      }));
+    });
     const unlistenClosed = listen<{ id?: string }>(
       "native-window-closed",
       (event) => {
         const id = event.payload?.id;
         if (typeof id !== "string") return;
+        const record = nativeWindowsRef.current.get(id);
+        const ownedShellIds = terminalShellTabIds(record);
         nativeWindowsRef.current.delete(id);
+        if (ownedShellIds.length > 0) {
+          for (const shellId of ownedShellIds) {
+            invoke("shell_close", { tabId: shellId }).catch(() => {
+              /* best-effort terminal-window cleanup */
+            });
+          }
+          setState((prev) => {
+            const tabs = (prev.tabs as Tab[] | undefined) ?? [];
+            const owned = new Set(ownedShellIds);
+            const panel =
+              (prev.terminalPanel as { activeSubId?: string } | undefined) ??
+              {};
+            return {
+              ...prev,
+              tabs: tabs.filter((tab) => !owned.has(tab.id)),
+              ...(panel.activeSubId && owned.has(panel.activeSubId)
+                ? { terminalPanel: { ...panel, activeSubId: "agent-bash" } }
+                : {}),
+            };
+          });
+        }
         syncNativeWindowsToState();
       },
     );
     return () => {
       disposed = true;
       unlistenRecord.then((fn) => fn());
+      unlistenShareMode.then((fn) => fn());
       unlistenClosed.then((fn) => fn());
     };
-  }, [syncNativeWindowsToState]);
+  }, [setState, syncNativeWindowsToState]);
 
   const recordProjectModel = useProjectModelRecorder(setState);
 

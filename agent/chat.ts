@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { Api, ImageContent, Model } from "@mariozechner/pi-ai";
 import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
 import type { AethonAgentState, TabRecord } from "./state";
@@ -25,6 +26,7 @@ import {
   FileReferenceError,
   expandFileReferencesInPrompt,
 } from "./file-references";
+import { emitSessionEvent } from "./aethon-api-sessions";
 import { logger } from "./logger";
 
 const chatLog = logger.scope("chat");
@@ -41,8 +43,18 @@ export async function handleChat(
       : undefined;
   const scheduledRun = scheduledRunFromMessage(msg);
   if (!msg.content) {
-    completeScheduledRun(deps, tabId, scheduledRun, false, "chat: missing content");
-    deps.send({ type: "error", message: "chat: missing content", controlRequestId });
+    completeScheduledRun(
+      deps,
+      tabId,
+      scheduledRun,
+      false,
+      "chat: missing content",
+    );
+    deps.send({
+      type: "error",
+      message: "chat: missing content",
+      controlRequestId,
+    });
     return;
   }
   chatLog.info(`received tabId=${tabId} chars=${msg.content.length}`);
@@ -147,7 +159,9 @@ export async function handleChat(
         message: `file references: ${expanded.issues.join("\n")}`,
       });
     }
-    content = planMode ? withPlanModeInstruction(expanded.prompt) : expanded.prompt;
+    content = planMode
+      ? withPlanModeInstruction(expanded.prompt)
+      : expanded.prompt;
   } catch (err) {
     if (mentions.length > 0) state.pendingExplicitSubagent.delete(tabId);
     const message =
@@ -166,6 +180,19 @@ export async function handleChat(
     if (scheduledRun) tab.scheduledRun = undefined;
     return;
   }
+  if (msg.suppressUserSessionEvent !== true && !scheduledRun) {
+    emitSessionEvent(state, "messageAppended", {
+      sessionId: tabId,
+      message: {
+        id: randomUUID(),
+        role: "user",
+        content: msg.content,
+        text: msg.content,
+        createdAt: Date.now(),
+      },
+    });
+  }
+
   const busyForTurn = tab.promptInFlight || isUnderlyingSessionBusy(tab);
   if (busyForTurn && !tab.promptInFlight) {
     tab.promptInFlight = true;

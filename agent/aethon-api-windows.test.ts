@@ -97,6 +97,96 @@ describe("buildWindowsApi", () => {
     expect(sent).toHaveLength(0);
   });
 
+  it("openTerminal uses a PTY-startup-sized timeout", async () => {
+    vi.useFakeTimers();
+    try {
+      const { state, sent, api } = makeFixture();
+      markFrontendReady(state);
+      let settled = false;
+      const p = api.openTerminal({ cwd: "/repo" }).then((result) => {
+        settled = true;
+        return result;
+      });
+      await Promise.resolve();
+      expect(sent.at(-1)).toMatchObject({ op: "open_terminal" });
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(settled).toBe(false);
+      await vi.advanceTimersByTimeAsync(30_000);
+      await expect(p).resolves.toEqual({ ok: false, error: "timeout" });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("openTerminal forwards terminal window queries", async () => {
+    const { state, sent, api } = makeFixture();
+    markFrontendReady(state);
+    const p = api.openTerminal({
+      id: "Term",
+      title: "Terminal",
+      cwd: "/repo",
+      command: "zsh",
+      args: ["-l"],
+      activateShell: false,
+    });
+    await Promise.resolve();
+    const msg = sent.at(-1)!;
+    expect(msg).toMatchObject({
+      type: "native_window_query",
+      op: "open_terminal",
+      args: {
+        id: "Term",
+        title: "Terminal",
+        cwd: "/repo",
+        command: "zsh",
+        args: ["-l"],
+        activateShell: false,
+      },
+    });
+    ackMutation(state, msg.mutationId as string, true, undefined, {
+      id: "Term",
+      label: "aethon-canvas-Term",
+      kind: "canvas",
+      title: "Terminal",
+      components: [],
+      state: {},
+    });
+    await expect(p).resolves.toMatchObject({ ok: true });
+  });
+
+  it("get/getState/getCanvas forward read queries for a window id", async () => {
+    const { state, sent, api } = makeFixture();
+    markFrontendReady(state);
+
+    const p = api.get("Workpad");
+    await Promise.resolve();
+    let msg = sent.at(-1)!;
+    expect(msg).toMatchObject({
+      type: "native_window_query",
+      op: "get",
+      args: { id: "Workpad" },
+    });
+    ackMutation(state, msg.mutationId as string, true, undefined, {
+      id: "Workpad",
+      label: "aethon-canvas-Workpad",
+      kind: "canvas",
+      title: "Workpad",
+      components: [],
+      state: { count: 1 },
+    });
+    await expect(p).resolves.toMatchObject({ ok: true });
+
+    void api.getState("Workpad");
+    await Promise.resolve();
+    msg = sent.at(-1)!;
+    expect(msg).toMatchObject({ op: "get_state", args: { id: "Workpad" } });
+
+    void api.getCanvas("Workpad");
+    await Promise.resolve();
+    msg = sent.at(-1)!;
+    expect(msg).toMatchObject({ op: "get_canvas", args: { id: "Workpad" } });
+  });
+
   it("list replaces the known window summary cache", async () => {
     const { state, sent, api } = makeFixture();
     state.nativeWindows.set("Old", {

@@ -78,7 +78,10 @@ export interface UseChatContext {
    *  invocation so handlers see fresh state without re-creating the
    *  command registry. */
   slashContext: () => SlashCommandContext;
-  persistLocalChatMessage: (msg: ChatMessage, tabId: string) => void;
+  persistLocalChatMessage: (
+    msg: ChatMessage,
+    tabId: string,
+  ) => Promise<boolean>;
   recordProjectModel: (model: string, tabId?: string) => void;
   findTabById?: (tabId: string) => Tab | undefined;
   /** pi's boot/default model, used as the new-tab fallback. Cleared when
@@ -620,7 +623,10 @@ export function useChat(ctx: UseChatContext): UseChatActions {
         /* ignore */
       }
     }
-    persistLocalChatMessage(userMessage, tabId);
+    const userSessionEventMirrored = await persistLocalChatMessage(
+      userMessage,
+      tabId,
+    );
     const targetCwd =
       typeof targetTab?.cwd === "string" && targetTab.cwd.length > 0
         ? targetTab.cwd
@@ -639,7 +645,7 @@ export function useChat(ctx: UseChatContext): UseChatActions {
         : typeof stateRef.current.thinkingLevel === "string" &&
             stateRef.current.thinkingLevel.length > 0
           ? stateRef.current.thinkingLevel
-        : undefined;
+          : undefined;
     const targetPlanMode =
       targetTab?.kind === "agent" ? targetTab.planMode === true : false;
     try {
@@ -655,6 +661,7 @@ export function useChat(ctx: UseChatContext): UseChatActions {
           ...(targetThinkingLevel
             ? { thinkingLevel: targetThinkingLevel }
             : {}),
+          suppressUserSessionEvent: userSessionEventMirrored,
           ...(typeof targetTab?.hardEnforceProjectRoot === "boolean"
             ? { hardEnforce: targetTab.hardEnforceProjectRoot }
             : {}),

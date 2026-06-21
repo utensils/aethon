@@ -137,7 +137,10 @@ export interface BridgeMessageContext {
 
   // ─── Chat / status helpers (defined on App) ─────────────────────────
   appendMessage: (msg: ChatMessage, tabId?: string) => void;
-  persistLocalChatMessage: (msg: ChatMessage, tabId: string) => void;
+  persistLocalChatMessage: (
+    msg: ChatMessage,
+    tabId: string,
+  ) => Promise<boolean>;
   recordProjectModel: (model: string, tabId?: string) => void;
   appendOrAmendAgentText: (
     delta: string,
