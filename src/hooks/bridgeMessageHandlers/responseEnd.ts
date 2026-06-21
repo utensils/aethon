@@ -1,6 +1,7 @@
 import { closeRunningToolCards } from "../../utils/agentBusy";
 import { emitAgentTurnComplete } from "../../utils/agentTurnEvents";
 import { lastAgentText } from "../../utils/messages";
+import { resolveControlWait } from "../controlWaitRegistry";
 import type { BridgeMessageHandler } from "./types";
 import { clearHangWarn } from "./hangWarn";
 import { flushResponseDeltas } from "./responseDelta";
@@ -8,6 +9,12 @@ import { flushResponseDeltas } from "./responseDelta";
 export const handleResponseEnd: BridgeMessageHandler = (data, ctx) => {
   ctx.activeResponseIdRef.current = null;
   const tabId = (data.tabId as string | undefined) ?? "default";
+  // Release-control `chat.send --wait` waiters key off the opaque id the
+  // bridge echoes here. Resolve before the state work so the CLI unblocks the
+  // instant the turn ends.
+  if (typeof data.controlRequestId === "string" && data.controlRequestId) {
+    resolveControlWait(data.controlRequestId, "completed", tabId);
+  }
   flushResponseDeltas(tabId);
   // Always clear waiting on response_end. The queue is now held client
   // side: `useQueuedDispatch` watches the `waiting` transition and

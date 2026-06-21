@@ -4,6 +4,7 @@ import { renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { installTauriMocks, type TauriMockHarness } from "../test/tauriMocks";
 import type { Tab } from "../types/tab";
+import { resolveControlWait } from "./controlWaitRegistry";
 import { useControlRequests } from "./useControlRequests";
 
 function tab(patch: Partial<Tab> = {}): Tab {
@@ -124,5 +125,93 @@ describe("useControlRequests", () => {
         }),
       ),
     );
+  });
+
+  it("blocks chat.send --wait until the turn's terminal event resolves it", async () => {
+    const stateRef = { current: { activeTabId: "t1", tabs: [tab()] } };
+    const sendChat = vi.fn(() => Promise.resolve());
+    renderHook(() =>
+      useControlRequests({
+        stateRef,
+        pendingTabOpens: { current: new Map() },
+        newTab: vi.fn(),
+        closeTabNow: vi.fn(),
+        setActiveTab: vi.fn(),
+        updateTab: vi.fn(),
+        sendChat,
+        stopPrompt: vi.fn(),
+      }),
+    );
+
+    harness.fireEvent("control-request", {
+      requestId: "control-wait",
+      method: "chat.send",
+      params: { message: "go", tabId: "active", wait: true, timeoutMs: 10_000 },
+    });
+
+    // The chat is dispatched immediately, but the control request must NOT
+    // complete until the matching terminal event lands.
+    await waitFor(() =>
+      expect(sendChat).toHaveBeenCalledWith("go", {
+        tabId: "t1",
+        controlRequestId: "control-wait",
+      }),
+    );
+    expect(harness.invoke).not.toHaveBeenCalledWith(
+      "control_request_complete",
+      expect.objectContaining({ requestId: "control-wait" }),
+    );
+
+    // The bridge handler resolves the wait when response_end echoes the id.
+    resolveControlWait("control-wait", "completed", "t1");
+
+    await waitFor(() =>
+      expect(harness.invoke).toHaveBeenCalledWith(
+        "control_request_complete",
+        expect.objectContaining({
+          requestId: "control-wait",
+          success: true,
+          data: expect.objectContaining({
+            sent: true,
+            tabId: "t1",
+            wait: expect.objectContaining({ outcome: "completed" }),
+          }),
+        }),
+      ),
+    );
+  });
+
+  it("applies --plan / --thinking-level onto the target tab before dispatch", async () => {
+    const stateRef = { current: { activeTabId: "t1", tabs: [tab()] } };
+    const updateTab = vi.fn();
+    const sendChat = vi.fn(() => Promise.resolve());
+    renderHook(() =>
+      useControlRequests({
+        stateRef,
+        pendingTabOpens: { current: new Map() },
+        newTab: vi.fn(),
+        closeTabNow: vi.fn(),
+        setActiveTab: vi.fn(),
+        updateTab,
+        sendChat,
+        stopPrompt: vi.fn(),
+      }),
+    );
+
+    harness.fireEvent("control-request", {
+      requestId: "control-opts",
+      method: "chat.send",
+      params: {
+        message: "x",
+        tabId: "active",
+        planMode: true,
+        thinkingLevel: "high",
+      },
+    });
+
+    await waitFor(() => expect(sendChat).toHaveBeenCalled());
+    const mutator = updateTab.mock.calls.find((call) => call[0] === "t1")?.[1];
+    expect(mutator).toBeTypeOf("function");
+    expect(mutator(tab())).toMatchObject({ planMode: true, thinkingLevel: "high" });
   });
 });

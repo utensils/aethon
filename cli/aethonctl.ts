@@ -26,6 +26,11 @@ interface CliOptions {
   transport: "auto" | "control" | "debug";
 }
 
+/** Default `--wait` / `wait` ceiling. Agent turns routinely run for minutes, so
+ *  the old 5-minute default reported false timeouts on long turns; this is the
+ *  ceiling, not a fixed delay — a `--wait` returns the instant the turn ends. */
+const DEFAULT_WAIT_MS = 30 * 60 * 1000;
+
 function print(value: unknown, json = false): void {
   if (json || typeof value !== "string") {
     console.log(JSON.stringify(value, null, 2));
@@ -171,7 +176,7 @@ async function run(argv: string[]): Promise<void> {
       break;
     }
     case "wait": {
-      const timeout = Number(optionValue(args, "--timeout") ?? "300000");
+      const timeout = Number(optionValue(args, "--timeout") ?? String(DEFAULT_WAIT_MS));
       if (client.kind === "control") {
         print(await client.control.request("chat.wait", { timeoutMs: timeout }), true);
       } else {
@@ -305,6 +310,7 @@ async function runChat(
   const thinkingLevel = optionValue(args, "--thinking-level");
   const planMode = optionFlag(args, "--plan");
   const wait = optionFlag(args, "--wait");
+  const waitTimeoutMs = Number(optionValue(args, "--timeout") ?? String(DEFAULT_WAIT_MS));
   const message = readMessage(args);
   if (client.kind === "control") {
     let targetTab = requestedTab;
@@ -322,7 +328,7 @@ async function runChat(
         message,
         tabId: targetTab,
         ...(account ? { account } : {}),
-        ...(wait ? { wait: true, timeoutMs: 300_000 } : {}),
+        ...(wait ? { wait: true, timeoutMs: waitTimeoutMs } : {}),
         ...(planMode ? { planMode } : {}),
         ...(thinkingLevel ? { thinkingLevel } : {}),
       }),
@@ -342,7 +348,7 @@ async function runChat(
     });
     const result: JsonRecord = { sent: true, tabId: target.tabId };
     if (account) result.account = account;
-    if (wait) result.wait = await waitUntilIdle(client.debug, 300_000);
+    if (wait) result.wait = await waitUntilIdle(client.debug, waitTimeoutMs);
     print(result, options.json);
   }
 }
@@ -395,7 +401,7 @@ function runSkills(args: string[], options: CliOptions): void {
   const force = optionFlag(args, "--force");
   const dir = optionValue(args, "--dir");
   if (project && global) throw new Error("--project and --global are mutually exclusive");
-  const plan = planSkillInstall({ targets: args, project: project || !global ? project : false, dir });
+  const plan = planSkillInstall({ targets: args, project, dir });
   const written = installSkill(plan, force);
   print({ installed: written }, options.json);
 }
@@ -411,7 +417,7 @@ Usage:
   aethonctl models
   aethonctl accounts list
   aethonctl accounts use <profile-id> [--tab active|default|<id>]
-  aethonctl chat send [--account <profile-id>] [--tab active|default|<id>] [--wait] <message>
+  aethonctl chat send [--account <profile-id>] [--tab active|default|<id>] [--wait] [--timeout <ms>] [--plan] [--thinking-level <level>] <message>
   aethonctl agent stop [--tab active|default|<id>]
   aethonctl skills show
   aethonctl skills install [claude|codex|agents|all] [--project|--global] [--dir PATH] [--force]

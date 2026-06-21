@@ -16,7 +16,46 @@ use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::sync::oneshot;
 
 const PROTOCOL_VERSION: u32 = 1;
-const REQUEST_TIMEOUT: Duration = Duration::from_secs(300);
+/// Timeout for a forwarded request that carries no explicit `timeoutMs` (the
+/// quick UI-owned mutations: open/close/focus/account/stop).
+const DEFAULT_REQUEST_TIMEOUT: Duration = Duration::from_secs(300);
+/// Hard ceiling for a forwarded request, even one that asks to wait. `chat.send
+/// --wait` / `chat.wait` legitimately block for the whole agent turn (minutes),
+/// so the frontend passes its own `timeoutMs`; we honor it up to this cap so a
+/// long turn never reports a false timeout, while a wedged frontend can't pin a
+/// request open forever.
+const MAX_REQUEST_TIMEOUT: Duration = Duration::from_secs(24 * 60 * 60);
+/// Cap on a single control request line. Requests are small (method + params);
+/// a `chat.send` message is the largest field. Generous enough for a sizeable
+/// `--file` prompt, bounded so a local client can't stream unbounded memory.
+const MAX_REQUEST_BYTES: u64 = 16 * 1024 * 1024;
+
+/// Resolve the await timeout for a forwarded request, honoring a caller-supplied
+/// `timeoutMs` (plus a margin so the backend never beats the frontend's own
+/// wait) up to [`MAX_REQUEST_TIMEOUT`].
+fn request_timeout(params: &Value) -> Duration {
+    match params.get("timeoutMs").and_then(Value::as_u64) {
+        Some(ms) => Duration::from_millis(ms)
+            .saturating_add(Duration::from_secs(60))
+            .min(MAX_REQUEST_TIMEOUT),
+        None => DEFAULT_REQUEST_TIMEOUT,
+    }
+}
+
+/// Constant-time string compare for the per-launch token, so an authorized-vs-
+/// not decision doesn't leak via timing. Length is allowed to short-circuit
+/// (the token is a fixed-length uuid).
+fn token_eq(a: &str, b: &str) -> bool {
+    let (a, b) = (a.as_bytes(), b.as_bytes());
+    if a.len() != b.len() {
+        return false;
+    }
+    let mut diff = 0u8;
+    for (x, y) in a.iter().zip(b.iter()) {
+        diff |= x ^ y;
+    }
+    diff == 0
+}
 
 #[derive(Default)]
 pub(crate) struct ControlState {
@@ -92,13 +131,26 @@ pub(crate) fn control_request_complete(
         .pending
         .lock()
         .map_err(|e| e.to_string())?
-        .remove(&request_id)
-        .ok_or_else(|| format!("unknown control request id: {request_id}"))?;
-    let _ = sender.send(ControlCompletion {
-        success,
-        data,
-        error,
-    });
+        .remove(&request_id);
+    match sender {
+        Some(sender) => {
+            let _ = sender.send(ControlCompletion {
+                success,
+                data,
+                error,
+            });
+        }
+        None => {
+            // Late or duplicate completion: the forward already timed out and
+            // purged this entry (or the frontend completed twice). There's
+            // nothing left to resolve — treat it as a no-op rather than failing
+            // the command, which would surface as a noisy invoke error.
+            tracing::debug!(
+                target: "aethon::control",
+                "control_request_complete: no pending request {request_id}"
+            );
+        }
+    }
     Ok(())
 }
 
@@ -131,7 +183,7 @@ async fn handle_request(
         Ok(guard) => guard.clone(),
         Err(err) => return err_response(format!("control token lock: {err}")),
     };
-    if expected.as_deref() != Some(req.token.as_str()) {
+    if !expected.is_some_and(|token| token_eq(&token, &req.token)) {
         return err_response("unauthorized".to_string());
     }
 
@@ -203,6 +255,7 @@ async fn forward_to_frontend(
     req: ControlRequest,
 ) -> ControlResponse {
     let request_id = uuid::Uuid::new_v4().to_string();
+    let timeout = request_timeout(&req.params);
     let (tx, rx) = oneshot::channel();
     {
         let mut pending = match state.pending.lock() {
@@ -220,7 +273,7 @@ async fn forward_to_frontend(
         let _ = state.pending.lock().map(|mut p| p.remove(&request_id));
         return err_response(format!("emit control-request: {err}"));
     }
-    match tokio::time::timeout(REQUEST_TIMEOUT, rx).await {
+    match tokio::time::timeout(timeout, rx).await {
         Ok(Ok(done)) if done.success => ok_response(done.data.unwrap_or(Value::Null)),
         Ok(Ok(done)) => err_response(
             done.error
@@ -266,7 +319,7 @@ fn aethon_control_dir(app: &AppHandle) -> Result<PathBuf, String> {
 mod unix {
     use super::*;
     use std::os::unix::fs::PermissionsExt;
-    use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+    use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
     use tokio::net::{UnixListener, UnixStream};
 
     pub(super) async fn run(app: AppHandle, state: Arc<ControlState>) -> Result<(), String> {
@@ -330,7 +383,9 @@ mod unix {
         stream: UnixStream,
     ) -> Result<(), String> {
         let (reader, mut writer) = stream.into_split();
-        let mut lines = BufReader::new(reader).lines();
+        // Cap the request so a local client can't stream unbounded memory; a
+        // truncated request just fails to parse below.
+        let mut lines = BufReader::new(reader.take(MAX_REQUEST_BYTES)).lines();
         let Some(line) = lines.next_line().await.map_err(|e| e.to_string())? else {
             return Ok(());
         };
@@ -348,6 +403,27 @@ mod unix {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn request_timeout_honors_param_with_margin_and_cap() {
+        assert_eq!(request_timeout(&json!({})), DEFAULT_REQUEST_TIMEOUT);
+        assert_eq!(
+            request_timeout(&json!({ "timeoutMs": 1000_u64 })),
+            Duration::from_millis(1000) + Duration::from_secs(60)
+        );
+        assert_eq!(
+            request_timeout(&json!({ "timeoutMs": u64::MAX })),
+            MAX_REQUEST_TIMEOUT
+        );
+    }
+
+    #[test]
+    fn token_eq_matches_only_identical_tokens() {
+        assert!(token_eq("a1b2c3", "a1b2c3"));
+        assert!(!token_eq("a1b2c3", "a1b2c4"));
+        assert!(!token_eq("a1b2c3", "a1b2c3x"));
+        assert!(!token_eq("", "x"));
+    }
 
     #[test]
     fn readonly_status_counts_tabs_and_accounts() {

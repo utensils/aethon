@@ -60,13 +60,21 @@ export class AethonControlClient {
 
   request<T = unknown>(method: string, params: Record<string, unknown> = {}): Promise<T> {
     const payload = JSON.stringify({ token: this.token, method, params }) + "\n";
+    // A waited request (`chat.send --wait` / `chat.wait`) carries its own
+    // `timeoutMs` and may legitimately block for the whole agent turn. Derive
+    // the socket timer from it (with a margin larger than the backend's own
+    // margin) so the client never gives up before the app does.
+    const requestedTimeout =
+      typeof params.timeoutMs === "number" && Number.isFinite(params.timeoutMs)
+        ? params.timeoutMs + 120_000
+        : 310_000;
     return new Promise<T>((resolve, reject) => {
       const socket = net.createConnection(this.info.socketPath);
       let buffer = "";
       const timer = setTimeout(() => {
         socket.destroy();
         reject(new Error(`control request timed out: ${method}`));
-      }, 310_000);
+      }, requestedTimeout);
       socket.on("connect", () => {
         socket.write(payload);
       });

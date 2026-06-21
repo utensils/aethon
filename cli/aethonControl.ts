@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { AethonDebugClient, type DebugClientOptions, invokeJs } from "./debugClient.ts";
 
@@ -185,13 +185,8 @@ function pathExists(path: string): boolean {
 
 export function installSkill(plan: SkillInstallPlan, force = false): string[] {
   for (const path of plan.paths) {
-    if (!force) {
-      try {
-        readFileSync(path, "utf8");
-        throw new Error(`${path} already exists; pass --force to overwrite`);
-      } catch (err) {
-        if (err instanceof Error && !err.message.includes("ENOENT")) throw err;
-      }
+    if (!force && existsSync(path)) {
+      throw new Error(`${path} already exists; pass --force to overwrite`);
     }
     mkdirSync(dirname(path), { recursive: true });
     writeFileSync(path, plan.content);

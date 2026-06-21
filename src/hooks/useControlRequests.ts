@@ -1,4 +1,4 @@
-import { useEffect, type MutableRefObject } from "react";
+import { useEffect, useRef, type MutableRefObject } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import {
@@ -7,6 +7,15 @@ import {
 } from "../auth-profiles/commands";
 import { OVERVIEW_TAB_ID, type Tab } from "../types/tab";
 import { isAgentTabBusy } from "../utils/agentBusy";
+import {
+  cancelControlWait,
+  registerControlWait,
+} from "./controlWaitRegistry";
+
+/** Default ceiling for `chat.send --wait` / `chat.wait` when the caller does
+ *  not pass `timeoutMs`. Generous because real agent turns routinely run for
+ *  minutes; the caller can always Ctrl-C the CLI. */
+const DEFAULT_WAIT_MS = 30 * 60 * 1000;
 
 export interface ControlRequestPayload {
   requestId: string;
@@ -33,6 +42,15 @@ export interface UseControlRequestsContext {
 }
 
 export function useControlRequests(ctx: UseControlRequestsContext): void {
+  // Keep the live context in a ref so the listener can read the latest actions
+  // without re-subscribing on every App render. Subscribing with `[ctx]` (a
+  // fresh object literal each render) would tear down and re-register the
+  // `control-request` listener constantly and could briefly run duplicate
+  // handlers (Tauri's unlisten is async).
+  const ctxRef = useRef(ctx);
+  useEffect(() => {
+    ctxRef.current = ctx;
+  });
   useEffect(() => {
     let disposed = false;
     const unlisten = listen<ControlRequestPayload>(
@@ -41,7 +59,7 @@ export function useControlRequests(ctx: UseControlRequestsContext): void {
         const request = event.payload;
         if (!request?.requestId) return;
         try {
-          const data = await handleControlRequest(ctx, request);
+          const data = await handleControlRequest(ctxRef.current, request);
           if (!disposed) {
             await completeControlRequest(request.requestId, true, data);
           }
@@ -61,7 +79,7 @@ export function useControlRequests(ctx: UseControlRequestsContext): void {
       disposed = true;
       unlisten.then((fn) => fn());
     };
-  }, [ctx]);
+  }, []);
 }
 
 async function completeControlRequest(
@@ -70,12 +88,19 @@ async function completeControlRequest(
   data?: unknown,
   error?: string,
 ): Promise<void> {
-  await invoke("control_request_complete", {
-    requestId,
-    success,
-    ...(data !== undefined ? { data } : {}),
-    ...(error ? { error } : {}),
-  });
+  try {
+    await invoke("control_request_complete", {
+      requestId,
+      success,
+      ...(data !== undefined ? { data } : {}),
+      ...(error ? { error } : {}),
+    });
+  } catch {
+    // The backend already dropped this pending request (e.g. its own timeout
+    // fired and purged the entry) or the command isn't registered yet on an
+    // older shell. Either way there's nothing left to complete — swallow it so
+    // a late completion can't turn into a second, also-failing attempt.
+  }
 }
 
 async function handleControlRequest(
@@ -179,15 +204,51 @@ async function sendChat(
       ctx.updateTab(target.tabId, (tab) => ({ ...tab, authProfileId: account }));
     }
   }
-  await ctx.sendChat(message, {
-    tabId,
-    controlRequestId: requestId,
-  });
+  // Wire --plan / --thinking-level onto the target tab so the dispatched turn
+  // picks them up (useChat reads planMode/thinkingLevel from the tab, not from
+  // sendChat options). Previously these CLI flags were silently ignored.
+  applyTurnOptions(ctx, tabId, params);
+
   const wait = params.wait === true;
+  const timeoutMs = finiteNumber(params.timeoutMs) ?? DEFAULT_WAIT_MS;
+  // Register the wait BEFORE dispatching so the turn's terminal event can't
+  // land before we're listening for it.
+  const waitPromise = wait
+    ? registerControlWait(requestId, tabId, timeoutMs)
+    : undefined;
+  try {
+    await ctx.sendChat(message, { tabId, controlRequestId: requestId });
+  } catch (err) {
+    if (wait) cancelControlWait(requestId);
+    throw err;
+  }
   const result: Record<string, unknown> = { sent: true, tabId };
   if (account) result.account = account;
-  if (wait) result.wait = await waitForIdle(ctx, { tabId, timeoutMs: params.timeoutMs });
+  if (waitPromise) result.wait = await waitPromise;
   return result;
+}
+
+function applyTurnOptions(
+  ctx: UseControlRequestsContext,
+  tabId: string,
+  params: Record<string, unknown>,
+): void {
+  const planMode =
+    typeof params.planMode === "boolean" ? params.planMode : undefined;
+  const thinkingLevel = stringParam(params, "thinkingLevel");
+  if (planMode === undefined && !thinkingLevel) return;
+  // Only real agent tabs carry these per-tab toggles; the default-tab fallback
+  // has no Tab object to patch.
+  if (!tabs(ctx.stateRef.current).some((t) => t.id === tabId)) return;
+  ctx.updateTab(tabId, (tab) => ({
+    ...tab,
+    ...(planMode !== undefined ? { planMode } : {}),
+    ...(thinkingLevel ? { thinkingLevel } : {}),
+  }));
+}
+
+function finiteNumber(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
 async function waitForIdle(
@@ -195,10 +256,7 @@ async function waitForIdle(
   params: Record<string, unknown>,
 ): Promise<unknown> {
   const tabId = resolveControlTabId(ctx, stringParam(params, "tabId") ?? "active");
-  const timeoutMs =
-    typeof params.timeoutMs === "number" && Number.isFinite(params.timeoutMs)
-      ? params.timeoutMs
-      : 300_000;
+  const timeoutMs = finiteNumber(params.timeoutMs) ?? DEFAULT_WAIT_MS;
   const start = Date.now();
   let sawBusy = false;
   while (Date.now() - start < timeoutMs) {
