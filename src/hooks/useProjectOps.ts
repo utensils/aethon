@@ -70,6 +70,7 @@ export function useProjectOps(ctx: UseProjectOpsContext): UseProjectOpsActions {
     setState,
     stateRef,
     projectsRef,
+    tabBucketsRef: sharedTabBucketsRef,
     gitStatusRef,
     refreshGitStatusFor,
     refreshAllGitStatus,
@@ -85,7 +86,8 @@ export function useProjectOps(ctx: UseProjectOpsContext): UseProjectOpsActions {
 
   const projectsLoadedRef = useRef(false);
   const allDiscoveredSessionsRef = useRef<DiscoveredSession[]>([]);
-  const tabBucketsRef = useRef<Map<string, TabBucket>>(new Map());
+  const ownedTabBucketsRef = useRef<Map<string, TabBucket>>(new Map());
+  const tabBucketsRef = sharedTabBucketsRef ?? ownedTabBucketsRef;
 
   const projectStore = useProjectStore({
     setState,

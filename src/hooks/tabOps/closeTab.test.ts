@@ -6,6 +6,8 @@ import { OVERVIEW_TAB_ID, makeEmptyTab, type Tab } from "../../types/tab";
 import type { ProjectsState } from "../../projects";
 import { focusTerminalPanelSoon } from "../../utils/focus";
 import { SESSION_UI_SNAPSHOT_FLUSH_EVENT } from "../../state/sessionUiSnapshot";
+import { projectScopeBucketKey } from "../projectOps/tabBuckets";
+import type { TabBucket } from "../projectOps/types";
 
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(() => Promise.resolve(null)),
@@ -165,6 +167,80 @@ describe("closeTabNow → overview fallback", () => {
     expect(next.closedSessionIds).toEqual(["already-closed", "agent-2"]);
     expect(flushSpy).toHaveBeenCalledTimes(1);
     window.removeEventListener(SESSION_UI_SNAPSHOT_FLUSH_EVENT, flushSpy);
+  });
+
+  it("removes closed workspace tabs from the active bucket mirror", () => {
+    const workspaceKey = projectScopeBucketKey("project-1", "wt-1");
+    const t1 = makeTab("agent-1", "agent");
+    const t2 = makeTab("agent-2", "agent");
+    const tabBucketsRef = ref(
+      new Map<string, TabBucket>([
+        [
+          workspaceKey,
+          {
+            tabs: [t1, t2],
+            activeTabId: "agent-2",
+          },
+        ],
+      ]),
+    );
+    const { deps, apply } = buildDeps(
+      {
+        tabs: [t1, t2],
+        activeTabId: "agent-2",
+        persistedTabBuckets: {
+          [workspaceKey]: {
+            tabs: [t1, t2],
+            activeTabId: "agent-2",
+          },
+        },
+      },
+      {
+        projectsRef: ref<ProjectsState>({
+          activeId: "project-1",
+          activeWorkspaceId: "wt-1",
+          activeHostId: null,
+          projects: [
+            {
+              id: "project-1",
+              label: "Aethon",
+              path: "/repo/aethon",
+              lastUsed: 1,
+            },
+          ],
+          workspacesByProject: {
+            "project-1": [
+              {
+                id: "wt-1",
+                projectId: "project-1",
+                path: "/repo/aethon-fix",
+                branch: "fix/workspace-closed-tab-restore",
+                isMain: false,
+              },
+            ],
+          },
+        }),
+        tabBucketsRef,
+      },
+    );
+    const { closeTabNow } = useCloseTabActions(deps);
+
+    closeTabNow("agent-2");
+
+    expect((apply().tabs as Tab[]).map((t) => t.id)).toEqual(["agent-1"]);
+    expect(tabBucketsRef.current.get(workspaceKey)).toEqual({
+      tabs: [t1],
+      activeTabId: "agent-1",
+    });
+    expect(
+      (
+        apply().persistedTabBuckets as Record<string, TabBucket>
+      )[workspaceKey],
+    ).toEqual({
+      tabs: [t1],
+      activeTabId: "agent-1",
+    });
+    expect(apply().closedSessionIds).toEqual(["agent-2"]);
   });
 
   it("bounds closed agent session suppression to the most recent entries", () => {

@@ -12,6 +12,8 @@ import { focusTerminalPanelSoon } from "../../utils/focus";
 import { CLOSED_TAB_STACK_MAX, TAB_MIRROR_KEYS } from "./constants";
 import { recentSessionItemFromClosedTab } from "./helpers";
 import { SESSION_UI_SNAPSHOT_FLUSH_EVENT } from "../../state/sessionUiSnapshot";
+import { projectScopeBucketKey } from "../projectOps/tabBuckets";
+import type { TabBucket } from "../projectOps/types";
 
 export interface CloseTabDeps {
   setState: Dispatch<SetStateAction<Record<string, unknown>>>;
@@ -28,6 +30,7 @@ export interface CloseTabDeps {
   isShellBusy?: (tabId: string) => Promise<boolean>;
   dispatchTerminalReplay: (buffer: string) => void;
   closedTabsRef: MutableRefObject<ClosedTabEntry[]>;
+  tabBucketsRef?: MutableRefObject<Map<string, TabBucket>>;
   /** Bucket switching — the reopen flow needs to land closed tabs back
    *  in their original project bucket, even when the user is currently
    *  in a different one. */
@@ -56,6 +59,34 @@ export interface CloseTabActions {
   closeEditorTabsForPath: (path: string, kind: string) => void;
 }
 
+function preferredBucketActiveTabId(
+  tabs: Tab[],
+  currentActive: string | undefined,
+): string | undefined {
+  if (currentActive && tabs.some((tab) => tab.id === currentActive)) {
+    return currentActive;
+  }
+  return (
+    tabs.find((tab) => tab.kind === "agent" || tab.kind === "editor")?.id ??
+    tabs[0]?.id
+  );
+}
+
+function pruneTabFromBucket(
+  bucket: TabBucket | undefined,
+  tabId: string,
+  nextActiveTabId: string | undefined,
+): TabBucket | undefined {
+  if (!bucket) return undefined;
+  const tabs = bucket.tabs.filter((tab) => tab.id !== tabId);
+  if (tabs.length === bucket.tabs.length) return bucket;
+  if (tabs.length === 0) return undefined;
+  return {
+    tabs,
+    activeTabId: preferredBucketActiveTabId(tabs, nextActiveTabId),
+  };
+}
+
 /** Close + reopen family. Owns the closed-tab undo stack, the
  *  dirty-buffer / running-shell confirm prompts, the bridge
  *  `tab_close` / `shell_close` teardown, and the Monaco buffer
@@ -75,6 +106,7 @@ export function useCloseTabActions(deps: CloseTabDeps): CloseTabActions {
     isShellBusy,
     dispatchTerminalReplay,
     closedTabsRef,
+    tabBucketsRef,
     clearActiveProject,
     setActiveProjectById,
     newTab,
@@ -243,6 +275,44 @@ export function useCloseTabActions(deps: CloseTabDeps): CloseTabActions {
             }
           : {}),
       };
+      const bucketKey = projectScopeBucketKey(
+        projectsRef.current.activeId,
+        projectsRef.current.activeWorkspaceId,
+      );
+      const bucketRef = tabBucketsRef;
+      const inMemoryBucket = bucketRef?.current.get(bucketKey);
+      if (bucketRef && inMemoryBucket) {
+        const nextBucket = pruneTabFromBucket(
+          inMemoryBucket,
+          tabId,
+          activeTabId,
+        );
+        if (nextBucket) {
+          bucketRef.current.set(bucketKey, nextBucket);
+        } else {
+          bucketRef.current.delete(bucketKey);
+        }
+      }
+      const persistedBuckets =
+        prev.persistedTabBuckets &&
+        typeof prev.persistedTabBuckets === "object" &&
+        !Array.isArray(prev.persistedTabBuckets)
+          ? (prev.persistedTabBuckets as Record<string, TabBucket>)
+          : undefined;
+      if (persistedBuckets?.[bucketKey]) {
+        const nextPersisted = { ...persistedBuckets };
+        const nextBucket = pruneTabFromBucket(
+          persistedBuckets[bucketKey],
+          tabId,
+          activeTabId,
+        );
+        if (nextBucket) {
+          nextPersisted[bucketKey] = nextBucket;
+        } else {
+          delete nextPersisted[bucketKey];
+        }
+        result.persistedTabBuckets = nextPersisted;
+      }
       if (closedKind === "agent") {
         const closedIds = Array.isArray(prev.closedSessionIds)
           ? (prev.closedSessionIds as string[])
