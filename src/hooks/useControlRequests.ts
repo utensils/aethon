@@ -10,6 +10,7 @@ import { isAgentTabBusy } from "../utils/agentBusy";
 import {
   cancelControlWait,
   registerControlWait,
+  type ControlWaitResult,
 } from "./controlWaitRegistry";
 
 /** Default ceiling for `chat.send --wait` / `chat.wait` when the caller does
@@ -211,9 +212,9 @@ async function sendChat(
 
   const wait = params.wait === true;
   const timeoutMs = finiteNumber(params.timeoutMs) ?? DEFAULT_WAIT_MS;
-  // Register the wait BEFORE dispatching so the turn's terminal event can't
-  // land before we're listening for it.
-  const waitPromise = wait
+  // Register the deterministic wait BEFORE dispatching so the turn's terminal
+  // event can't land before we're listening for it.
+  const deterministic = wait
     ? registerControlWait(requestId, tabId, timeoutMs)
     : undefined;
   try {
@@ -224,7 +225,57 @@ async function sendChat(
   }
   const result: Record<string, unknown> = { sent: true, tabId };
   if (account) result.account = account;
-  if (waitPromise) result.wait = await waitPromise;
+  if (deterministic) {
+    result.wait = await raceControlWait(ctx, requestId, tabId, timeoutMs, deterministic);
+  }
+  return result;
+}
+
+/**
+ * Resolve a waited control send. The deterministic registry resolves the
+ * instant the bridge echoes this `controlRequestId` on `response_end`/`error`.
+ * But a normal-mode send to a BUSY tab is queued client-side and drained later
+ * WITHOUT this id, so the deterministic waiter would never fire — fall back to
+ * an idle poll that detects the tab draining. Whichever fires first wins; the
+ * loser is torn down so neither leaks a timer.
+ */
+async function raceControlWait(
+  ctx: UseControlRequestsContext,
+  requestId: string,
+  tabId: string,
+  timeoutMs: number,
+  deterministic: Promise<ControlWaitResult>,
+): Promise<ControlWaitResult> {
+  let stopped = false;
+  const poll = (async (): Promise<ControlWaitResult> => {
+    const start = Date.now();
+    let sawBusy = false;
+    while (!stopped && Date.now() - start < timeoutMs) {
+      const busy = isControlTabBusy(ctx.stateRef.current, tabId);
+      sawBusy = sawBusy || busy;
+      // Only a busy→idle transition counts: the never-busy case belongs to the
+      // deterministic waiter (a non-queued turn echoes its id), so we must not
+      // short-circuit "idle" here and return mid-turn.
+      if (!busy && sawBusy) {
+        return {
+          waiting: false,
+          tabId,
+          outcome: "completed",
+          elapsedMs: Date.now() - start,
+        };
+      }
+      await new Promise((resolve) => window.setTimeout(resolve, 250));
+    }
+    return {
+      waiting: true,
+      tabId,
+      outcome: "timeout",
+      elapsedMs: Date.now() - start,
+    };
+  })();
+  const result = await Promise.race([deterministic, poll]);
+  stopped = true;
+  cancelControlWait(requestId);
   return result;
 }
 

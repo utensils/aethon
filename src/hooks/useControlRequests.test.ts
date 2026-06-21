@@ -181,6 +181,56 @@ describe("useControlRequests", () => {
     );
   });
 
+  it("falls back to an idle poll when a waited send is queued (no echoed id)", async () => {
+    // A send to a busy tab is queued client-side and drained later WITHOUT the
+    // controlRequestId, so the deterministic waiter never fires. The wait must
+    // still resolve when the tab drains to idle.
+    const stateRef = {
+      current: { activeTabId: "t1", tabs: [tab({ waiting: true })] },
+    };
+    const sendChat = vi.fn(() => {
+      // Simulate the queued turn draining shortly after dispatch.
+      setTimeout(() => {
+        stateRef.current = { activeTabId: "t1", tabs: [tab({ waiting: false })] };
+      }, 30);
+      return Promise.resolve();
+    });
+    renderHook(() =>
+      useControlRequests({
+        stateRef,
+        pendingTabOpens: { current: new Map() },
+        newTab: vi.fn(),
+        closeTabNow: vi.fn(),
+        setActiveTab: vi.fn(),
+        updateTab: vi.fn(),
+        sendChat,
+        stopPrompt: vi.fn(),
+      }),
+    );
+
+    harness.fireEvent("control-request", {
+      requestId: "control-queued",
+      method: "chat.send",
+      params: { message: "later", tabId: "active", wait: true, timeoutMs: 10_000 },
+    });
+
+    // Resolves via the poll (never via resolveControlWait) once the tab is idle.
+    await waitFor(
+      () =>
+        expect(harness.invoke).toHaveBeenCalledWith(
+          "control_request_complete",
+          expect.objectContaining({
+            requestId: "control-queued",
+            success: true,
+            data: expect.objectContaining({
+              wait: expect.objectContaining({ waiting: false }),
+            }),
+          }),
+        ),
+      { timeout: 4000 },
+    );
+  });
+
   it("applies --plan / --thinking-level onto the target tab before dispatch", async () => {
     const stateRef = { current: { activeTabId: "t1", tabs: [tab()] } };
     const updateTab = vi.fn();
