@@ -41784,10 +41784,10 @@
         "timeout"
       ],
       "complexity": "simple",
-      "lineRange": {
-        "start": 96,
-        "end": 98
-      }
+      "lineRange": [
+        96,
+        98
+      ]
     },
     {
       "id": "function:src/config.ts:clearConfigCache",
@@ -41800,10 +41800,10 @@
         "cache"
       ],
       "complexity": "simple",
-      "lineRange": {
-        "start": 207,
-        "end": 209
-      }
+      "lineRange": [
+        207,
+        209
+      ]
     },
     {
       "id": "function:src/config.ts:normalizeVisibility",
@@ -41816,10 +41816,10 @@
         "validation"
       ],
       "complexity": "simple",
-      "lineRange": {
-        "start": 359,
-        "end": 361
-      }
+      "lineRange": [
+        359,
+        361
+      ]
     },
     {
       "id": "function:src/hooks/bridgeMessageHandlers/editorQuery.ts:isAbsolutePath",
@@ -41833,10 +41833,10 @@
         "editor"
       ],
       "complexity": "simple",
-      "lineRange": {
-        "start": 10,
-        "end": 16
-      }
+      "lineRange": [
+        10,
+        16
+      ]
     },
     {
       "id": "function:src/hooks/controlWaitRegistry.ts:hasControlTurnStarted",
@@ -41850,10 +41850,10 @@
         "registry"
       ],
       "complexity": "simple",
-      "lineRange": {
-        "start": 88,
-        "end": 90
-      }
+      "lineRange": [
+        88,
+        90
+      ]
     },
     {
       "id": "function:src/hooks/controlWaitRegistry.ts:markControlTurnStarted",
@@ -41867,10 +41867,10 @@
         "registry"
       ],
       "complexity": "simple",
-      "lineRange": {
-        "start": 82,
-        "end": 85
-      }
+      "lineRange": [
+        82,
+        85
+      ]
     },
     {
       "id": "function:src/hooks/useDevshell.ts:refreshDevshell",
@@ -41884,10 +41884,10 @@
         "nix"
       ],
       "complexity": "simple",
-      "lineRange": {
-        "start": 311,
-        "end": 313
-      }
+      "lineRange": [
+        311,
+        313
+      ]
     },
     {
       "id": "function:src/hooks/useUpdater.ts:releaseUrl",
@@ -41901,10 +41901,10 @@
         "release"
       ],
       "complexity": "simple",
-      "lineRange": {
-        "start": 99,
-        "end": 101
-      }
+      "lineRange": [
+        99,
+        101
+      ]
     },
     {
       "id": "function:src/nativeWindows.ts:canvasWindowSurfaceId",
@@ -41918,10 +41918,10 @@
         "canvas"
       ],
       "complexity": "simple",
-      "lineRange": {
-        "start": 107,
-        "end": 109
-      }
+      "lineRange": [
+        107,
+        109
+      ]
     },
     {
       "id": "function:src/nativeWindows.ts:nativeWindowSummaries",
@@ -41935,10 +41935,10 @@
         "canvas"
       ],
       "complexity": "simple",
-      "lineRange": {
-        "start": 89,
-        "end": 95
-      }
+      "lineRange": [
+        89,
+        95
+      ]
     },
     {
       "id": "function:src/nativeWindows.ts:normalizeWindowState",
@@ -41952,10 +41952,10 @@
         "validation"
       ],
       "complexity": "simple",
-      "lineRange": {
-        "start": 69,
-        "end": 73
-      }
+      "lineRange": [
+        69,
+        73
+      ]
     },
     {
       "id": "function:src/scheduledTasks.ts:createScheduledTask",
@@ -41969,10 +41969,10 @@
         "ipc"
       ],
       "complexity": "simple",
-      "lineRange": {
-        "start": 94,
-        "end": 98
-      }
+      "lineRange": [
+        94,
+        98
+      ]
     },
     {
       "id": "function:src/scheduledTasks.ts:listScheduledTasks",
@@ -41986,10 +41986,10 @@
         "ipc"
       ],
       "complexity": "simple",
-      "lineRange": {
-        "start": 90,
-        "end": 92
-      }
+      "lineRange": [
+        90,
+        92
+      ]
     },
     {
       "id": "function:src/scheduledTasks.ts:resolveLoopPrompt",
@@ -42003,10 +42003,10 @@
         "ipc"
       ],
       "complexity": "simple",
-      "lineRange": {
-        "start": 188,
-        "end": 197
-      }
+      "lineRange": [
+        188,
+        197
+      ]
     },
     {
       "id": "function:src/subagents/parse.ts:isSafeSubagentName",
@@ -42020,10 +42020,10 @@
         "security"
       ],
       "complexity": "simple",
-      "lineRange": {
-        "start": 42,
-        "end": 44
-      }
+      "lineRange": [
+        42,
+        44
+      ]
     },
     {
       "id": "function:src/utils/agentBusy.ts:hasRunningToolCard",
@@ -42037,10 +42037,10 @@
         "tool-card"
       ],
       "complexity": "simple",
-      "lineRange": {
-        "start": 21,
-        "end": 27
-      }
+      "lineRange": [
+        21,
+        27
+      ]
     },
     {
       "id": "function:src/utils/agentBusy.ts:isAgentTabInFlight",
@@ -42054,10 +42054,10 @@
         "state"
       ],
       "complexity": "simple",
-      "lineRange": {
-        "start": 31,
-        "end": 37
-      }
+      "lineRange": [
+        31,
+        37
+      ]
     },
     {
       "id": "function:src/utils/gitErrors.ts:isGitIndexLockedError",
@@ -42071,10 +42071,10 @@
         "error"
       ],
       "complexity": "simple",
-      "lineRange": {
-        "start": 1,
-        "end": 4
-      }
+      "lineRange": [
+        1,
+        4
+      ]
     },
     {
       "id": "function:src/utils/highlight.ts:getCachedHighlight",
@@ -42088,10 +42088,10 @@
         "cache"
       ],
       "complexity": "simple",
-      "lineRange": {
-        "start": 77,
-        "end": 86
-      }
+      "lineRange": [
+        77,
+        86
+      ]
     },
     {
       "id": "function:src/utils/highlight.ts:prewarmHighlighter",
@@ -42105,10 +42105,10 @@
         "performance"
       ],
       "complexity": "simple",
-      "lineRange": {
-        "start": 125,
-        "end": 128
-      }
+      "lineRange": [
+        125,
+        128
+      ]
     },
     {
       "id": "function:src/utils/imageAttachments.ts:durableImageAttachments",
@@ -42122,10 +42122,10 @@
         "image"
       ],
       "complexity": "simple",
-      "lineRange": {
-        "start": 47,
-        "end": 51
-      }
+      "lineRange": [
+        47,
+        51
+      ]
     },
     {
       "id": "function:src/utils/imageAttachments.ts:imageAttachmentSrc",
@@ -42139,10 +42139,10 @@
         "image"
       ],
       "complexity": "simple",
-      "lineRange": {
-        "start": 35,
-        "end": 38
-      }
+      "lineRange": [
+        35,
+        38
+      ]
     },
     {
       "id": "function:src/utils/messages.ts:truncateToEntry",
@@ -42156,10 +42156,10 @@
         "transcript"
       ],
       "complexity": "simple",
-      "lineRange": {
-        "start": 292,
-        "end": 299
-      }
+      "lineRange": [
+        292,
+        299
+      ]
     },
     {
       "id": "function:src/utils/stateMutation.ts:decodeToken",
@@ -42173,10 +42173,10 @@
         "state"
       ],
       "complexity": "simple",
-      "lineRange": {
-        "start": 6,
-        "end": 8
-      }
+      "lineRange": [
+        6,
+        8
+      ]
     },
     {
       "id": "function:src/utils/stateMutation.ts:isPlainObject",
@@ -42190,10 +42190,10 @@
         "type-guard"
       ],
       "complexity": "simple",
-      "lineRange": {
-        "start": 38,
-        "end": 45
-      }
+      "lineRange": [
+        38,
+        45
+      ]
     },
     {
       "id": "function:src/utils/toolCardIdentity.ts:normalizeToolCallId",
@@ -42207,10 +42207,10 @@
         "identity"
       ],
       "complexity": "simple",
-      "lineRange": {
-        "start": 1,
-        "end": 3
-      }
+      "lineRange": [
+        1,
+        3
+      ]
     },
     {
       "id": "file:src/extensions/default-layout/workstation.a2ui.json",
