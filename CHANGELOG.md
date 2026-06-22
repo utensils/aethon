@@ -4,6 +4,76 @@ All notable changes to Aethon. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 [SemVer](https://semver.org/).
 
+## [0.10.0](https://github.com/utensils/aethon/compare/v0.9.0...v0.10.0) (2026-06-22)
+
+
+### Features
+
+* **accounts:** multi-account Codex — usage stats, isolation, switching, auto-switch ([#323](https://github.com/utensils/aethon/issues/323)) ([6bac7a2](https://github.com/utensils/aethon/commit/6bac7a28c66bc86eefa6a3b741da128cf39d9bb0))
+* add Codex-style file change tool cards ([2b2fec1](https://github.com/utensils/aethon/commit/2b2fec1953763f55e0ca43072cccce6a7e5df674))
+* add native A2UI canvas windows ([#318](https://github.com/utensils/aethon/issues/318)) ([b781b9c](https://github.com/utensils/aethon/commit/b781b9c88ac48fb01cf19253acab6b96678a921a))
+* add native loop scheduler ([5e4a092](https://github.com/utensils/aethon/commit/5e4a0923bf70fd931938b99503d269248ba296fd))
+* add silent session tab title tool ([6de5525](https://github.com/utensils/aethon/commit/6de5525d93c62d45533065d226aae800b8c414e6))
+* add workspace startup commands ([50c41e8](https://github.com/utensils/aethon/commit/50c41e882f588cb5bc445c3eef4b8e5bf50bcf59))
+* **agent:** add enforced plan mode ([929c9cc](https://github.com/utensils/aethon/commit/929c9ccb5f0f539897a1a5dc8d55889e1f33bd52))
+* compact plan mode toggle ([#319](https://github.com/utensils/aethon/issues/319)) ([d7c9b09](https://github.com/utensils/aethon/commit/d7c9b0977795d0684a17c0ae7c34528d7e56f500))
+* **composer:** add [@file](https://github.com/file) completion picker to chat input and task launcher ([#266](https://github.com/utensils/aethon/issues/266)) ([efe504d](https://github.com/utensils/aethon/commit/efe504d04bf941d19e6f97695435d55f5b235a4e))
+* **dashboard:** add host-level task launcher ([db89c19](https://github.com/utensils/aethon/commit/db89c1944219cbdfc78982bbd3372d0dfb5b458c))
+* **extensions:** close extension API gaps ([db6cf4a](https://github.com/utensils/aethon/commit/db6cf4a24098b99ee971fea396c32a685e56df28))
+* make terminal urls clickable ([#303](https://github.com/utensils/aethon/issues/303)) ([7bda4b4](https://github.com/utensils/aethon/commit/7bda4b4af9118ad1c805ff4e96dca1d937ce3a9a))
+* **memory:** add Aethon user and project memory ([ba313bb](https://github.com/utensils/aethon/commit/ba313bb6a267492176631effa58cf3f1ca690c35)), closes [#270](https://github.com/utensils/aethon/issues/270)
+* **models:** expose Codex reasoning controls ([8eaab89](https://github.com/utensils/aethon/commit/8eaab89e0706ad8a4cb0da8307d266b3feb3c864))
+* **subagents:** add parallel background delegation ([#299](https://github.com/utensils/aethon/issues/299)) ([3d3789a](https://github.com/utensils/aethon/commit/3d3789ab0b35faa4c6b9102c7abcece406ff5d42))
+* **voice:** auto-listen toggle in conversation HUD, off by default ([#294](https://github.com/utensils/aethon/issues/294)) ([d78ba9c](https://github.com/utensils/aethon/commit/d78ba9c9a8a9b3200310764890628c75867a3f9e))
+* **voice:** LFM2-Audio third voice mode (ASR + TTS + hands-free conversation) ([#289](https://github.com/utensils/aethon/issues/289)) ([299594a](https://github.com/utensils/aethon/commit/299594a9a20eeb859fd755314f3a81e7ad8f6f5c))
+* **voice:** push-to-talk hotkey — hold to dictate, release to send ([#293](https://github.com/utensils/aethon/issues/293)) ([eaa4221](https://github.com/utensils/aethon/commit/eaa4221f5a583f295a9b5495c3ac819794be6a7d))
+
+
+### Bug Fixes
+
+* add voice input to overview task launcher ([#308](https://github.com/utensils/aethon/issues/308)) ([a9ccb69](https://github.com/utensils/aethon/commit/a9ccb697e2448f08a91b349856bc95b2338803e2))
+* **agent:** keep bad at-file refs non-fatal ([#268](https://github.com/utensils/aethon/issues/268)) ([1ef61c6](https://github.com/utensils/aethon/commit/1ef61c647930c4d154947ce8877e4cfcef953f81))
+* **agent:** persist reasoning defaults ([de6d4ff](https://github.com/utensils/aethon/commit/de6d4ff509b06a13d596a844744f500d53987495))
+* **agent:** recover from Codex context overflow ([#340](https://github.com/utensils/aethon/issues/340)) ([2a4248c](https://github.com/utensils/aethon/commit/2a4248c041a16c23d55b4a9f48314837b792b904))
+* **chat:** keep initial prompts ordered after restore ([476ac3a](https://github.com/utensils/aethon/commit/476ac3a3f56b8a7b64b2c03d6df4f06e93275a41))
+* **chat:** stop message rollback/fork actions stacking vertically during reflow ([#324](https://github.com/utensils/aethon/issues/324)) ([db1955c](https://github.com/utensils/aethon/commit/db1955c2aeaa42dc31c988860d3ce6762e97a849))
+* clarify running session warning ([d947a09](https://github.com/utensils/aethon/commit/d947a094aa6224c44cb0ef2b7717ae491d19ed64))
+* clarify workspace startup progress ([b21b9a5](https://github.com/utensils/aethon/commit/b21b9a507ea4ac33f4331655847538d4dbea3084))
+* clear collapsed header traffic controls ([#325](https://github.com/utensils/aethon/issues/325)) ([4361783](https://github.com/utensils/aethon/commit/4361783ca657ff7b59b28f59734b34ce60861a3e))
+* **editor:** restore inline file tree rename ([#286](https://github.com/utensils/aethon/issues/286)) ([332fca7](https://github.com/utensils/aethon/commit/332fca7ee9dd4ed5348e10c033fec22d7483bd3b))
+* **fs:** refresh sidebar after agent-created folders ([#269](https://github.com/utensils/aethon/issues/269)) ([a9edf4e](https://github.com/utensils/aethon/commit/a9edf4e0780192f1c9fadc9651202b7a17f66d29))
+* **git:** avoid optional locks during background status ([59016cd](https://github.com/utensils/aethon/commit/59016cd53e168ea040445497eb82fa6d9a1279a3))
+* keep closed workspace tabs closed ([1cff597](https://github.com/utensils/aethon/commit/1cff59736d31f46415e917e209eec51c81f7a17a))
+* **menu:** add Exit to File menu ([#320](https://github.com/utensils/aethon/issues/320)) ([f5f5305](https://github.com/utensils/aethon/commit/f5f530593e20dbee7e03c1f7137f0e4a0c237d49))
+* move terminal toggle to control backtick ([0679191](https://github.com/utensils/aethon/commit/06791918e7f56397886195658983fe00e08a0e2b))
+* name background agent completion toasts ([f8a919a](https://github.com/utensils/aethon/commit/f8a919ab5165b4f85e8ede07365f3de975cc2fd1))
+* persist xhigh reasoning defaults ([81b5d44](https://github.com/utensils/aethon/commit/81b5d445894ae104e8dc566d887794521fbd839c))
+* prevent startup reload flicker ([#285](https://github.com/utensils/aethon/issues/285)) ([dd90443](https://github.com/utensils/aethon/commit/dd90443db43ac520d2d4ae332dd53bb25351200f))
+* prevent subagent timeout crash loops ([#300](https://github.com/utensils/aethon/issues/300)) ([3c45d1f](https://github.com/utensils/aethon/commit/3c45d1ff6f0ed720a74e5d1c582d8af2714c731f))
+* refresh file tree after agent writes ([8b0e8c0](https://github.com/utensils/aethon/commit/8b0e8c02a24abc08d1d8425b0cfd35e46f099aea))
+* refresh session watchdog on agent activity ([ca7cb80](https://github.com/utensils/aethon/commit/ca7cb80aa2856d761546cf8ddeb64a02fa79adfa))
+* refresh workspace branches before PR status ([#322](https://github.com/utensils/aethon/issues/322)) ([60c23c2](https://github.com/utensils/aethon/commit/60c23c2bf2bf262c2756afff2d1531c8a4336b59)), closes [#321](https://github.com/utensils/aethon/issues/321)
+* remove nested chat row scrollbars ([77ea6c9](https://github.com/utensils/aethon/commit/77ea6c9c02e351a2a477fb4350b10ffecf051afa))
+* render host workspace activity row ([1300a8c](https://github.com/utensils/aethon/commit/1300a8c6bfd24e7efe82e02f916ea873ec9353ce))
+* require explicit update install ([#317](https://github.com/utensils/aethon/issues/317)) ([9e95c70](https://github.com/utensils/aethon/commit/9e95c7055becdab86bb8676620bf1be280c4ea0a))
+* resume sticky scroll on new prompt ([09f4e27](https://github.com/utensils/aethon/commit/09f4e27e87ed5cf899a663a4429c4570d9aca563))
+* retain active workspace tab ([4720293](https://github.com/utensils/aethon/commit/4720293e77df193be5975ca7e6301707810f3aaf))
+* scope startup overlay to workspace ([758044b](https://github.com/utensils/aethon/commit/758044b603639a898b6f495896aba26465f8ad28))
+* **session:** skip auto-restoring sessions from deleted workspaces ([5797f57](https://github.com/utensils/aethon/commit/5797f57c8eaf2cd3d4e401b077041d953ad92ce6))
+* **session:** skip auto-restoring sessions from deleted workspaces ([#311](https://github.com/utensils/aethon/issues/311)) ([5797f57](https://github.com/utensils/aethon/commit/5797f57c8eaf2cd3d4e401b077041d953ad92ce6))
+* show global agent activity indicators ([5fbcfaa](https://github.com/utensils/aethon/commit/5fbcfaae23ea79fd038be06e8cfeb3e1474c3cc3))
+* show host workspace agent activity ([52813e7](https://github.com/utensils/aethon/commit/52813e7bcdf7a7890b9486896a7005b76d6b80d3))
+* **sidebar:** show project activity for running workspaces ([#272](https://github.com/utensils/aethon/issues/272)) ([87ab959](https://github.com/utensils/aethon/commit/87ab9596b9316ed6e33ce4506c4e223f9459ce0d))
+* **subagents:** exempt [@mentions](https://github.com/mentions) from file-ref expansion anywhere ([#297](https://github.com/utensils/aethon/issues/297)) ([935c946](https://github.com/utensils/aethon/commit/935c946bce96304ce364860a3cb19f507f1f34c0))
+* **subagents:** surface [@mentions](https://github.com/mentions) mid-message ([#296](https://github.com/utensils/aethon/issues/296)) ([874f104](https://github.com/utensils/aethon/commit/874f104450ac4f4c323f42c299a39a1d1158d33b))
+* **terminal:** sync xterm metrics with app zoom ([714a7a7](https://github.com/utensils/aethon/commit/714a7a72e51fc8f12fa2b8de692a866bf39db89b))
+* **tray:** avoid status item rebuilds on menu replays ([#271](https://github.com/utensils/aethon/issues/271)) ([d36df23](https://github.com/utensils/aethon/commit/d36df2331253492f4752e2f9345966bece22d918))
+* **voice/agent:** mic toggle, conversation auto-record, and backgrounded-workspace activity dots ([#328](https://github.com/utensils/aethon/issues/328)) ([f343b44](https://github.com/utensils/aethon/commit/f343b44567f6183c0042da16f4a097831cda0c39))
+* **voice:** address Copilot review of [#289](https://github.com/utensils/aethon/issues/289) ([#290](https://github.com/utensils/aethon/issues/290)) ([18d5110](https://github.com/utensils/aethon/commit/18d5110b1cb5b2b66cf1442d99ed4af7e24f12ad))
+* **voice:** code-sign the bundled LFM2 runner for notarization ([#291](https://github.com/utensils/aethon/issues/291)) ([d5f404c](https://github.com/utensils/aethon/commit/d5f404c78e93b2ba3a8f9c657a849e8998b50150))
+* **voice:** set up a keychain so LFM2 runner signing works (notarization) ([#292](https://github.com/utensils/aethon/issues/292)) ([9c6d928](https://github.com/utensils/aethon/commit/9c6d928278b2a6e7eb59346957359e7ecece65b0))
+* **website:** unbreak `docs` token gate + auto-update version badge ([#344](https://github.com/utensils/aethon/issues/344)) ([18e9ff2](https://github.com/utensils/aethon/commit/18e9ff2df73c9198300ad6f5d42029aa377c6b71))
+
 ## [0.9.0](https://github.com/utensils/aethon/compare/v0.8.1...v0.9.0) (2026-06-10)
 
 ### ⚠ BREAKING CHANGES
