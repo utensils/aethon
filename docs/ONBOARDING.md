@@ -61,7 +61,7 @@ state, system-prompt composition, auth profiles, subagents, devshell client, and
 The React rendering surface: the `A2UIRenderer`, the primitive component registry, the
 default-layout payload (`workstation.a2ui.json` + slots), Monaco editor, file icons, and styles.
 - `components/A2UIRenderer.tsx` — the engine that turns layout payloads into React trees.
-- `components/primitives/{layout,controls,form,context-menu}.tsx` — the 20 built-in, non-overridable primitives.
+- `components/primitives/{layout,controls,form,media,text}.tsx` — the built-in primitives behind the 19-entry `PRIMITIVE_REGISTRY` (+ the renderer's inline `for-each` = 20 non-overridable types). `context-menu.tsx` here is a shared menu helper, not a registered primitive type.
 - `extensions/default-layout/workstation.a2ui.json` — the default UI, as data.
 - `extensions/default-layout/index.ts` — assembles the slot catalogue and registers all chrome components, panels, themes, keybindings.
 
@@ -188,7 +188,7 @@ pedagogical path through the architecture.
    `slots.json` defines the canonical slot contract any layout must satisfy. The single most
    important idea in the codebase.
 5. **The A2UI Renderer & State Model** — `A2UIRenderer.tsx` turns payloads into a live React tree
-   (20 primitives + extension components, for-each templating, optimistic `$ref` updates);
+   (a 19-entry primitive registry + the inline `for-each` = 20 non-overridable types, plus extension components and optimistic `$ref` updates);
    `jsonPointer.ts` + `dataBinding.ts` are how data becomes pixels and input flows back to state.
 6. **Shared Types & Two Registries** — `types/tab.ts` and `types/a2ui.ts` are the two
    most-depended-upon files (144 and 100 inbound edges) — the vocabulary the whole frontend
@@ -262,9 +262,9 @@ counts.)
 ### Frontend UI & A2UI Layout
 | File | Role |
 | --- | --- |
-| `src/components/A2UIRenderer.tsx` | The rendering engine: payloads → React trees, 20 primitives + extension components, optimistic `$ref` updates, for-each, event dispatch. |
+| `src/components/A2UIRenderer.tsx` | The rendering engine: payloads → React trees, the 19-entry `PRIMITIVE_REGISTRY` + inline `for-each` (20 non-overridable types) + extension components, optimistic `$ref` updates, event dispatch. |
 | `src/components/primitives/layout.tsx` | Layout primitives — Card, Container (macOS drag-region), List, Table — resolving `$ref`-bound collections. |
-| `src/components/primitives/{controls,form,context-menu}.tsx` | Interactive control, form, and context-menu primitives bound to state via `$ref`. |
+| `src/components/primitives/{controls,form,media,text}.tsx` | Interactive control, form, media, and text primitives bound to state via `$ref` (`context-menu.tsx` is a shared menu helper, not a registered primitive type). |
 | `src/extensions/default-layout/workstation.a2ui.json` | The default UI as data — the entire app chrome + initial state store. |
 | `src/extensions/default-layout/index.ts` | Default-layout entry: assembles slots, registers all chrome components/panels/themes/keybindings. |
 | `src/extensions/default-layout/chat-input.tsx` | The composer: draft state, slash/@-mention pickers, voice input, attachments, keyboard handling. |
@@ -342,8 +342,8 @@ and verify behavior in the running dev app.
 - `src/hooks/useVoice{Conversation,Hotkey,Input}.ts` — push-to-talk and conversation modes with timing-sensitive state.
 
 ### Frontend UI & A2UI Layout (54 complex; the renderer + chrome)
-- `src/components/A2UIRenderer.tsx` — **the** rendering engine; the 20-primitive table and optimistic `$ref` logic live here.
-- `src/components/primitives/{layout,controls,form,context-menu}.tsx` — the non-overridable primitives every layout depends on.
+- `src/components/A2UIRenderer.tsx` — **the** rendering engine; the 19-entry primitive registry (+ inline `for-each` = 20 types) and optimistic `$ref` logic live here.
+- `src/components/primitives/{layout,controls,form,media,text}.tsx` — the non-overridable primitive modules every layout depends on (`context-menu.tsx` is a shared helper, not a registered primitive type).
 - `src/extensions/default-layout/workstation.a2ui.json` — the default UI payload; must satisfy the slot contract.
 - `src/extensions/default-layout/{chat-input,sidebar/file-tree,shell/panel}.tsx` — the heaviest chrome composites.
 
