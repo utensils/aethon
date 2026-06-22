@@ -10,6 +10,7 @@ import {
 
 const authProfileMocks = vi.hoisted(() => ({
   switchAccountForTab: vi.fn(() => Promise.resolve()),
+  setDefaultAccount: vi.fn(() => Promise.resolve()),
 }));
 
 vi.mock("../../auth-profiles", async (importOriginal) => {
@@ -17,6 +18,7 @@ vi.mock("../../auth-profiles", async (importOriginal) => {
   return {
     ...actual,
     switchAccountForTab: authProfileMocks.switchAccountForTab,
+    setDefaultAccount: authProfileMocks.setDefaultAccount,
   };
 });
 
@@ -33,6 +35,7 @@ afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
   authProfileMocks.switchAccountForTab.mockClear();
+  authProfileMocks.setDefaultAccount.mockClear();
 });
 
 describe("ModelPicker", () => {
@@ -291,5 +294,117 @@ describe("AccountSelector", () => {
         { cwd: "/repo", model: "openai-codex/gpt-5.5" },
       ),
     );
+  });
+
+  // The overview has no live agent session. Picking an account there must set
+  // the provider DEFAULT (which new tasks inherit), not rebind a phantom
+  // "default" tab — otherwise the header shows the unchanged provider default
+  // and the pick appears to do nothing.
+  const overviewState = {
+    activeTabId: "__overview__",
+    tabs: [],
+    defaultModel: "openai-codex/gpt-5.5",
+    authProfiles: {
+      profiles: [
+        {
+          id: "openai-codex-primary",
+          providerId: "openai-codex",
+          label: "Primary",
+          kind: "oauth",
+        },
+        {
+          id: "openai-codex-secondary",
+          providerId: "openai-codex",
+          label: "Secondary",
+          kind: "oauth",
+        },
+      ],
+      activeByTab: {},
+      defaultByProvider: { "openai-codex": "openai-codex-secondary" },
+    },
+  };
+
+  it("shows the provider default on the overview (no active agent tab)", () => {
+    render(
+      <AccountSelector
+        component={{ id: "account-selector", type: "account-selector", props: {} }}
+        state={overviewState}
+        onEvent={vi.fn()}
+      />,
+    );
+    expect(screen.getByRole("button", { name: /Secondary/i })).toBeTruthy();
+  });
+
+  it("sets the provider default (not a tab switch) when picking on the overview", async () => {
+    render(
+      <AccountSelector
+        component={{ id: "account-selector", type: "account-selector", props: {} }}
+        state={overviewState}
+        onEvent={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /Secondary/i }));
+    fireEvent.click(screen.getByText("Primary").closest("li")!);
+
+    await waitFor(() =>
+      expect(authProfileMocks.setDefaultAccount).toHaveBeenCalledWith(
+        "openai-codex-primary",
+      ),
+    );
+    expect(authProfileMocks.switchAccountForTab).not.toHaveBeenCalled();
+  });
+
+  // A new tab launched from the overview resolves its model via
+  // modelForNewProjectTab, which prefers the active project's remembered model
+  // over the pi default. The selector must scope to *that* provider — not the
+  // pi default's — or it would show/set the wrong account.
+  it("scopes the overview selector to the project's remembered model provider", () => {
+    render(
+      <AccountSelector
+        component={{
+          id: "account-selector",
+          type: "account-selector",
+          props: {},
+        }}
+        state={{
+          activeTabId: "__overview__",
+          activeProjectId: "proj-a",
+          tabs: [],
+          // Header default empty → per-project memory wins over the pi default.
+          defaultModel: "",
+          piDefaultModel: "openai-codex/gpt-5.5",
+          projectModels: { "proj-a": "anthropic/claude-opus" },
+          authProfiles: {
+            profiles: [
+              {
+                id: "openai-codex-primary",
+                providerId: "openai-codex",
+                label: "Primary",
+                kind: "oauth",
+              },
+              {
+                id: "anthropic-main",
+                providerId: "anthropic",
+                label: "Anthropic",
+                kind: "oauth",
+              },
+            ],
+            activeByTab: {},
+            defaultByProvider: {
+              "openai-codex": "openai-codex-primary",
+              anthropic: "anthropic-main",
+            },
+          },
+        }}
+        onEvent={vi.fn()}
+      />,
+    );
+
+    // Scoped to anthropic (the project's remembered model) — shows the
+    // Anthropic account and offers no OpenAI account.
+    expect(screen.getByRole("button", { name: /Anthropic/i })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /Anthropic/i }));
+    expect(screen.queryByText("Primary")).toBeNull();
   });
 });
