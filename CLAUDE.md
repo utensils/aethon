@@ -41,6 +41,20 @@ helpers (defined in `flake.nix`):
 
 ESLint is configured for **0 errors and 0 warnings**.
 
+### Knowledge graph (understand-anything)
+
+This repo ships an [understand-anything](https://github.com/Egonex-AI/Understand-Anything)
+knowledge graph under `.understand-anything/` (`knowledge-graph.json` +
+`domain-graph.json`), plus a graph-derived `docs/ONBOARDING.md`. View it with the
+`understand-dashboard` devshell helper; regenerate with `/understand` (refreshes
+on commit in-session when `autoUpdate: true` in `.understand-anything/config.json`
+— session-scoped via the plugin's hooks, not a standalone git hook).
+The plugin is declared in `.claude/settings.json`, so first-time contributors just
+run `/plugin install understand-anything@understand-anything` once (Claude Code
+prompts to trust the repo + add the marketplace), then `/understand`,
+`/understand-dashboard`, `/understand-onboard`, `/understand-domain`, etc. are
+available. `fingerprints.json` is git-ignored (regenerable local baseline).
+
 Single tests:
 
 - TS file: `bunx vitest run agent/terminal-stream.test.ts`
