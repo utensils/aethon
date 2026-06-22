@@ -1,6 +1,9 @@
 # understand-anything scratch — regenerable, not a source of truth.
-# Keep the graph (knowledge-graph.json), meta.json, fingerprints.json,
-# config.json and .understandignore tracked; drop the working dirs.
+# Keep the graph (knowledge-graph.json), meta.json, config.json and
+# .understandignore tracked; drop the working dirs and the regenerable
+# fingerprints baseline (1.7 MB, churn-heavy, rebuilt by every analysis —
+# kept local-only to avoid noisy diffs; no Git-LFS).
 intermediate/
 tmp/
 .trash-*/
+fingerprints.json
