@@ -1,7 +1,5 @@
 ---
 title: Knowledge Graph
-aside: false
-outline: false
 ---
 
 <script setup>
@@ -19,28 +17,22 @@ architecture visually instead of reading the source top to bottom.
 The graph maps **2,674 nodes** (files, functions, classes, configs, docs) and **5,903 edges**
 (imports, calls, contains, tested-by, …) across **10 architecture layers**, with a **14-step
 guided tour** that walks the three-layer design — Rust/Tauri shell → agent bridge → React
-frontend. A separate **domain view** groups the code into seven functional domains. For a prose
-companion, see the graph-derived
-[onboarding guide](https://github.com/utensils/aethon/blob/main/docs/ONBOARDING.md).
+frontend. A separate **domain view** groups the code into seven functional domains.
 
-<p style="margin:1.5rem 0 1rem;">
+<p style="margin:1.5rem 0;">
   <a :href="dashboardUrl" target="_blank" rel="noreferrer"
-     style="display:inline-block;padding:0.6rem 1.1rem;border-radius:8px;background:var(--vp-c-brand-1);color:var(--vp-c-white);font-weight:600;text-decoration:none;">
-    Open the dashboard in a new tab →
+     style="display:inline-block;padding:0.7rem 1.25rem;border-radius:8px;background:var(--vp-c-brand-1);color:var(--vp-c-white);font-weight:600;text-decoration:none;font-size:1.05rem;">
+    Open the interactive dashboard →
   </a>
 </p>
 
-<iframe
-  :src="dashboardUrl"
-  title="Aethon knowledge-graph dashboard"
-  loading="lazy"
-  sandbox="allow-scripts allow-same-origin allow-popups"
-  style="width:100%;height:78vh;min-height:560px;margin-top:0.5rem;border:1px solid var(--vp-c-divider);border-radius:10px;background:var(--vp-c-bg-soft);"
-></iframe>
+It opens full-screen in a new tab — **no login and no token** (it's a static, read-only view of
+the already-public graph). For a prose companion, see the graph-derived
+[onboarding guide](https://github.com/utensils/aethon/blob/main/docs/ONBOARDING.md).
 
 ::: tip Keeping it fresh
 The graph is a committed snapshot (`.understand-anything/knowledge-graph.json`). Regenerate it with
 the `/understand` skill, copy the refreshed graph into `website/public/dashboard/data/`, and rebuild
-the docs to update this view. The embedded viewer is the understand-anything dashboard
+the docs to update this view. The dashboard itself is the understand-anything viewer
 ([MIT](https://github.com/Egonex-AI/Understand-Anything)), vendored under `website/public/dashboard/`.
 :::
