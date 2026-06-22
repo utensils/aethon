@@ -1,0 +1,2383 @@
+{
+  "version": "1.0.0",
+  "project": {
+    "name": "aethon",
+    "languages": [
+      "TypeScript",
+      "Rust",
+      "JavaScript"
+    ],
+    "frameworks": [
+      "Tauri 2",
+      "React 19",
+      "Vite",
+      "pi-coding-agent"
+    ],
+    "description": "Aethon is a developer-facing desktop application: a thin Tauri 2 + React 19 shell that embeds the pi coding agent as a bun subprocess and renders its output as live, interactive UI via the A2UI protocol. The agent drives the interface (layout-as-payload) instead of a fixed IDE, while the Rust shell owns OS boundaries — agent process supervision, PTY shells, git/GitHub status, voice capture, auto-update, and LAN peer discovery.",
+    "analyzedAt": "2026-06-22T03:05:08Z",
+    "gitCommitHash": "2a4248c041a16c23d55b4a9f48314837b792b904"
+  },
+  "nodes": [
+    {
+      "id": "domain:agent-orchestration",
+      "type": "domain",
+      "name": "Agent Orchestration & Bridge",
+      "summary": "Owns the lifecycle of the embedded pi coding agent: a global bridge plus one worker bridge per non-default tab, spawned as bun subprocesses and supervised by the Rust shell. Forwards chat messages and A2UI events over JSON-lines stdio, multiplexes tabs over a single pipe, idle-retires workers, and survives hot reloads without aborting in-flight prompts.",
+      "tags": [
+        "agent",
+        "supervisor",
+        "ipc",
+        "subprocess",
+        "concurrency"
+      ],
+      "complexity": "complex",
+      "domainMeta": {
+        "entities": [
+          "AgentProcesses",
+          "AethonAgentState",
+          "Tab",
+          "bridge worker",
+          "mutation id"
+        ],
+        "businessRules": [
+          "Tab-scoped messages with a non-default tabId route to that tab's worker; everything else goes to the global bridge",
+          "Workers spawn lazily on first write, respawn when their cwd changes, and idle-retire after the configured TTL (15 min default)",
+          "The global bridge is the sole owner of the frontend extension surface; worker registry mutations are origin-gated by originTabId",
+          "Hot reload drains in-flight prompts via a reload sentinel instead of SIGKILL"
+        ],
+        "crossDomainInteractions": [
+          "domain:a2ui-rendering",
+          "domain:projects-workspaces",
+          "domain:auth-profiles",
+          "domain:extensions-runtime"
+        ]
+      }
+    },
+    {
+      "id": "flow:send-chat-message",
+      "type": "flow",
+      "name": "Send a chat message to the agent",
+      "summary": "User submits a prompt; the Rust shell routes it to the global or per-tab bridge, the bridge runs the pi session, and streamed assistant output flows back as agent-response events that mutate the UI.",
+      "tags": [
+        "agent",
+        "chat",
+        "ipc",
+        "streaming"
+      ],
+      "complexity": "complex",
+      "domainMeta": {
+        "entryPoint": "IPC command send_message",
+        "entryType": "manual"
+      }
+    },
+    {
+      "id": "step:send-chat-message:forward-message",
+      "type": "step",
+      "name": "Forward message into bridge stdin",
+      "summary": "send_message forwards the chat message and attachments from the frontend into the agent bridge's stdin, choosing global vs worker by tabId.",
+      "tags": [
+        "ipc",
+        "rust"
+      ],
+      "complexity": "moderate",
+      "filePath": "src-tauri/src/agent_commands.rs",
+      "lineRange": [
+        0,
+        0
+      ]
+    },
+    {
+      "id": "step:send-chat-message:spawn-or-route",
+      "type": "step",
+      "name": "Spawn or route to the bridge worker",
+      "summary": "The supervisor lazily spawns the bun bridge on first write (or routes to an existing worker), launching the child with user/worker env and devshell-resolved environment.",
+      "tags": [
+        "supervisor",
+        "spawn"
+      ],
+      "complexity": "complex",
+      "filePath": "src-tauri/src/agent_process/spawn.rs",
+      "lineRange": [
+        0,
+        0
+      ]
+    },
+    {
+      "id": "step:send-chat-message:dispatch-stdin",
+      "type": "step",
+      "name": "Dispatch the inbound JSON-lines message",
+      "summary": "The bridge's central dispatcher reads stdin and routes each inbound message to its matching handler, carrying the tabId through AsyncLocalStorage.",
+      "tags": [
+        "bridge",
+        "dispatcher"
+      ],
+      "complexity": "complex",
+      "filePath": "agent/dispatcher.ts",
+      "lineRange": [
+        0,
+        0
+      ]
+    },
+    {
+      "id": "step:send-chat-message:run-session",
+      "type": "step",
+      "name": "Run the pi session for the tab",
+      "summary": "Tab lifecycle resolves the tab's cwd, lazily builds its pi session with the full tool registry, and streams assistant text/thinking/tool events into session messages.",
+      "tags": [
+        "agent",
+        "session"
+      ],
+      "complexity": "complex",
+      "filePath": "agent/tab-lifecycle/lifecycle.ts",
+      "lineRange": [
+        0,
+        0
+      ]
+    },
+    {
+      "id": "step:send-chat-message:emit-response",
+      "type": "step",
+      "name": "Emit agent-response events",
+      "summary": "Reader threads on the child's stdout emit an agent-response Tauri event per line (UTF-8-boundary safe), which the frontend consumes and applies to the state store.",
+      "tags": [
+        "readers",
+        "events"
+      ],
+      "complexity": "moderate",
+      "filePath": "src-tauri/src/agent_process/readers.rs",
+      "lineRange": [
+        0,
+        0
+      ]
+    },
+    {
+      "id": "flow:retire-idle-worker",
+      "type": "flow",
+      "name": "Idle-retire a background worker",
+      "summary": "A background sweep task retires worker bridges that have been idle past the configured TTL and reaps orphaned meta-less children, reconciling against the frontend's live tab set.",
+      "tags": [
+        "supervisor",
+        "lifecycle",
+        "cleanup"
+      ],
+      "complexity": "moderate",
+      "domainMeta": {
+        "entryPoint": "background idle sweep task",
+        "entryType": "cron"
+      }
+    },
+    {
+      "id": "step:retire-idle-worker:track-idle",
+      "type": "step",
+      "name": "Track per-worker readiness and idle time",
+      "summary": "The supervisor state machine tracks per-worker readiness, last-activity, and wedged-prompt protection in the AgentProcesses managed state.",
+      "tags": [
+        "supervisor",
+        "state"
+      ],
+      "complexity": "complex",
+      "filePath": "src-tauri/src/agent_process/process.rs",
+      "lineRange": [
+        0,
+        0
+      ]
+    },
+    {
+      "id": "step:retire-idle-worker:sweep",
+      "type": "step",
+      "name": "Sweep workers past the TTL",
+      "summary": "The background idle-sweep task retires idle workers past the configured TTL and reaps orphaned children, unless a wedged prompt is still being protected.",
+      "tags": [
+        "sweep",
+        "cleanup"
+      ],
+      "complexity": "moderate",
+      "filePath": "src-tauri/src/agent_process/sweep.rs",
+      "lineRange": [
+        0,
+        0
+      ]
+    },
+    {
+      "id": "step:retire-idle-worker:purge-routes",
+      "type": "step",
+      "name": "Purge mutation routes on retire",
+      "summary": "Mutation acknowledgement routes for the retired worker are purged so pending mutation ids can no longer resolve against a dead process.",
+      "tags": [
+        "mutation",
+        "cleanup"
+      ],
+      "complexity": "moderate",
+      "filePath": "src-tauri/src/agent_process/process.rs",
+      "lineRange": [
+        0,
+        0
+      ]
+    },
+    {
+      "id": "flow:hot-reload-bridge",
+      "type": "flow",
+      "name": "Hot-reload the agent bridge",
+      "summary": "An extension file change triggers a graceful bridge reload: the watcher writes a reload_request to stdin, the bridge drains active prompts and emits a sentinel, and the supervisor respawns on the next IPC call without aborting the user's turn.",
+      "tags": [
+        "hot-reload",
+        "watcher",
+        "lifecycle"
+      ],
+      "complexity": "complex",
+      "domainMeta": {
+        "entryPoint": "file-watcher reload_request",
+        "entryType": "event"
+      }
+    },
+    {
+      "id": "step:hot-reload-bridge:request-reload",
+      "type": "step",
+      "name": "Request a graceful reload",
+      "summary": "The Rust file-watcher debounce worker writes a reload_request message to the child's stdin instead of SIGKILL when extension files change.",
+      "tags": [
+        "watcher",
+        "reload"
+      ],
+      "complexity": "moderate"
+    },
+    {
+      "id": "step:hot-reload-bridge:drain-prompts",
+      "type": "step",
+      "name": "Drain in-flight prompts",
+      "summary": "The bridge dispatcher drains active prompt sessions for each tab so the user's in-flight LLM turn is not aborted by the reload.",
+      "tags": [
+        "bridge",
+        "reload"
+      ],
+      "complexity": "moderate",
+      "filePath": "agent/dispatcher.ts",
+      "lineRange": [
+        0,
+        0
+      ]
+    },
+    {
+      "id": "step:hot-reload-bridge:emit-sentinel",
+      "type": "step",
+      "name": "Emit the reload-done sentinel and exit",
+      "summary": "The bridge emits a _reload_done sentinel on stdout and exits; the supervisor's reader peeks for it, emits agent-reloaded, and respawns on the next IPC call.",
+      "tags": [
+        "readers",
+        "reload"
+      ],
+      "complexity": "moderate",
+      "filePath": "src-tauri/src/agent_process/readers.rs",
+      "lineRange": [
+        0,
+        0
+      ]
+    },
+    {
+      "id": "domain:a2ui-rendering",
+      "type": "domain",
+      "name": "A2UI Rendering, Layout & State",
+      "summary": "The frontend rendering surface where the agent decides what the user sees. The default UI is a data payload (workstation.a2ui.json), fed through the A2UIRenderer that turns layout payloads into a live React tree of primitives plus extension components. All app state lives in one object addressed by JSON Pointer, with optimistic $ref updates on user input.",
+      "tags": [
+        "frontend",
+        "a2ui",
+        "rendering",
+        "state",
+        "react"
+      ],
+      "complexity": "complex",
+      "domainMeta": {
+        "entities": [
+          "A2UI payload",
+          "layout slots",
+          "app state store",
+          "$ref binding",
+          "primitive registry"
+        ],
+        "businessRules": [
+          "The default layout is data, not hardcoded React, so the agent can mutate the entire chrome at runtime",
+          "All app state lives in one object addressed by JSON Pointer; reads use {\"$ref\": \"/path\"} bindings",
+          "The renderer applies optimistic writes back to the $ref path for change/submit events before the backend confirms",
+          "20 built-in primitives are non-overridable; all other chrome composites come from the ExtensionRegistry"
+        ],
+        "crossDomainInteractions": [
+          "domain:agent-orchestration",
+          "domain:extensions-runtime",
+          "domain:projects-workspaces"
+        ]
+      }
+    },
+    {
+      "id": "flow:boot-frontend",
+      "type": "flow",
+      "name": "Boot the frontend and paint the default layout",
+      "summary": "The React app applies the saved theme, mounts the thin App shell, bootstraps the single state store from the default-layout payload, and renders the workstation chrome through the A2UIRenderer.",
+      "tags": [
+        "frontend",
+        "boot",
+        "layout"
+      ],
+      "complexity": "moderate",
+      "domainMeta": {
+        "entryPoint": "src/main.tsx entry point",
+        "entryType": "manual"
+      }
+    },
+    {
+      "id": "step:boot-frontend:apply-theme",
+      "type": "step",
+      "name": "Apply boot theme early",
+      "summary": "The application entry point applies the saved boot theme as early as possible, before the React app mounts, to avoid a flash of unthemed chrome.",
+      "tags": [
+        "boot",
+        "theme"
+      ],
+      "complexity": "simple",
+      "filePath": "src/main.tsx",
+      "lineRange": [
+        0,
+        0
+      ]
+    },
+    {
+      "id": "step:boot-frontend:compose-shell",
+      "type": "step",
+      "name": "Compose the App shell from hooks",
+      "summary": "App.tsx composes ~40 useX() hooks, bootstraps the single state store, wires OS-edge listeners and native window sync, and renders the workstation layout.",
+      "tags": [
+        "app",
+        "hooks"
+      ],
+      "complexity": "complex",
+      "filePath": "src/App.tsx",
+      "lineRange": [
+        0,
+        0
+      ]
+    },
+    {
+      "id": "step:boot-frontend:load-layout",
+      "type": "step",
+      "name": "Load the layout-as-payload default",
+      "summary": "The default-layout extension assembles the slot catalogue and registers all chrome components, panels, themes, and keybindings behind workstation.a2ui.json.",
+      "tags": [
+        "layout",
+        "extension"
+      ],
+      "complexity": "complex",
+      "filePath": "src/extensions/default-layout/index.ts",
+      "lineRange": [
+        0,
+        0
+      ]
+    },
+    {
+      "id": "step:boot-frontend:render-tree",
+      "type": "step",
+      "name": "Render the A2UI tree",
+      "summary": "The A2UIRenderer turns the layout payload into a live React tree, wiring the 20 built-in primitives plus extension components and handling for-each templating.",
+      "tags": [
+        "renderer",
+        "react"
+      ],
+      "complexity": "complex",
+      "filePath": "src/components/A2UIRenderer.tsx",
+      "lineRange": [
+        0,
+        0
+      ]
+    },
+    {
+      "id": "flow:apply-bridge-message",
+      "type": "flow",
+      "name": "Apply an agent UI mutation",
+      "summary": "Agent output arrives as a batched agent-response payload; each bridge message is dispatched to its handler, origin-gated, and applied to the single state store, which re-renders the affected slice of the React tree.",
+      "tags": [
+        "bridge",
+        "state",
+        "rendering"
+      ],
+      "complexity": "complex",
+      "domainMeta": {
+        "entryPoint": "agent-response Tauri event",
+        "entryType": "event"
+      }
+    },
+    {
+      "id": "step:apply-bridge-message:pump-messages",
+      "type": "step",
+      "name": "Pump batched agent-response messages",
+      "summary": "useBridgeMessages wires the agent-response Tauri event into a batched payload pump and dispatches each message to its registered handler.",
+      "tags": [
+        "bridge",
+        "hook"
+      ],
+      "complexity": "complex",
+      "filePath": "src/hooks/useBridgeMessages.ts",
+      "lineRange": [
+        0,
+        0
+      ]
+    },
+    {
+      "id": "step:apply-bridge-message:origin-gate",
+      "type": "step",
+      "name": "Origin-gate registry mutations",
+      "summary": "Registry-replacing messages are rejected unless their origin tab is in the active workspace bucket, stopping a background worker from clobbering active components.",
+      "tags": [
+        "origin-gate",
+        "security"
+      ],
+      "complexity": "complex",
+      "filePath": "src/hooks/useBridgeMessages.ts",
+      "lineRange": [
+        0,
+        0
+      ]
+    },
+    {
+      "id": "step:apply-bridge-message:set-state",
+      "type": "step",
+      "name": "Write into the JSON-Pointer state store",
+      "summary": "The JSON-Pointer toolkit resolves and sets the target path in the single app-state store with structural-sharing clones.",
+      "tags": [
+        "state",
+        "json-pointer"
+      ],
+      "complexity": "moderate",
+      "filePath": "src/utils/jsonPointer.ts",
+      "lineRange": [
+        0,
+        0
+      ]
+    },
+    {
+      "id": "step:apply-bridge-message:rebind",
+      "type": "step",
+      "name": "Re-resolve $ref bindings and re-render",
+      "summary": "Data-binding re-resolves each component's $ref JSON-Pointer props into concrete values and the renderer repaints the affected subtree.",
+      "tags": [
+        "data-binding",
+        "render"
+      ],
+      "complexity": "moderate",
+      "filePath": "src/utils/dataBinding.ts",
+      "lineRange": [
+        0,
+        0
+      ]
+    },
+    {
+      "id": "flow:route-user-event",
+      "type": "flow",
+      "name": "Route a user interaction event",
+      "summary": "When the user clicks or types, the central event dispatcher resolves the A2UI event through shell-consent prefixes, extension routes, then id/type-keyed built-in handlers, applying an optimistic state update and optionally forwarding to the bridge.",
+      "tags": [
+        "frontend",
+        "events",
+        "routing"
+      ],
+      "complexity": "moderate",
+      "domainMeta": {
+        "entryPoint": "A2UIRenderer onEvent callback",
+        "entryType": "manual"
+      }
+    },
+    {
+      "id": "step:route-user-event:optimistic-update",
+      "type": "step",
+      "name": "Apply optimistic $ref update",
+      "summary": "For change/submit events on $ref inputs the renderer applies an optimistic write back to the bound path so the UI feels instant.",
+      "tags": [
+        "renderer",
+        "optimistic"
+      ],
+      "complexity": "moderate",
+      "filePath": "src/components/A2UIRenderer.tsx",
+      "lineRange": [
+        0,
+        0
+      ]
+    },
+    {
+      "id": "step:route-user-event:dispatch-event",
+      "type": "step",
+      "name": "Dispatch through the precedence layers",
+      "summary": "The central dispatcher resolves the event through shell-consent prefixes, extension-registered routes, then id/type-keyed built-in handlers in that order.",
+      "tags": [
+        "events",
+        "dispatcher"
+      ],
+      "complexity": "complex",
+      "filePath": "src/eventRoutes/index.ts",
+      "lineRange": [
+        0,
+        0
+      ]
+    },
+    {
+      "id": "step:route-user-event:forward-or-handle",
+      "type": "step",
+      "name": "Forward to the bridge or mark handled",
+      "summary": "A handler returning true marks the event handled and suppresses the default dispatch_a2ui_event forward to the backend; returning false forwards it to the agent.",
+      "tags": [
+        "events",
+        "ipc"
+      ],
+      "complexity": "moderate",
+      "filePath": "src/eventRoutes/index.ts",
+      "lineRange": [
+        0,
+        0
+      ]
+    },
+    {
+      "id": "domain:shells-terminal",
+      "type": "domain",
+      "name": "Interactive Shells & Devshell",
+      "summary": "Beyond the agent, the Rust shell hosts interactive PTY terminal tabs. Shells opened inside a flake project are auto-wrapped with the resolved Nix devshell environment, which feeds both the PTY tabs and the agent's bash tool from one source of truth. A per-tab ShareMode is the security boundary that gates whether the agent may read or write a shell.",
+      "tags": [
+        "shell",
+        "pty",
+        "terminal",
+        "devshell",
+        "nix",
+        "security"
+      ],
+      "complexity": "complex",
+      "domainMeta": {
+        "entities": [
+          "ShellRegistry",
+          "ShareMode",
+          "PTY session",
+          "devshell env",
+          "scrollback ring buffer"
+        ],
+        "businessRules": [
+          "ShareMode is the per-tab opt-in security boundary; agents only see shared shells via list()",
+          "Writes pop an Allow/Deny notification in read-write mode; read-write-trusted bypasses the prompt",
+          "Devshell env is applied after TERM/COLORTERM and before per-tab overrides so explicit env keeps winning",
+          "A cold devshell cache spawns the shell unwrapped while a background resolver warms it"
+        ],
+        "crossDomainInteractions": [
+          "domain:agent-orchestration",
+          "domain:projects-workspaces"
+        ]
+      }
+    },
+    {
+      "id": "flow:open-shell-tab",
+      "type": "flow",
+      "name": "Open a PTY shell tab",
+      "summary": "The user opens a terminal sub-tab; the Rust shell spawns a portable-pty process, applies the resolved Nix devshell env, and streams output back to the frontend as shell-output events.",
+      "tags": [
+        "shell",
+        "pty",
+        "devshell"
+      ],
+      "complexity": "complex",
+      "domainMeta": {
+        "entryPoint": "IPC command shell_open",
+        "entryType": "manual"
+      }
+    },
+    {
+      "id": "step:open-shell-tab:resolve-devshell",
+      "type": "step",
+      "name": "Resolve the Nix devshell env",
+      "summary": "The devshell resolver runs nix print-dev-env / direnv exec env / nix-shell with a timeout and parses the null-separated env output, cached by lockfile fingerprint.",
+      "tags": [
+        "devshell",
+        "nix"
+      ],
+      "complexity": "complex",
+      "filePath": "src-tauri/src/devshell/resolve.rs",
+      "lineRange": [
+        0,
+        0
+      ]
+    },
+    {
+      "id": "step:open-shell-tab:spawn-pty",
+      "type": "step",
+      "name": "Spawn the portable-pty shell",
+      "summary": "shell_open spawns a new interactive PTY shell tab, applying the resolved devshell env after TERM/COLORTERM and before per-tab overrides.",
+      "tags": [
+        "pty",
+        "shell"
+      ],
+      "complexity": "complex",
+      "filePath": "src-tauri/src/shell/lifecycle/open.rs",
+      "lineRange": [
+        0,
+        0
+      ]
+    },
+    {
+      "id": "step:open-shell-tab:stream-output",
+      "type": "step",
+      "name": "Stream PTY output to the frontend",
+      "summary": "The reader emits shell-output events as the PTY produces bytes and shell-exit when the process ends, preserving UTF-8 boundaries across reads.",
+      "tags": [
+        "pty",
+        "events"
+      ],
+      "complexity": "moderate"
+    },
+    {
+      "id": "step:open-shell-tab:append-scrollback",
+      "type": "step",
+      "name": "Append into bounded scrollback",
+      "summary": "Output is appended into a bounded ring-buffer scrollback store that tracks oldest/total offsets and supports reads from an arbitrary offset.",
+      "tags": [
+        "scrollback",
+        "buffer"
+      ],
+      "complexity": "moderate",
+      "filePath": "src-tauri/src/shell/scrollback.rs",
+      "lineRange": [
+        0,
+        0
+      ]
+    },
+    {
+      "id": "flow:agent-shell-access",
+      "type": "flow",
+      "name": "Grant the agent access to a shell",
+      "summary": "An agent requests to read or write a shared shell; the ShareMode boundary decides — surfacing only opted-in shells, prompting Allow/Deny on writes, and bypassing the prompt only in trusted mode.",
+      "tags": [
+        "shell",
+        "security",
+        "sharemode"
+      ],
+      "complexity": "moderate",
+      "domainMeta": {
+        "entryPoint": "aethon.shells write/read query",
+        "entryType": "event"
+      }
+    },
+    {
+      "id": "step:agent-shell-access:check-sharemode",
+      "type": "step",
+      "name": "Check the per-tab ShareMode",
+      "summary": "The ShareMode/ShareState transition logic enforces the per-tab sharing boundary (none / read-only / read-write / read-write-trusted) before any access is allowed.",
+      "tags": [
+        "sharemode",
+        "security"
+      ],
+      "complexity": "complex",
+      "filePath": "src-tauri/src/shell/sharemode.rs",
+      "lineRange": [
+        0,
+        0
+      ]
+    },
+    {
+      "id": "step:agent-shell-access:prompt-consent",
+      "type": "step",
+      "name": "Prompt for write consent",
+      "summary": "A write in read-write mode pops an Allow/Deny notification, rounding through the mutation-ack channel; read-write-trusted bypasses the prompt.",
+      "tags": [
+        "consent",
+        "notification"
+      ],
+      "complexity": "moderate"
+    },
+    {
+      "id": "step:agent-shell-access:apply-access",
+      "type": "step",
+      "name": "Apply the read or write",
+      "summary": "Once consented, the bridge surface (aethon.shells read/write) reads scrollback or forwards keystrokes into the PTY writer for that tab.",
+      "tags": [
+        "shell",
+        "bridge"
+      ],
+      "complexity": "moderate"
+    },
+    {
+      "id": "domain:projects-workspaces",
+      "type": "domain",
+      "name": "Projects, Workspaces & Git Integration",
+      "summary": "Manages the project/workspace tree (a project has one or more workspaces — the main checkout or a git worktree), each running independently with its own tabs, sessions, and git state. An always-on VCS surface consolidates working-tree changes, branch ahead/behind, PR state, and CI rollup into one slice, fed by tiered status polling and TTL-cached gh data.",
+      "tags": [
+        "projects",
+        "workspaces",
+        "git",
+        "github",
+        "vcs",
+        "worktree"
+      ],
+      "complexity": "complex",
+      "domainMeta": {
+        "entities": [
+          "Project",
+          "Workspace",
+          "git worktree",
+          "tab bucket",
+          "VCS slice",
+          "PR/CI rollup"
+        ],
+        "businessRules": [
+          "A project has one or more workspaces; existing tabs keep the cwd they were created with when the active project switches",
+          "The project list is MRU, capped at 16, persisted with schema migration on read",
+          "Git-status polling is tiered: hot (active workspace), warm (recent roots), cold (other projects)",
+          "Use gh issue list length for the open-issue count, not open_issues_count which counts PRs plus issues"
+        ],
+        "crossDomainInteractions": [
+          "domain:a2ui-rendering",
+          "domain:agent-orchestration",
+          "domain:shells-terminal"
+        ]
+      }
+    },
+    {
+      "id": "flow:switch-workspace",
+      "type": "flow",
+      "name": "Switch the active workspace",
+      "summary": "Selecting a workspace in the sidebar paints warm from in-memory caches, mirrors the active workspace id to state so the file tree and new tabs follow, and reconciles git status in the background.",
+      "tags": [
+        "workspaces",
+        "switching",
+        "cache"
+      ],
+      "complexity": "complex",
+      "domainMeta": {
+        "entryPoint": "sidebar workspace selection",
+        "entryType": "manual"
+      }
+    },
+    {
+      "id": "step:switch-workspace:reconcile-workspaces",
+      "type": "step",
+      "name": "Reconcile workspace records",
+      "summary": "Workspace domain logic reconciles in-memory workspace records against the git worktree listing, managing pending states and ordering.",
+      "tags": [
+        "workspaces",
+        "worktree"
+      ],
+      "complexity": "complex",
+      "filePath": "src/workspaces.ts",
+      "lineRange": [
+        0,
+        0
+      ]
+    },
+    {
+      "id": "step:switch-workspace:warm-paint",
+      "type": "step",
+      "name": "Warm-paint from the VCS slice cache",
+      "summary": "The /vcs slice paints from the in-memory LRU plus disk-backed VCS slice cache for an instant warm switch while data reconciles.",
+      "tags": [
+        "cache",
+        "vcs"
+      ],
+      "complexity": "moderate",
+      "filePath": "src/vcsSliceCache.ts",
+      "lineRange": [
+        0,
+        0
+      ]
+    },
+    {
+      "id": "step:switch-workspace:bucket-tabs",
+      "type": "step",
+      "name": "Restore the workspace's tab bucket",
+      "summary": "Tabs bucket per workspace, so switching restores the active workspace's tabs while existing tabs keep the cwd they were created with.",
+      "tags": [
+        "tabs",
+        "buckets"
+      ],
+      "complexity": "moderate",
+      "filePath": "src/projects.ts",
+      "lineRange": [
+        0,
+        0
+      ]
+    },
+    {
+      "id": "step:switch-workspace:schedule-status",
+      "type": "step",
+      "name": "Schedule a tiered status refresh",
+      "summary": "The tiered poll scheduler tracks a warm-root MRU set and computes which workspace roots are due for a git-status refresh at warm vs cold cadence.",
+      "tags": [
+        "polling",
+        "scheduler"
+      ],
+      "complexity": "moderate",
+      "filePath": "src/hooks/statusPollScheduler.ts",
+      "lineRange": [
+        0,
+        0
+      ]
+    },
+    {
+      "id": "flow:refresh-vcs-status",
+      "type": "flow",
+      "name": "Refresh the always-on VCS surface",
+      "summary": "On a poll tick the VCS hook calls git status, per-file status, gh branch status, and gh checks (all best-effort), then consolidates branch ahead/behind, PR state, and CI rollup into the single /vcs slice.",
+      "tags": [
+        "vcs",
+        "git",
+        "github",
+        "polling"
+      ],
+      "complexity": "complex",
+      "domainMeta": {
+        "entryPoint": "useVcsStatus poll tick",
+        "entryType": "cron"
+      }
+    },
+    {
+      "id": "step:refresh-vcs-status:git-status",
+      "type": "step",
+      "name": "Query git working-tree status",
+      "summary": "The git status module produces a branch/ahead/behind/dirty summary and per-file porcelain-z classification against the active workspace root.",
+      "tags": [
+        "git",
+        "rust"
+      ],
+      "complexity": "complex",
+      "filePath": "src-tauri/src/commands/git/status.rs",
+      "lineRange": [
+        0,
+        0
+      ]
+    },
+    {
+      "id": "step:refresh-vcs-status:branch-pr",
+      "type": "step",
+      "name": "Fetch branch PR status",
+      "summary": "The gh branch-status cache fetches PR state for the current branch over the gh CLI with positive/negative TTLs and in-flight dedupe.",
+      "tags": [
+        "github",
+        "cache",
+        "pr"
+      ],
+      "complexity": "moderate",
+      "filePath": "src/ghBranchStatusCache.ts",
+      "lineRange": [
+        0,
+        0
+      ]
+    },
+    {
+      "id": "step:refresh-vcs-status:ci-rollup",
+      "type": "step",
+      "name": "Roll up CI check runs",
+      "summary": "The gh checks cache fetches the CI check-run rollup for the branch, mapping individual check conclusions to a single tone.",
+      "tags": [
+        "github",
+        "ci",
+        "cache"
+      ],
+      "complexity": "moderate",
+      "filePath": "src/ghChecksCache.ts",
+      "lineRange": [
+        0,
+        0
+      ]
+    },
+    {
+      "id": "step:refresh-vcs-status:consolidate-slice",
+      "type": "step",
+      "name": "Consolidate into the /vcs slice",
+      "summary": "useVcsStatus consolidates working-tree changes, ahead/behind, PR state, and CI rollup into one /vcs state slice read by both the header cluster and the source-control panel.",
+      "tags": [
+        "vcs",
+        "hook"
+      ],
+      "complexity": "complex",
+      "filePath": "src/hooks/useVcsStatus.ts",
+      "lineRange": [
+        0,
+        0
+      ]
+    },
+    {
+      "id": "flow:create-worktree",
+      "type": "flow",
+      "name": "Create a git worktree workspace",
+      "summary": "The user adds a workspace; the Rust worktree commands create a new git worktree on a branch, and the workspace store reconciles it into the in-memory list and the sidebar tree.",
+      "tags": [
+        "workspaces",
+        "git",
+        "worktree"
+      ],
+      "complexity": "moderate",
+      "domainMeta": {
+        "entryPoint": "git_worktree_add command",
+        "entryType": "manual"
+      }
+    },
+    {
+      "id": "step:create-worktree:add-worktree",
+      "type": "step",
+      "name": "Add the git worktree",
+      "summary": "The worktree lifecycle commands list/add/remove worktrees on a branch, with orphan/markerless cleanup and prune support.",
+      "tags": [
+        "git",
+        "worktree"
+      ],
+      "complexity": "complex",
+      "filePath": "src-tauri/src/commands/git/worktrees.rs",
+      "lineRange": [
+        0,
+        0
+      ]
+    },
+    {
+      "id": "step:create-worktree:persist-project",
+      "type": "step",
+      "name": "Persist into the projects store",
+      "summary": "The projects store persists the MRU project list and per-project workspaces to disk with schema migration on read.",
+      "tags": [
+        "projects",
+        "persistence"
+      ],
+      "complexity": "moderate",
+      "filePath": "src/projects.ts",
+      "lineRange": [
+        0,
+        0
+      ]
+    },
+    {
+      "id": "step:create-worktree:reconcile-tree",
+      "type": "step",
+      "name": "Reconcile into the sidebar tree",
+      "summary": "The workspace logic reconciles the new worktree into the in-memory workspace records so it appears nested under its project in the host->project->workspace tree.",
+      "tags": [
+        "workspaces",
+        "sidebar"
+      ],
+      "complexity": "moderate",
+      "filePath": "src/workspaces.ts",
+      "lineRange": [
+        0,
+        0
+      ]
+    },
+    {
+      "id": "domain:voice-input",
+      "type": "domain",
+      "name": "Voice-to-Text Input",
+      "summary": "Composer dictation living Rust-side. A common engine trait fronts multiple providers — a local Whisper model (candle-transformers), native OS recognizers (macOS SFSpeechRecognizer, Windows SAPI), and an experimental LFM2-Audio path — all consuming the same captured PCM buffer from the cpal recorder so the orchestrator needs no per-OS branching.",
+      "tags": [
+        "voice",
+        "speech",
+        "whisper",
+        "audio",
+        "transcription"
+      ],
+      "complexity": "complex",
+      "domainMeta": {
+        "entities": [
+          "PlatformSpeechEngine",
+          "CapturedAudio PCM",
+          "RecordingSession",
+          "voice provider",
+          "Whisper model"
+        ],
+        "businessRules": [
+          "All providers consume the same CapturedAudio PCM buffer, so the core holds a single engine trait with no per-OS branching",
+          "Whisper model weights are downloaded on demand via prepare and removable",
+          "The active provider is selectable and enableable; capture meters levels in real time"
+        ],
+        "crossDomainInteractions": [
+          "domain:a2ui-rendering"
+        ]
+      }
+    },
+    {
+      "id": "flow:dictate-transcript",
+      "type": "flow",
+      "name": "Dictate a transcript",
+      "summary": "The user starts dictation; the cpal recorder captures PCM while metering levels, then on stop the selected provider transcribes the buffer and returns text into the composer.",
+      "tags": [
+        "voice",
+        "recording",
+        "transcription"
+      ],
+      "complexity": "complex",
+      "domainMeta": {
+        "entryPoint": "IPC command start_recording",
+        "entryType": "manual"
+      }
+    },
+    {
+      "id": "step:dictate-transcript:start-recording",
+      "type": "step",
+      "name": "Start recording on the provider",
+      "summary": "start_recording begins capture on the selected provider, dispatching to the platform, Whisper/Distil, or LFM2 path.",
+      "tags": [
+        "voice",
+        "recording"
+      ],
+      "complexity": "moderate",
+      "filePath": "src-tauri/src/voice/registry.rs",
+      "lineRange": [
+        0,
+        0
+      ]
+    },
+    {
+      "id": "step:dictate-transcript:capture-pcm",
+      "type": "step",
+      "name": "Capture PCM and meter levels",
+      "summary": "The cpal recorder captures PCM into a RecordingSession, meters levels via a spawned emitter task, and normalizes/resamples the interleaved samples.",
+      "tags": [
+        "audio",
+        "cpal"
+      ],
+      "complexity": "complex",
+      "filePath": "src-tauri/src/voice/audio.rs",
+      "lineRange": [
+        0,
+        0
+      ]
+    },
+    {
+      "id": "step:dictate-transcript:transcribe",
+      "type": "step",
+      "name": "Stop and transcribe",
+      "summary": "stop_and_transcribe stops the active recording and returns the transcript from the selected provider's engine.",
+      "tags": [
+        "voice",
+        "transcription"
+      ],
+      "complexity": "moderate",
+      "filePath": "src-tauri/src/voice/registry.rs",
+      "lineRange": [
+        0,
+        0
+      ]
+    },
+    {
+      "id": "step:dictate-transcript:deliver-text",
+      "type": "step",
+      "name": "Deliver text to the composer",
+      "summary": "The transcript is surfaced through the voice IPC command back to the frontend composer for the user to send.",
+      "tags": [
+        "voice",
+        "ipc"
+      ],
+      "complexity": "simple",
+      "filePath": "src-tauri/src/commands/voice.rs",
+      "lineRange": [
+        0,
+        0
+      ]
+    },
+    {
+      "id": "flow:prepare-voice-model",
+      "type": "flow",
+      "name": "Prepare a voice model",
+      "summary": "Before first use of a Whisper provider the model weights are downloaded on demand into the local cache, and can be removed to reclaim space.",
+      "tags": [
+        "voice",
+        "whisper",
+        "download"
+      ],
+      "complexity": "moderate",
+      "domainMeta": {
+        "entryPoint": "IPC command model prepare",
+        "entryType": "manual"
+      }
+    },
+    {
+      "id": "step:prepare-voice-model:select-provider",
+      "type": "step",
+      "name": "Select and enable a provider",
+      "summary": "The voice IPC surface lists, selects, and enables a transcription provider before any recording can begin.",
+      "tags": [
+        "voice",
+        "provider"
+      ],
+      "complexity": "simple",
+      "filePath": "src-tauri/src/commands/voice.rs",
+      "lineRange": [
+        0,
+        0
+      ]
+    },
+    {
+      "id": "step:prepare-voice-model:download-weights",
+      "type": "step",
+      "name": "Download the model weights",
+      "summary": "Whisper model weights are downloaded on demand into the on-disk cache when the provider is prepared.",
+      "tags": [
+        "whisper",
+        "download"
+      ],
+      "complexity": "moderate",
+      "filePath": "src-tauri/src/voice/download.rs",
+      "lineRange": [
+        0,
+        0
+      ]
+    },
+    {
+      "id": "step:prepare-voice-model:load-engine",
+      "type": "step",
+      "name": "Load the inference engine",
+      "summary": "The voice core loads the active provider engine so it is ready to transcribe captured PCM through the common engine trait.",
+      "tags": [
+        "voice",
+        "inference"
+      ],
+      "complexity": "moderate",
+      "filePath": "src-tauri/src/voice/mod.rs",
+      "lineRange": [
+        0,
+        0
+      ]
+    },
+    {
+      "id": "domain:platform-services",
+      "type": "domain",
+      "name": "Platform Services: Update, Discovery & Auth",
+      "summary": "Self-contained desktop subsystems that round out the shell. Channel-aware auto-updates with a pre-install backup and post-launch rollback timer; an mDNS discovery scaffold that advertises and browses for peer Aethon instances on the LAN; and per-tab auth profiles letting different agent tabs authenticate as different accounts.",
+      "tags": [
+        "updater",
+        "mdns",
+        "discovery",
+        "auth",
+        "oauth",
+        "platform"
+      ],
+      "complexity": "complex",
+      "domainMeta": {
+        "entities": [
+          "pending Update",
+          "boot probation timer",
+          "mDNS service",
+          "auth profile",
+          "OAuth/API-key credential"
+        ],
+        "businessRules": [
+          "Auto-update copies the running .app to a versioned backup before install; a bounded probation timer rolls back on failed boot",
+          "The mDNS advertiser is gated on [server] enabled, but the HTTP server and browser always run so discovery stays read-only and useful",
+          "Discovery is explicit scaffolding with no auth and no TLS — not to be leaned on for trusted IPC",
+          "Profile ids are sanitized before touching disk; the active profile selects which model registry a tab sees"
+        ],
+        "crossDomainInteractions": [
+          "domain:agent-orchestration",
+          "domain:a2ui-rendering"
+        ]
+      }
+    },
+    {
+      "id": "flow:auto-update",
+      "type": "flow",
+      "name": "Auto-update with rollback protection",
+      "summary": "A background poll discovers an update on the selected channel, stashes it, and on install backs up the current .app before applying; the post-launch probation monitor arms a rollback timer that the frontend cancels on a healthy first paint.",
+      "tags": [
+        "updater",
+        "rollback",
+        "boot-probation"
+      ],
+      "complexity": "complex",
+      "domainMeta": {
+        "entryPoint": "useUpdater background poll",
+        "entryType": "cron"
+      }
+    },
+    {
+      "id": "step:auto-update:check-update",
+      "type": "step",
+      "name": "Check for an update on the channel",
+      "summary": "check_for_updates_with_channel discovers nightly/stable endpoints via the GitHub API and stashes the pending Update in managed state.",
+      "tags": [
+        "updater",
+        "channel"
+      ],
+      "complexity": "complex",
+      "filePath": "src-tauri/src/commands/updater.rs",
+      "lineRange": [
+        0,
+        0
+      ]
+    },
+    {
+      "id": "step:auto-update:backup-app",
+      "type": "step",
+      "name": "Back up the running app",
+      "summary": "install_pending_update copies the current .app to a versioned backup dir inside spawn_blocking before applying the update.",
+      "tags": [
+        "backup",
+        "boot-probation"
+      ],
+      "complexity": "moderate",
+      "filePath": "src-tauri/src/boot_probation/backup.rs",
+      "lineRange": [
+        0,
+        0
+      ]
+    },
+    {
+      "id": "step:auto-update:install",
+      "type": "step",
+      "name": "Install the stashed update",
+      "summary": "The stashed pending Update is installed, after which the app relaunches into a probation window.",
+      "tags": [
+        "updater",
+        "install"
+      ],
+      "complexity": "moderate",
+      "filePath": "src-tauri/src/commands/updater.rs",
+      "lineRange": [
+        0,
+        0
+      ]
+    },
+    {
+      "id": "step:auto-update:arm-rollback",
+      "type": "step",
+      "name": "Arm the rollback timer",
+      "summary": "The probation monitor tracks boot stages and arms an attempt-bounded rollback timer that spawns the rollback helper on timeout.",
+      "tags": [
+        "boot-probation",
+        "rollback"
+      ],
+      "complexity": "complex",
+      "filePath": "src-tauri/src/boot_probation/monitor.rs",
+      "lineRange": [
+        0,
+        0
+      ]
+    },
+    {
+      "id": "step:auto-update:confirm-healthy",
+      "type": "step",
+      "name": "Confirm a healthy boot",
+      "summary": "useUpdater calls boot_stage and boot_ok on first paint to cancel the rollback timer once the new version launches cleanly.",
+      "tags": [
+        "boot",
+        "updater"
+      ],
+      "complexity": "moderate",
+      "filePath": "src/hooks/useUpdater.ts",
+      "lineRange": [
+        0,
+        0
+      ]
+    },
+    {
+      "id": "flow:discover-peers",
+      "type": "flow",
+      "name": "Discover LAN peers over mDNS",
+      "summary": "The discovery daemon advertises the local Aethon over _aethon._tcp.local. with its HTTP port, browses for other instances, and emits host-discovered / host-removed events the frontend surfaces.",
+      "tags": [
+        "mdns",
+        "discovery",
+        "lan"
+      ],
+      "complexity": "moderate",
+      "domainMeta": {
+        "entryPoint": "server_start command",
+        "entryType": "manual"
+      }
+    },
+    {
+      "id": "step:discover-peers:bind-http",
+      "type": "step",
+      "name": "Bind the discovery HTTP server",
+      "summary": "An axum HTTP server binds an OS-chosen port exposing GET /health and /status for mDNS-discovered peers (no auth, scaffold).",
+      "tags": [
+        "http",
+        "axum"
+      ],
+      "complexity": "moderate",
+      "filePath": "src-tauri/src/server/http.rs",
+      "lineRange": [
+        0,
+        0
+      ]
+    },
+    {
+      "id": "step:discover-peers:advertise-browse",
+      "type": "step",
+      "name": "Advertise and browse over mDNS",
+      "summary": "The mDNS advertiser announces _aethon._tcp.local. with the HTTP port in TXT while the browser scans for peers, emitting host-discovered / host-removed.",
+      "tags": [
+        "mdns",
+        "discovery"
+      ],
+      "complexity": "complex",
+      "filePath": "src-tauri/src/server/mdns.rs",
+      "lineRange": [
+        0,
+        0
+      ]
+    },
+    {
+      "id": "step:discover-peers:surface-peers",
+      "type": "step",
+      "name": "Surface discovered peers",
+      "summary": "The host command reports local host identity and the discovered peers are surfaced to the frontend for display.",
+      "tags": [
+        "host",
+        "ipc"
+      ],
+      "complexity": "simple",
+      "filePath": "src-tauri/src/commands/host.rs",
+      "lineRange": [
+        0,
+        0
+      ]
+    },
+    {
+      "id": "flow:login-auth-profile",
+      "type": "flow",
+      "name": "Log in with an auth profile",
+      "summary": "A user adds or switches a per-tab account; the auth-profiles manager runs the OAuth or API-key flow, persists sanitized credentials, and applies the active profile so that tab's agent authenticates as the chosen account.",
+      "tags": [
+        "auth",
+        "oauth",
+        "login",
+        "multi-account"
+      ],
+      "complexity": "complex",
+      "domainMeta": {
+        "entryPoint": "auth-profile bridge command",
+        "entryType": "manual"
+      }
+    },
+    {
+      "id": "step:login-auth-profile:send-command",
+      "type": "step",
+      "name": "Send the auth-profile command",
+      "summary": "Frontend command helpers resolve switch targets and send auth-profile bridge commands to the agent for the active tab.",
+      "tags": [
+        "auth",
+        "frontend"
+      ],
+      "complexity": "moderate",
+      "filePath": "src/auth-profiles/commands.ts",
+      "lineRange": [
+        0,
+        0
+      ]
+    },
+    {
+      "id": "step:login-auth-profile:run-login",
+      "type": "step",
+      "name": "Run the OAuth or API-key flow",
+      "summary": "The auth-profiles manager orchestrates credential persistence and the OAuth/API-key login flow, streaming login events so the OAuth challenge surfaces in the UI.",
+      "tags": [
+        "auth",
+        "oauth"
+      ],
+      "complexity": "complex",
+      "filePath": "agent/auth-profiles/manager.ts",
+      "lineRange": [
+        0,
+        0
+      ]
+    },
+    {
+      "id": "step:login-auth-profile:persist-profile",
+      "type": "step",
+      "name": "Persist the sanitized profile",
+      "summary": "The store derives on-disk paths, sanitizes the profile id before touching disk, and saves the profile metadata and credentials.",
+      "tags": [
+        "auth",
+        "persistence"
+      ],
+      "complexity": "moderate",
+      "filePath": "agent/auth-profiles/store.ts",
+      "lineRange": [
+        0,
+        0
+      ]
+    },
+    {
+      "id": "step:login-auth-profile:apply-registry",
+      "type": "step",
+      "name": "Apply the per-tab model registry",
+      "summary": "The active profile selects which model registry a tab sees, so per-tab pi service registries authenticate as the chosen account.",
+      "tags": [
+        "auth",
+        "registry"
+      ],
+      "complexity": "moderate",
+      "filePath": "agent/auth-profiles/manager.ts",
+      "lineRange": [
+        0,
+        0
+      ]
+    },
+    {
+      "id": "domain:extensions-runtime",
+      "type": "domain",
+      "name": "Extensions & Runtime API",
+      "summary": "The override surface that lets extensions reshape Aethon. A public window.aethon / globalThis.aethon runtime API lets tools and extensions register components, themes, keybindings, and layouts, and mutate the UI. Extensions load from a directory or npm-style package, and the ExtensionRegistry maps component/template types to React implementations so chrome composites can be swapped at runtime.",
+      "tags": [
+        "extensions",
+        "runtime-api",
+        "registry",
+        "themes",
+        "keybindings"
+      ],
+      "complexity": "complex",
+      "domainMeta": {
+        "entities": [
+          "ExtensionRegistry",
+          "window.aethon API",
+          "extension package",
+          "registered layout",
+          "theme definition"
+        ],
+        "businessRules": [
+          "Chrome composites must be keyed by type so registerComponent and renamed instances stay routable; the 20 primitives can't be overridden",
+          "Layout ids match /^[A-Za-z][\\w-]*$/ and 'workstation' is reserved",
+          "Extension themes reject reserved ids and invalid CSS variable keys",
+          "The global bridge owns the frontend extension surface; worker registry mutations are origin-stamped and gated"
+        ],
+        "crossDomainInteractions": [
+          "domain:a2ui-rendering",
+          "domain:agent-orchestration"
+        ]
+      }
+    },
+    {
+      "id": "flow:load-extensions",
+      "type": "flow",
+      "name": "Load extensions at bridge startup",
+      "summary": "On bridge startup the extension loader discovers pi-installed extensions and npm-style packages from the user directory, imports candidate files, and registers their component/theme/keybinding exports before the default tab's session prompt is composed.",
+      "tags": [
+        "extensions",
+        "loader",
+        "startup"
+      ],
+      "complexity": "complex",
+      "domainMeta": {
+        "entryPoint": "agent/main.ts extension load",
+        "entryType": "manual"
+      }
+    },
+    {
+      "id": "step:load-extensions:discover",
+      "type": "step",
+      "name": "Discover installed extensions",
+      "summary": "The extension loader discovers pi-installed Aethon extensions and persisted session tabs from the user directory.",
+      "tags": [
+        "extensions",
+        "discovery"
+      ],
+      "complexity": "moderate",
+      "filePath": "agent/extension-loader/discovery.ts",
+      "lineRange": [
+        0,
+        0
+      ]
+    },
+    {
+      "id": "step:load-extensions:import-register",
+      "type": "step",
+      "name": "Import and register exports",
+      "summary": "The directory loader imports candidate files, registers their exports, and handles project-scoped naming for the active cwd.",
+      "tags": [
+        "extensions",
+        "loader"
+      ],
+      "complexity": "complex",
+      "filePath": "agent/extension-loader/directory.ts",
+      "lineRange": [
+        0,
+        0
+      ]
+    },
+    {
+      "id": "step:load-extensions:load-packages",
+      "type": "step",
+      "name": "Load npm-style packages",
+      "summary": "The package loader discovers and loads npm-style Aethon extension packages from their manifest, registering backend exports and forwarding UI registrations.",
+      "tags": [
+        "extensions",
+        "packages"
+      ],
+      "complexity": "moderate",
+      "filePath": "agent/extension-loader/packages.ts",
+      "lineRange": [
+        0,
+        0
+      ]
+    },
+    {
+      "id": "step:load-extensions:compose-prompt",
+      "type": "step",
+      "name": "Compose the system prompt with extensions",
+      "summary": "main.ts builds AethonAgentState and loads extensions before the default tab so its session prompt and runtime snapshot see them.",
+      "tags": [
+        "agent",
+        "prompt"
+      ],
+      "complexity": "moderate",
+      "filePath": "agent/main.ts",
+      "lineRange": [
+        0,
+        0
+      ]
+    },
+    {
+      "id": "flow:register-runtime-component",
+      "type": "flow",
+      "name": "Register a component via the runtime API",
+      "summary": "An extension or pi tool calls the runtime API to register a custom component, theme, or layout; the registration is stamped with its origin tab, gated by the frontend, and applied to the ExtensionRegistry so chrome composites swap at runtime.",
+      "tags": [
+        "runtime-api",
+        "registry",
+        "mutation"
+      ],
+      "complexity": "complex",
+      "domainMeta": {
+        "entryPoint": "globalThis.aethon.registerComponent",
+        "entryType": "event"
+      }
+    },
+    {
+      "id": "step:register-runtime-component:call-api",
+      "type": "step",
+      "name": "Call the runtime registration API",
+      "summary": "globalThis.aethon assembles the full runtime API (layout, canvas, components, themes, keybindings) that tools and extensions call to mutate the UI.",
+      "tags": [
+        "runtime-api",
+        "agent"
+      ],
+      "complexity": "complex",
+      "filePath": "agent/aethon-api.ts",
+      "lineRange": [
+        0,
+        0
+      ]
+    },
+    {
+      "id": "step:register-runtime-component:stamp-origin",
+      "type": "step",
+      "name": "Stamp the origin tab",
+      "summary": "Registry-replacing bridge messages are stamped with the worker's originTabId so background-workspace workers can't clobber the active workspace's surface.",
+      "tags": [
+        "origin-gate",
+        "security"
+      ],
+      "complexity": "complex",
+      "filePath": "agent/origin-gate.ts",
+      "lineRange": [
+        0,
+        0
+      ]
+    },
+    {
+      "id": "step:register-runtime-component:ack-mutation",
+      "type": "step",
+      "name": "Round-trip the mutation ack",
+      "summary": "mutation-ack mints a tracked mutation id with a timeout, gates the send on frontend readiness, and resolves when the frontend confirms or rejects.",
+      "tags": [
+        "mutation",
+        "ack"
+      ],
+      "complexity": "complex",
+      "filePath": "agent/mutation-ack.ts",
+      "lineRange": [
+        0,
+        0
+      ]
+    },
+    {
+      "id": "step:register-runtime-component:apply-registry",
+      "type": "step",
+      "name": "Apply to the ExtensionRegistry",
+      "summary": "The ExtensionRegistry maps the component/template type to its React implementation, swapping the chrome composite at runtime for all instances keyed by type.",
+      "tags": [
+        "registry",
+        "frontend"
+      ],
+      "complexity": "moderate",
+      "filePath": "src/extensions/ExtensionRegistry.ts",
+      "lineRange": [
+        0,
+        0
+      ]
+    },
+    {
+      "id": "flow:register-layout",
+      "type": "flow",
+      "name": "Register and activate a layout",
+      "summary": "Through window.aethon a caller registers a new layout payload (validated against the canonical slot contract and id pattern) and activates it, replacing the workstation chrome that the A2UIRenderer paints.",
+      "tags": [
+        "runtime-api",
+        "layout",
+        "slots"
+      ],
+      "complexity": "moderate",
+      "domainMeta": {
+        "entryPoint": "window.aethon.registerLayout",
+        "entryType": "manual"
+      }
+    },
+    {
+      "id": "step:register-layout:register",
+      "type": "step",
+      "name": "Register the layout payload",
+      "summary": "windowApi builds the public window.aethon API including registerLayout/activateLayout, enforcing the id pattern and the reserved 'workstation' id.",
+      "tags": [
+        "runtime-api",
+        "layout"
+      ],
+      "complexity": "moderate",
+      "filePath": "src/runtime/windowApi.ts",
+      "lineRange": [
+        0,
+        0
+      ]
+    },
+    {
+      "id": "step:register-layout:validate-slots",
+      "type": "step",
+      "name": "Validate the slot coverage",
+      "summary": "The slot catalogue exposes coverage inspection to validate that a layout satisfies the canonical slot contract (header, sidebar, canvas, composer, terminal, status).",
+      "tags": [
+        "slots",
+        "layout"
+      ],
+      "complexity": "moderate",
+      "filePath": "src/extensions/default-layout/slots.ts",
+      "lineRange": [
+        0,
+        0
+      ]
+    },
+    {
+      "id": "step:register-layout:activate",
+      "type": "step",
+      "name": "Activate and repaint",
+      "summary": "Activating the layout swaps the active payload, and the A2UIRenderer repaints the entire chrome from the new data document.",
+      "tags": [
+        "layout",
+        "render"
+      ],
+      "complexity": "moderate",
+      "filePath": "src/components/A2UIRenderer.tsx",
+      "lineRange": [
+        0,
+        0
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "source": "domain:agent-orchestration",
+      "target": "flow:send-chat-message",
+      "type": "contains_flow",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "flow:send-chat-message",
+      "target": "step:send-chat-message:forward-message",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.2
+    },
+    {
+      "source": "flow:send-chat-message",
+      "target": "step:send-chat-message:spawn-or-route",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.4
+    },
+    {
+      "source": "flow:send-chat-message",
+      "target": "step:send-chat-message:dispatch-stdin",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.6
+    },
+    {
+      "source": "flow:send-chat-message",
+      "target": "step:send-chat-message:run-session",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "flow:send-chat-message",
+      "target": "step:send-chat-message:emit-response",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "domain:agent-orchestration",
+      "target": "flow:retire-idle-worker",
+      "type": "contains_flow",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "flow:retire-idle-worker",
+      "target": "step:retire-idle-worker:track-idle",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.3
+    },
+    {
+      "source": "flow:retire-idle-worker",
+      "target": "step:retire-idle-worker:sweep",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.6
+    },
+    {
+      "source": "flow:retire-idle-worker",
+      "target": "step:retire-idle-worker:purge-routes",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.9
+    },
+    {
+      "source": "domain:agent-orchestration",
+      "target": "flow:hot-reload-bridge",
+      "type": "contains_flow",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "flow:hot-reload-bridge",
+      "target": "step:hot-reload-bridge:request-reload",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.3
+    },
+    {
+      "source": "flow:hot-reload-bridge",
+      "target": "step:hot-reload-bridge:drain-prompts",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.6
+    },
+    {
+      "source": "flow:hot-reload-bridge",
+      "target": "step:hot-reload-bridge:emit-sentinel",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.9
+    },
+    {
+      "source": "domain:a2ui-rendering",
+      "target": "flow:boot-frontend",
+      "type": "contains_flow",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "flow:boot-frontend",
+      "target": "step:boot-frontend:apply-theme",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.2
+    },
+    {
+      "source": "flow:boot-frontend",
+      "target": "step:boot-frontend:compose-shell",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.4
+    },
+    {
+      "source": "flow:boot-frontend",
+      "target": "step:boot-frontend:load-layout",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.6
+    },
+    {
+      "source": "flow:boot-frontend",
+      "target": "step:boot-frontend:render-tree",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "domain:a2ui-rendering",
+      "target": "flow:apply-bridge-message",
+      "type": "contains_flow",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "flow:apply-bridge-message",
+      "target": "step:apply-bridge-message:pump-messages",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.2
+    },
+    {
+      "source": "flow:apply-bridge-message",
+      "target": "step:apply-bridge-message:origin-gate",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.4
+    },
+    {
+      "source": "flow:apply-bridge-message",
+      "target": "step:apply-bridge-message:set-state",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.6
+    },
+    {
+      "source": "flow:apply-bridge-message",
+      "target": "step:apply-bridge-message:rebind",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "domain:a2ui-rendering",
+      "target": "flow:route-user-event",
+      "type": "contains_flow",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "flow:route-user-event",
+      "target": "step:route-user-event:optimistic-update",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.3
+    },
+    {
+      "source": "flow:route-user-event",
+      "target": "step:route-user-event:dispatch-event",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.6
+    },
+    {
+      "source": "flow:route-user-event",
+      "target": "step:route-user-event:forward-or-handle",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.9
+    },
+    {
+      "source": "domain:shells-terminal",
+      "target": "flow:open-shell-tab",
+      "type": "contains_flow",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "flow:open-shell-tab",
+      "target": "step:open-shell-tab:resolve-devshell",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.2
+    },
+    {
+      "source": "flow:open-shell-tab",
+      "target": "step:open-shell-tab:spawn-pty",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.4
+    },
+    {
+      "source": "flow:open-shell-tab",
+      "target": "step:open-shell-tab:stream-output",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.6
+    },
+    {
+      "source": "flow:open-shell-tab",
+      "target": "step:open-shell-tab:append-scrollback",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "domain:shells-terminal",
+      "target": "flow:agent-shell-access",
+      "type": "contains_flow",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "flow:agent-shell-access",
+      "target": "step:agent-shell-access:check-sharemode",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.3
+    },
+    {
+      "source": "flow:agent-shell-access",
+      "target": "step:agent-shell-access:prompt-consent",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.6
+    },
+    {
+      "source": "flow:agent-shell-access",
+      "target": "step:agent-shell-access:apply-access",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.9
+    },
+    {
+      "source": "domain:projects-workspaces",
+      "target": "flow:switch-workspace",
+      "type": "contains_flow",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "flow:switch-workspace",
+      "target": "step:switch-workspace:reconcile-workspaces",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.2
+    },
+    {
+      "source": "flow:switch-workspace",
+      "target": "step:switch-workspace:warm-paint",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.4
+    },
+    {
+      "source": "flow:switch-workspace",
+      "target": "step:switch-workspace:bucket-tabs",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.6
+    },
+    {
+      "source": "flow:switch-workspace",
+      "target": "step:switch-workspace:schedule-status",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "domain:projects-workspaces",
+      "target": "flow:refresh-vcs-status",
+      "type": "contains_flow",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "flow:refresh-vcs-status",
+      "target": "step:refresh-vcs-status:git-status",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.2
+    },
+    {
+      "source": "flow:refresh-vcs-status",
+      "target": "step:refresh-vcs-status:branch-pr",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.4
+    },
+    {
+      "source": "flow:refresh-vcs-status",
+      "target": "step:refresh-vcs-status:ci-rollup",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.6
+    },
+    {
+      "source": "flow:refresh-vcs-status",
+      "target": "step:refresh-vcs-status:consolidate-slice",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "domain:projects-workspaces",
+      "target": "flow:create-worktree",
+      "type": "contains_flow",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "flow:create-worktree",
+      "target": "step:create-worktree:add-worktree",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.3
+    },
+    {
+      "source": "flow:create-worktree",
+      "target": "step:create-worktree:persist-project",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.6
+    },
+    {
+      "source": "flow:create-worktree",
+      "target": "step:create-worktree:reconcile-tree",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.9
+    },
+    {
+      "source": "domain:voice-input",
+      "target": "flow:dictate-transcript",
+      "type": "contains_flow",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "flow:dictate-transcript",
+      "target": "step:dictate-transcript:start-recording",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.2
+    },
+    {
+      "source": "flow:dictate-transcript",
+      "target": "step:dictate-transcript:capture-pcm",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.4
+    },
+    {
+      "source": "flow:dictate-transcript",
+      "target": "step:dictate-transcript:transcribe",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.6
+    },
+    {
+      "source": "flow:dictate-transcript",
+      "target": "step:dictate-transcript:deliver-text",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "domain:voice-input",
+      "target": "flow:prepare-voice-model",
+      "type": "contains_flow",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "flow:prepare-voice-model",
+      "target": "step:prepare-voice-model:select-provider",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.3
+    },
+    {
+      "source": "flow:prepare-voice-model",
+      "target": "step:prepare-voice-model:download-weights",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.6
+    },
+    {
+      "source": "flow:prepare-voice-model",
+      "target": "step:prepare-voice-model:load-engine",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.9
+    },
+    {
+      "source": "domain:platform-services",
+      "target": "flow:auto-update",
+      "type": "contains_flow",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "flow:auto-update",
+      "target": "step:auto-update:check-update",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.2
+    },
+    {
+      "source": "flow:auto-update",
+      "target": "step:auto-update:backup-app",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.4
+    },
+    {
+      "source": "flow:auto-update",
+      "target": "step:auto-update:install",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.6
+    },
+    {
+      "source": "flow:auto-update",
+      "target": "step:auto-update:arm-rollback",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "flow:auto-update",
+      "target": "step:auto-update:confirm-healthy",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "domain:platform-services",
+      "target": "flow:discover-peers",
+      "type": "contains_flow",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "flow:discover-peers",
+      "target": "step:discover-peers:bind-http",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.3
+    },
+    {
+      "source": "flow:discover-peers",
+      "target": "step:discover-peers:advertise-browse",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.6
+    },
+    {
+      "source": "flow:discover-peers",
+      "target": "step:discover-peers:surface-peers",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.9
+    },
+    {
+      "source": "domain:platform-services",
+      "target": "flow:login-auth-profile",
+      "type": "contains_flow",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "flow:login-auth-profile",
+      "target": "step:login-auth-profile:send-command",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.2
+    },
+    {
+      "source": "flow:login-auth-profile",
+      "target": "step:login-auth-profile:run-login",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.4
+    },
+    {
+      "source": "flow:login-auth-profile",
+      "target": "step:login-auth-profile:persist-profile",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.6
+    },
+    {
+      "source": "flow:login-auth-profile",
+      "target": "step:login-auth-profile:apply-registry",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "domain:agent-orchestration",
+      "target": "domain:a2ui-rendering",
+      "type": "cross_domain",
+      "direction": "forward",
+      "description": "The bridge streams agent-response events that the frontend applies to the single state store, re-rendering the A2UI tree.",
+      "weight": 0.9
+    },
+    {
+      "source": "domain:a2ui-rendering",
+      "target": "domain:agent-orchestration",
+      "type": "cross_domain",
+      "direction": "forward",
+      "description": "User events that aren't handled locally are forwarded to the bridge via dispatch_a2ui_event for the agent to act on.",
+      "weight": 0.7
+    },
+    {
+      "source": "domain:agent-orchestration",
+      "target": "domain:extensions-runtime",
+      "type": "cross_domain",
+      "direction": "forward",
+      "description": "The global bridge is the sole owner of the frontend extension surface; worker registry mutations are origin-gated.",
+      "weight": 0.7
+    },
+    {
+      "source": "domain:projects-workspaces",
+      "target": "domain:agent-orchestration",
+      "type": "cross_domain",
+      "direction": "forward",
+      "description": "Each workspace pins its own cwd; workers respawn when their cwd changes and idle-retire per workspace.",
+      "weight": 0.6
+    },
+    {
+      "source": "domain:shells-terminal",
+      "target": "domain:agent-orchestration",
+      "type": "cross_domain",
+      "direction": "forward",
+      "description": "Devshell resolution feeds both PTY shells and the agent's bash tool from one source of truth; ShareMode gates agent shell access.",
+      "weight": 0.6
+    },
+    {
+      "source": "domain:shells-terminal",
+      "target": "domain:projects-workspaces",
+      "type": "cross_domain",
+      "direction": "forward",
+      "description": "Shells opened inside a flake project are auto-wrapped with that project's resolved Nix devshell environment.",
+      "weight": 0.5
+    },
+    {
+      "source": "domain:voice-input",
+      "target": "domain:a2ui-rendering",
+      "type": "cross_domain",
+      "direction": "forward",
+      "description": "Dictated transcripts are delivered back into the composer surface rendered by the A2UI frontend.",
+      "weight": 0.4
+    },
+    {
+      "source": "domain:platform-services",
+      "target": "domain:agent-orchestration",
+      "type": "cross_domain",
+      "direction": "forward",
+      "description": "Auth profiles select which model registry each agent tab authenticates against.",
+      "weight": 0.6
+    },
+    {
+      "source": "domain:platform-services",
+      "target": "domain:a2ui-rendering",
+      "type": "cross_domain",
+      "direction": "forward",
+      "description": "The update banner and probation report render as chrome above the A2UI layout.",
+      "weight": 0.4
+    },
+    {
+      "source": "domain:projects-workspaces",
+      "target": "domain:a2ui-rendering",
+      "type": "cross_domain",
+      "direction": "forward",
+      "description": "The active workspace id is mirrored to state so the sidebar tree, file tree, and new tabs follow the selection.",
+      "weight": 0.6
+    },
+    {
+      "source": "domain:extensions-runtime",
+      "target": "flow:load-extensions",
+      "type": "contains_flow",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "flow:load-extensions",
+      "target": "step:load-extensions:discover",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.2
+    },
+    {
+      "source": "flow:load-extensions",
+      "target": "step:load-extensions:import-register",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.4
+    },
+    {
+      "source": "flow:load-extensions",
+      "target": "step:load-extensions:load-packages",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.6
+    },
+    {
+      "source": "flow:load-extensions",
+      "target": "step:load-extensions:compose-prompt",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "domain:extensions-runtime",
+      "target": "flow:register-runtime-component",
+      "type": "contains_flow",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "flow:register-runtime-component",
+      "target": "step:register-runtime-component:call-api",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.2
+    },
+    {
+      "source": "flow:register-runtime-component",
+      "target": "step:register-runtime-component:stamp-origin",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.4
+    },
+    {
+      "source": "flow:register-runtime-component",
+      "target": "step:register-runtime-component:ack-mutation",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.6
+    },
+    {
+      "source": "flow:register-runtime-component",
+      "target": "step:register-runtime-component:apply-registry",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "domain:extensions-runtime",
+      "target": "flow:register-layout",
+      "type": "contains_flow",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "flow:register-layout",
+      "target": "step:register-layout:register",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.3
+    },
+    {
+      "source": "flow:register-layout",
+      "target": "step:register-layout:validate-slots",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.6
+    },
+    {
+      "source": "flow:register-layout",
+      "target": "step:register-layout:activate",
+      "type": "flow_step",
+      "direction": "forward",
+      "weight": 0.9
+    },
+    {
+      "source": "domain:extensions-runtime",
+      "target": "domain:a2ui-rendering",
+      "type": "cross_domain",
+      "direction": "forward",
+      "description": "Extensions register components, themes, and layouts into the ExtensionRegistry that the A2UIRenderer paints, overriding chrome composites.",
+      "weight": 0.8
+    }
+  ],
+  "layers": [],
+  "tour": []
+}
