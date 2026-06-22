@@ -48,6 +48,22 @@ export async function requestAuthProfiles(): Promise<void> {
 }
 
 /**
+ * Set the default account for a profile's provider. This is the account new
+ * tabs/tasks inherit (a fresh tab with no explicit binding resolves its
+ * account from `defaultByProvider` via the bridge's `defaultProfileIdForTab`).
+ * Used by the header account selector when no live agent tab is active (the
+ * overview), where there's no session to rebind — picking an account means
+ * "use this for new work on this provider".
+ */
+export async function setDefaultAccount(profileId: string): Promise<void> {
+  if (!profileId) return;
+  await sendAuthProfileCommand({
+    type: "auth_profile_set_default",
+    profileId,
+  });
+}
+
+/**
  * Switch the active account for a tab. The global bridge owns the auth
  * surface (`auth_profile_use_for_tab`), but a non-default tab runs its
  * prompts in a separate worker bridge that must also rebuild its session

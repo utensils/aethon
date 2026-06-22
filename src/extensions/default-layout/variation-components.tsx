@@ -17,6 +17,13 @@ import { resolvePointer } from "../../utils/jsonPointer";
 import { PI_DEFAULT_MODEL_SENTINEL } from "../../utils/modelPicker";
 import type { BuiltinComponentProps } from "../../components/A2UIRenderer";
 import type { Tab } from "../../types/tab";
+import {
+  accountsForProvider,
+  providerOfModelId,
+  resolveSelectableProfileId,
+  soleDefaultProfileId,
+} from "../../auth-profiles/selection";
+import { modelForNewProjectTab } from "../../hooks/tabOps/helpers";
 import type { VcsSlice } from "../../hooks/useVcsStatus";
 import { ciMeta, prMeta } from "./sidebar/vcs-presentation";
 import { absolutePathFor } from "./sidebar/fileTreeModel";
@@ -612,19 +619,7 @@ function activeTabModelProvider(
   activeTabId: string,
 ): string | undefined {
   const tabs = (state.tabs as Array<{ id: string; model?: string }>) ?? [];
-  const model = tabs.find((t) => t.id === activeTabId)?.model;
-  return typeof model === "string" && model.includes("/")
-    ? model.split("/")[0]
-    : undefined;
-}
-
-/** When exactly one provider default is configured, use it as the global
- *  fallback selection. */
-function soleDefault(
-  defaultByProvider: Record<string, string> | undefined,
-): string | undefined {
-  const values = Object.values(defaultByProvider ?? {});
-  return values.length === 1 ? values[0] : undefined;
+  return providerOfModelId(tabs.find((t) => t.id === activeTabId)?.model);
 }
 
 export function AccountSelector({
@@ -646,34 +641,57 @@ export function AccountSelector({
       id: string;
       model?: string;
       authProfileId?: string;
+      kind?: string;
     }>) ?? []
   ).find((t) => t.id === activeTabId);
+  // An active *agent* tab has a live session to rebind; the overview (or a
+  // shell/editor tab) does not — there a pick sets the provider default that
+  // new tasks inherit instead.
+  const isAgentTab = !!activeTab && (activeTab.kind ?? "agent") === "agent";
 
-  // Only offer accounts for the active tab's model provider — switching to a
-  // profile from another provider would point the tab's auth at a provider
-  // that can't back the current model. When the provider is unknown (no
-  // model yet), fall back to all profiles.
-  const tabProvider = activeTabModelProvider(state, activeTabId);
-  const selectable = tabProvider
-    ? profiles.filter((p) => p.providerId === tabProvider)
-    : profiles;
+  // Provider scoping. An agent tab scopes to its own model's provider.
+  // Otherwise (overview) scope to the provider of the model a task launched
+  // from here would actually boot with — `modelForNewProjectTab` folds in
+  // `/defaultModel`, per-project memory (`projectModels`), and the pi default
+  // in the same precedence the new tab uses — so the selector reflects and its
+  // `setDefaultAccount` targets the provider new work will run as.
+  const activeProjectId =
+    typeof state.activeProjectId === "string" ? state.activeProjectId : null;
+  const piDefaultModel =
+    typeof state.piDefaultModel === "string" ? state.piDefaultModel : "";
+  const newTabModel = modelForNewProjectTab(
+    state,
+    activeProjectId,
+    piDefaultModel,
+  );
+  const provider = isAgentTab
+    ? activeTabModelProvider(state, activeTabId)
+    : providerOfModelId(newTabModel);
+
+  // Only offer accounts for that provider — switching to a profile from
+  // another provider would point auth at a provider that can't back the
+  // model. When the provider is unknown, fall back to all profiles.
+  const selectable = accountsForProvider(profiles, provider);
   if (selectable.length === 0) return null;
 
   // Resolve the *effective* account so the chip always reflects which one a
   // prompt would actually use — even before the user explicitly picks one.
-  // The tab mirror updates immediately on auth_profile_changed, while the
-  // snapshot map can lag until a later auth_profiles refresh; prefer the tab
-  // value so the header flips as soon as the switch lands.
-  const selectableIds = new Set(selectable.map((p) => p.id));
-  const firstSelectable = (...ids: Array<string | undefined>) =>
-    ids.find((id) => id && selectableIds.has(id));
-  const resolvedId =
-    firstSelectable(
-      activeTab?.authProfileId,
-      auth.activeByTab?.[activeTabId],
-      tabProvider ? auth.defaultByProvider?.[tabProvider] : undefined,
-      soleDefault(auth.defaultByProvider),
-    ) ?? selectable[0]?.id;
+  // For an agent tab the tab mirror updates immediately on
+  // auth_profile_changed (snapshot can lag), so prefer it. For the overview
+  // the source of truth is the provider default (set via auth_profile_set_default).
+  const resolvedId = isAgentTab
+    ? resolveSelectableProfileId(
+        selectable,
+        activeTab?.authProfileId,
+        auth.activeByTab?.[activeTabId],
+        provider ? auth.defaultByProvider?.[provider] : undefined,
+        soleDefaultProfileId(auth.defaultByProvider),
+      )
+    : resolveSelectableProfileId(
+        selectable,
+        provider ? auth.defaultByProvider?.[provider] : undefined,
+        soleDefaultProfileId(auth.defaultByProvider),
+      );
   const activeProfile = selectable.find((p) => p.id === resolvedId);
   const usage = resolvedId ? auth.usage?.[resolvedId] : undefined;
 
@@ -707,7 +725,18 @@ export function AccountSelector({
       ]}
       onSelect={(_sectionId, itemId) => {
         import("../../auth-profiles").then(
-          ({ resolveAccountSwitchTarget, switchAccountForTab }) => {
+          ({
+            resolveAccountSwitchTarget,
+            switchAccountForTab,
+            setDefaultAccount,
+          }) => {
+            // No live agent session (overview / shell / editor): the pick sets
+            // the provider default that new tasks inherit, rather than binding
+            // a phantom "default" session whose change the header never shows.
+            if (!isAgentTab) {
+              void setDefaultAccount(itemId);
+              return;
+            }
             const target = resolveAccountSwitchTarget(
               (state.tabs as Tab[] | undefined) ?? [],
               activeTabId,
