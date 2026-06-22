@@ -223,6 +223,11 @@
             packages = [
               rustToolchain
               pkgs.bun
+              # node + pnpm power the `understand-dashboard` helper: the
+              # understand-anything plugin's Vite dashboard runs on node, and
+              # pnpm installs/builds its packages on a cold plugin cache.
+              pkgs.nodejs
+              pkgs.pnpm
               pkgs.cargo-tauri
               pkgs.pkg-config
               pkgs.git
@@ -406,6 +411,17 @@
                   [ -d node_modules ] || bun install --frozen-lockfile
                   exec bun run dev --host 0.0.0.0 "$@"
                 '';
+              }
+              {
+                category = "docs";
+                name = "understand-dashboard";
+                # Visualize the understand-anything knowledge graph produced by
+                # the /understand skill (.understand-anything/knowledge-graph.json).
+                # The wrapper resolves the installed plugin, ensures its dashboard
+                # package is built, and runs Vite with GRAPH_DIR=<repo root>.
+                # Foreground like `dev`/`docs`; open the printed `?token=` URL.
+                help = "Launch the understand-anything knowledge-graph dashboard (reads .understand-anything/knowledge-graph.json)";
+                command = "exec ./scripts/understand-dashboard.sh \"$@\"";
               }
               {
                 category = "check";

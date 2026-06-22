@@ -27,18 +27,34 @@ subprocess. Business logic belongs in the agent, not the shell.
 Run inside `nix develop` (direnv auto-activates via `.envrc`). Devshell
 helpers (defined in `flake.nix`):
 
-| Command     | What it does                                                              |
-| ----------- | ------------------------------------------------------------------------- |
-| `dev`       | `scripts/dev.sh` → `cargo tauri dev` with port auto-increment             |
-| `docs`      | `vitepress dev` from `website/` bound to `0.0.0.0` (LAN-reachable; :5173) |
-| `build-app` | `cargo tauri build` — release bundle                                      |
-| `check`     | CI gate: clippy + tsc + ESLint + cargo test + vitest                      |
-| `lint`      | ESLint (no auto-fix)                                                      |
-| `test`      | `cargo test --lib` + `bunx vitest run`                                    |
-| `coverage`  | TS coverage report (vitest v8) → `coverage/`                              |
-| `fmt`       | treefmt (rustfmt + nixfmt + prettier + taplo)                             |
+| Command                | What it does                                                                                                                        |
+| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `dev`                  | `scripts/dev.sh` → `cargo tauri dev` with port auto-increment                                                                       |
+| `docs`                 | `vitepress dev` from `website/` bound to `0.0.0.0` (LAN-reachable; :5173)                                                           |
+| `build-app`            | `cargo tauri build` — release bundle                                                                                                |
+| `check`                | CI gate: clippy + tsc + ESLint + cargo test + vitest                                                                                |
+| `lint`                 | ESLint (no auto-fix)                                                                                                                |
+| `test`                 | `cargo test --lib` + `bunx vitest run`                                                                                              |
+| `coverage`             | TS coverage report (vitest v8) → `coverage/`                                                                                        |
+| `fmt`                  | treefmt (rustfmt + nixfmt + prettier + taplo)                                                                                       |
+| `understand-dashboard` | `scripts/understand-dashboard.sh` → Vite dashboard for `.understand-anything/knowledge-graph.json` (open the printed `?token=` URL) |
 
 ESLint is configured for **0 errors and 0 warnings**.
+
+### Knowledge graph (understand-anything)
+
+This repo ships an [understand-anything](https://github.com/Egonex-AI/Understand-Anything)
+knowledge graph under `.understand-anything/` (`knowledge-graph.json` +
+`domain-graph.json`), plus a graph-derived `docs/ONBOARDING.md`. View it with the
+`understand-dashboard` devshell helper; regenerate with `/understand` (refreshes
+on commit in-session when `autoUpdate: true` in `.understand-anything/config.json`
+— session-scoped via the plugin's hooks, not a standalone git hook).
+The plugin is declared in `.claude/settings.json`, so first-time contributors just
+run `/plugin install understand-anything@understand-anything` once (Claude Code
+prompts to trust the repo + add the marketplace), then `/understand`,
+`/understand-dashboard`, `/understand-onboard`, `/understand-domain`, etc. are
+available. `fingerprints.json` is committed (plain file, no Git-LFS) as the shared
+structural baseline the auto-update hooks compare against.
 
 Single tests:
 
