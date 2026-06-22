@@ -1,7 +1,7 @@
 {
   "version": "1.0.0",
-  "gitCommitHash": "24a58b2290611832965ce20eb7a30310551d83b2",
-  "generatedAt": "2026-06-22T03:30:12.550Z",
+  "gitCommitHash": "7b019865d57eabd5468268a3e4548e01c62e6de7",
+  "generatedAt": "2026-06-22T04:12:57.153Z",
   "files": {
     ".claude/skills/aethon-debug/scripts/debug-agent-diag.sh": {
       "filePath": ".claude/skills/aethon-debug/scripts/debug-agent-diag.sh",
@@ -70443,7 +70443,7 @@
     },
     "docs/ONBOARDING.md": {
       "filePath": "docs/ONBOARDING.md",
-      "contentHash": "c5108bb72fce0c2798105cadf9c5e3f059adff978ec149abf3124ccba75f3b11",
+      "contentHash": "e743b4eeb7613b58eb6ed063e96d1e69986b6461d77c94a58601d85d643735da",
       "functions": [],
       "classes": [],
       "imports": [],

@@ -28,8 +28,8 @@
       "GitHub Actions"
     ],
     "description": "Aethon is a Tauri 2 + React 19 + TypeScript desktop shell that embeds the pi coding agent and renders its output as live, interactive UI via the A2UI protocol, where the agent dynamically populates the interface rather than a fixed IDE layout. Note: this project has over 100 source files; consider scoping analysis to a subdirectory for faster results.",
-    "analyzedAt": "2026-06-22T03:29:45.567Z",
-    "gitCommitHash": "24a58b2290611832965ce20eb7a30310551d83b2"
+    "analyzedAt": "2026-06-22T04:12:55.991Z",
+    "gitCommitHash": "7b019865d57eabd5468268a3e4548e01c62e6de7"
   },
   "nodes": [
     {
