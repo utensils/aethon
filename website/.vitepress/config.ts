@@ -1,9 +1,20 @@
+import { readFileSync } from "node:fs";
 import { defineConfig } from "vitepress";
 
 // utensils.io is the org's GitHub Pages custom domain — every repo
 // Pages site is served at https://utensils.io/<repo>/.
 const SITE_URL = "https://utensils.io/aethon/";
 const REPO = "utensils/aethon";
+
+// Single source of truth for the nav version badge: read the app version from
+// the repo-root package.json (kept in lockstep with Cargo.toml / tauri.conf.json
+// by scripts/sync-version.mjs) at build time, so the badge tracks releases
+// automatically instead of drifting out of date as a hardcoded string.
+const APP_VERSION = (
+  JSON.parse(
+    readFileSync(new URL("../../package.json", import.meta.url), "utf-8"),
+  ) as { version: string }
+).version;
 
 export default defineConfig({
   lang: "en-US",
@@ -45,7 +56,7 @@ export default defineConfig({
       { text: "Troubleshooting", link: "/troubleshooting" },
       { text: "Knowledge Graph", link: "/knowledge-graph" },
       {
-        text: "v0.3.3",
+        text: `v${APP_VERSION}`,
         items: [
           {
             text: "Releases",

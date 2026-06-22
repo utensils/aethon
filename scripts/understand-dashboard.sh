@@ -19,6 +19,9 @@
 #
 # Usage: understand-dashboard [extra vite args...]
 #        understand-dashboard --host 0.0.0.0      # reachable on the LAN
+#        understand-dashboard --port 5999         # override the default port
+# Binds 127.0.0.1:5273 by default (NOT Vite's 5173) so it never collides with
+# the `docs` helper's vitepress dev server. Override with UNDERSTAND_DASHBOARD_PORT.
 set -euo pipefail
 
 # --- repo root (this script lives in <root>/scripts/) ---
@@ -101,11 +104,19 @@ echo "==> graph:     $GRAPH"
 echo "==> launching Vite (look for the http://127.0.0.1:<port>?token=<token> line; Ctrl+C to stop)"
 
 cd "$DASH"
+# Default to a dedicated port (NOT Vite's 5173): the `docs` helper runs
+# `vitepress dev` on 5173, and a dashboard left running there binds
+# 127.0.0.1:5173 which silently shadows vitepress's 0.0.0.0:5173 on localhost
+# (the kernel prefers the more-specific bind) — so `docs` would serve this
+# token-gated dashboard instead of the site. Passing `--port` here keeps the
+# two helpers off each other's toes. A user-supplied `--port` in "$@" comes
+# after and wins (last Vite flag takes precedence).
+DASH_PORT="${UNDERSTAND_DASHBOARD_PORT:-5273}"
 # Run the dashboard's own vite binary directly. `pnpm exec`/`pnpm run` would
 # first run an implicit deps-status check that calls `pnpm install`, which
 # fails against the read-only plugin cache even though node_modules is present.
 VITE_BIN="$DASH/node_modules/.bin/vite"
 if [ -x "$VITE_BIN" ]; then
-  exec env GRAPH_DIR="$PROJECT_ROOT" "$VITE_BIN" --host 127.0.0.1 "$@"
+  exec env GRAPH_DIR="$PROJECT_ROOT" "$VITE_BIN" --host 127.0.0.1 --port "$DASH_PORT" "$@"
 fi
-exec env GRAPH_DIR="$PROJECT_ROOT" npx --no-install vite --host 127.0.0.1 "$@"
+exec env GRAPH_DIR="$PROJECT_ROOT" npx --no-install vite --host 127.0.0.1 --port "$DASH_PORT" "$@"
