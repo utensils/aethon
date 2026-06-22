@@ -4,8 +4,11 @@ title: Knowledge Graph
 
 <script setup>
 import { withBase } from "vitepress";
-// Resolve against the configured VitePress base instead of hard-coding /aethon/.
-const dashboardUrl = withBase("/dashboard/");
+// Link to index.html explicitly: VitePress's dev server (vitepress dev) routes a
+// bare directory path (/dashboard/) through its own SPA fallback and never serves
+// the vendored public/dashboard/index.html. The explicit file works in both
+// `vitepress dev` and the built GitHub Pages site.
+const dashboardUrl = withBase("/dashboard/index.html");
 </script>
 
 # Knowledge Graph
