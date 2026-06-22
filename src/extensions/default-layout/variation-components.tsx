@@ -641,6 +641,13 @@ export function AccountSelector({
 
   const activeTabId =
     typeof state.activeTabId === "string" ? state.activeTabId : "default";
+  const activeTab = (
+    (state.tabs as Array<{
+      id: string;
+      model?: string;
+      authProfileId?: string;
+    }>) ?? []
+  ).find((t) => t.id === activeTabId);
 
   // Only offer accounts for the active tab's model provider — switching to a
   // profile from another provider would point the tab's auth at a provider
@@ -653,13 +660,20 @@ export function AccountSelector({
   if (selectable.length === 0) return null;
 
   // Resolve the *effective* account so the chip always reflects which one a
-  // prompt would actually use — even before the user explicitly picks one:
-  //   tab assignment → provider default → sole default → first profile.
+  // prompt would actually use — even before the user explicitly picks one.
+  // The tab mirror updates immediately on auth_profile_changed, while the
+  // snapshot map can lag until a later auth_profiles refresh; prefer the tab
+  // value so the header flips as soon as the switch lands.
+  const selectableIds = new Set(selectable.map((p) => p.id));
+  const firstSelectable = (...ids: Array<string | undefined>) =>
+    ids.find((id) => id && selectableIds.has(id));
   const resolvedId =
-    auth.activeByTab?.[activeTabId] ??
-    (tabProvider ? auth.defaultByProvider?.[tabProvider] : undefined) ??
-    soleDefault(auth.defaultByProvider) ??
-    selectable[0]?.id;
+    firstSelectable(
+      activeTab?.authProfileId,
+      auth.activeByTab?.[activeTabId],
+      tabProvider ? auth.defaultByProvider?.[tabProvider] : undefined,
+      soleDefault(auth.defaultByProvider),
+    ) ?? selectable[0]?.id;
   const activeProfile = selectable.find((p) => p.id === resolvedId);
   const usage = resolvedId ? auth.usage?.[resolvedId] : undefined;
 

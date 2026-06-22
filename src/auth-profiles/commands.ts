@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { isAgentTabBusy } from "../utils/agentBusy";
+import { isAgentTabInFlight } from "../utils/agentBusy";
 import { OVERVIEW_TAB_ID, type Tab } from "../types/tab";
 
 export interface AccountSwitchTarget {
@@ -31,7 +31,7 @@ export function resolveAccountSwitchTarget(
     tabId: tab.id,
     cwd: tab.cwd,
     model: tab.model,
-    busy: isAgentTabBusy(tab, { includeQueue: true }),
+    busy: isAgentTabInFlight(tab),
   };
 }
 
