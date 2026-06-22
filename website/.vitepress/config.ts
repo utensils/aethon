@@ -43,6 +43,7 @@ export default defineConfig({
         activeMatch: "/reference/",
       },
       { text: "Troubleshooting", link: "/troubleshooting" },
+      { text: "Knowledge Graph", link: "/knowledge-graph" },
       {
         text: "v0.3.3",
         items: [
