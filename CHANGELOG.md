@@ -4,6 +4,13 @@ All notable changes to Aethon. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 [SemVer](https://semver.org/).
 
+## [0.10.2](https://github.com/utensils/aethon/compare/v0.10.1...v0.10.2) (2026-06-22)
+
+
+### Bug Fixes
+
+* **auth:** switch the codex account from the overview header ([#348](https://github.com/utensils/aethon/issues/348)) ([5c24fcc](https://github.com/utensils/aethon/commit/5c24fccb962cd58c2d5c32fb251c42ba74afb7ca))
+
 ## [0.10.1](https://github.com/utensils/aethon/compare/v0.10.0...v0.10.1) (2026-06-22)
 
 
