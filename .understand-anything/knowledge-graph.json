@@ -28,8 +28,8 @@
       "GitHub Actions"
     ],
     "description": "Aethon is a Tauri 2 + React 19 + TypeScript desktop shell that embeds the pi coding agent and renders its output as live, interactive UI via the A2UI protocol, where the agent dynamically populates the interface rather than a fixed IDE layout. Note: this project has over 100 source files; consider scoping analysis to a subdirectory for faster results.",
-    "analyzedAt": "2026-06-22T01:23:18.621Z",
-    "gitCommitHash": "2a4248c041a16c23d55b4a9f48314837b792b904"
+    "analyzedAt": "2026-06-22T03:29:45.567Z",
+    "gitCommitHash": "24a58b2290611832965ce20eb7a30310551d83b2"
   },
   "nodes": [
     {
@@ -42225,6 +42225,46 @@
         "config"
       ],
       "complexity": "moderate"
+    },
+    {
+      "id": "file:scripts/understand-dashboard.sh",
+      "type": "file",
+      "name": "understand-dashboard.sh",
+      "filePath": "scripts/understand-dashboard.sh",
+      "summary": "Foreground launcher for the understand-anything knowledge-graph dashboard: resolves the installed plugin across versions/hosts, ensures its dashboard package and core are built, and runs Vite with GRAPH_DIR pointed at the repo root.",
+      "tags": [
+        "tooling",
+        "script",
+        "dashboard",
+        "developer-experience"
+      ],
+      "complexity": "moderate"
+    },
+    {
+      "id": "document:docs/ONBOARDING.md",
+      "type": "document",
+      "name": "ONBOARDING.md",
+      "filePath": "docs/ONBOARDING.md",
+      "summary": "Graph-derived onboarding guide for new contributors: project overview, the ten architecture layers with key files, core concepts, the guided tour, a per-layer file map, and complexity hotspots.",
+      "tags": [
+        "documentation",
+        "onboarding",
+        "architecture"
+      ],
+      "complexity": "moderate"
+    },
+    {
+      "id": "config:.claude/settings.json",
+      "type": "config",
+      "name": "settings.json",
+      "filePath": ".claude/settings.json",
+      "summary": "Project-scoped Claude Code settings that register the understand-anything marketplace and enable its plugin, so contributors get the /understand* skills after a one-time /plugin install.",
+      "tags": [
+        "configuration",
+        "claude-code",
+        "tooling"
+      ],
+      "complexity": "simple"
     }
   ],
   "edges": [
@@ -83558,6 +83598,13 @@
       "type": "calls",
       "direction": "forward",
       "weight": 0.7
+    },
+    {
+      "source": "document:docs/ONBOARDING.md",
+      "target": "document:CLAUDE.md",
+      "type": "related",
+      "direction": "forward",
+      "weight": 0.5
     }
   ],
   "layers": [
@@ -84562,7 +84609,8 @@
         "document:src/file-icons/SOURCE.md",
         "file:website/.vitepress/config.ts",
         "file:website/.vitepress/theme/index.ts",
-        "file:website/.vitepress/theme/style.css"
+        "file:website/.vitepress/theme/style.css",
+        "document:docs/ONBOARDING.md"
       ]
     },
     {
@@ -84605,7 +84653,8 @@
         "file:examples/pi-extensions/aethon-sidebar-panel.ts",
         "file:examples/pi-extensions/aethon-theme.ts",
         "file:examples/pi-extensions/aethon-types.d.ts",
-        "file:scripts/sync-version.mjs"
+        "file:scripts/sync-version.mjs",
+        "file:scripts/understand-dashboard.sh"
       ]
     },
     {
@@ -84671,7 +84720,8 @@
         "config:src-tauri/capabilities/default.json",
         "config:src-tauri/icons/android/mipmap-anydpi-v26/ic_launcher.xml",
         "config:src-tauri/icons/android/values/ic_launcher_background.xml",
-        "file:vite.config.ts"
+        "file:vite.config.ts",
+        "config:.claude/settings.json"
       ]
     }
   ],

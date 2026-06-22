@@ -1,8 +1,8 @@
 # Aethon — Onboarding Guide
 
-> Generated from the project knowledge graph (2671 nodes / 5902 edges / 10 layers / 14 tour
+> Generated from the project knowledge graph (2674 nodes / 5903 edges / 10 layers / 14 tour
 > steps). This guide is a high-level map for new contributors. Every file, layer, and concept
-> below is grounded in the analyzed codebase at commit `2a4248c`.
+> below is grounded in the analyzed codebase at commit `24a58b2`.
 
 ---
 
