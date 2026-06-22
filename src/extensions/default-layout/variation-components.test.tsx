@@ -1,8 +1,26 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 
-import { ModelPicker } from "./variation-components";
+const authProfileMocks = vi.hoisted(() => ({
+  switchAccountForTab: vi.fn(() => Promise.resolve()),
+}));
+
+vi.mock("../../auth-profiles", async (importOriginal) => {
+  const actual = await importOriginal<object>();
+  return {
+    ...actual,
+    switchAccountForTab: authProfileMocks.switchAccountForTab,
+  };
+});
+
+import { AccountSelector, ModelPicker } from "./variation-components";
 
 beforeEach(() => {
   vi.stubGlobal("requestAnimationFrame", (cb: FrameRequestCallback) => {
@@ -14,6 +32,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
+  authProfileMocks.switchAccountForTab.mockClear();
 });
 
 describe("ModelPicker", () => {
@@ -161,6 +180,116 @@ describe("ModelPicker", () => {
       "select",
       { sectionId: "models", itemId: "openai/gpt-5.5" },
       "openai/gpt-5.5",
+    );
+  });
+});
+
+describe("AccountSelector", () => {
+  it("shows the active tab auth profile even when the snapshot map is stale", () => {
+    render(
+      <AccountSelector
+        component={{
+          id: "account-selector",
+          type: "account-selector",
+          props: {},
+        }}
+        state={{
+          activeTabId: "tab-1",
+          tabs: [
+            {
+              id: "tab-1",
+              kind: "agent",
+              title: "Tab 1",
+              cwd: "/repo",
+              model: "openai-codex/gpt-5.5",
+              waiting: false,
+              authProfileId: "openai-codex-secondary",
+              messages: [],
+            },
+          ],
+          authProfiles: {
+            profiles: [
+              {
+                id: "openai-codex-primary",
+                providerId: "openai-codex",
+                label: "Primary",
+                kind: "oauth",
+              },
+              {
+                id: "openai-codex-secondary",
+                providerId: "openai-codex",
+                label: "Secondary",
+                kind: "oauth",
+              },
+            ],
+            activeByTab: { "tab-1": "openai-codex-primary" },
+            defaultByProvider: { "openai-codex": "openai-codex-primary" },
+          },
+        }}
+        onEvent={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: /Secondary/i })).toBeTruthy();
+  });
+
+  it("switches accounts from the header when a tab only has queued messages", async () => {
+    render(
+      <AccountSelector
+        component={{
+          id: "account-selector",
+          type: "account-selector",
+          props: {},
+        }}
+        state={{
+          activeTabId: "tab-1",
+          tabs: [
+            {
+              id: "tab-1",
+              kind: "agent",
+              title: "Tab 1",
+              cwd: "/repo",
+              model: "openai-codex/gpt-5.5",
+              waiting: false,
+              queueCount: 1,
+              queuedMessages: [
+                { id: "q1", content: "continue on secondary" },
+              ],
+              messages: [],
+            },
+          ],
+          authProfiles: {
+            profiles: [
+              {
+                id: "openai-codex-primary",
+                providerId: "openai-codex",
+                label: "Primary",
+                kind: "oauth",
+              },
+              {
+                id: "openai-codex-secondary",
+                providerId: "openai-codex",
+                label: "Secondary",
+                kind: "oauth",
+              },
+            ],
+            activeByTab: { "tab-1": "openai-codex-primary" },
+            defaultByProvider: { "openai-codex": "openai-codex-primary" },
+          },
+        }}
+        onEvent={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /Primary/i }));
+    fireEvent.click(screen.getByText("Secondary").closest("li")!);
+
+    await waitFor(() =>
+      expect(authProfileMocks.switchAccountForTab).toHaveBeenCalledWith(
+        "tab-1",
+        "openai-codex-secondary",
+        { cwd: "/repo", model: "openai-codex/gpt-5.5" },
+      ),
     );
   });
 });

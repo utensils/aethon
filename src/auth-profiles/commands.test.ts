@@ -95,4 +95,19 @@ describe("resolveAccountSwitchTarget", () => {
     );
     expect(target.busy).toBe(true);
   });
+
+  it("allows switching accounts before queued messages drain", () => {
+    const target = resolveAccountSwitchTarget(
+      [
+        agentTab({
+          id: "t-queued",
+          waiting: false,
+          queueCount: 1,
+          queuedMessages: [{ id: "q1", content: "retry on secondary" }],
+        }),
+      ],
+      "t-queued",
+    );
+    expect(target.busy).toBe(false);
+  });
 });
