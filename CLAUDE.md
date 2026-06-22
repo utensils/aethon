@@ -53,7 +53,8 @@ The plugin is declared in `.claude/settings.json`, so first-time contributors ju
 run `/plugin install understand-anything@understand-anything` once (Claude Code
 prompts to trust the repo + add the marketplace), then `/understand`,
 `/understand-dashboard`, `/understand-onboard`, `/understand-domain`, etc. are
-available. `fingerprints.json` is git-ignored (regenerable local baseline).
+available. `fingerprints.json` is committed (plain file, no Git-LFS) as the shared
+structural baseline the auto-update hooks compare against.
 
 Single tests:
 

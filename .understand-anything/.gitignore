@@ -1,9 +1,9 @@
-# understand-anything scratch — regenerable, not a source of truth.
-# Keep the graph (knowledge-graph.json), meta.json, config.json and
-# .understandignore tracked; drop the working dirs and the regenerable
-# fingerprints baseline (1.7 MB, churn-heavy, rebuilt by every analysis —
-# kept local-only to avoid noisy diffs; no Git-LFS).
+# understand-anything scratch — only the working dirs are regenerable junk.
+# The durable artifacts stay TRACKED: knowledge-graph.json, domain-graph.json,
+# meta.json, config.json, .understandignore, and fingerprints.json.
+# fingerprints.json is committed on purpose (plain file, no Git-LFS): with
+# autoUpdate=true the plugin's hooks need a shared structural baseline, else a
+# fresh clone treats every changed file as STRUCTURAL on its first incremental.
 intermediate/
 tmp/
 .trash-*/
-fingerprints.json

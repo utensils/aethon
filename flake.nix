@@ -223,6 +223,11 @@
             packages = [
               rustToolchain
               pkgs.bun
+              # node + pnpm power the `understand-dashboard` helper: the
+              # understand-anything plugin's Vite dashboard runs on node, and
+              # pnpm installs/builds its packages on a cold plugin cache.
+              pkgs.nodejs
+              pkgs.pnpm
               pkgs.cargo-tauri
               pkgs.pkg-config
               pkgs.git

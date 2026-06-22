@@ -74,17 +74,24 @@ fi
 
 DASH="$PLUGIN_ROOT/packages/dashboard"
 
-if ! command -v pnpm >/dev/null 2>&1; then
-  echo "error: pnpm not found on PATH (needed to run the dashboard)." >&2
+# pnpm is only needed to INSTALL deps / BUILD core. When the installed plugin
+# already ships node_modules + a built core (the common case), we launch via
+# the local vite binary and never touch pnpm — so don't hard-require it up front.
+need_pnpm() {
+  command -v pnpm >/dev/null 2>&1 && return 0
+  echo "error: the dashboard package needs a build step ($1) but pnpm is not on PATH." >&2
+  echo "       Run inside 'nix develop' (pnpm is in the devshell), or install pnpm and retry." >&2
   exit 1
-fi
+}
 
 # --- ensure deps installed + core built (the dashboard imports @understand-anything/core) ---
 if [ ! -d "$DASH/node_modules" ]; then
+  need_pnpm "missing dashboard node_modules"
   echo "==> installing dashboard deps (pnpm install)"
   ( cd "$PLUGIN_ROOT" && { pnpm install --frozen-lockfile 2>/dev/null || pnpm install; } )
 fi
 if [ ! -f "$PLUGIN_ROOT/packages/core/dist/index.js" ]; then
+  need_pnpm "missing @understand-anything/core build"
   echo "==> building @understand-anything/core"
   ( cd "$PLUGIN_ROOT" && pnpm --filter @understand-anything/core build )
 fi
