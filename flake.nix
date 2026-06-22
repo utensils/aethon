@@ -408,6 +408,17 @@
                 '';
               }
               {
+                category = "docs";
+                name = "understand-dashboard";
+                # Visualize the understand-anything knowledge graph produced by
+                # the /understand skill (.understand-anything/knowledge-graph.json).
+                # The wrapper resolves the installed plugin, ensures its dashboard
+                # package is built, and runs Vite with GRAPH_DIR=<repo root>.
+                # Foreground like `dev`/`docs`; open the printed `?token=` URL.
+                help = "Launch the understand-anything knowledge-graph dashboard (reads .understand-anything/knowledge-graph.json)";
+                command = "exec ./scripts/understand-dashboard.sh \"$@\"";
+              }
+              {
                 category = "check";
                 name = "check";
                 help = "Full CI gate: clippy + tsc + ESLint + cargo test + vitest";
