@@ -10,11 +10,17 @@ on:
     paths:
       - "website/**"
       - ".github/workflows/docs.yml"
+      # The nav version badge is read from package.json at build time, so a
+      # release bump (release-please, release-type: node) must rebuild the
+      # site even though it touches no website/** files — otherwise the badge
+      # goes stale until the next docs edit.
+      - "package.json"
   pull_request:
     branches: [main]
     paths:
       - "website/**"
       - ".github/workflows/docs.yml"
+      - "package.json"
   workflow_dispatch:
 
 # Only one deploy to Pages at a time. Build runs on PR + main; deploy
