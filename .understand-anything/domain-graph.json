@@ -15,7 +15,7 @@
     ],
     "description": "Aethon is a developer-facing desktop application: a thin Tauri 2 + React 19 shell that embeds the pi coding agent as a bun subprocess and renders its output as live, interactive UI via the A2UI protocol. The agent drives the interface (layout-as-payload) instead of a fixed IDE, while the Rust shell owns OS boundaries — agent process supervision, PTY shells, git/GitHub status, voice capture, auto-update, and LAN peer discovery.",
     "analyzedAt": "2026-06-22T03:05:08Z",
-    "gitCommitHash": "24a58b2290611832965ce20eb7a30310551d83b2"
+    "gitCommitHash": "7b019865d57eabd5468268a3e4548e01c62e6de7"
   },
   "nodes": [
     {
