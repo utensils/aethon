@@ -1,0 +1,6 @@
+# understand-anything scratch — regenerable, not a source of truth.
+# Keep the graph (knowledge-graph.json), meta.json, fingerprints.json,
+# config.json and .understandignore tracked; drop the working dirs.
+intermediate/
+tmp/
+.trash-*/
