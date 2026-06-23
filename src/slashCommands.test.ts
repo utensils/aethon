@@ -438,6 +438,44 @@ describe("buildBuiltinSlashCommands", () => {
     expect(system[0]).toContain("Prompt: sync from origin main");
   });
 
+  it("/loop reuse adopts an existing loop on the active session", async () => {
+    const system: string[] = [];
+    const notifications: string[] = [];
+    const reused: string[] = [];
+    const ctx = makeSlashContext({
+      appendSystem: (text) => system.push(text),
+      notify: (input) => notifications.push(input.title),
+      listScheduledTasks: () =>
+        Promise.resolve([
+          {
+            id: "abcdef123456",
+            label: "old loop",
+            status: "cancelled",
+            mode: "loopSelfPaced",
+            schedule: { kind: "selfPaced" },
+          },
+        ] as never),
+      reuseScheduledTask: (id) => {
+        reused.push(id);
+        return Promise.resolve({
+          id,
+          label: "old loop",
+          status: "scheduled",
+          mode: "loopSelfPaced",
+          schedule: { kind: "selfPaced", nextRunAt: 123 },
+        } as never);
+      },
+      createScheduledTask: () => Promise.reject(new Error("should not create")),
+    });
+    const loop = buildBuiltinSlashCommands().find((c) => c.name === "loop")!;
+
+    await loop.run("reuse abcdef12", ctx);
+
+    expect(reused).toEqual(["abcdef123456"]);
+    expect(notifications).toContain("Loop reused here");
+    expect(system[0]).toContain("Loop reused on this session");
+  });
+
   it("/tasks delete invokes true deletion instead of cancel", async () => {
     const calls: string[] = [];
     const notifications: string[] = [];

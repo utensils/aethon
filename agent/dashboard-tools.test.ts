@@ -38,8 +38,8 @@ afterEach(() => {
   (globalThis as { aethon?: unknown }).aethon = originalAethon;
 });
 
-function getTool(name: string) {
-  const tools = buildDashboardTools();
+function getTool(name: string, state?: Parameters<typeof buildDashboardTools>[0]) {
+  const tools = buildDashboardTools(state);
   const t = tools.find((tool) => tool.name === name);
   if (!t) throw new Error(`tool ${name} not in catalogue`);
   return t;
@@ -51,6 +51,7 @@ describe("buildDashboardTools()", () => {
     expect(tools.map((t) => t.name).sort()).toEqual([
       "getOpenIssue",
       "getRepoOverview",
+      "listAvailableModels",
       "listOpenIssues",
       "refreshDashboard",
       "startTask",
@@ -59,6 +60,26 @@ describe("buildDashboardTools()", () => {
 });
 
 describe("startTask tool", () => {
+  it("documents that model ids must be provider-qualified and available from the runtime model list", () => {
+    const tool = getTool("startTask") as {
+      parameters: {
+        properties?: Record<string, { description?: string }>;
+      };
+      description?: string;
+    };
+    expect(tool.description).toContain("configured Aethon model ids");
+    expect(tool.description).toContain("must set `model`");
+    expect(tool.parameters.properties?.model?.description).toContain(
+      "openai-codex/gpt-5.5",
+    );
+    expect(tool.parameters.properties?.model?.description).toContain(
+      "listAvailableModels",
+    );
+    expect(tool.parameters.properties?.model?.description).toContain(
+      "Required",
+    );
+  });
+
   it("forwards prompt + workspace options to aethon.tasks.start", async () => {
     fakeTasks.start.mockResolvedValue({ ok: true, data: { projectId: "p1" } });
     const tool = getTool("startTask");
@@ -90,8 +111,41 @@ describe("startTask tool", () => {
     fakeTasks.start.mockResolvedValue({ ok: false, error: "no project" });
     const tool = getTool("startTask");
     await expect(
-      tool.execute("c1", { projectPath: "/p", prompt: "hi" }),
+      tool.execute("c1", {
+        projectPath: "/p",
+        prompt: "hi",
+        model: "openai-codex/gpt-5.5",
+      }),
     ).rejects.toThrow("no project");
+  });
+});
+
+describe("listAvailableModels tool", () => {
+  it("returns exact provider-qualified runtime model ids", async () => {
+    const tool = getTool("listAvailableModels", {
+      cachedModels: [
+        { id: "openai-codex/gpt-5.5", label: "GPT-5.5" },
+        {
+          id: "ollama-hal9000/qwen3.6-128k:latest",
+          label: "hal9000: qwen",
+        },
+      ],
+    } as Parameters<typeof buildDashboardTools>[0]);
+    const result = await tool.execute("c1", {});
+
+    expect(result.content[0]?.text).toContain("openai-codex/gpt-5.5");
+    expect(result.content[0]?.text).toContain(
+      "ollama-hal9000/qwen3.6-128k:latest",
+    );
+    expect(result.details).toEqual({
+      models: [
+        { id: "openai-codex/gpt-5.5", label: "GPT-5.5" },
+        {
+          id: "ollama-hal9000/qwen3.6-128k:latest",
+          label: "hal9000: qwen",
+        },
+      ],
+    });
   });
 });
 

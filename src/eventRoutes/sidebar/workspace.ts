@@ -1,5 +1,7 @@
 import type { EventRouteHandler } from "../types";
 import { activateOverview } from "../tabStrip";
+import type { Tab } from "../../types/tab";
+import { normalizeSessionPath } from "../../hooks/projectOps/tabBuckets";
 
 /** Workspace event family — all routed through useProjectOps actions. */
 export const handleSidebarCreateWorkspace: EventRouteHandler = (
@@ -215,6 +217,61 @@ export const handleSidebarRetryPendingWorkspace: EventRouteHandler = (
   if (eventType !== "retry-pending-workspace") return false;
   const workspaceId = (data as { workspaceId?: string } | undefined)?.workspaceId;
   if (workspaceId) void ctx.retryPendingWorkspace(workspaceId);
+  return true;
+};
+
+export const handleSidebarStopWorkspaceAgent: EventRouteHandler = (
+  { eventType, data },
+  ctx,
+) => {
+  if (eventType !== "stop-workspace-agent") return false;
+  const workspaceId = (data as { workspaceId?: string } | undefined)?.workspaceId;
+  if (!workspaceId) return true;
+
+  const sidebar =
+    (ctx.stateRef.current.sidebar as
+      | {
+          projects?: {
+            workspaces?: { id: string; path?: string }[];
+          }[];
+        }
+      | undefined) ?? {};
+  let workspacePath: string | undefined;
+  for (const project of sidebar.projects ?? []) {
+    const workspace = project.workspaces?.find((w) => w.id === workspaceId);
+    if (workspace) {
+      workspacePath = workspace.path;
+      break;
+    }
+  }
+  if (!workspacePath) return true;
+
+  const targetPath = normalizeSessionPath(workspacePath);
+  const running = new Set(
+    Object.keys(
+      (ctx.stateRef.current.agentRunningTabs as
+        | Record<string, unknown>
+        | undefined) ?? {},
+    ),
+  );
+  const tabs: Tab[] = [];
+  const collect = (list: Tab[] | undefined) => {
+    for (const tab of list ?? []) {
+      if (tab.kind === "agent" && normalizeSessionPath(tab.cwd) === targetPath) {
+        tabs.push(tab);
+      }
+    }
+  };
+  collect(ctx.stateRef.current.tabs as Tab[] | undefined);
+  const buckets = ctx.stateRef.current.persistedTabBuckets as
+    | Record<string, { tabs?: Tab[] }>
+    | undefined;
+  for (const bucket of Object.values(buckets ?? {})) collect(bucket.tabs);
+
+  const stopIds = tabs
+    .filter((tab) => running.has(tab.id) || tab.waiting === true)
+    .map((tab) => tab.id);
+  for (const tabId of [...new Set(stopIds)]) void ctx.stopPrompt(tabId);
   return true;
 };
 

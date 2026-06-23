@@ -9,6 +9,7 @@ import {
   handleSidebarDeleteSession,
   handleSidebarRenameSession,
   handleSidebarSetProjectWorkspaceBase,
+  handleSidebarStopWorkspaceAgent,
   handleSidebarSwitchWorkspace,
   handleSidebarToggleExtension,
   handleSectionedSelect,
@@ -101,6 +102,51 @@ describe("handleSidebarRemoveWorkspace", () => {
     expect(ctx.removeWorkspaceById).toHaveBeenCalledWith("wt-1", {
       confirmed: true,
     });
+  });
+});
+
+describe("handleSidebarStopWorkspaceAgent", () => {
+  it("stops running agent tabs in the selected workspace without switching focus", async () => {
+    const { ctx, mocks } = buildRouteFixture({
+      state: {
+        sidebar: {
+          projects: [
+            {
+              id: "proj-1",
+              workspaces: [{ id: "wt-1", path: "/repo/aethon-fix-issue" }],
+            },
+          ],
+        },
+        tabs: [],
+        persistedTabBuckets: {
+          "proj-1::workspace::wt-1": {
+            tabs: [
+              {
+                id: "tab-bg",
+                kind: "agent",
+                cwd: "/repo/aethon-fix-issue",
+                waiting: false,
+              },
+            ],
+          },
+        },
+        agentRunningTabs: { "tab-bg": true },
+      },
+    });
+
+    const handled = await handleSidebarStopWorkspaceAgent(
+      {
+        component: { id: "sidebar" },
+        eventType: "stop-workspace-agent",
+        data: { workspaceId: "wt-1" },
+      },
+      ctx,
+    );
+
+    expect(handled).toBe(true);
+    expect(mocks.stopPrompt).toHaveBeenCalledWith("tab-bg");
+    expect(mocks.activateWorkspace).not.toHaveBeenCalled();
+    expect(mocks.setActiveProjectById).not.toHaveBeenCalled();
   });
 });
 
