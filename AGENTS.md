@@ -25,8 +25,31 @@ by the agent.
 
 ## Common Commands
 
-Run inside `nix develop` (or via direnv — `.envrc` is `use flake`). The
-devshell exposes these helpers (defined in `flake.nix`):
+Run commands inside the Nix devshell (or via direnv — `.envrc` is `use flake`).
+Before running native app commands, explicitly check whether the shell is
+already in that environment:
+
+```bash
+printenv IN_NIX_SHELL DIRENV_DIR
+command -v dev check build-app
+```
+
+If `IN_NIX_SHELL` / `DIRENV_DIR` are empty or the devshell helper commands are
+missing, do not run `bun tauri dev`, `cargo tauri dev`, `cargo test`, or
+`build-app` directly from the plain shell. Use `nix develop -c ...` instead:
+
+```bash
+nix develop -c dev
+nix develop -c check
+nix develop -c build-app
+nix develop -c cargo test --lib -p aethon -- helpers::test_name
+```
+
+This is mandatory for native macOS UAT. Plain shells often inherit incompatible
+flags or miss SDK/libiconv/toolchain paths, causing noisy linker failures that
+are not app regressions.
+
+The devshell exposes these helpers (defined in `flake.nix`):
 
 | Command     | What it does                                                                  |
 | ----------- | ----------------------------------------------------------------------------- |
