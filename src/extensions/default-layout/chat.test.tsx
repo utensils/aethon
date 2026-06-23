@@ -1918,7 +1918,9 @@ describe("ChatHistory turn activity feed (mocked Virtuoso renders rows)", () => 
       transcriptVisibility: { toolCalls: "group-run" },
     });
     expect(screen.getByText("done")).toBeTruthy();
-    expect(screen.getByText(/2 tool calls/)).toBeTruthy();
+    const summary = screen.getByRole("button", { name: /2 tool calls/ });
+    expect(summary).toBeTruthy();
+    expect(summary.textContent).toContain("Worked for 1s · 2 tool calls");
     expect(screen.queryByText(/read · bash/)).toBeNull();
   });
 
@@ -2187,6 +2189,9 @@ describe("ChatHistory turn activity feed (mocked Virtuoso renders rows)", () => 
     fireEvent.click(screen.getByRole("button", { name: /Edited 2 files/ }));
 
     expect(screen.getAllByText("Edited 2 files").length).toBeGreaterThan(1);
+    const summary = screen.getByRole("button", { name: /Edited 2 files/ });
+    expect(summary.textContent).toContain("Edited 2 files · +13 -3");
+    expect(summary.textContent).not.toContain("tool call");
     expect(screen.getByText("App.tsx")).toBeTruthy();
     expect(screen.getByText("message-groups.tsx")).toBeTruthy();
     expect(screen.getAllByText("+13").length).toBeGreaterThan(0);

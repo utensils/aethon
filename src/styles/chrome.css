@@ -10099,6 +10099,10 @@ button.ae-vcs-chip:focus-visible {
   color: var(--text-dim);
   opacity: 0.85;
 }
+.ae-turn-block-separator {
+  color: color-mix(in oklab, var(--text-dim) 70%, transparent);
+  opacity: 0.75;
+}
 .ae-turn-block-files {
   display: inline-flex;
   align-items: center;

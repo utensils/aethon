@@ -117,6 +117,7 @@ function FileChangeStats({
       {additions > 0 ? (
         <span className="ae-turn-block-add">+{additions}</span>
       ) : null}
+      {additions > 0 && deletions > 0 ? " " : null}
       {deletions > 0 ? (
         <span className="ae-turn-block-del">-{deletions}</span>
       ) : null}
@@ -141,6 +142,7 @@ function activityLabel({
 }
 
 function activityMeta(summary: ToolMessageSummary): string {
+  if (summary.fileChanges.total > 0) return "";
   return summary.total > 0 ? toolCountLabel(summary) : "";
 }
 
@@ -437,10 +439,11 @@ function TurnActivity({
   });
   const meta = activityMeta(summary);
   const fileLabel = fileChangeLabel(summary);
+  const showFileStats = label === fileLabel;
   const accessibleSummary = [
     label,
     meta,
-    label === fileLabel
+    showFileStats
       ? fileChangeStatsLabel(summary).replace(fileLabel, "").trim()
       : "",
   ]
@@ -485,8 +488,22 @@ function TurnActivity({
           {detailsOpen ? "▾" : "▸"}
         </span>
         <span className="ae-turn-block-label">{label}</span>
-        {meta ? <span className="ae-turn-block-meta">{meta}</span> : null}
-        <FileChangeStats summary={summary} hideLabel={label === fileLabel} />
+        {meta ? (
+          <>
+            <span className="ae-turn-block-separator" aria-hidden="true">
+              {" · "}
+            </span>
+            <span className="ae-turn-block-meta">{meta}</span>
+          </>
+        ) : null}
+        {showFileStats &&
+        (summary.fileChanges.additions > 0 ||
+          summary.fileChanges.deletions > 0) ? (
+          <span className="ae-turn-block-separator" aria-hidden="true">
+            {" · "}
+          </span>
+        ) : null}
+        <FileChangeStats summary={summary} hideLabel={showFileStats} />
       </button>
       {detailsBodyVisible && (
         <div className="ae-turn-activity-body" data-state={detailsBodyState}>
