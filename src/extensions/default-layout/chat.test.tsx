@@ -1464,6 +1464,47 @@ describe("ChatInput", () => {
       screen.getByRole("link", { name: "https://example.com/after" }),
     ).toBeTruthy();
   });
+
+  it("lets collapsed thinking blocks stay user-expanded across rerenders", () => {
+    const message = {
+      id: "1",
+      role: "agent",
+      text: "before <thinking>check the plan</thinking> after",
+    };
+    const { onEvent, rerender } = renderHistory({
+      messages: [message],
+      waiting: false,
+      transcriptVisibility: { thinking: "collapse", toolCalls: "show" },
+    });
+
+    const details = screen.getByText("Thinking").closest("details");
+    expect(details).toBeInstanceOf(HTMLDetailsElement);
+    const thinkingBlock = details as HTMLDetailsElement;
+    expect(thinkingBlock.hasAttribute("open")).toBe(false);
+
+    thinkingBlock.open = true;
+
+    rerender(
+      <ChatHistory
+        component={{
+          id: "chat-history",
+          type: "chat-history",
+          props: { messages: { $ref: "/messages" } },
+        }}
+        state={{
+          messages: [message],
+          waiting: true,
+          transcriptVisibility: { thinking: "collapse", toolCalls: "show" },
+        }}
+        onEvent={onEvent}
+      />,
+    );
+
+    expect(
+      (screen.getByText("Thinking").closest("details") as HTMLDetailsElement)
+        .open,
+    ).toBe(true);
+  });
 });
 
 describe("ChatInput @ completion", () => {
