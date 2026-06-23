@@ -880,6 +880,43 @@ describe("useProjectOps overview terminal project switches", () => {
     expect(newShellTab).not.toHaveBeenCalled();
   });
 
+  it("remembers a project's selected session after visiting overview and another project", () => {
+    const newShellTab = vi.fn();
+    const { result, stateRef } = renderProjectOps(twoProjectState(), {
+      newShellTab,
+    });
+    const alphaAgent = nonEmptyAgentTab("alpha-agent", "Alpha", "project-1");
+    const betaAgent = nonEmptyAgentTab("beta-agent", "Beta", "project-2");
+    result.current.tabBucketsRef.current.set(
+      projectScopeBucketKey("project-2", null),
+      {
+        tabs: [betaAgent],
+        activeTabId: "beta-agent",
+      },
+    );
+    stateRef.current = {
+      ...stateRef.current,
+      activeTabId: OVERVIEW_TAB_ID,
+      terminal: { open: false },
+      tabs: [alphaAgent],
+    };
+
+    act(() => {
+      expect(result.current.setActiveProjectById("project-2")).toBe(true);
+    });
+    expect(stateRef.current.activeTabId).toBe("beta-agent");
+
+    act(() => {
+      expect(result.current.setActiveProjectById("project-1")).toBe(true);
+    });
+
+    expect(stateRef.current.activeTabId).toBe("alpha-agent");
+    expect((stateRef.current.tabs as Tab[]).map((t) => t.id)).toEqual([
+      "alpha-agent",
+    ]);
+    expect(newShellTab).not.toHaveBeenCalled();
+  });
+
   it("restores the host session when clearing to the host bucket", () => {
     const newShellTab = vi.fn();
     const { result, stateRef } = renderProjectOps(twoProjectState(), {

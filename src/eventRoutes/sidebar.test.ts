@@ -378,7 +378,20 @@ describe("handleSidebarSwitchWorkspace", () => {
   };
 
   it("shows the landing when switching to an empty workspace scope", async () => {
-    const { ctx, applySetState } = buildRouteFixture({ state: sidebarState });
+    const { ctx, mocks, applySetState } = buildRouteFixture({
+      state: {
+        ...sidebarState,
+        tabs: [{ id: "stale-tab", kind: "agent", cwd: "/repo/other" }],
+        activeTabId: "stale-tab",
+      },
+    });
+    mocks.activateWorkspace.mockImplementation(() => {
+      ctx.stateRef.current = {
+        ...ctx.stateRef.current,
+        tabs: [],
+        activeTabId: undefined,
+      };
+    });
 
     const handled = await handleSidebarSwitchWorkspace(
       {
@@ -391,7 +404,9 @@ describe("handleSidebarSwitchWorkspace", () => {
 
     expect(handled).toBe(true);
     expect(ctx.activateWorkspace).toHaveBeenCalledWith("wt-1");
-    expect(applySetState().landing).toMatchObject({
+    const next = applySetState();
+    expect(next.activeTabId).toBe(OVERVIEW_TAB_ID);
+    expect(next.landing).toMatchObject({
       kind: "workspace",
       projectId: "proj-1",
       iconUrl: "asset://localhost/project-icons/aethon.png",
@@ -428,6 +443,7 @@ describe("handleSidebarSwitchWorkspace", () => {
       isMain: true,
       path: "/repo/aethon",
     });
+    expect(applySetState().activeTabId).toBe(OVERVIEW_TAB_ID);
   });
 
   it("reveals an existing workspace session instead of covering it with landing", async () => {
@@ -628,6 +644,30 @@ describe("handleSectionedSelect", () => {
       activeTabId: "tab-7",
     });
     expect(next.activeTabId).toBe(OVERVIEW_TAB_ID);
+  });
+
+  it("clicking the active project from a workspace restores main without forcing overview", async () => {
+    const { ctx, applySetState } = buildRouteFixture({
+      state: {
+        project: { id: "proj-1", path: "/repo/app" },
+        activeWorkspaceId: "wt-1",
+        activeTabId: "main-tab",
+      },
+    });
+    await handleSectionedSelect(
+      {
+        component: { id: "sidebar" },
+        eventType: "select",
+        data: { sectionId: "projects", itemId: "proj-1" },
+      },
+      ctx,
+    );
+    const next = applySetState({
+      project: { id: "proj-1", path: "/repo/app" },
+      activeWorkspaceId: "wt-1",
+      activeTabId: "main-tab",
+    });
+    expect(next.activeTabId).toBe("main-tab");
   });
 
   it("clicking a different project does NOT force the overview sentinel", async () => {

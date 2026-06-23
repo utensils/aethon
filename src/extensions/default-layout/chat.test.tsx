@@ -25,6 +25,7 @@ const virtuosoMockState = vi.hoisted(
   (): {
     alignToBottom?: unknown;
     followOutput?: unknown;
+    defaultItemHeight?: unknown;
     scrollToCalls: unknown[];
     scrollToIndexCalls: unknown[];
     // Virtuoso callbacks captured so tests can drive at-bottom / range
@@ -35,6 +36,7 @@ const virtuosoMockState = vi.hoisted(
   } => ({
     alignToBottom: undefined,
     followOutput: undefined,
+    defaultItemHeight: undefined,
     scrollToCalls: [],
     scrollToIndexCalls: [],
     atBottomStateChange: undefined,
@@ -80,6 +82,7 @@ vi.mock("react-virtuoso", () => ({
         totalListHeightChanged,
         alignToBottom,
         followOutput,
+        defaultItemHeight,
       }: {
         data?: Array<{ id?: string }>;
         itemContent: (index: number, item: unknown) => React.ReactNode;
@@ -97,12 +100,14 @@ vi.mock("react-virtuoso", () => ({
         totalListHeightChanged?: (height: number) => void;
         alignToBottom?: unknown;
         followOutput?: unknown;
+        defaultItemHeight?: unknown;
       },
       ref,
     ) => {
       const Footer = components?.Footer;
       virtuosoMockState.alignToBottom = alignToBottom;
       virtuosoMockState.followOutput = followOutput;
+      virtuosoMockState.defaultItemHeight = defaultItemHeight;
       virtuosoMockState.atBottomStateChange = atBottomStateChange;
       virtuosoMockState.rangeChanged = rangeChanged;
       virtuosoMockState.totalListHeightChanged = totalListHeightChanged;
@@ -183,6 +188,7 @@ beforeEach(() => {
   resizeObserverMockState.callbacks = [];
   openUrl.mockResolvedValue(undefined);
   virtuosoMockState.followOutput = undefined;
+  virtuosoMockState.defaultItemHeight = undefined;
   virtuosoMockState.alignToBottom = undefined;
   virtuosoMockState.scrollToCalls = [];
   virtuosoMockState.scrollToIndexCalls = [];
@@ -698,6 +704,7 @@ describe("ChatInput", () => {
     // the terminal-close view above latest.
     expect(virtuosoMockState.followOutput).toBe(false);
     expect(virtuosoMockState.alignToBottom).toBeUndefined();
+    expect(virtuosoMockState.defaultItemHeight).toBe(120);
   });
 
   it("shows the pill and stops following when the user scrolls up", () => {
