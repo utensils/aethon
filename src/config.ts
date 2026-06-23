@@ -6,7 +6,7 @@ import type { ShareMode } from "./utils/shareMode";
 import { SHARE_MODES } from "./utils/shareMode";
 
 /** Tri-state visibility for the model's thinking blocks:
- *  `show` (full), `collapse` (closed "Thinking" label), `hide` (removed). */
+ *  `show` (full), `collapse` (legacy closed label), `hide` (removed). */
 export type VisibilityMode = "show" | "collapse" | "hide";
 
 /** Tool-call visibility. `show` renders lightweight activity rows and `hide`
@@ -43,11 +43,11 @@ export interface AethonConfig {
      *  this many seconds. Default 8 — sub-second turns rarely need it. */
     notifyMinDurationSeconds: number;
     /** Global default visibility for the model's thinking blocks. Per-tab
-     *  overridable via the composer pills; `show` by default. */
+     *  overridable via the composer pills; `hide` by default. */
     thinkingVisibility: VisibilityMode;
     /** Global default visibility for tool-call activity. The grouped values
      *  (`group-turn` / `group-run` / `group-block`) fold activity into
-     *  collapsed clusters; `show` by default. Per-tab overridable via the
+     *  collapsed clusters; `group-block` by default. Per-tab overridable via the
      *  composer pills. */
     toolCallsVisibility: ToolCallsMode;
   };
@@ -138,6 +138,7 @@ export interface AethonConfig {
 
 export const DEFAULT_AGENT_TIMEOUT_SECONDS = 300;
 export const MAX_AGENT_TIMEOUT_SECONDS = 24 * 60 * 60;
+export const DEFAULT_THINKING_VISIBILITY: VisibilityMode = "hide";
 export const DEFAULT_TOOL_CALLS_VISIBILITY: ToolCallsMode = "group-block";
 
 const DEFAULTS: AethonConfig = {
@@ -147,7 +148,7 @@ const DEFAULTS: AethonConfig = {
     restoreTabs: false,
     notifyOnCompletion: true,
     notifyMinDurationSeconds: 8,
-    thinkingVisibility: "show",
+    thinkingVisibility: DEFAULT_THINKING_VISIBILITY,
     toolCallsVisibility: DEFAULT_TOOL_CALLS_VISIBILITY,
   },
   agent: {
@@ -358,8 +359,10 @@ function normalizeThinkingLevel(value: unknown): string | null {
     : null;
 }
 
-/** Mirrors `normalize_visibility` in helpers.rs — unknown/missing → "show". */
+/** Mirrors `normalize_visibility` in helpers.rs — missing → the clean default,
+ *  unknown explicit values → "show" so a typo never hides content. */
 export function normalizeVisibility(value: unknown): VisibilityMode {
+  if (value === undefined) return DEFAULT_THINKING_VISIBILITY;
   return value === "collapse" || value === "hide" ? value : "show";
 }
 

@@ -1517,6 +1517,7 @@ describe("ChatInput", () => {
 
   it("linkifies text split around thinking blocks", () => {
     renderHistory({
+      transcriptVisibility: { thinking: "show", toolCalls: "show" },
       messages: [
         {
           id: "1",
@@ -1536,6 +1537,32 @@ describe("ChatInput", () => {
     expect(
       screen.getByRole("link", { name: "https://example.com/thinking" }),
     ).toBeTruthy();
+    expect(
+      screen.getByRole("link", { name: "https://example.com/after" }),
+    ).toBeTruthy();
+  });
+
+  it("hides thinking blocks by default for a clean transcript", () => {
+    renderHistory({
+      messages: [
+        {
+          id: "1",
+          role: "agent",
+          text: [
+            "before https://example.com/before",
+            "<thinking>check https://example.com/thinking</thinking>",
+            "after https://example.com/after",
+          ].join(" "),
+        },
+      ],
+    });
+
+    expect(
+      screen.getByRole("link", { name: "https://example.com/before" }),
+    ).toBeTruthy();
+    expect(
+      screen.queryByRole("link", { name: "https://example.com/thinking" }),
+    ).toBeNull();
     expect(
       screen.getByRole("link", { name: "https://example.com/after" }),
     ).toBeTruthy();

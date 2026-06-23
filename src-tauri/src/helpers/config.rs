@@ -216,15 +216,16 @@ pub struct AethonConfig {
     pub guardrails: GuardrailsConfig,
 }
 
-/// Validate-and-normalize a tri-state transcript visibility value
-/// (`[ui] thinking_visibility` / `tool_calls_visibility`). Unknown strings,
-/// missing values, and parse failures all fall through to `"show"` so a typo
-/// can't silently hide the transcript.
+/// Validate-and-normalize a tri-state thinking visibility value
+/// (`[ui] thinking_visibility`). Missing config follows the clean transcript
+/// default (`"hide"`), but unknown explicit values fall through to `"show"` so
+/// a typo can't silently hide content.
 pub fn normalize_visibility(input: Option<&str>) -> &'static str {
     match input {
         Some("collapse") => "collapse",
         Some("hide") => "hide",
-        // Includes Some("show"), Some(<unknown>), and None.
+        None => "hide",
+        // Includes Some("show") and Some(<unknown>).
         _ => "show",
     }
 }
@@ -1022,17 +1023,21 @@ enabled = "never"
     }
 
     #[test]
-    fn normalize_visibility_falls_back_to_show() {
-        assert_eq!(normalize_visibility(None), "show");
+    fn normalize_visibility_defaults_missing_to_hide() {
+        assert_eq!(normalize_visibility(None), "hide");
+    }
+
+    #[test]
+    fn normalize_visibility_keeps_malformed_explicit_values_visible() {
         assert_eq!(normalize_visibility(Some("")), "show");
         assert_eq!(normalize_visibility(Some("Hide")), "show");
         assert_eq!(normalize_visibility(Some("gone")), "show");
     }
 
     #[test]
-    fn parse_config_toml_visibility_defaults_to_show_and_grouped_tools() {
+    fn parse_config_toml_visibility_defaults_to_hidden_thinking_and_grouped_tools() {
         let v = parse_config_toml("");
-        assert_eq!(v["ui"]["thinkingVisibility"], "show");
+        assert_eq!(v["ui"]["thinkingVisibility"], "hide");
         assert_eq!(v["ui"]["toolCallsVisibility"], "group-block");
     }
 

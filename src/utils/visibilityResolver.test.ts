@@ -4,7 +4,7 @@ import { resolveVisibility } from "./visibilityResolver";
 describe("resolveVisibility", () => {
   it("defaults tool calls to group-block when no global value is mirrored", () => {
     expect(resolveVisibility({}, undefined)).toEqual({
-      thinking: "show",
+      thinking: "hide",
       toolCalls: "group-block",
     });
   });
@@ -75,7 +75,9 @@ describe("resolveVisibility", () => {
     ).toBe("group-turn");
     expect(
       resolveVisibility(
-        { tabs: [{ id: "t1", visibilityOverrides: { toolCalls: "collapse" } }] },
+        {
+          tabs: [{ id: "t1", visibilityOverrides: { toolCalls: "collapse" } }],
+        },
         "t1",
       ).toolCalls,
     ).toBe("group-turn");
