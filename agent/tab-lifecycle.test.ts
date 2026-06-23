@@ -23,6 +23,7 @@ import {
   installAethonRetryClassifier,
   resolveTabCwd,
   summarizeToolArgs,
+  synthesizeCancelledSubagentToolResults,
   tabSessionDir,
   toolCardPayload,
 } from "./tab-lifecycle";
@@ -1148,6 +1149,91 @@ describe("handleSessionEvent", () => {
       },
     });
     expect(rec.toolArgsCache.has("c1")).toBe(false);
+  });
+
+  it("synthesizes model-visible errors for cancelled subagent delegations", () => {
+    const f = makeFixture();
+    const rec = fakeRec();
+    const messages: unknown[] = [
+      {
+        role: "assistant",
+        content: [
+          {
+            type: "toolCall",
+            id: "call_batch_1",
+            name: "task_batch",
+            arguments: { tasks: [] },
+          },
+        ],
+      },
+    ];
+    const appendMessage = vi.fn();
+    rec.session = {
+      ...rec.session,
+      agent: { state: { messages } },
+      sessionManager: {
+        appendMessage,
+        getEntries: () => [],
+      },
+    } as TabRecord["session"];
+    rec.toolArgsCache.set("call_batch_1", {
+      name: "task_batch",
+      summary: "3 agents",
+      uiId: "tool-1-call_batch_1",
+      startedAt: 1_000,
+      endedAt: 2_000,
+      status: "cancelled",
+      taskPartialText: "## qwen\npartial progress",
+    });
+
+    const count = synthesizeCancelledSubagentToolResults(f.state, rec, "tab-1");
+
+    expect(count).toBe(1);
+    expect(messages.at(-1)).toMatchObject({
+      role: "toolResult",
+      toolCallId: "call_batch_1",
+      toolName: "task_batch",
+      isError: true,
+      content: [
+        {
+          type: "text",
+          text: expect.stringContaining("Partial output before interruption"),
+        },
+      ],
+    });
+    expect(appendMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        role: "toolResult",
+        toolCallId: "call_batch_1",
+        isError: true,
+      }),
+    );
+    expect(synthesizeCancelledSubagentToolResults(f.state, rec, "tab-1")).toBe(
+      0,
+    );
+  });
+
+  it("does not synthesize model-visible errors for cancelled bash tools", () => {
+    const f = makeFixture();
+    const rec = fakeRec();
+    const messages: unknown[] = [];
+    rec.session = {
+      ...rec.session,
+      agent: { state: { messages } },
+    } as TabRecord["session"];
+    rec.toolArgsCache.set("call_bash_1", {
+      name: "bash",
+      summary: "sleep 60",
+      uiId: "tool-1-call_bash_1",
+      startedAt: 1_000,
+      endedAt: 2_000,
+      status: "cancelled",
+    });
+
+    expect(synthesizeCancelledSubagentToolResults(f.state, rec, "tab-1")).toBe(
+      0,
+    );
+    expect(messages).toEqual([]);
   });
 
   it("agent_end clears promptInFlight, sets agentEndFired, emits response_end", () => {

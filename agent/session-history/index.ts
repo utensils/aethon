@@ -39,3 +39,15 @@ export {
 export { latestSessionLog, readSessionMetadata } from "./metadata";
 export { findSessionFileMatchingCwd } from "./lookup";
 export { readSessionTranscript } from "./restore";
+export {
+  appendSyntheticSubagentToolResults,
+  findDanglingSubagentToolCalls,
+  isSubagentToolName,
+  repairDanglingSubagentToolResults,
+  syntheticSubagentCancellationText,
+  syntheticSubagentToolResultMessage,
+} from "./subagent-tool-results";
+export type {
+  DanglingSubagentToolCall,
+  SyntheticSubagentToolResult,
+} from "./subagent-tool-results";

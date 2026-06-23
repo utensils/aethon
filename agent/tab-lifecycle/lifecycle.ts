@@ -41,7 +41,10 @@ import {
 import { wrapWithSourceGuard } from "../source-guard";
 import { logger } from "../logger";
 import { authProfileServicesForTab } from "../auth-profiles";
-import { findSessionFileMatchingCwd } from "../session-history";
+import {
+  findSessionFileMatchingCwd,
+  repairDanglingSubagentToolResults,
+} from "../session-history";
 import type { AethonAgentState, TabRecord } from "../state";
 import { contextUsageSnapshot, emitContextUsage } from "../context-usage";
 import { handleSessionEvent } from "./events";
@@ -119,6 +122,17 @@ export async function ensureTab(
     // fresh under the same dir rather than picking up an unrelated
     // project's history (`continueRecent` would).
     const matching = await findSessionFileMatchingCwd(dir, resolvedCwd);
+    if (matching) {
+      await repairDanglingSubagentToolResults(matching).catch(
+        (err: unknown) => {
+          lifecycleLog.warn(
+            `subagent result repair failed for ${matching}: ${
+              err instanceof Error ? err.message : String(err)
+            }`,
+          );
+        },
+      );
+    }
     sessionManager = matching
       ? SessionManager.open(matching, dir)
       : SessionManager.create(resolvedCwd, dir);

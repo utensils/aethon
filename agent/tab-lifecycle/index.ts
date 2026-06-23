@@ -34,7 +34,10 @@ export {
   tabSessionDir,
 } from "./utils";
 export { emitBashResult } from "./terminal";
-export { cancelRunningToolCards } from "./tools";
+export {
+  cancelRunningToolCards,
+  synthesizeCancelledSubagentToolResults,
+} from "./tools";
 export {
   buildPickerModels,
   defaultModelKey,
