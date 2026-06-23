@@ -9929,6 +9929,68 @@ button.ae-vcs-chip:focus-visible {
   white-space: nowrap;
 }
 
+.ae-file-activity-card {
+  display: flex;
+  width: min(100%, 56rem);
+  min-width: 0;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: color-mix(in oklab, var(--bg-elev) 72%, transparent);
+}
+
+.ae-file-activity-head {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.ae-file-activity-icon {
+  display: inline-flex;
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  background: color-mix(in oklab, var(--accent) 16%, transparent);
+  color: var(--accent);
+  font-size: 12px;
+}
+
+.ae-file-activity-title {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text);
+  font-size: var(--chrome-text);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ae-file-activity-head .ae-turn-block-files {
+  margin-left: auto;
+  flex: 0 0 auto;
+}
+
+.ae-file-activity-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.ae-file-activity-list .ae-tool-activity-file {
+  padding: 7px 12px;
+  border-top: 1px solid color-mix(in oklab, var(--border) 60%, transparent);
+}
+
+.ae-file-activity-list .ae-tool-activity-file:first-child {
+  border-top: 0;
+}
+
 .ae-tool-activity-file {
   display: flex;
   align-items: center;

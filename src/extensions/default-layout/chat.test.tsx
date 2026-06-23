@@ -1859,6 +1859,7 @@ describe("ChatHistory turn activity feed (mocked Virtuoso renders rows)", () => 
   function groupedHistoryElement(
     state: Record<string, unknown>,
     registry = new ExtensionRegistry(),
+    onEvent = vi.fn(),
   ) {
     registry.register({
       name: "test-tool-card",
@@ -1873,7 +1874,7 @@ describe("ChatHistory turn activity feed (mocked Virtuoso renders rows)", () => 
             props: { messages: { $ref: "/messages" } },
           }}
           state={state}
-          onEvent={vi.fn()}
+          onEvent={onEvent}
         />
       </ExtensionRegistryProvider>
     );
@@ -2061,6 +2062,126 @@ describe("ChatHistory turn activity feed (mocked Virtuoso renders rows)", () => 
     expect(screen.getByText(/2 tool calls · 1 update/)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: /2 tool calls/ }));
     expect(screen.getByText("reading files")).toBeTruthy();
+  });
+
+  it("expands completed file tools as one compact edit artifact", () => {
+    renderGroupedHistory({
+      messages: [
+        { id: "u1", role: "user", text: "change files" },
+        {
+          id: "t1",
+          role: "agent",
+          a2ui: {
+            components: [
+              {
+                id: "tool-edit-1",
+                type: "tool-card",
+                props: {
+                  title: "edit",
+                  startedAt: 1,
+                  endedAt: 2,
+                  fileChange: {
+                    kind: "edited",
+                    path: "src/App.tsx",
+                    additions: 3,
+                    deletions: 1,
+                  },
+                },
+              },
+            ],
+          },
+        },
+        {
+          id: "t2",
+          role: "agent",
+          a2ui: {
+            components: [
+              {
+                id: "tool-edit-2",
+                type: "tool-card",
+                props: {
+                  title: "edit",
+                  startedAt: 3,
+                  endedAt: 5,
+                  fileChange: {
+                    kind: "edited",
+                    path: "src/message-groups.tsx",
+                    additions: 10,
+                    deletions: 2,
+                  },
+                },
+              },
+            ],
+          },
+        },
+      ],
+      transcriptVisibility: { toolCalls: "group-block" },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /Edited 2 files/ }));
+
+    expect(screen.getAllByText("Edited 2 files").length).toBeGreaterThan(1);
+    expect(screen.getByText("App.tsx")).toBeTruthy();
+    expect(screen.getByText("message-groups.tsx")).toBeTruthy();
+    expect(screen.getAllByText("+13").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("-3").length).toBeGreaterThan(0);
+    expect(screen.queryByText("Completed in 0.0s")).toBeNull();
+  });
+
+  it("forwards compact edit artifact file actions with the originating tool id", () => {
+    const onEvent = vi.fn();
+    render(
+      groupedHistoryElement(
+        {
+          messages: [
+            { id: "u1", role: "user", text: "change files" },
+            {
+              id: "t1",
+              role: "agent",
+              a2ui: {
+                components: [
+                  {
+                    id: "tool-edit-1",
+                    type: "tool-card",
+                    props: {
+                      title: "edit",
+                      startedAt: 1,
+                      endedAt: 2,
+                      fileChange: {
+                        kind: "edited",
+                        path: "src/App.tsx",
+                        rootPath: "/repo/aethon",
+                        additions: 3,
+                      },
+                    },
+                  },
+                ],
+              },
+            },
+          ],
+          transcriptVisibility: { toolCalls: "group-block" },
+        },
+        new ExtensionRegistry(),
+        onEvent,
+      ),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /Edited 1 file/ }));
+    fireEvent.click(screen.getByTitle("Open src/App.tsx"));
+    expect(onEvent).toHaveBeenCalledWith(
+      "tool-file-open",
+      { filePath: "src/App.tsx", rootPath: "/repo/aethon" },
+      "tool-edit-1",
+    );
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Open diff for App.tsx" }),
+    );
+    expect(onEvent).toHaveBeenCalledWith(
+      "tool-file-diff",
+      { filePath: "src/App.tsx", rootPath: "/repo/aethon" },
+      "tool-edit-1",
+    );
   });
 
   it("keeps stopped assistant progress visible and expanded when there is no final answer", () => {

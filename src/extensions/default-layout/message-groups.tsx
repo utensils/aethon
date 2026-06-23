@@ -166,6 +166,30 @@ function fileChangeStatsLabel(summary: ToolMessageSummary): string {
   return parts.join(" ");
 }
 
+interface ToolFileChangeEntry {
+  change: ToolCardFileChange;
+  componentId?: string;
+}
+
+function collectFileChangeEntries(
+  messages: readonly ChatMessage[],
+): ToolFileChangeEntry[] {
+  const entries: ToolFileChangeEntry[] = [];
+  for (const message of messages) {
+    const details = toolCardDetails(message);
+    if (!details.fileChange?.path) continue;
+    entries.push({
+      change: details.fileChange,
+      ...(details.componentId ? { componentId: details.componentId } : {}),
+    });
+  }
+  return entries;
+}
+
+function hasFileChange(message: ChatMessage): boolean {
+  return Boolean(toolCardDetails(message).fileChange?.path);
+}
+
 function basename(path: string): string {
   return (
     path
@@ -250,6 +274,41 @@ function ToolFileChangeRow({
       >
         ⧉
       </button>
+    </div>
+  );
+}
+
+function ToolFileChangesCard({
+  entries,
+  summary,
+  onEvent,
+}: {
+  entries: ToolFileChangeEntry[];
+  summary: ToolMessageSummary;
+  onEvent?: BuiltinComponentProps["onEvent"];
+}) {
+  if (entries.length === 0) return null;
+  const label = fileChangeLabel(summary);
+  const statLabel = fileChangeStatsLabel(summary);
+  return (
+    <div className="ae-file-activity-card" role="group" aria-label={statLabel}>
+      <div className="ae-file-activity-head">
+        <span className="ae-file-activity-icon" aria-hidden="true">
+          ✎
+        </span>
+        <span className="ae-file-activity-title">{label}</span>
+        <FileChangeStats summary={summary} hideLabel />
+      </div>
+      <div className="ae-file-activity-list">
+        {entries.map(({ change, componentId }) => (
+          <ToolFileChangeRow
+            key={`${componentId ?? ""}:${change.path}`}
+            change={change}
+            onEvent={onEvent}
+            componentId={componentId}
+          />
+        ))}
+      </div>
     </div>
   );
 }
@@ -343,6 +402,12 @@ function TurnActivity({
   const runningTools = toolMessages.filter(isRunningToolCard);
   const detailsOpen = forceOpen || expanded || toolCallsVisibility === "show";
   const visibleTools = detailsOpen ? toolMessages : runningTools;
+  const fileChangeEntries = detailsOpen
+    ? collectFileChangeEntries(visibleTools)
+    : [];
+  const visibleToolRows = detailsOpen
+    ? visibleTools.filter((message) => !hasFileChange(message))
+    : visibleTools;
   const hasActivity =
     progressMessages.length > 0 ||
     toolMessages.length > 0 ||
@@ -399,7 +464,12 @@ function TurnActivity({
               thinkingVisibility={thinkingVisibility}
             />
           ))}
-          {visibleTools.map((message) => (
+          <ToolFileChangesCard
+            entries={fileChangeEntries}
+            summary={summary}
+            onEvent={onEvent}
+          />
+          {visibleToolRows.map((message) => (
             <ToolActivityRow
               key={message.id}
               message={message}
