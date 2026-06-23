@@ -79,15 +79,18 @@ function appendLiveSyntheticToolResult(
   ) {
     messages.push(message);
   }
+  const alreadyPersisted = sessionManagerHasToolResult(
+    session,
+    result.toolCallId,
+  );
   const appendMessage = session.sessionManager?.appendMessage;
-  if (
-    typeof appendMessage === "function" &&
-    !sessionManagerHasToolResult(session, result.toolCallId)
-  ) {
-    appendMessage.call(session.sessionManager, message);
+  if (typeof appendMessage === "function") {
+    if (!alreadyPersisted) {
+      appendMessage.call(session.sessionManager, message);
+    }
     return true;
   }
-  return false;
+  return alreadyPersisted;
 }
 
 async function persistSyntheticToolResults(

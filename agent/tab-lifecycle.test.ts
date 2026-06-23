@@ -1,3 +1,6 @@
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import {
   AethonAgentState,
@@ -1211,6 +1214,69 @@ describe("handleSessionEvent", () => {
     expect(synthesizeCancelledSubagentToolResults(f.state, rec, "tab-1")).toBe(
       0,
     );
+  });
+
+  it("does not raw-append duplicates when the session manager already has the synthetic result", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "aethon-tab-lifecycle-"));
+    const sessionsDir = join(dir, "sessions");
+    const tabDir = join(sessionsDir, "tab-1");
+    const sessionFile = join(tabDir, "session.jsonl");
+    await mkdir(tabDir, { recursive: true });
+    await writeFile(
+      sessionFile,
+      [
+        JSON.stringify({ type: "session", id: "session-1", cwd: "/repo" }),
+        JSON.stringify({
+          type: "message",
+          id: "existing-tool-result",
+          message: {
+            role: "toolResult",
+            toolCallId: "call_batch_1",
+            toolName: "task_batch",
+            content: [{ type: "text", text: "already synthesized" }],
+            isError: true,
+          },
+        }),
+      ].join("\n") + "\n",
+      "utf8",
+    );
+    const f = makeFixture({ sessionsDir });
+    f.state.tabProjectCwds.set("tab-1", "/repo");
+    const rec = fakeRec();
+    const appendMessage = vi.fn();
+    rec.session = {
+      ...rec.session,
+      agent: { state: { messages: [] } },
+      sessionManager: {
+        appendMessage,
+        getEntries: () => [
+          {
+            message: {
+              role: "toolResult",
+              toolCallId: "call_batch_1",
+            },
+          },
+        ],
+      },
+    } as TabRecord["session"];
+    rec.toolArgsCache.set("call_batch_1", {
+      name: "task_batch",
+      summary: "3 agents",
+      uiId: "tool-1-call_batch_1",
+      startedAt: 1_000,
+      endedAt: 2_000,
+      status: "cancelled",
+    });
+
+    expect(synthesizeCancelledSubagentToolResults(f.state, rec, "tab-1")).toBe(
+      1,
+    );
+    await Promise.resolve();
+
+    expect(appendMessage).not.toHaveBeenCalled();
+    const raw = await readFile(sessionFile, "utf8");
+    expect(raw.trim().split(/\r?\n/)).toHaveLength(2);
+    expect(raw).not.toContain("aethon-synthetic-tool-result");
   });
 
   it("does not synthesize model-visible errors for cancelled bash tools", () => {

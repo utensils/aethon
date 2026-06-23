@@ -756,9 +756,7 @@ export function handleSessionEvent(
         });
         deps.send({ type: "a2ui", tabId, id: cached.uiId, payload });
         const extracted = extractToolContent(ev.partialResult);
-        if (ev.toolName === "task" || ev.toolName === "task_batch") {
-          cached.taskPartialText = extracted.text;
-        }
+        cached.taskPartialText = extracted.text;
         const streamed = consumeBashTerminalSnapshot(
           extracted.text,
           cached.taskPartialStream,
