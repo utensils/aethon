@@ -66,6 +66,46 @@ async function getActiveTurnState(page: Page): Promise<ActiveTurnState> {
   }
 }
 
+async function getComposerRightOverlayGeometry(
+  page: Page,
+  overlaySelector: string,
+): Promise<{
+  overlayRight: number;
+  firstActionLeft: number;
+  actionLane: string;
+  textareaPaddingRight: string;
+}> {
+  return await page.locator(".a2ui-chat-input-field-wrap").evaluate(
+    (wrap, selector) => {
+      const overlay = wrap.querySelector(selector);
+      const conversation = wrap.querySelector(".a2ui-chat-input-conversation");
+      const voice = wrap.querySelector(
+        ".a2ui-chat-input-voice:not(.a2ui-chat-input-conversation)",
+      );
+      const send = wrap.querySelector(".a2ui-chat-input-send");
+      const textarea = wrap.querySelector(".a2ui-chat-input-field");
+      if (!overlay || !conversation || !voice || !send || !textarea) {
+        throw new Error("expected composer overlay and voice controls");
+      }
+      const overlayRect = overlay.getBoundingClientRect();
+      const actionRects = [conversation, voice, send].map((el) =>
+        el.getBoundingClientRect(),
+      );
+      const wrapStyle = getComputedStyle(wrap);
+      const textareaStyle = getComputedStyle(textarea);
+      return {
+        overlayRight: overlayRect.right,
+        firstActionLeft: Math.min(...actionRects.map((rect) => rect.left)),
+        actionLane: wrapStyle
+          .getPropertyValue("--a2ui-chat-input-action-lane")
+          .trim(),
+        textareaPaddingRight: textareaStyle.paddingRight,
+      };
+    },
+    overlaySelector,
+  );
+}
+
 async function completeActiveTurn(page: Page): Promise<void> {
   await page.evaluate(() => {
     window.__AETHON_E2E__?.completeActiveTurn();
@@ -212,6 +252,36 @@ test("chat canvas contains wide content without horizontal scrolling", async ({
   );
 });
 
+test("voice transcribing status does not overlap composer action buttons", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 900, height: 700 });
+  await waitForAethonReady(page);
+
+  await page.getByRole("button", { name: "New Tab" }).click();
+  await expect(page.locator(".a2ui-chat-input-field")).toBeVisible();
+
+  await page.getByRole("button", { name: "Voice input" }).click();
+  await expect(
+    page.getByRole("button", { name: "Stop voice input" }),
+  ).toBeVisible();
+
+  await page.getByRole("button", { name: "Stop voice input" }).click();
+  await expect(page.locator(".a2ui-chat-input-voice-status")).toContainText(
+    "Transcribing",
+  );
+
+  const geometry = await getComposerRightOverlayGeometry(
+    page,
+    ".a2ui-chat-input-voice-status",
+  );
+
+  expect(geometry.overlayRight).toBeLessThanOrEqual(
+    geometry.firstActionLeft - 4,
+  );
+  expect(geometry.textareaPaddingRight).toBe(geometry.actionLane);
+});
+
 test("queues normal Enter messages behind an in-flight turn and drains cleanly", async ({
   page,
 }) => {
@@ -236,6 +306,13 @@ test("queues normal Enter messages behind an in-flight turn and drains cleanly",
   await page.keyboard.press("Enter");
 
   await expect(page.locator(".a2ui-chat-input-queue")).toHaveText("+1");
+  const queueGeometry = await getComposerRightOverlayGeometry(
+    page,
+    ".a2ui-chat-input-queue",
+  );
+  expect(queueGeometry.overlayRight).toBeLessThanOrEqual(
+    queueGeometry.firstActionLeft - 4,
+  );
   await expect(page.locator(".a2ui-tab-active")).toContainText("+1");
   await expect(page.locator(".a2ui-queued-popover")).toBeVisible();
   await expect(page.locator(".a2ui-queued-message")).toHaveCount(1);

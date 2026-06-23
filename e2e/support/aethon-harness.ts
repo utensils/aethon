@@ -272,6 +272,13 @@ export async function installAethonHarness(page: Page): Promise<void> {
                 inheritEnv: true,
                 promptBeforeClose: true,
               },
+              voice: {
+                toggleHotkey: "mod+shift+m",
+                holdHotkey: null,
+                speakAgentReplies: false,
+                speakMaxChars: 600,
+                conversationContinuous: false,
+              },
               shortcuts: { newTabKind: "agent" },
             };
           case "read_state":
@@ -337,6 +344,37 @@ export async function installAethonHarness(page: Page): Promise<void> {
           case "set_extension_menu_items":
           case "start_agent":
             return undefined;
+          case "voice_list_providers":
+            return [
+              {
+                id: "voice-platform-system",
+                name: "System dictation",
+                description: "E2E voice provider",
+                kind: "platform",
+                recordingMode: "native",
+                privacyLabel: "Local",
+                offline: true,
+                downloadRequired: false,
+                modelSizeLabel: null,
+                cachePath: null,
+                acceleratorLabel: null,
+                status: "ready",
+                statusLabel: "Ready",
+                enabled: true,
+                selected: true,
+                setupRequired: false,
+                canRemoveModel: false,
+                error: null,
+              },
+            ];
+          case "voice_start_recording":
+          case "voice_cancel_recording":
+            return undefined;
+          case "voice_stop_and_transcribe":
+            return new Promise(() => {
+              // Keep the composer in its transcribing state so visual layout
+              // regressions around the status strip can be measured.
+            });
           case "workspace_startup_prepare_for_path": {
             const cwdArgs =
               args.args && typeof args.args === "object"
