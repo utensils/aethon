@@ -265,6 +265,10 @@ export interface TabRecord {
       rootPath?: string;
       bashStream?: BashTerminalStreamState;
       taskPartialStream?: BashTerminalStreamState;
+      /** Latest text streamed by task/task_batch partial updates, used when
+       *  Aethon has to synthesize an error result after an interrupted
+       *  delegation before pi emits tool_execution_end. */
+      taskPartialText?: string;
       /** Epoch ms — when tool_execution_start fired. Used by the M6 P4
        *  `tool-card` component to render a live elapsed-time clock. */
       startedAt?: number;
@@ -272,6 +276,9 @@ export interface TabRecord {
        *  emitted tool_execution_end (e.g. user pressed Stop). */
       endedAt?: number;
       status?: "cancelled";
+      /** Set once Aethon has inserted a model-visible synthetic error for an
+       *  interrupted subagent delegation, preventing duplicate backfills. */
+      syntheticResultEmitted?: boolean;
     }
   >;
   promptInFlight: boolean;

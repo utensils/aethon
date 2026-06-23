@@ -14,10 +14,145 @@
 
 import { logger } from "../logger";
 import { toolCardPayload } from "../tool-card";
-import type { TabRecord } from "../state";
-import type { TabLifecycleDeps } from "./utils";
+import type { AethonAgentState, TabRecord } from "../state";
+import {
+  appendSyntheticSubagentToolResults,
+  findSessionFileMatchingCwd,
+  isSubagentToolName,
+  latestSessionLog,
+  syntheticSubagentToolResultMessage,
+  type SyntheticSubagentToolResult,
+} from "../session-history";
+import { tabSessionDir, type TabLifecycleDeps } from "./utils";
 
 const turnLog = logger.scope("turn");
+const subagentLog = logger.scope("subagent");
+
+interface ToolResultSessionState {
+  agent?: {
+    state?: {
+      messages?: unknown[];
+    };
+  };
+  sessionManager?: {
+    appendMessage?: (message: unknown) => unknown;
+    getEntries?: () => unknown[];
+  };
+}
+
+function hasToolResultMessage(
+  messages: readonly unknown[],
+  toolCallId: string,
+): boolean {
+  return messages.some((message) => {
+    if (!message || typeof message !== "object") return false;
+    const record = message as Record<string, unknown>;
+    return record.role === "toolResult" && record.toolCallId === toolCallId;
+  });
+}
+
+function sessionManagerHasToolResult(
+  session: ToolResultSessionState,
+  toolCallId: string,
+): boolean {
+  const entries = session.sessionManager?.getEntries?.();
+  if (!Array.isArray(entries)) return false;
+  return entries.some((entry) => {
+    if (!entry || typeof entry !== "object") return false;
+    const message = (entry as Record<string, unknown>).message;
+    if (!message || typeof message !== "object") return false;
+    const record = message as Record<string, unknown>;
+    return record.role === "toolResult" && record.toolCallId === toolCallId;
+  });
+}
+
+function appendLiveSyntheticToolResult(
+  rec: TabRecord,
+  result: SyntheticSubagentToolResult,
+): boolean {
+  const session = rec.session as ToolResultSessionState;
+  const message = syntheticSubagentToolResultMessage(result);
+  const messages = session.agent?.state?.messages;
+  if (
+    Array.isArray(messages) &&
+    !hasToolResultMessage(messages, result.toolCallId)
+  ) {
+    messages.push(message);
+  }
+  const alreadyPersisted = sessionManagerHasToolResult(
+    session,
+    result.toolCallId,
+  );
+  const appendMessage = session.sessionManager?.appendMessage;
+  if (typeof appendMessage === "function") {
+    if (!alreadyPersisted) {
+      appendMessage.call(session.sessionManager, message);
+    }
+    return true;
+  }
+  return alreadyPersisted;
+}
+
+async function persistSyntheticToolResults(
+  state: AethonAgentState,
+  tabId: string,
+  results: SyntheticSubagentToolResult[],
+): Promise<void> {
+  if (results.length === 0) return;
+  const dir = tabSessionDir(state, tabId);
+  const cwd =
+    state.tabProjectCwds.get(tabId) ?? state.currentProjectCwd ?? undefined;
+  const matching = cwd ? await findSessionFileMatchingCwd(dir, cwd) : undefined;
+  const fallback =
+    !matching && tabId !== "default" ? await latestSessionLog(dir) : undefined;
+  const path = matching ?? fallback?.path;
+  if (!path) return;
+  await appendSyntheticSubagentToolResults(path, results);
+}
+
+export function synthesizeCancelledSubagentToolResults(
+  state: AethonAgentState,
+  rec: TabRecord,
+  tabId: string,
+): number {
+  const results: SyntheticSubagentToolResult[] = [];
+  const rawPersistResults: SyntheticSubagentToolResult[] = [];
+  for (const [toolCallId, cached] of rec.toolArgsCache) {
+    if (
+      cached.status !== "cancelled" ||
+      cached.syntheticResultEmitted === true ||
+      !isSubagentToolName(cached.name)
+    ) {
+      continue;
+    }
+    const result = {
+      toolCallId,
+      toolName: cached.name,
+      ...(cached.taskPartialText
+        ? { partialText: cached.taskPartialText }
+        : {}),
+    };
+    const persistedThroughSessionManager = appendLiveSyntheticToolResult(
+      rec,
+      result,
+    );
+    cached.syntheticResultEmitted = true;
+    results.push(result);
+    if (!persistedThroughSessionManager) rawPersistResults.push(result);
+  }
+  if (rawPersistResults.length > 0) {
+    void persistSyntheticToolResults(state, tabId, rawPersistResults).catch(
+      (err: unknown) => {
+        subagentLog.warn(
+          `failed to persist synthetic subagent tool result tabId=${tabId}: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        );
+      },
+    );
+  }
+  return results.length;
+}
 
 /** Stop visible timers for tools that were in-flight when the user aborted.
  *  Pi normally emits tool_execution_end, but abort paths can terminate the

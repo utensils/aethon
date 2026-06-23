@@ -41,6 +41,7 @@ import {
   toolCardPayload,
 } from "../tool-card";
 import { emitBashResult } from "./terminal";
+import { synthesizeCancelledSubagentToolResults } from "./tools";
 import {
   cancelAethonRetry,
   removeTrailingFailureMessage,
@@ -755,6 +756,7 @@ export function handleSessionEvent(
         });
         deps.send({ type: "a2ui", tabId, id: cached.uiId, payload });
         const extracted = extractToolContent(ev.partialResult);
+        cached.taskPartialText = extracted.text;
         const streamed = consumeBashTerminalSnapshot(
           extracted.text,
           cached.taskPartialStream,
@@ -909,6 +911,7 @@ export function handleSessionEvent(
       } else {
         turnLog.info(log);
       }
+      synthesizeCancelledSubagentToolResults(state, rec, tabId);
       for (const [toolCallId, cached] of rec.toolArgsCache) {
         if (cached.endedAt !== undefined) rec.toolArgsCache.delete(toolCallId);
       }
@@ -1058,6 +1061,7 @@ function finalizeFailedTurn(
   if (!rec || rec.agentEndFired) return;
   cancelAethonRetry(rec);
   resetContextOverflowRecovery(rec);
+  synthesizeCancelledSubagentToolResults(state, rec, tabId);
   rec.agentEndFired = true;
   rec.promptInFlight = false;
   if (state.currentAgentTabId === tabId) {

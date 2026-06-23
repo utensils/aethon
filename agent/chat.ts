@@ -9,6 +9,7 @@ import {
   cancelRunningToolCards,
   ensurePickerHasModel,
   ensureTab,
+  synthesizeCancelledSubagentToolResults,
 } from "./tab-lifecycle";
 import {
   modelRegistryForModelId,
@@ -287,6 +288,7 @@ export async function handleChat(
     .finally(() => {
       const stillStreamingOrRetrying = isUnderlyingSessionBusy(tab);
       if (!tab.agentEndFired && !stillStreamingOrRetrying) {
+        synthesizeCancelledSubagentToolResults(state, tab, tabId);
         tab.promptInFlight = false;
         deps.send({
           type: "response_end",

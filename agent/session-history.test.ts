@@ -1,15 +1,25 @@
-import { mkdir, mkdtemp, rm, symlink, utimes, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  symlink,
+  utimes,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   appendLocalChatMessage,
+  findDanglingSubagentToolCalls,
   findSessionFileMatchingCwd,
   normalizeSessionLabel,
   parseSessionHistoryLines,
   readSessionLabel,
   readSessionMetadata,
   readSessionTranscript,
+  repairDanglingSubagentToolResults,
   writeSessionLabel,
 } from "./session-history";
 import { SESSION_TITLE_TOOL_NAME } from "./silent-tools";
@@ -278,6 +288,35 @@ describe("parseSessionHistoryLines", () => {
           ],
         },
       },
+    ]);
+  });
+
+  it("detects dangling task and task_batch tool calls that lack results", () => {
+    const lines = [
+      JSON.stringify({
+        type: "message",
+        message: {
+          role: "assistant",
+          content: [
+            { type: "toolCall", id: "call_task", name: "task" },
+            { type: "toolCall", id: "call_batch", name: "task_batch" },
+            { type: "toolCall", id: "call_bash", name: "bash" },
+          ],
+        },
+      }),
+      JSON.stringify({
+        type: "message",
+        message: {
+          role: "toolResult",
+          toolCallId: "call_task",
+          toolName: "task",
+          content: [{ type: "text", text: "done" }],
+        },
+      }),
+    ];
+
+    expect(findDanglingSubagentToolCalls(lines)).toEqual([
+      { toolCallId: "call_batch", toolName: "task_batch" },
     ]);
   });
 
@@ -906,6 +945,255 @@ describe("readSessionTranscript", () => {
     expect(restored[0].a2ui?.components[0].props).toMatchObject({
       status: "cancelled",
       endedAt: 4_000,
+    });
+  });
+
+  it("repairs dangling subagent tool calls with synthetic error results", async () => {
+    const dir = await tempRoot();
+    const path = join(dir, "session.jsonl");
+    await writeFile(
+      path,
+      `${JSON.stringify({
+        type: "message",
+        id: "assistant-tool",
+        timestamp: 3_000,
+        message: {
+          role: "assistant",
+          content: [
+            {
+              type: "toolCall",
+              id: "call_batch_1",
+              name: "task_batch",
+              arguments: { tasks: [] },
+            },
+          ],
+        },
+      })}\n`,
+    );
+
+    await expect(repairDanglingSubagentToolResults(path)).resolves.toBe(1);
+    const repairedLines = (await readFile(path, "utf8")).trim().split(/\r?\n/);
+    const repairedRecord = JSON.parse(repairedLines.at(-1) ?? "{}");
+    expect(repairedRecord).toMatchObject({
+      type: "message",
+      parentId: "assistant-tool",
+      message: {
+        role: "toolResult",
+        toolCallId: "call_batch_1",
+        isError: true,
+      },
+    });
+
+    const restored = await readSessionTranscript(dir);
+    expect(restored).toHaveLength(1);
+    expect(restored[0].a2ui?.components[0]).toMatchObject({
+      type: "tool-card",
+      props: {
+        toolName: "task_batch",
+        isError: true,
+      },
+    });
+    expect(restored[0].a2ui?.components[0]).toMatchObject({
+      children: [
+        {
+          props: {
+            content: expect.stringContaining("delegation as cancelled/failed"),
+          },
+        },
+      ],
+    });
+    await expect(repairDanglingSubagentToolResults(path)).resolves.toBe(0);
+  });
+
+  it("does not repair dangling subagent calls from inactive branches", async () => {
+    const dir = await tempRoot();
+    const path = join(dir, "session.jsonl");
+    await writeFile(
+      path,
+      [
+        JSON.stringify({
+          type: "session",
+          id: "session-1",
+          cwd: "/repo",
+        }),
+        JSON.stringify({
+          type: "message",
+          id: "u1",
+          message: { role: "user", content: [{ type: "text", text: "hi" }] },
+        }),
+        JSON.stringify({
+          type: "message",
+          id: "abandoned-assistant",
+          parentId: "u1",
+          message: {
+            role: "assistant",
+            content: [{ type: "toolCall", id: "call_old", name: "task_batch" }],
+          },
+        }),
+        JSON.stringify({
+          type: "message",
+          id: "active-assistant",
+          parentId: "u1",
+          message: {
+            role: "assistant",
+            content: [{ type: "text", text: "new branch" }],
+          },
+        }),
+      ].join("\n") + "\n",
+    );
+
+    await expect(repairDanglingSubagentToolResults(path)).resolves.toBe(0);
+    const raw = await readFile(path, "utf8");
+    expect(raw).not.toContain("aethon-synthetic-tool-result");
+  });
+
+  it("uses non-message entries when identifying the active repair branch", async () => {
+    const dir = await tempRoot();
+    const path = join(dir, "session.jsonl");
+    await writeFile(
+      path,
+      [
+        JSON.stringify({ type: "session", id: "session-1", cwd: "/repo" }),
+        JSON.stringify({
+          type: "message",
+          id: "u1",
+          message: { role: "user", content: [{ type: "text", text: "hi" }] },
+        }),
+        JSON.stringify({
+          type: "message",
+          id: "abandoned-assistant",
+          parentId: "u1",
+          message: {
+            role: "assistant",
+            content: [{ type: "toolCall", id: "call_old", name: "task_batch" }],
+          },
+        }),
+        JSON.stringify({
+          type: "message",
+          id: "active-assistant",
+          parentId: "u1",
+          message: {
+            role: "assistant",
+            content: [{ type: "text", text: "new branch" }],
+          },
+        }),
+        JSON.stringify({
+          type: "model_change",
+          id: "active-model",
+          parentId: "active-assistant",
+          timestamp: "2026-06-23T00:00:00.000Z",
+          provider: "anthropic",
+          modelId: "claude",
+        }),
+      ].join("\n") + "\n",
+    );
+
+    await expect(repairDanglingSubagentToolResults(path)).resolves.toBe(0);
+    const raw = await readFile(path, "utf8");
+    expect(raw).not.toContain("aethon-synthetic-tool-result");
+  });
+
+  it("does not repair stale dangling subagent calls after conversation continued", async () => {
+    const dir = await tempRoot();
+    const path = join(dir, "session.jsonl");
+    await writeFile(
+      path,
+      [
+        JSON.stringify({ type: "session", id: "session-1", cwd: "/repo" }),
+        JSON.stringify({
+          type: "message",
+          id: "u1",
+          message: { role: "user", content: [{ type: "text", text: "hi" }] },
+        }),
+        JSON.stringify({
+          type: "message",
+          id: "assistant-tool",
+          parentId: "u1",
+          message: {
+            role: "assistant",
+            content: [{ type: "toolCall", id: "call_old", name: "task_batch" }],
+          },
+        }),
+        JSON.stringify({
+          type: "message",
+          id: "u2",
+          parentId: "assistant-tool",
+          message: {
+            role: "user",
+            content: [{ type: "text", text: "continue" }],
+          },
+        }),
+      ].join("\n") + "\n",
+    );
+
+    await expect(repairDanglingSubagentToolResults(path)).resolves.toBe(0);
+    const raw = await readFile(path, "utf8");
+    expect(raw).not.toContain("aethon-synthetic-tool-result");
+  });
+
+  it("keeps repaired subagent pi results ahead of local cancelled cards", async () => {
+    const dir = await tempRoot();
+    const path = join(dir, "session.jsonl");
+    await writeFile(
+      path,
+      `${JSON.stringify({
+        type: "message",
+        id: "assistant-tool",
+        timestamp: 3_000,
+        message: {
+          role: "assistant",
+          content: [
+            {
+              type: "toolCall",
+              id: "call_batch_1",
+              name: "task_batch",
+              arguments: { tasks: [] },
+            },
+          ],
+        },
+      })}\n${JSON.stringify({
+        type: "message",
+        id: "tool-result",
+        timestamp: 4_000,
+        message: {
+          role: "toolResult",
+          toolCallId: "call_batch_1",
+          toolName: "task_batch",
+          content: [{ type: "text", text: "cancelled synthetic result" }],
+          isError: true,
+        },
+      })}\n`,
+    );
+    await appendLocalChatMessage(dir, {
+      id: "tool-7-call_batch_1",
+      role: "agent",
+      a2ui: {
+        components: [
+          {
+            id: "tool-7-call_batch_1",
+            type: "tool-card",
+            props: {
+              toolName: "task_batch",
+              startedAt: 3_000,
+              endedAt: 3_500,
+              status: "cancelled",
+            },
+          },
+        ],
+      },
+      createdAt: 3_500,
+    });
+
+    const restored = await readSessionTranscript(dir);
+    expect(restored.map((message) => message.id)).toEqual([
+      "restored-tool-call_batch_1",
+    ]);
+    expect(restored[0].a2ui?.components[0]).toMatchObject({
+      props: {
+        toolName: "task_batch",
+        isError: true,
+      },
+      children: [{ props: { content: "cancelled synthetic result" } }],
     });
   });
 

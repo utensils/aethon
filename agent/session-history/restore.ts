@@ -19,6 +19,7 @@ import { latestSessionLog } from "./metadata";
 import { findSessionFileMatchingCwd } from "./lookup";
 import { readLocalChatTranscript } from "./parse-local";
 import { parseSessionHistoryLines } from "./parse-pi";
+import { isSubagentToolName } from "./subagent-tool-results";
 import {
   MAX_RESTORED_MESSAGES,
   type RestoredChatAttachment,
@@ -111,9 +112,13 @@ function toolCardIdentityFromId(id: string): string | undefined {
 
 function toolCardRecords(
   message: RestoredChatMessage,
-): Array<{ identity: string; status?: unknown }> {
+): Array<{ identity: string; status?: unknown; toolName?: unknown }> {
   const components = message.a2ui?.components ?? [];
-  const records: Array<{ identity: string; status?: unknown }> = [];
+  const records: Array<{
+    identity: string;
+    status?: unknown;
+    toolName?: unknown;
+  }> = [];
   for (const component of components) {
     if (!component || typeof component !== "object") continue;
     const record = component as Record<string, unknown>;
@@ -126,7 +131,11 @@ function toolCardRecords(
       record.props && typeof record.props === "object"
         ? (record.props as Record<string, unknown>)
         : undefined;
-    records.push({ identity, status: props?.status });
+    records.push({
+      identity,
+      status: props?.status,
+      toolName: props?.toolName,
+    });
   }
   return records;
 }
@@ -168,12 +177,17 @@ function isCoveredByPiToolCard(
   message: RestoredChatMessage,
   piToolCards: ReadonlySet<string>,
 ): boolean {
-  if (isCancelledToolCardMessage(message)) return false;
-  const identities = toolCardIdentities(message);
-  return (
-    identities.length > 0 &&
-    identities.every((identity) => piToolCards.has(identity))
-  );
+  const records = toolCardRecords(message);
+  if (records.length === 0) return false;
+  if (isCancelledToolCardMessage(message)) {
+    return records.every(
+      (record) =>
+        record.status === "cancelled" &&
+        isSubagentToolName(record.toolName) &&
+        piToolCards.has(record.identity),
+    );
+  }
+  return records.every((record) => piToolCards.has(record.identity));
 }
 
 function removePiToolCardsCoveredByLocalCancellation(
@@ -183,10 +197,14 @@ function removePiToolCardsCoveredByLocalCancellation(
   const cancelledIdentities = cancelledToolCardIdentitySet(localMessages);
   if (cancelledIdentities.size === 0) return piMessages;
   return piMessages.filter((message) => {
-    const identities = toolCardIdentities(message);
+    const records = toolCardRecords(message);
     return (
-      identities.length === 0 ||
-      !identities.every((identity) => cancelledIdentities.has(identity))
+      records.length === 0 ||
+      !records.every(
+        (record) =>
+          cancelledIdentities.has(record.identity) &&
+          !isSubagentToolName(record.toolName),
+      )
     );
   });
 }
