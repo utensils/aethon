@@ -32,8 +32,9 @@ pub struct UiConfig {
     /// via the composer pills; this is the default new tabs inherit.
     pub thinking_visibility: Option<String>,
     /// Global default visibility for tool-call cards in the transcript.
-    /// Allowed: `"show"` (default), `"collapse"` (group consecutive cards),
-    /// `"hide"`. Unknown values fall back to `"show"`.
+    /// Allowed: `"show"`, `"group-turn"`, `"group-run"`, `"group-block"`
+    /// (default when the key is missing), `"hide"`. Unknown values fall back
+    /// to `"show"` so a typo cannot silently hide content.
     pub tool_calls_visibility: Option<String>,
 }
 
@@ -234,7 +235,9 @@ pub fn normalize_visibility(input: Option<&str>) -> &'static str {
 /// agent turn), `group-run` (one cluster per consecutive run), and
 /// `group-block` (the whole agent turn folded into one block). The legacy
 /// `"collapse"` value (written by PR #204) maps to `group-turn` so existing
-/// configs adopt the natural per-turn grouping. Unknown/missing → `"show"`.
+/// configs adopt the natural per-turn grouping. Unknown values fall back to
+/// `"show"` so a typo can't silently hide content; missing config keys are
+/// handled by `parse_config_toml` and default to `"group-block"`.
 pub fn normalize_tool_visibility(input: Option<&str>) -> &'static str {
     match input {
         Some("group-turn") => "group-turn",
@@ -381,7 +384,12 @@ pub fn parse_config_toml(input: &str) -> serde_json::Value {
         .unwrap_or(8);
     let new_tab_kind = normalize_new_tab_kind(cfg.shortcuts.new_tab_kind.as_deref());
     let thinking_visibility = normalize_visibility(cfg.ui.thinking_visibility.as_deref());
-    let tool_calls_visibility = normalize_tool_visibility(cfg.ui.tool_calls_visibility.as_deref());
+    let tool_calls_visibility = cfg
+        .ui
+        .tool_calls_visibility
+        .as_deref()
+        .map(|value| normalize_tool_visibility(Some(value)))
+        .unwrap_or("group-block");
     let thinking_level = normalize_thinking_level(cfg.agent.thinking_level.as_deref());
     let provider_timeout_seconds =
         normalize_optional_timeout_seconds(cfg.agent.provider_timeout_seconds);
@@ -1022,10 +1030,10 @@ enabled = "never"
     }
 
     #[test]
-    fn parse_config_toml_visibility_defaults_to_show() {
+    fn parse_config_toml_visibility_defaults_to_show_and_grouped_tools() {
         let v = parse_config_toml("");
         assert_eq!(v["ui"]["thinkingVisibility"], "show");
-        assert_eq!(v["ui"]["toolCallsVisibility"], "show");
+        assert_eq!(v["ui"]["toolCallsVisibility"], "group-block");
     }
 
     #[test]

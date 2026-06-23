@@ -24,6 +24,7 @@ export default tseslint.config(
       "examples/**",
       ".aethon/**",
       ".claude/**",
+      ".understand-anything/**",
       "scripts/**",
       // VitePress docs site is self-contained — its own tsconfig + lockfile.
       "website/**",

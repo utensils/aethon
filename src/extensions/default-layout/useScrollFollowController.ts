@@ -10,10 +10,11 @@ import type { VirtuosoHandle, ListRange } from "react-virtuoso";
 import type { ChatMessage } from "../../types/a2ui";
 import { isAtBottom as metricsAtBottom } from "../../utils/stickyScrollController";
 import {
-  anchorMessageIdForGroup,
-  findGroupIndexForMessageId,
-  type MessageGroup,
-} from "../../utils/toolCardGrouping";
+  anchorMessageIdForRow,
+  findRowIndexForMessageId,
+  searchableTextForRow,
+  type TranscriptRow,
+} from "../../utils/transcriptRows";
 import type { ResolvedVisibility } from "../../utils/visibilityResolver";
 
 // Distance (px) from the bottom still treated as "at the bottom" — used by the
@@ -94,7 +95,7 @@ function removeUserScrollIntentListeners(
 
 interface UseScrollFollowControllerArgs {
   messages: ChatMessage[];
-  groups: MessageGroup[];
+  rows: TranscriptRow[];
   tabId?: string;
   scrollToMatch?: string;
   visibility: ResolvedVisibility;
@@ -113,6 +114,7 @@ export interface ScrollFollowController {
   handleRangeChanged: (range: ListRange) => void;
   handleScrollerRef: (ref: HTMLElement | Window | null) => void;
   handleTotalListHeightChanged: () => void;
+  scrollerElement: HTMLElement | null;
 }
 
 export function resetScrollFollowCacheForTests(): void {
@@ -131,7 +133,7 @@ export function getScrollFollowCacheAnchorForTests(
  *  search jumps, and visibility-toggle re-anchoring. */
 export function useScrollFollowController({
   messages,
-  groups,
+  rows,
   tabId,
   scrollToMatch,
   visibility,
@@ -159,18 +161,18 @@ export function useScrollFollowController({
   const [flashIndex, setFlashIndex] = useState<number | null>(null);
   const prevScrollToMatch = useRef<string | undefined>(undefined);
   const prevLastMessageId = useRef(messages[messages.length - 1]?.id);
-  // Topmost visible group index, fed by Virtuoso's rangeChanged — used to
-  // recover the reading anchor when a filter toggle rebuilds the group list.
+  // Topmost visible row index, fed by Virtuoso's rangeChanged — used to recover
+  // the reading anchor when a filter toggle rebuilds the virtual row list.
   const lastRangeRef = useRef<ListRange | null>(null);
-  // Always-current groups for synchronous reads inside event handlers (scroll /
-  // rangeChanged), which fire outside the render that produced `groups`. Synced
+  // Always-current rows for synchronous reads inside event handlers (scroll /
+  // rangeChanged), which fire outside the render that produced `rows`. Synced
   // in a layout effect (refs must not be written during render); event handlers
   // run after commit, so the ref is current by the time they fire.
-  const groupsRef = useRef(groups);
+  const rowsRef = useRef(rows);
   useLayoutEffect(() => {
-    groupsRef.current = groups;
-  }, [groups]);
-  const prevGroupsRef = useRef<MessageGroup[]>(groups);
+    rowsRef.current = rows;
+  }, [rows]);
+  const prevRowsRef = useRef<TranscriptRow[]>(rows);
   const prevVisRef = useRef({
     toolCalls: visibility.toolCalls,
     thinking: visibility.thinking,
@@ -212,7 +214,7 @@ export function useScrollFollowController({
           updateCanScroll();
           return;
         }
-        const lastIndex = Math.max(0, groupsRef.current.length - 1);
+        const lastIndex = Math.max(0, rowsRef.current.length - 1);
         virtuosoRef.current?.scrollToIndex({ index: lastIndex, align: "end" });
         virtuosoRef.current?.scrollTo({ top: Number.MAX_SAFE_INTEGER });
         if (el) el.scrollTop = el.scrollHeight;
@@ -294,24 +296,22 @@ export function useScrollFollowController({
       if (atBottom) {
         tabScrollCache.delete(tabId);
       } else {
-        const anchorId = anchorMessageIdForGroup(
-          groupsRef.current[lastRangeRef.current?.startIndex ?? 0],
+        const anchorId = anchorMessageIdForRow(
+          rowsRef.current[lastRangeRef.current?.startIndex ?? 0],
         );
         if (anchorId) tabScrollCache.set(tabId, anchorId);
       }
     }
   }, [setFollowing, tabId, updateCanScroll]);
 
-  // Track the topmost visible group and, while scrolled-up, keep the per-tab
+  // Track the topmost visible row and, while scrolled-up, keep the per-tab
   // restore anchor current as the user scrolls (so switching away restores the
   // exact message they were reading, even after new messages arrived).
   const handleRangeChanged = useCallback(
     (range: ListRange) => {
       lastRangeRef.current = range;
       if (tabId !== undefined && !followingRef.current) {
-        const anchorId = anchorMessageIdForGroup(
-          groupsRef.current[range.startIndex],
-        );
+        const anchorId = anchorMessageIdForRow(rowsRef.current[range.startIndex]);
         if (anchorId) tabScrollCache.set(tabId, anchorId);
       }
     },
@@ -392,22 +392,21 @@ export function useScrollFollowController({
   // mounts the target row even when it's far offscreen, so no DOM walk is needed.
   useEffect(() => {
     if (!scrollToMatch || scrollToMatch === prevScrollToMatch.current) return;
-    prevScrollToMatch.current = scrollToMatch;
     const needle = scrollToMatch.toLowerCase();
-    // Search runs over groups so the scroll index matches Virtuoso's data.
-    // Only text-bearing single rows can match (tool clusters carry no text).
-    const idx = groups.findIndex(
-      (g) =>
-        g.type === "single" &&
-        (g.message.text ?? "").toLowerCase().includes(needle),
+    // Search runs over virtual rows so the scroll index matches Virtuoso's
+    // flattened data. Collapsed summaries include the text/tool metadata they
+    // contain, so a folded historical turn can still be found and flashed.
+    const idx = rows.findIndex((row) =>
+      searchableTextForRow(row).toLowerCase().includes(needle),
     );
     if (idx < 0) return;
+    prevScrollToMatch.current = scrollToMatch;
     virtuosoRef.current?.scrollToIndex({ index: idx, align: "center" });
     // eslint-disable-next-line react-hooks/set-state-in-effect -- transient flash driven by an external search action (the same effect also imperatively scrolls); not derivable during render
     setFlashIndex(idx);
     const timer = window.setTimeout(() => setFlashIndex(null), 1200);
     return () => window.clearTimeout(timer);
-  }, [groups, scrollToMatch, virtuosoRef]);
+  }, [rows, scrollToMatch, virtuosoRef]);
 
   // Per-tab restore: map the saved top-of-viewport message id to its current row
   // index. When present, open there (aligned to the top); otherwise open pinned
@@ -416,12 +415,12 @@ export function useScrollFollowController({
   const restoreAnchorId =
     tabId !== undefined ? tabScrollCache.get(tabId) : undefined;
   const restoreIndex = restoreAnchorId
-    ? findGroupIndexForMessageId(groups, restoreAnchorId)
+    ? findRowIndexForMessageId(rows, restoreAnchorId)
     : -1;
   const initialTopMostItemIndex =
     restoreIndex >= 0
       ? { index: restoreIndex, align: "start" as const }
-      : { index: Math.max(0, groups.length - 1), align: "end" as const };
+      : { index: Math.max(0, rows.length - 1), align: "end" as const };
 
   // A cached restore anchor that no longer exists (chat cleared via Cmd+K, or a
   // session rollback truncated it away) is stale: restoreIndex is -1 so the list
@@ -461,13 +460,13 @@ export function useScrollFollowController({
   }, [messages, scrollToBottom, setFollowing, tabId]);
 
   // Toggling a transcript filter (tool-call grouping / thinking visibility)
-  // rebuilds `groups` with a different length + identity. Re-anchor exactly once
+  // rebuilds `rows` with a different length + identity. Re-anchor exactly once
   // per toggle (NOT per streamed token — visibility is the guard) so the view
   // never jumps: a following user stays pinned to the new bottom; a scrolled-up
   // user keeps the message they were reading in place.
   useLayoutEffect(() => {
     const prevVis = prevVisRef.current;
-    const prevGroups = prevGroupsRef.current;
+    const prevRows = prevRowsRef.current;
     const visChanged =
       prevVis.toolCalls !== visibility.toolCalls ||
       prevVis.thinking !== visibility.thinking;
@@ -475,7 +474,7 @@ export function useScrollFollowController({
       toolCalls: visibility.toolCalls,
       thinking: visibility.thinking,
     };
-    prevGroupsRef.current = groups;
+    prevRowsRef.current = rows;
     if (!visChanged) return;
 
     if (followingRef.current) {
@@ -483,17 +482,17 @@ export function useScrollFollowController({
       return;
     }
 
-    // Map the topmost visible message id from the OLD groups to its index in
-    // the NEW groups and pin it to the top (preserves the reading position).
+    // Map the topmost visible message id from the OLD rows to its index in
+    // the NEW rows and pin it to the top (preserves the reading position).
     const startIndex = lastRangeRef.current?.startIndex ?? 0;
-    const anchorId = anchorMessageIdForGroup(prevGroups[startIndex]);
-    let newIndex = findGroupIndexForMessageId(groups, anchorId);
+    const anchorId = anchorMessageIdForRow(prevRows[startIndex]);
+    let newIndex = findRowIndexForMessageId(rows, anchorId);
     if (newIndex < 0 && anchorId) {
       // Anchor dropped (e.g. its tool card was hidden): fall back to the nearest
       // preceding message that still survives in the new groups.
       const anchorMsgIdx = messages.findIndex((m) => m.id === anchorId);
       for (let i = anchorMsgIdx - 1; i >= 0; i--) {
-        const idx = findGroupIndexForMessageId(groups, messages[i].id);
+        const idx = findRowIndexForMessageId(rows, messages[i].id);
         if (idx >= 0) {
           newIndex = idx;
           break;
@@ -503,7 +502,7 @@ export function useScrollFollowController({
     if (newIndex >= 0) {
       virtuosoRef.current?.scrollToIndex({ index: newIndex, align: "start" });
     }
-  }, [groups, messages, scrollToBottom, visibility, virtuosoRef]);
+  }, [rows, messages, scrollToBottom, visibility, virtuosoRef]);
 
   return {
     following,
@@ -515,5 +514,6 @@ export function useScrollFollowController({
     handleRangeChanged,
     handleScrollerRef,
     handleTotalListHeightChanged,
+    scrollerElement: scrollerEl,
   };
 }

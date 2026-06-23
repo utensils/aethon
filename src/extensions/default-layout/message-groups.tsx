@@ -4,6 +4,7 @@ import A2UIRenderer, {
 } from "../../components/A2UIRenderer";
 import {
   isToolCardMessage,
+  toolCardTitle,
   type MessageGroup,
 } from "../../utils/toolCardGrouping";
 import type { VisibilityMode } from "../../config";
@@ -36,14 +37,6 @@ export function CanvasFooter({ context }: { context?: CanvasFooterContext }) {
   );
 }
 
-/** Title shown on a tool-call card (e.g. "bash", "read"), used for the
- *  collapsed-group peek. */
-function toolCardTitle(m: ChatMessage): string | undefined {
-  const comp = m.a2ui?.components?.find((c) => c?.type === "tool-card");
-  const title = comp?.props?.title;
-  return typeof title === "string" && title.length > 0 ? title : undefined;
-}
-
 /** A short "name · name · …" peek of the tools inside a collapsed group, so the
  *  user can tell what's hidden without expanding. Caps at 4 names. */
 function toolPeek(messages: ChatMessage[]): string {
@@ -66,6 +59,7 @@ export function ToolGroupRow({
   onEvent,
   expanded,
   onToggle,
+  renderExpandedBody = false,
 }: {
   group: Extract<MessageGroup, { type: "tool-group" }>;
   state: Record<string, unknown>;
@@ -73,6 +67,7 @@ export function ToolGroupRow({
   onEvent?: BuiltinComponentProps["onEvent"];
   expanded: boolean;
   onToggle: () => void;
+  renderExpandedBody?: boolean;
 }) {
   const count = group.messages.length;
   const peek = toolPeek(group.messages);
@@ -92,7 +87,7 @@ export function ToolGroupRow({
           <span className="ae-tool-group-peek">{peek}</span>
         )}
       </button>
-      {expanded && (
+      {expanded && renderExpandedBody && (
         <div className="ae-tool-group-body">
           {group.messages.map((m) =>
             m.a2ui ? (
@@ -107,6 +102,31 @@ export function ToolGroupRow({
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+export function ToolGroupChildRow({
+  message,
+  state,
+  tabId,
+  onEvent,
+}: {
+  message: ChatMessage;
+  state: Record<string, unknown>;
+  tabId?: string;
+  onEvent?: BuiltinComponentProps["onEvent"];
+}) {
+  return (
+    <div className="ae-tool-group-child-row">
+      {message.a2ui ? (
+        <A2UIRenderer
+          payload={message.a2ui}
+          state={state}
+          onEvent={forwardNestedA2UIEvent(onEvent)}
+          tabId={tabId}
+        />
+      ) : null}
     </div>
   );
 }
@@ -140,6 +160,7 @@ export function TurnBlockRow({
   thinkingVisibility,
   expanded,
   onToggle,
+  renderExpandedBody = false,
 }: {
   group: Extract<MessageGroup, { type: "turn-block" }>;
   state: Record<string, unknown>;
@@ -149,6 +170,7 @@ export function TurnBlockRow({
   thinkingVisibility: VisibilityMode;
   expanded: boolean;
   onToggle: () => void;
+  renderExpandedBody?: boolean;
 }) {
   const peek = toolPeek(group.messages);
   return (
@@ -170,7 +192,7 @@ export function TurnBlockRow({
           <span className="ae-turn-block-peek">{peek}</span>
         )}
       </button>
-      {expanded && (
+      {expanded && renderExpandedBody && (
         <div className="ae-turn-block-body">
           {group.messages.map((m, i) => (
             <ChatMessageRow

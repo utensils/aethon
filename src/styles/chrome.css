@@ -9723,15 +9723,15 @@ button.ae-vcs-chip:focus-visible {
 
 /* ── Grouped tool-call cluster (tool visibility = "group-run" / "group-turn") ── */
 .ae-tool-group {
-  border: 1px dashed var(--border);
-  border-radius: 10px;
+  border: 1px solid color-mix(in oklab, var(--border) 72%, transparent);
+  border-radius: var(--radius-md);
   width: fit-content;
   max-width: 100%;
 }
 .ae-tool-group[data-expanded="true"] {
   width: 100%;
-  border-style: solid;
-  background: var(--bg-elev);
+  border-color: transparent;
+  background: transparent;
 }
 .ae-tool-group-summary {
   display: inline-flex;
@@ -9743,12 +9743,25 @@ button.ae-vcs-chip:focus-visible {
   color: var(--text-dim);
   font: inherit;
   font-size: 12px;
-  padding: 5px 10px;
+  padding: 4px 9px;
   cursor: pointer;
   text-align: left;
+  border-radius: inherit;
+  transition:
+    background 120ms ease,
+    border-color 120ms ease,
+    color 120ms ease;
 }
 .ae-tool-group-summary:hover {
+  background: var(--bg-hover);
   color: var(--text);
+}
+.ae-tool-group[data-expanded="true"] .ae-tool-group-summary {
+  width: fit-content;
+  max-width: 100%;
+  border: 1px solid color-mix(in oklab, var(--border) 80%, transparent);
+  border-radius: var(--radius-md);
+  background: color-mix(in oklab, var(--bg-elev) 72%, transparent);
 }
 .ae-tool-group-caret {
   font-size: 10px;
@@ -9771,18 +9784,25 @@ button.ae-vcs-chip:focus-visible {
   gap: 6px;
   padding: 0 8px 8px;
 }
+.ae-tool-group-child-row {
+  min-width: 0;
+  max-width: min(100%, 76ch);
+}
+.ae-tool-group-child-row .ae-tool-card {
+  width: 100%;
+}
 
 /* ── Folded agent turn (tool-call visibility = "group-block") ─────────── */
 .ae-turn-block {
-  border: 1px dashed var(--border);
-  border-radius: 10px;
+  border: 1px solid color-mix(in oklab, var(--border) 72%, transparent);
+  border-radius: var(--radius-md);
   width: fit-content;
   max-width: 100%;
 }
 .ae-turn-block[data-expanded="true"] {
   width: 100%;
-  border-style: solid;
-  background: var(--bg-elev);
+  border-color: transparent;
+  background: transparent;
 }
 .ae-turn-block-summary {
   display: inline-flex;
@@ -9794,12 +9814,25 @@ button.ae-vcs-chip:focus-visible {
   color: var(--text-dim);
   font: inherit;
   font-size: 12px;
-  padding: 5px 10px;
+  padding: 4px 9px;
   cursor: pointer;
   text-align: left;
+  border-radius: inherit;
+  transition:
+    background 120ms ease,
+    border-color 120ms ease,
+    color 120ms ease;
 }
 .ae-turn-block-summary:hover {
+  background: var(--bg-hover);
   color: var(--text);
+}
+.ae-turn-block[data-expanded="true"] .ae-turn-block-summary {
+  width: fit-content;
+  max-width: 100%;
+  border: 1px solid color-mix(in oklab, var(--border) 80%, transparent);
+  border-radius: var(--radius-md);
+  background: color-mix(in oklab, var(--bg-elev) 72%, transparent);
 }
 .ae-turn-block-caret {
   font-size: 10px;
@@ -9826,6 +9859,12 @@ button.ae-vcs-chip:focus-visible {
   flex-direction: column;
   gap: 10px;
   padding: 4px 8px 10px;
+}
+.ae-turn-block-child-row.a2ui-msg-row {
+  margin-top: 4px;
+}
+.ae-turn-block-child-message.a2ui-chat-message {
+  max-width: min(100%, 76ch);
 }
 
 /* --------------------------------------------------------------------------
