@@ -596,6 +596,7 @@ function handleOAuthStart(
           challengeId,
           profileId: meta.id,
           providerId,
+          targetTabId: pending.targetTabId,
           ok: true,
         },
       });
@@ -851,6 +852,11 @@ async function handleApplyForTab(
     initialModel: nextModel || desiredModel,
   });
   markProfileUsed(state, profile.id);
+  deps.send({
+    type: "auth_profile_changed",
+    tabId,
+    profileId: profile.id,
+  });
 }
 
 /**

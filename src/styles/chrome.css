@@ -6548,6 +6548,36 @@ body.ae-resizing-terminal * {
   border-radius: var(--radius-md);
   background: color-mix(in oklab, var(--accent) 5%, transparent);
 }
+.ae-auth-instructions {
+  margin: var(--space-2) 0 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: center;
+  color: var(--fg);
+  font-size: 13px;
+}
+.ae-auth-code-copy {
+  display: inline-flex;
+  gap: var(--space-2);
+  align-items: center;
+  min-width: 0;
+}
+.ae-auth-code-input {
+  width: 132px;
+  max-width: 100%;
+  padding: 4px 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--bg-elev);
+  color: var(--fg);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-align: center;
+  user-select: all;
+}
 .ae-auth-list {
   display: flex;
   flex-direction: column;

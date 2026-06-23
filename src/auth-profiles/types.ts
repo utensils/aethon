@@ -30,6 +30,7 @@ export interface AuthProfileLoginEvent {
   challengeId: string;
   profileId: string;
   providerId: string;
+  targetTabId?: string;
   url?: string;
   instructions?: string;
   message?: string;

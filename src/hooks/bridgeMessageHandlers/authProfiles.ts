@@ -7,7 +7,8 @@ import {
   type AuthProfilesSnapshot,
 } from "../../auth-profiles";
 import type { Tab } from "../../types/tab";
-import type { BridgeMessageHandler } from "./types";
+import { isAgentTabInFlight } from "../../utils/agentBusy";
+import type { BridgeMessageContext, BridgeMessageHandler } from "./types";
 
 type AuthProfilesState = AuthProfilesSnapshot & {
   modal?: { open?: boolean };
@@ -115,6 +116,7 @@ export const handleAuthProfileLoginEvent: BridgeMessageHandler = (
       message: event.error,
       kind: event.ok ? "success" : "error",
     });
+    applyCompletedLoginToWorker(event, ctx);
   }
   ctx.setState((prev) => {
     const current = (prev.authProfiles as AuthProfilesState | undefined) ?? {};
@@ -132,7 +134,41 @@ export const handleAuthProfileLoginEvent: BridgeMessageHandler = (
   });
 };
 
-export const handleAuthProfileChanged: BridgeMessageHandler = (message, ctx) => {
+function applyCompletedLoginToWorker(
+  event: AuthProfileLoginEvent,
+  ctx: BridgeMessageContext,
+): void {
+  if (event.ok !== true || !event.profileId) return;
+  const tabId = event.targetTabId;
+  if (!tabId || tabId === "default") return;
+  const tab = ((ctx.stateRef.current.tabs as Tab[] | undefined) ?? []).find(
+    (candidate) =>
+      candidate.id === tabId && (candidate.kind ?? "agent") === "agent",
+  );
+  if (!tab) return;
+  if (isAgentTabInFlight(tab)) {
+    ctx.pushNotification({
+      title: "Account ready",
+      message: "Stop the current prompt before switching this tab to the new account.",
+      kind: "info",
+    });
+    return;
+  }
+  void sendAuthProfileCommand({
+    type: "auth_profile_apply",
+    tabId,
+    profileId: event.profileId,
+    ...(tab?.cwd ? { cwd: tab.cwd } : {}),
+    ...(tab?.model ? { model: tab.model } : {}),
+  }).catch(() => {
+    /* bridge restart / reload — auth profile is persisted, ignore */
+  });
+}
+
+export const handleAuthProfileChanged: BridgeMessageHandler = (
+  message,
+  ctx,
+) => {
   const tabId = typeof message.tabId === "string" ? message.tabId : undefined;
   const profileId =
     typeof message.profileId === "string" ? message.profileId : undefined;
@@ -147,14 +183,14 @@ export const handleAuthProfileChanged: BridgeMessageHandler = (message, ctx) => 
     ...prev,
     authProfiles: {
       ...(prev.authProfiles ?? {
-          profiles: [],
-          defaultByProvider: {},
-          providers: [],
-          activeByTab: {},
-        }),
+        profiles: [],
+        defaultByProvider: {},
+        providers: [],
+        activeByTab: {},
+      }),
       activeByTab: {
-        ...((prev.authProfiles as AuthProfilesState | undefined)
-          ?.activeByTab ?? {}),
+        ...((prev.authProfiles as AuthProfilesState | undefined)?.activeByTab ??
+          {}),
         [tabId]: profileId,
       },
     },

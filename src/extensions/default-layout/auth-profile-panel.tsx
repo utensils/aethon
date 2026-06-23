@@ -485,6 +485,10 @@ function LoginStatus({
   onChange: (value: string) => void;
   onSubmit: (event: AuthProfileLoginEvent) => Promise<void>;
 }) {
+  const [copiedChallengeId, setCopiedChallengeId] = useState<string | null>(
+    null,
+  );
+
   if (!event) return null;
   if (event.type === "prompt") {
     return (
@@ -510,15 +514,79 @@ function LoginStatus({
     );
   }
   if (event.type === "auth" && event.url) {
+    const instructions = event.instructions?.trim();
+    const codeMatch = instructions?.match(
+      /^(.*?\bcode:\s*)([A-Za-z0-9-]+)(.*)$/i,
+    );
+    const codePrefix = codeMatch?.[1];
+    const deviceCode = codeMatch?.[2];
+    const codeSuffix = codeMatch?.[3]?.trim();
+    const copiedCode = copiedChallengeId === event.challengeId;
+    const copyDeviceCode = async () => {
+      if (!deviceCode) return;
+      const copied = await copyText(deviceCode);
+      setCopiedChallengeId(copied ? event.challengeId : null);
+    };
     return (
-      <p className="ae-settings-note">
-        Browser login opened. If it did not, open the provider login URL from
-        your browser.
-      </p>
+      <div className="ae-auth-login">
+        <p className="ae-settings-note">
+          Browser login opened. If it did not, open the provider login URL from
+          your browser.
+        </p>
+        {instructions && codePrefix && deviceCode ? (
+          <div className="ae-auth-instructions">
+            <span>{codePrefix}</span>
+            <div className="ae-auth-code-copy">
+              <input
+                className="ae-auth-code-input"
+                aria-label="Authentication code"
+                readOnly
+                value={deviceCode}
+                onClick={(e) => e.currentTarget.select()}
+                onFocus={(e) => e.currentTarget.select()}
+              />
+              <button
+                type="button"
+                className="ae-settings-secondary"
+                onClick={() => void copyDeviceCode()}
+              >
+                {copiedCode ? "Copied" : "Copy"}
+              </button>
+            </div>
+            {codeSuffix && <span>{codeSuffix}</span>}
+          </div>
+        ) : instructions ? (
+          <p className="ae-auth-instructions">{instructions}</p>
+        ) : null}
+      </div>
     );
   }
   if (event.message || event.error) {
     return <p className="ae-settings-note">{event.error ?? event.message}</p>;
   }
   return null;
+}
+
+async function copyText(text: string): Promise<boolean> {
+  if (navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch {
+      // Fall back to selection copy below.
+    }
+  }
+
+  const textarea = document.createElement("textarea");
+  textarea.value = text;
+  textarea.setAttribute("readonly", "");
+  textarea.style.position = "fixed";
+  textarea.style.opacity = "0";
+  document.body.appendChild(textarea);
+  try {
+    textarea.select();
+    return document.execCommand("copy");
+  } finally {
+    textarea.remove();
+  }
 }
