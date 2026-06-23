@@ -563,6 +563,19 @@ function hasDisplayableAgentContent(
   );
 }
 
+function hasHiddenThinkingTail(
+  turn: ConversationTurn,
+  thinkingVisibility: VisibilityMode,
+): boolean {
+  const tail = turn.agentMessages.at(-1);
+  if (!tail) return false;
+  return (
+    !hasDisplayableAgentContent(tail, thinkingVisibility) &&
+    typeof tail.thinking === "string" &&
+    tail.thinking.trim().length > 0
+  );
+}
+
 export function ConversationTurnRow({
   turn,
   state,
@@ -596,13 +609,16 @@ export function ConversationTurnRow({
   );
   const stopped =
     hasStopNotice || (isLatest && !live && state.status === "stopped");
+  const interruptedTail =
+    !live && hasHiddenThinkingTail(turn, thinkingVisibility);
+  const preserveInterruptedProse = stopped || interruptedTail;
   const displayableAgentMessages = turn.agentMessages.filter((message) =>
     hasDisplayableAgentContent(message, thinkingVisibility),
   );
   const visibleFinalMessage = displayableAgentMessages.at(-1);
   const visibleAgentMessages = live
     ? displayableAgentMessages
-    : stopped
+    : preserveInterruptedProse
       ? displayableAgentMessages
       : visibleFinalMessage
         ? [visibleFinalMessage]
@@ -661,7 +677,9 @@ export function ConversationTurnRow({
         expanded={expanded}
         onToggle={onToggle}
         live={live}
-        forceOpen={stopped}
+        forceOpen={
+          stopped || (interruptedTail && visibleAgentMessages.length === 0)
+        }
         visibleAgentMessageIds={visibleAgentMessageIds}
       />
     </div>

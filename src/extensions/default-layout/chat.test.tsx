@@ -2352,6 +2352,96 @@ describe("ChatHistory turn activity feed (mocked Virtuoso renders rows)", () => 
     expect(screen.getByText(/1 tool call/)).toBeTruthy();
   });
 
+  it("keeps interrupted progress prose visible when stop status has already reset", () => {
+    renderGroupedHistory({
+      messages: [
+        { id: "u1", role: "user", text: "Review this implementation" },
+        {
+          id: "a1",
+          role: "agent",
+          text: "I’ll inspect the branch diff and relevant files.",
+          model: "openai-codex/gpt-5.5",
+        },
+        {
+          id: "a2",
+          role: "agent",
+          text: "I don’t see any uncommitted changes.",
+          model: "openai-codex/gpt-5.5",
+        },
+        {
+          id: "t1",
+          role: "agent",
+          a2ui: {
+            components: [
+              {
+                id: "c1",
+                type: "tool-card",
+                props: { title: "bash", startedAt: 1, endedAt: 2 },
+              },
+            ],
+          },
+        },
+        {
+          id: "thinking-tail",
+          role: "agent",
+          thinking: "I was stopped before writing the final answer.",
+        },
+      ],
+      waiting: false,
+      status: "ready",
+      transcriptVisibility: { thinking: "hide", toolCalls: "group-block" },
+    });
+
+    expect(
+      screen.getByText("I’ll inspect the branch diff and relevant files."),
+    ).toBeTruthy();
+    expect(
+      screen.getByText("I don’t see any uncommitted changes."),
+    ).toBeTruthy();
+    expect(
+      screen.queryByText("I was stopped before writing the final answer."),
+    ).toBeNull();
+    expect(
+      screen
+        .getByRole("button", { name: /1 tool call/ })
+        .getAttribute("aria-expanded"),
+    ).toBe("false");
+    expect(screen.queryByText("bash")).toBeNull();
+  });
+
+  it("keeps interrupted tool output visible when stop happens before prose", () => {
+    renderGroupedHistory({
+      messages: [
+        { id: "u1", role: "user", text: "Review this implementation" },
+        {
+          id: "t1",
+          role: "agent",
+          a2ui: {
+            components: [
+              {
+                id: "c1",
+                type: "tool-card",
+                props: { title: "bash", startedAt: 1, endedAt: 2 },
+              },
+            ],
+          },
+        },
+        {
+          id: "thinking-tail",
+          role: "agent",
+          thinking: "I was stopped before writing visible prose.",
+        },
+      ],
+      waiting: false,
+      status: "ready",
+      transcriptVisibility: { thinking: "hide", toolCalls: "group-block" },
+    });
+
+    const summary = screen.getByRole("button", { name: /1 tool call/ });
+    expect(summary.getAttribute("aria-expanded")).toBe("true");
+    expect(screen.getByText("bash")).toBeTruthy();
+  });
+
   it("keeps the latest stopped status turn expanded when no stop notice is in the transcript", () => {
     renderGroupedHistory({
       status: "stopped",
