@@ -6,9 +6,11 @@ interface ToolCardMeta {
   isError: boolean;
   status?: string;
   title?: string;
+  description?: string;
   startedAt?: number;
   endedAt?: number;
   fileChange?: ToolCardFileChange;
+  componentId?: string;
 }
 
 const toolCardMetaCache = new WeakMap<ChatMessage, ToolCardMeta>();
@@ -20,6 +22,19 @@ export interface ToolCardFileChange {
   preview?: string;
   additions?: number;
   deletions?: number;
+}
+
+export interface ToolCardDetails {
+  isToolCard: boolean;
+  isRunning: boolean;
+  isError: boolean;
+  status?: string;
+  title?: string;
+  description?: string;
+  startedAt?: number;
+  endedAt?: number;
+  fileChange?: ToolCardFileChange;
+  componentId?: string;
 }
 
 export interface ToolMessageSummary {
@@ -74,6 +89,7 @@ function readToolCardMeta(m: ChatMessage): ToolCardMeta {
   const comp = m.a2ui?.components?.find((c) => c?.type === "tool-card");
   const props = comp?.props;
   const title = stringValue(props?.title);
+  const description = stringValue(props?.description);
   const status = stringValue(props?.status);
   const startedAt = finiteNumber(props?.startedAt);
   const endedAt = finiteNumber(props?.endedAt);
@@ -85,6 +101,8 @@ function readToolCardMeta(m: ChatMessage): ToolCardMeta {
     isError: props?.isError === true,
     ...(status ? { status } : {}),
     ...(title ? { title } : {}),
+    ...(description ? { description } : {}),
+    ...(comp?.id ? { componentId: comp.id } : {}),
     ...(startedAt !== undefined ? { startedAt } : {}),
     ...(endedAt !== undefined ? { endedAt } : {}),
     ...(fileChange ? { fileChange } : {}),
@@ -115,6 +133,10 @@ export function toolCardFileChange(
   m: ChatMessage,
 ): ToolCardFileChange | undefined {
   return readToolCardMeta(m).fileChange;
+}
+
+export function toolCardDetails(m: ChatMessage): ToolCardDetails {
+  return { ...readToolCardMeta(m) };
 }
 
 export function summarizeToolMessages(

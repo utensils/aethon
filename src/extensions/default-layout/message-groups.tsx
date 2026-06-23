@@ -2,15 +2,17 @@ import type { A2UIComponent, ChatMessage } from "../../types/a2ui";
 import A2UIRenderer, {
   type BuiltinComponentProps,
 } from "../../components/A2UIRenderer";
+import { FileIcon } from "../../components/file-icon";
 import {
   isRunningToolCard,
   summarizeToolMessages,
+  toolCardDetails,
+  type ToolCardFileChange,
   type ToolMessageSummary,
 } from "../../utils/toolCardGrouping";
 import type { ConversationTurn } from "../../utils/transcriptRows";
 import type { ToolCallsMode, VisibilityMode } from "../../config";
 import { ChatMessageRow, TypingIndicator } from "./message-row";
-import { forwardNestedA2UIEvent } from "./message-rendering-utils";
 
 export interface CanvasFooterContext {
   liveSubtree: { components: A2UIComponent[] } | null;
@@ -149,6 +151,152 @@ function fileChangeStatsLabel(summary: ToolMessageSummary): string {
   return parts.join(" ");
 }
 
+function basename(path: string): string {
+  return (
+    path
+      .replace(/[/\\]+$/, "")
+      .split(/[/\\]/)
+      .pop() || path
+  );
+}
+
+function parentPath(path: string): string {
+  const trimmed = path.replace(/[/\\]+$/, "");
+  const idx = Math.max(trimmed.lastIndexOf("/"), trimmed.lastIndexOf("\\"));
+  return idx > 0 ? trimmed.slice(0, idx) : "";
+}
+
+function toolStateLabel(details: ReturnType<typeof toolCardDetails>): string {
+  if (details.isRunning) return "Running";
+  if (details.status === "cancelled") return "Cancelled";
+  if (details.isError) return "Failed";
+  return "Completed";
+}
+
+function toolDurationLabel(
+  details: ReturnType<typeof toolCardDetails>,
+): string {
+  if (details.startedAt === undefined || details.endedAt === undefined) {
+    return "";
+  }
+  return compactDuration(Math.max(0, details.endedAt - details.startedAt));
+}
+
+function ToolFileChangeRow({
+  change,
+  onEvent,
+  componentId,
+}: {
+  change: ToolCardFileChange;
+  onEvent?: BuiltinComponentProps["onEvent"];
+  componentId?: string;
+}) {
+  const filePath = change.path ?? "";
+  if (!filePath) return null;
+  const eventPayload = {
+    filePath,
+    ...(change.rootPath ? { rootPath: change.rootPath } : {}),
+  };
+  const additions = change.additions ?? 0;
+  const deletions = change.deletions ?? 0;
+  const dir = parentPath(filePath);
+  return (
+    <div className="ae-tool-activity-file">
+      <button
+        type="button"
+        className="ae-tool-activity-file-open"
+        title={`Open ${filePath}`}
+        onClick={() => onEvent?.("tool-file-open", eventPayload, componentId)}
+      >
+        <FileIcon
+          path={filePath}
+          isDir={false}
+          className="ae-tool-activity-file-icon"
+        />
+        <span className="ae-tool-activity-file-name">{basename(filePath)}</span>
+        {dir ? <span className="ae-tool-activity-file-dir">{dir}</span> : null}
+      </button>
+      {(additions > 0 || deletions > 0) && (
+        <span className="ae-tool-activity-file-stat" aria-label="Line changes">
+          {additions > 0 ? (
+            <span className="ae-turn-block-add">+{additions}</span>
+          ) : null}
+          {deletions > 0 ? (
+            <span className="ae-turn-block-del">-{deletions}</span>
+          ) : null}
+        </span>
+      )}
+      <button
+        type="button"
+        className="ae-tool-activity-file-diff"
+        title={`Open diff for ${filePath}`}
+        aria-label={`Open diff for ${basename(filePath)}`}
+        onClick={() => onEvent?.("tool-file-diff", eventPayload, componentId)}
+      >
+        ⧉
+      </button>
+    </div>
+  );
+}
+
+function ToolActivityRow({
+  message,
+  onEvent,
+}: {
+  message: ChatMessage;
+  onEvent?: BuiltinComponentProps["onEvent"];
+}) {
+  const details = toolCardDetails(message);
+  if (!details.isToolCard) return null;
+  const stateLabel = toolStateLabel(details);
+  const duration = toolDurationLabel(details);
+  const status = details.isRunning
+    ? "running"
+    : details.status === "cancelled"
+      ? "cancelled"
+      : details.isError
+        ? "failed"
+        : "completed";
+  return (
+    <div
+      className="ae-tool-activity-row"
+      data-status={status}
+      role="group"
+      aria-label={[
+        details.title ?? "tool",
+        details.description ?? "",
+        duration ? `${stateLabel} in ${duration}` : stateLabel,
+      ]
+        .filter(Boolean)
+        .join(" · ")}
+    >
+      <span className="ae-tool-activity-dot" aria-hidden="true" />
+      <div className="ae-tool-activity-main">
+        <div className="ae-tool-activity-line">
+          <span className="ae-tool-activity-name">
+            {details.title ?? "tool"}
+          </span>
+          {details.description ? (
+            <span className="ae-tool-activity-description">
+              {details.description}
+            </span>
+          ) : null}
+        </div>
+        {details.fileChange ? (
+          <ToolFileChangeRow
+            change={details.fileChange}
+            onEvent={onEvent}
+            componentId={details.componentId}
+          />
+        ) : null}
+      </div>
+      <span className="ae-tool-activity-state">
+        {duration ? `${stateLabel} in ${duration}` : stateLabel}
+      </span>
+    </div>
+  );
+}
+
 function TurnActivity({
   turn,
   state,
@@ -235,11 +383,9 @@ function TurnActivity({
             />
           ))}
           {visibleTools.map((message) => (
-            <ToolGroupChildRow
+            <ToolActivityRow
               key={message.id}
               message={message}
-              state={state}
-              tabId={tabId}
               onEvent={onEvent}
             />
           ))}
@@ -248,11 +394,9 @@ function TurnActivity({
       {!detailsOpen && runningTools.length > 0 && (
         <div className="ae-turn-activity-live-tools">
           {runningTools.map((message) => (
-            <ToolGroupChildRow
+            <ToolActivityRow
               key={message.id}
               message={message}
-              state={state}
-              tabId={tabId}
               onEvent={onEvent}
             />
           ))}
@@ -342,31 +486,6 @@ export function ConversationTurnRow({
         onToggle={onToggle}
         live={live}
       />
-    </div>
-  );
-}
-
-export function ToolGroupChildRow({
-  message,
-  state,
-  tabId,
-  onEvent,
-}: {
-  message: ChatMessage;
-  state: Record<string, unknown>;
-  tabId?: string;
-  onEvent?: BuiltinComponentProps["onEvent"];
-}) {
-  return (
-    <div className="ae-tool-group-child-row">
-      {message.a2ui ? (
-        <A2UIRenderer
-          payload={message.a2ui}
-          state={state}
-          onEvent={forwardNestedA2UIEvent(onEvent)}
-          tabId={tabId}
-        />
-      ) : null}
     </div>
   );
 }

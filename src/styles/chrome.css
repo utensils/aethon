@@ -9730,14 +9730,6 @@ button.ae-vcs-chip:focus-visible {
   color: var(--text);
 }
 
-.ae-tool-group-child-row {
-  min-width: 0;
-  max-width: min(100%, 76ch);
-}
-.ae-tool-group-child-row .ae-tool-card {
-  width: 100%;
-}
-
 /* ── Codex-style conversation turns: prose first, activity folded ───────── */
 .ae-conversation-turn {
   display: flex;
@@ -9795,6 +9787,137 @@ button.ae-vcs-chip:focus-visible {
 
 .ae-turn-progress-message .a2ui-chat-meta {
   display: none;
+}
+
+.ae-tool-activity-row {
+  display: grid;
+  grid-template-columns: 10px minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  color: var(--text-secondary, var(--text-dim));
+  font-size: var(--chrome-text);
+}
+
+.ae-tool-activity-dot {
+  width: 6px;
+  height: 6px;
+  margin-top: 8px;
+  border-radius: 999px;
+  background: var(--state-success-fg, var(--success));
+  opacity: 0.85;
+}
+
+.ae-tool-activity-row[data-status="running"] .ae-tool-activity-dot {
+  background: var(--accent);
+}
+
+.ae-tool-activity-row[data-status="failed"] .ae-tool-activity-dot,
+.ae-tool-activity-row[data-status="cancelled"] .ae-tool-activity-dot {
+  background: var(--state-error-fg, var(--danger));
+}
+
+.ae-tool-activity-main {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.ae-tool-activity-line {
+  display: flex;
+  align-items: baseline;
+  min-width: 0;
+  gap: 8px;
+}
+
+.ae-tool-activity-name {
+  flex: 0 0 auto;
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--chrome-text-compact);
+  font-weight: 600;
+}
+
+.ae-tool-activity-description {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: var(--chrome-text-compact);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ae-tool-activity-state {
+  justify-self: end;
+  color: var(--text-dim);
+  font-size: var(--chrome-text-compact);
+  white-space: nowrap;
+}
+
+.ae-tool-activity-file {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 8px;
+}
+
+.ae-tool-activity-file-open {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  gap: 6px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-secondary, var(--text-dim));
+  cursor: pointer;
+  font: inherit;
+}
+
+.ae-tool-activity-file-open:hover {
+  color: var(--text);
+}
+
+.ae-tool-activity-file-icon {
+  flex: 0 0 auto;
+}
+
+.ae-tool-activity-file-name {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ae-tool-activity-file-dir {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-dim);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ae-tool-activity-file-stat {
+  display: inline-flex;
+  gap: 5px;
+}
+
+.ae-tool-activity-file-diff {
+  flex: 0 0 auto;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+  font: inherit;
+}
+
+.ae-tool-activity-file-diff:hover {
+  color: var(--text);
 }
 
 .ae-turn-block-caret {
