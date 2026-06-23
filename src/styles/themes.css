@@ -1032,6 +1032,7 @@
   .a2ui-terminal,
   .a2ui-chat-message-flash,
   .a2ui-msg-row-enter,
+  .a2ui-scroll-to-bottom,
   .ae-agent-pill-dot,
   .app-header-pill[data-state="thinking"]::before,
   .ae-turn-activity-body,
@@ -1050,5 +1051,11 @@
   }
   .ae-tool-spinner {
     opacity: 0.6;
+  }
+  .ae-turn-activity-summary,
+  .ae-turn-block-caret,
+  .ae-tool-activity-file-diff,
+  .ae-tool-activity-file-open {
+    transition: none !important;
   }
 }
