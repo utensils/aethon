@@ -13,7 +13,12 @@ export const handleError: BridgeMessageHandler = (data, ctx) => {
   }
   ctx.activeResponseIdRef.current = null;
   ctx.appendMessage(
-    { id: crypto.randomUUID(), role: "agent", text: `Error: ${message}` },
+    {
+      id: crypto.randomUUID(),
+      role: "agent",
+      text: `Error: ${message}`,
+      createdAt: Date.now(),
+    },
     tabId,
   );
   ctx.updateTab(tabId, (tab) => {
