@@ -1,10 +1,16 @@
 // @vitest-environment jsdom
 import { useRef } from "react";
-import { act, cleanup, fireEvent, renderHook } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  renderHook,
+  waitFor,
+} from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { VirtuosoHandle } from "react-virtuoso";
 import type { ChatMessage } from "../../types/a2ui";
-import { groupMessages } from "../../utils/toolCardGrouping";
+import { buildTranscriptRows } from "../../utils/transcriptRows";
 import type { ResolvedVisibility } from "../../utils/visibilityResolver";
 import {
   getScrollFollowCacheAnchorForTests,
@@ -46,12 +52,16 @@ function renderController(tabId = "tab-1") {
     scrollTo: vi.fn(),
     scrollToIndex: vi.fn(),
   } as unknown as VirtuosoHandle;
-  const groups = groupMessages(messages, visibility.toolCalls);
+  const rows = buildTranscriptRows(
+    messages,
+    visibility.toolCalls,
+    new Set(),
+  ).rows;
   const hook = renderHook(() => {
     const virtuosoRef = useRef<VirtuosoHandle | null>(virtuoso);
     return useScrollFollowController({
       messages,
-      groups,
+      rows,
       tabId,
       visibility,
       terminalOpen: false,
@@ -60,6 +70,47 @@ function renderController(tabId = "tab-1") {
     });
   });
   return { ...hook, virtuoso };
+}
+
+function renderControllerForMessages({
+  testMessages,
+  toolCalls = "show",
+  scrollToMatch,
+  tabId = "tab-1",
+}: {
+  testMessages: ChatMessage[];
+  toolCalls?: ResolvedVisibility["toolCalls"];
+  scrollToMatch?: string;
+  tabId?: string;
+}) {
+  const scrollToIndex = vi.fn();
+  const virtuoso = {
+    scrollTo: vi.fn(),
+    scrollToIndex,
+  } as unknown as VirtuosoHandle;
+  const testVisibility: ResolvedVisibility = {
+    thinking: "show",
+    toolCalls,
+  };
+  const rows = buildTranscriptRows(
+    testMessages,
+    testVisibility.toolCalls,
+    new Set(),
+  ).rows;
+  const hook = renderHook(() => {
+    const virtuosoRef = useRef<VirtuosoHandle | null>(virtuoso);
+    return useScrollFollowController({
+      messages: testMessages,
+      rows,
+      tabId,
+      scrollToMatch,
+      visibility: testVisibility,
+      terminalOpen: false,
+      layoutRows: "1fr 0px",
+      virtuosoRef,
+    });
+  });
+  return { ...hook, scrollToIndex, virtuoso, rows };
 }
 
 let requestAnimationFrameSpy: ReturnType<typeof vi.spyOn>;
@@ -165,5 +216,51 @@ describe("useScrollFollowController", () => {
 
     expect(second.result.current.following).toBe(true);
     expect(getScrollFollowCacheAnchorForTests("tab-1")).toBeUndefined();
+  });
+
+  it("searches text inside collapsed group-block turns and scrolls to the summary row", async () => {
+    const hiddenTurnMessages: ChatMessage[] = [
+      { id: "u1", role: "user", text: "run checks" },
+      { id: "a1", role: "agent", text: "needle text inside a folded reply" },
+      {
+        id: "t1",
+        role: "agent",
+        a2ui: {
+          components: [
+            {
+              id: "c1",
+              type: "tool-card",
+              props: {
+                title: "bash",
+                description: "needle hidden tool metadata",
+                startedAt: 1,
+                endedAt: 2,
+              },
+            },
+          ],
+        },
+      },
+      { id: "u2", role: "user", text: "next turn keeps the previous one completed" },
+      { id: "a2", role: "agent", text: "latest visible reply" },
+    ];
+
+    const { rows, scrollToIndex } = renderControllerForMessages({
+      testMessages: hiddenTurnMessages,
+      toolCalls: "group-block",
+      scrollToMatch: "hidden tool metadata",
+    });
+
+    expect(rows.map((row) => row.type)).toEqual([
+      "message",
+      "turn-block-summary",
+      "message",
+      "message",
+    ]);
+    await waitFor(() =>
+      expect(scrollToIndex).toHaveBeenCalledWith({
+        index: 1,
+        align: "center",
+      }),
+    );
   });
 });

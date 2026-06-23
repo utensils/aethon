@@ -14,27 +14,46 @@ export type MessageGroup =
   | { type: "tool-group"; id: string; messages: ChatMessage[] }
   | { type: "turn-block"; id: string; messages: ChatMessage[] };
 
-/** True when a message's A2UI payload is a tool-call card. */
-export function isToolCardMessage(m: ChatMessage): boolean {
-  const components = m.a2ui?.components;
-  return (
-    Array.isArray(components) && components.some((c) => c?.type === "tool-card")
-  );
+interface ToolCardMeta {
+  isToolCard: boolean;
+  isRunning: boolean;
+  title?: string;
 }
 
-function toolCardProps(m: ChatMessage): Record<string, unknown> | undefined {
+const toolCardMetaCache = new WeakMap<ChatMessage, ToolCardMeta>();
+
+function readToolCardMeta(m: ChatMessage): ToolCardMeta {
+  const cached = toolCardMetaCache.get(m);
+  if (cached) return cached;
   const comp = m.a2ui?.components?.find((c) => c?.type === "tool-card");
-  return comp?.props;
+  const props = comp?.props;
+  const title = props?.title;
+  const meta: ToolCardMeta = {
+    isToolCard: Boolean(comp),
+    isRunning:
+      Boolean(props) && props?.startedAt !== undefined && props?.endedAt === undefined,
+    title: typeof title === "string" && title.length > 0 ? title : undefined,
+  };
+  toolCardMetaCache.set(m, meta);
+  return meta;
+}
+
+/** True when a message's A2UI payload is a tool-call card. */
+export function isToolCardMessage(m: ChatMessage): boolean {
+  return readToolCardMeta(m).isToolCard;
 }
 
 /** A tool card that started but hasn't ended is still streaming — keep it
  *  visible (ungrouped) so the user can watch live progress even in a grouped
  *  mode. Mirrors ToolCard's own `running` derivation. */
 export function isRunningToolCard(m: ChatMessage): boolean {
-  const props = toolCardProps(m);
-  return (
-    !!props && props.startedAt !== undefined && props.endedAt === undefined
-  );
+  return readToolCardMeta(m).isRunning;
+}
+
+/** Title shown on a tool-call card (e.g. "bash", "read"). Cached per
+ * message object because grouping and collapsed peeks ask for it repeatedly. */
+export function toolCardTitle(m: ChatMessage): string | undefined {
+  return readToolCardMeta(m).title;
 }
 
 /** A completed tool card — the unit that grouping consolidates. */

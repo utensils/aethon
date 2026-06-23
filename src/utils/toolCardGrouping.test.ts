@@ -6,6 +6,7 @@ import {
   findGroupIndexForMessageId,
   isToolCardMessage,
   isRunningToolCard,
+  toolCardTitle,
   type MessageGroup,
 } from "./toolCardGrouping";
 import type { ChatMessage } from "../types/a2ui";
@@ -35,6 +36,7 @@ describe("isToolCardMessage / isRunningToolCard", () => {
     expect(isRunningToolCard(tool("a", { running: true }))).toBe(true);
     expect(isRunningToolCard(tool("a"))).toBe(false);
     expect(isRunningToolCard(text("a"))).toBe(false);
+    expect(toolCardTitle(tool("a"))).toBe("bash");
   });
 });
 

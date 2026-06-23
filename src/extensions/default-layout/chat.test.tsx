@@ -25,9 +25,12 @@ const virtuosoMockState = vi.hoisted(
   (): {
     alignToBottom?: unknown;
     followOutput?: unknown;
-    defaultItemHeight?: unknown;
     scrollToCalls: unknown[];
     scrollToIndexCalls: unknown[];
+    dataLength?: number;
+    heightEstimates?: unknown;
+    increaseViewportBy?: unknown;
+    minOverscanItemCount?: unknown;
     // Virtuoso callbacks captured so tests can drive at-bottom / range
     // transitions explicitly (the real library is the sole at-bottom signal).
     atBottomStateChange?: (atBottom: boolean) => void;
@@ -36,9 +39,12 @@ const virtuosoMockState = vi.hoisted(
   } => ({
     alignToBottom: undefined,
     followOutput: undefined,
-    defaultItemHeight: undefined,
     scrollToCalls: [],
     scrollToIndexCalls: [],
+    dataLength: undefined,
+    heightEstimates: undefined,
+    increaseViewportBy: undefined,
+    minOverscanItemCount: undefined,
     atBottomStateChange: undefined,
     rangeChanged: undefined,
     totalListHeightChanged: undefined,
@@ -82,7 +88,9 @@ vi.mock("react-virtuoso", () => ({
         totalListHeightChanged,
         alignToBottom,
         followOutput,
-        defaultItemHeight,
+        heightEstimates,
+        increaseViewportBy,
+        minOverscanItemCount,
       }: {
         data?: Array<{ id?: string }>;
         itemContent: (index: number, item: unknown) => React.ReactNode;
@@ -100,14 +108,19 @@ vi.mock("react-virtuoso", () => ({
         totalListHeightChanged?: (height: number) => void;
         alignToBottom?: unknown;
         followOutput?: unknown;
-        defaultItemHeight?: unknown;
+        heightEstimates?: unknown;
+        increaseViewportBy?: unknown;
+        minOverscanItemCount?: unknown;
       },
       ref,
     ) => {
       const Footer = components?.Footer;
       virtuosoMockState.alignToBottom = alignToBottom;
       virtuosoMockState.followOutput = followOutput;
-      virtuosoMockState.defaultItemHeight = defaultItemHeight;
+      virtuosoMockState.dataLength = data.length;
+      virtuosoMockState.heightEstimates = heightEstimates;
+      virtuosoMockState.increaseViewportBy = increaseViewportBy;
+      virtuosoMockState.minOverscanItemCount = minOverscanItemCount;
       virtuosoMockState.atBottomStateChange = atBottomStateChange;
       virtuosoMockState.rangeChanged = rangeChanged;
       virtuosoMockState.totalListHeightChanged = totalListHeightChanged;
@@ -188,10 +201,13 @@ beforeEach(() => {
   resizeObserverMockState.callbacks = [];
   openUrl.mockResolvedValue(undefined);
   virtuosoMockState.followOutput = undefined;
-  virtuosoMockState.defaultItemHeight = undefined;
   virtuosoMockState.alignToBottom = undefined;
   virtuosoMockState.scrollToCalls = [];
   virtuosoMockState.scrollToIndexCalls = [];
+  virtuosoMockState.dataLength = undefined;
+  virtuosoMockState.heightEstimates = undefined;
+  virtuosoMockState.increaseViewportBy = undefined;
+  virtuosoMockState.minOverscanItemCount = undefined;
 });
 
 afterEach(() => {
@@ -704,7 +720,6 @@ describe("ChatInput", () => {
     // the terminal-close view above latest.
     expect(virtuosoMockState.followOutput).toBe(false);
     expect(virtuosoMockState.alignToBottom).toBeUndefined();
-    expect(virtuosoMockState.defaultItemHeight).toBe(120);
   });
 
   it("shows the pill and stops following when the user scrolls up", () => {
@@ -1821,6 +1836,40 @@ describe("ChatHistory tool-call grouping (mocked Virtuoso renders rows)", () => 
       transcriptVisibility: { toolCalls: "group-run" },
     });
     expect(screen.getByText("2 tool calls")).toBeTruthy();
+  });
+
+  it("passes per-row height estimates and overscan hints to Virtuoso", () => {
+    renderGroupedHistory({
+      messages: toolMessages,
+      transcriptVisibility: { toolCalls: "group-block" },
+    });
+    expect(virtuosoMockState.dataLength).toBeTypeOf("number");
+    expect(virtuosoMockState.heightEstimates).toHaveLength(
+      virtuosoMockState.dataLength!,
+    );
+    expect(virtuosoMockState.increaseViewportBy).toEqual({
+      top: 600,
+      bottom: 200,
+    });
+    expect(virtuosoMockState.minOverscanItemCount).toEqual({
+      top: 4,
+      bottom: 2,
+    });
+  });
+
+  it("expands grouped tool calls into separate virtual child rows", () => {
+    renderGroupedHistory({
+      messages: toolMessages,
+      transcriptVisibility: { toolCalls: "group-run" },
+    });
+    const collapsedLength = virtuosoMockState.dataLength;
+    expect(collapsedLength).toBeTypeOf("number");
+
+    fireEvent.click(screen.getByRole("button", { name: /2 tool calls/ }));
+
+    expect(virtuosoMockState.dataLength).toBe(collapsedLength! + 2);
+    expect(screen.getByText("read")).toBeTruthy();
+    expect(screen.getByText("bash")).toBeTruthy();
   });
 
   it("keeps followOutput disabled when completed tool cards collapse into a group after user scroll-away", () => {

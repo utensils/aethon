@@ -137,6 +137,7 @@ export interface AethonConfig {
 
 export const DEFAULT_AGENT_TIMEOUT_SECONDS = 300;
 export const MAX_AGENT_TIMEOUT_SECONDS = 24 * 60 * 60;
+export const DEFAULT_TOOL_CALLS_VISIBILITY: ToolCallsMode = "group-block";
 
 const DEFAULTS: AethonConfig = {
   ui: {
@@ -146,7 +147,7 @@ const DEFAULTS: AethonConfig = {
     notifyOnCompletion: true,
     notifyMinDurationSeconds: 8,
     thinkingVisibility: "show",
-    toolCallsVisibility: "show",
+    toolCallsVisibility: DEFAULT_TOOL_CALLS_VISIBILITY,
   },
   agent: {
     model: null,
@@ -234,9 +235,10 @@ export function getConfig(): Promise<AethonConfig> {
               ? obj.ui.notifyMinDurationSeconds
               : 8,
           thinkingVisibility: normalizeVisibility(obj?.ui?.thinkingVisibility),
-          toolCallsVisibility: normalizeToolCallsVisibility(
-            obj?.ui?.toolCallsVisibility,
-          ),
+          toolCallsVisibility:
+            obj?.ui?.toolCallsVisibility === undefined
+              ? DEFAULT_TOOL_CALLS_VISIBILITY
+              : normalizeToolCallsVisibility(obj.ui.toolCallsVisibility),
         },
         agent: {
           model: typeof obj?.agent?.model === "string" ? obj.agent.model : null,
@@ -362,7 +364,7 @@ export function normalizeVisibility(value: unknown): VisibilityMode {
 
 /** Mirrors `normalize_tool_visibility` in helpers.rs. Accepts the three
  *  grouping styles plus show/hide; legacy `"collapse"` → `"group-turn"`;
- *  unknown/missing → `"show"`. */
+ *  unknown → `"show"` so malformed explicit config never hides content. */
 export function normalizeToolCallsVisibility(value: unknown): ToolCallsMode {
   switch (value) {
     case "group-turn":
