@@ -9,9 +9,9 @@ import { SHARE_MODES } from "./utils/shareMode";
  *  `show` (full), `collapse` (closed "Thinking" label), `hide` (removed). */
 export type VisibilityMode = "show" | "collapse" | "hide";
 
-/** Tool-call visibility. Like thinking it can be `show`n or `hide`den, but the
- *  middle is split into three chronological *grouping* styles the composer pill
- *  cycles through:
+/** Tool-call visibility. `show` renders lightweight activity rows and `hide`
+ *  removes tool calls from the transcript. The middle is split into three
+ *  chronological *grouping* styles the composer pill cycles through:
  *    - `group-turn`  — one collapsed cluster per agent turn (all of a turn's
  *                      tool calls gathered into one group);
  *    - `group-run`   — one collapsed cluster per consecutive run of tool calls;
@@ -45,9 +45,10 @@ export interface AethonConfig {
     /** Global default visibility for the model's thinking blocks. Per-tab
      *  overridable via the composer pills; `show` by default. */
     thinkingVisibility: VisibilityMode;
-    /** Global default visibility for tool-call cards. The grouped values
-     *  (`group-turn` / `group-run` / `group-block`) fold cards into collapsed
-     *  clusters; `show` by default. Per-tab overridable via the composer pills. */
+    /** Global default visibility for tool-call activity. The grouped values
+     *  (`group-turn` / `group-run` / `group-block`) fold activity into
+     *  collapsed clusters; `show` by default. Per-tab overridable via the
+     *  composer pills. */
     toolCallsVisibility: ToolCallsMode;
   };
   agent: {

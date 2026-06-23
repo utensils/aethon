@@ -8,11 +8,11 @@ import { readUiScale } from "./layout";
 /**
  * Composer-bar visibility pills (chrome composite). Two pills — Thinking and
  * Tool calls — cycle the active session's transcript visibility on click.
- * Thinking cycles show → collapse → hide; Tool calls cycle through the three
- * chronological grouping styles (by turn / by run / as block) between show and
- * hide. A "More options" caret opens a popover that explains scope (this
- * session vs. all sessions), offers direct grouping selection, a reset, and the
- * per-session project-root guardrail.
+ * Thinking cycles show → collapse → hide; Tool calls cycle through lightweight
+ * activity rows plus the grouped styles (by turn / by run / as block) and hide.
+ * A "More options" caret opens a popover that explains scope (this session vs.
+ * all sessions), offers direct grouping selection, a reset, and the per-session
+ * project-root guardrail.
  *
  * Routing: events are keyed by `type:composer-visibility-pills` in
  * BUILTIN_ROUTE_TABLE (see `eventRoutes/composerPills.ts`). The pill reads
@@ -41,7 +41,7 @@ const TOOL_LABEL: Record<ToolCallsMode, string> = {
 };
 
 const TOOL_TITLE: Record<ToolCallsMode, string> = {
-  show: "shown in full",
+  show: "shown as activity rows",
   "group-turn": "grouped — one cluster per agent turn",
   "group-run": "grouped — one cluster per consecutive run",
   "group-block": "grouped — the whole turn folded into one block",
