@@ -34,6 +34,13 @@ export function parseModelIdWithThinking(raw: string): {
   return { modelId, thinkingLevel: suffix };
 }
 
+function workspaceLandingVisible(state: Record<string, unknown>): boolean {
+  return (
+    (state.landing as { kind?: string } | null | undefined)?.kind ===
+    "workspace"
+  );
+}
+
 export interface ChatModelSelectionDeps {
   appendMessage: (msg: ChatMessage, tabId?: string) => void;
 }
@@ -159,7 +166,9 @@ export function useChatModelSelectionController(
       const activeTab = activeId
         ? tabs.find((t) => t.id === activeId)
         : undefined;
-      const hasActiveAgentTab = activeTab?.kind === "agent";
+      const hasActiveAgentTab =
+        activeTab?.kind === "agent" &&
+        !workspaceLandingVisible(stateRef.current);
       piDefaultModelRef.current = "";
       setState((prev) => ({
         ...prev,
@@ -185,7 +194,8 @@ export function useChatModelSelectionController(
     const activeTab = activeId
       ? tabs.find((t) => t.id === activeId)
       : undefined;
-    const hasActiveAgentTab = activeTab?.kind === "agent";
+    const hasActiveAgentTab =
+      activeTab?.kind === "agent" && !workspaceLandingVisible(stateRef.current);
     const previousTabModel = activeTab?.model ?? "";
     // Only mirror onto a live session when an agent tab is focused and not
     // mid-turn (the bridge rejects a switch while a prompt is in flight).
@@ -264,7 +274,11 @@ export function useChatModelSelectionController(
     const activeTab = activeId
       ? tabs.find((t) => t.id === activeId)
       : undefined;
-    if (!activeId || (activeTab?.kind ?? "agent") !== "agent") {
+    if (
+      !activeId ||
+      (activeTab?.kind ?? "agent") !== "agent" ||
+      workspaceLandingVisible(stateRef.current)
+    ) {
       setState((prev) => ({
         ...prev,
         thinkingLevel: level,

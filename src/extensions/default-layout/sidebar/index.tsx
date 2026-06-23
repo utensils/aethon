@@ -561,13 +561,11 @@ function SidebarSectionBlock({
                 }}
               />
             ) : undefined;
-            // Only show the disclosure when there are EXTRA workspaces
-            // beyond the main one — every git repo returns ≥1 entry
-            // (the project's primary checkout), so a 1-element list is
-            // "no extra workspaces" and the chevron is meaningless.
-            // Surface the chevron only when workspaces.length > 1.
-            const hasExtraWorkspaces = !!workspaces && workspaces.length > 1;
-            const visibleWorkspaces = hasExtraWorkspaces ? workspaces : [];
+            // The project row represents the main checkout. Only render
+            // nested rows for additional workspaces; otherwise the active
+            // branch appears twice under the same project.
+            const extraWorkspaces = workspaces?.filter((w) => !w.isMain) ?? [];
+            const hasExtraWorkspaces = extraWorkspaces.length > 0;
             return (
               <Fragment key={item.id}>
                 <ItemRow
@@ -615,7 +613,7 @@ function SidebarSectionBlock({
                   trailingControl={trailingControl}
                 />
                 {hasExtraWorkspaces && expanded
-                  ? visibleWorkspaces.map((wt) => (
+                  ? extraWorkspaces.map((wt) => (
                       <WorkspaceRow
                         key={wt.id}
                         item={wt}

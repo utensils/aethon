@@ -86,7 +86,9 @@ export const handleSectionedSelect: EventRouteHandler = async (
       | { id?: string }
       | null
       | undefined;
-    const wasAlreadyActiveProject = project?.id === selected.itemId;
+    const wasAlreadyActiveProjectRoot =
+      project?.id === selected.itemId &&
+      ctx.stateRef.current.activeWorkspaceId == null;
     ctx.activateWorkspace(null);
     ctx.setActiveProjectById(selected.itemId);
     ctx.setState((prev) => ({ ...prev, landing: null }));
@@ -95,7 +97,7 @@ export const handleSectionedSelect: EventRouteHandler = async (
     // The first click on a project also lands on overview because the
     // project bucket is loaded fresh — but if it carried an active tab
     // from a previous visit, only the re-click should deselect it.
-    if (wasAlreadyActiveProject) {
+    if (wasAlreadyActiveProjectRoot) {
       activateOverview(ctx);
     }
     return true;

@@ -334,7 +334,7 @@ describe("Sidebar extension controls", () => {
 });
 
 describe("Sidebar project menu", () => {
-  it("renders host workspace agent activity on the expanded main workspace row", () => {
+  it("renders only extra workspace rows while keeping main activity on the project row", () => {
     renderSidebar({
       props: {
         sections: [
@@ -346,6 +346,11 @@ describe("Sidebar project menu", () => {
                 id: "project-1",
                 label: "aethon",
                 expanded: true,
+                agent: {
+                  status: "running",
+                  activeCount: 1,
+                  runningCount: 1,
+                },
                 workspaces: [
                   {
                     id: "main",
@@ -376,9 +381,13 @@ describe("Sidebar project menu", () => {
       },
     });
 
-    expect(screen.getByText("main").closest(".ae-workspace-row")).toBeTruthy();
+    expect(screen.queryByText("main")).toBeNull();
+    expect(
+      screen.getByText("feature-x").closest(".ae-workspace-row"),
+    ).toBeTruthy();
     const dot = screen.getByLabelText("Agent running");
-    expect(dot.closest(".ae-workspace-row")?.textContent).toContain("main");
+    expect(dot.closest(".a2ui-sidebar-item")?.textContent).toContain("aethon");
+    expect(dot.closest(".ae-workspace-row")).toBeNull();
   });
 
   it("starts inline workspace rename from the context menu without prompt", () => {

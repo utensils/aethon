@@ -18,6 +18,14 @@ import {
 import { queuedDeliveryLabels } from "./message-rendering-utils";
 import { useScrollFollowController } from "./useScrollFollowController";
 
+// Restored transcripts often open at the bottom with the first measured row
+// being an atypical tool card or markdown block. Letting Virtuoso use that row
+// as its initial probe overestimates the unmeasured history above, making the
+// scrollbar thumb look too short until the first manual scroll forces more
+// measurement. A stable estimate keeps idle restored sessions visually honest;
+// real row measurements still replace it as Virtuoso renders.
+const DEFAULT_CHAT_ROW_HEIGHT = 120;
+
 function ScrollToBottomPill({
   visible,
   onClick,
@@ -213,6 +221,7 @@ export function VirtualMessageFeed({
         className={className}
         style={{ flex: 1, minHeight: 0 }}
         data={groups}
+        defaultItemHeight={DEFAULT_CHAT_ROW_HEIGHT}
         computeItemKey={(index, g) => (g ? groupKey(g) : String(index))}
         itemContent={itemContent}
         // Open at the saved per-tab anchor (top-aligned) when restoring a
