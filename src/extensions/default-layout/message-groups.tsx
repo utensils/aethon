@@ -188,6 +188,27 @@ function hasFileChange(message: ChatMessage): boolean {
   return Boolean(toolCardDetails(message).fileChange?.path);
 }
 
+function withOpenToolCards(message: ChatMessage): ChatMessage {
+  if (!message.a2ui?.components?.length) return message;
+  return {
+    ...message,
+    a2ui: {
+      ...message.a2ui,
+      components: message.a2ui.components.map((component) =>
+        component.type === "tool-card"
+          ? {
+              ...component,
+              props: {
+                ...component.props,
+                defaultOpen: true,
+              },
+            }
+          : component,
+      ),
+    },
+  };
+}
+
 function basename(path: string): string {
   return (
     path
@@ -459,14 +480,16 @@ function TurnActivity({
   const detailsOpen = forceOpen || expanded || toolCallsVisibility === "show";
   const detailsBodyVisible = detailsOpen || closingBodyRetained;
   const detailsBodyState = detailsOpen ? "open" : "closing";
+  const showOriginalToolCards =
+    forceOpen && !live && (visibleAgentMessageIds?.size ?? 0) === 0;
   const visibleTools = detailsOpen ? toolMessages : runningTools;
   const detailTools = detailsBodyVisible ? toolMessages : [];
-  const fileChangeEntries = detailsBodyVisible
+  const fileChangeEntries = detailsBodyVisible && !showOriginalToolCards
     ? collectFileChangeEntries(detailTools)
     : [];
-  const detailToolRows = detailTools.filter(
-    (message) => !hasFileChange(message),
-  );
+  const detailToolRows = showOriginalToolCards
+    ? []
+    : detailTools.filter((message) => !hasFileChange(message));
   const hasActivity =
     progressMessages.length > 0 ||
     toolMessages.length > 0 ||
@@ -556,6 +579,20 @@ function TurnActivity({
       </button>
       {detailsBodyVisible && (
         <div className="ae-turn-activity-body" data-state={detailsBodyState}>
+          {showOriginalToolCards
+            ? detailTools.map((message) => (
+                <ChatMessageRow
+                  key={message.id}
+                  message={withOpenToolCards(message)}
+                  state={state}
+                  tabId={tabId}
+                  className={`${rowClassName} ae-turn-tool-message`}
+                  prevRole="agent"
+                  onEvent={onEvent}
+                  thinkingVisibility={thinkingVisibility}
+                />
+              ))
+            : null}
           {progressMessages.map((message, index) => (
             <ChatMessageRow
               key={message.id}

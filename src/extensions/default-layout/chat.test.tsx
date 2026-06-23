@@ -2429,6 +2429,13 @@ describe("ChatHistory turn activity feed (mocked Virtuoso renders rows)", () => 
                 id: "c1",
                 type: "tool-card",
                 props: { title: "bash", startedAt: 1, endedAt: 2 },
+                children: [
+                  {
+                    id: "out",
+                    type: "code",
+                    props: { content: "review output before stop" },
+                  },
+                ],
               },
             ],
           },
@@ -2447,6 +2454,7 @@ describe("ChatHistory turn activity feed (mocked Virtuoso renders rows)", () => 
     const summary = screen.getByRole("button", { name: /1 tool call/ });
     expect(summary.getAttribute("aria-expanded")).toBe("true");
     expect(screen.getByText("bash")).toBeTruthy();
+    expect(screen.getByText("review output before stop")).toBeTruthy();
   });
 
   it("keeps the latest stopped status turn expanded when no stop notice is in the transcript", () => {
