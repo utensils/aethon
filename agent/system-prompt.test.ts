@@ -169,8 +169,17 @@ describe("DEFAULT_AETHON_PROMPT", () => {
     expect(DEFAULT_AETHON_PROMPT).toContain("Codex Desktop style");
     expect(DEFAULT_AETHON_PROMPT).toContain("meaningful phase changes");
     expect(DEFAULT_AETHON_PROMPT).toContain("Do not mirror routine");
+    expect(DEFAULT_AETHON_PROMPT).toContain(
+      "one short orientation paragraph per phase",
+    );
+    expect(DEFAULT_AETHON_PROMPT).toContain(
+      "let the tool cards form the activity trail",
+    );
     expect(DEFAULT_AETHON_PROMPT).toContain("tool cards carry diffs");
     expect(DEFAULT_AETHON_PROMPT).toContain("Final replies should be compact");
+    expect(DEFAULT_AETHON_PROMPT).toContain(
+      'Do not end with a generic "if you want"',
+    );
     expect(DEFAULT_AETHON_PROMPT).not.toContain(
       "Always inform the user as to what you are doing as you do it",
     );
