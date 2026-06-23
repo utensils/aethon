@@ -53,6 +53,7 @@ import { isSilentTool } from "../silent-tools";
 import {
   addLiveContextUsageEstimate,
   clearLiveContextUsageEstimate,
+  contextUsageSnapshot,
   emitContextUsage,
   emitContextUsageThrottled,
 } from "../context-usage";
@@ -485,6 +486,63 @@ function handleContextOverflowCompactionEvent(
   void continueAfterContextCompaction(state, deps, tabId, failedMessage);
 }
 
+function shouldCompactCompletedTurn(
+  state: AethonAgentState,
+  tabId: string,
+  rec: TabRecord,
+): boolean {
+  const snapshot = contextUsageSnapshot(state, tabId, rec);
+  if (!snapshot?.autoCompactEnabled) return false;
+  if (rec.contextUsageTransientTokens === undefined) return false;
+  if (rec.contextUsageTransientTokens <= 0) return false;
+  if (
+    typeof (rec.session as CompactAndContinueSession).compact !== "function"
+  ) {
+    return false;
+  }
+  return snapshot.estimatedTokensUntilCompact === 0;
+}
+
+function compactCompletedTurnThenFinalize(
+  state: AethonAgentState,
+  deps: TabLifecycleDeps,
+  rec: TabRecord,
+  tabId: string,
+  lastAssistant:
+    | {
+        role?: string;
+        stopReason?: string;
+        content?: unknown;
+        id?: unknown;
+        messageId?: unknown;
+      }
+    | undefined,
+): void {
+  rec.promptInFlight = true;
+  rec.agentEndFired = false;
+  state.currentAgentTabId = tabId;
+  deps.send({
+    type: "notice",
+    tabId,
+    busy: true,
+    message: "Context threshold reached; compacting before the next turn...",
+  });
+  const session = rec.session as CompactAndContinueSession;
+  void session
+    .compact?.()
+    .catch((err: unknown) => {
+      const message = err instanceof Error ? err.message : String(err);
+      deps.send({
+        type: "error",
+        tabId,
+        message: `auto-compaction failed: ${message}`,
+      });
+    })
+    .finally(() => {
+      finalizeCompletedTurn(state, deps, rec, tabId, lastAssistant);
+    });
+}
+
 /** Per-tab pi session event subscriber. Extracted so tests can drive it
  *  directly with synthetic event payloads. */
 export function handleSessionEvent(
@@ -859,26 +917,22 @@ export function handleSessionEvent(
         !keepTurnOpenForAutoSwitch &&
         !keepTurnOpenForContextRecovery
       ) {
-        cancelAethonRetry(rec);
-        if (failedMessage) resetContextOverflowRecovery(rec);
-        rec.agentEndFired = true;
-        rec.promptInFlight = false;
-        if (state.currentAgentTabId === tabId) {
-          state.currentAgentTabId = undefined;
+        if (!failedMessage && shouldCompactCompletedTurn(state, tabId, rec)) {
+          compactCompletedTurnThenFinalize(
+            state,
+            deps,
+            rec,
+            tabId,
+            lastAssistant,
+          );
+          break;
         }
-        emitFinalAssistantContent(state, deps, rec, tabId, lastAssistant);
-        rollResponseMessage(rec);
-        clearLiveContextUsageEstimate(rec);
-        emitContextUsage(state, deps, tabId, rec);
-        // Back-fill pi entry ids onto the just-streamed messages so the
-        // rollback / fork affordances work without a reload.
-        emitEntryIds(deps, rec, tabId);
-        deps.send({ type: "response_end", tabId });
-        emitScheduledRunComplete(
+        finalizeCompletedTurn(
+          state,
           deps,
           rec,
           tabId,
-          !failedMessage,
+          lastAssistant,
           failedMessage,
         );
       }
@@ -952,6 +1006,40 @@ export function handleSessionEvent(
       break;
     }
   }
+}
+
+function finalizeCompletedTurn(
+  state: AethonAgentState,
+  deps: TabLifecycleDeps,
+  rec: TabRecord,
+  tabId: string,
+  lastAssistant:
+    | {
+        role?: string;
+        stopReason?: string;
+        content?: unknown;
+        id?: unknown;
+        messageId?: unknown;
+      }
+    | undefined,
+  failedMessage?: string,
+): void {
+  cancelAethonRetry(rec);
+  if (failedMessage) resetContextOverflowRecovery(rec);
+  rec.agentEndFired = true;
+  rec.promptInFlight = false;
+  if (state.currentAgentTabId === tabId) {
+    state.currentAgentTabId = undefined;
+  }
+  emitFinalAssistantContent(state, deps, rec, tabId, lastAssistant);
+  rollResponseMessage(rec);
+  clearLiveContextUsageEstimate(rec);
+  emitContextUsage(state, deps, tabId, rec);
+  // Back-fill pi entry ids onto the just-streamed messages so the rollback /
+  // fork affordances work without a reload.
+  emitEntryIds(deps, rec, tabId);
+  deps.send({ type: "response_end", tabId });
+  emitScheduledRunComplete(deps, rec, tabId, !failedMessage, failedMessage);
 }
 
 /**
