@@ -343,21 +343,23 @@ export const ChatMessageRow = memo(
               <>
                 <button
                   type="button"
-                  className="ae-msg-branch-btn"
+                  className="ae-msg-branch-btn ae-msg-branch-icon-btn"
+                  aria-label="Rollback to this message"
                   title="Rewind the conversation to this message"
                   onClick={() => setConfirmingRollback(true)}
                 >
-                  ↶ Rollback
+                  <span aria-hidden="true">↶</span>
                 </button>
                 <button
                   type="button"
-                  className="ae-msg-branch-btn"
+                  className="ae-msg-branch-btn ae-msg-branch-icon-btn"
+                  aria-label="Fork from this message"
                   title="Fork the conversation into a new tab from here"
                   onClick={() =>
                     onEvent?.("fork-to-tab", { entryId: message.entryId })
                   }
                 >
-                  ⑂ Fork
+                  <span aria-hidden="true">⑂</span>
                 </button>
               </>
             )}
