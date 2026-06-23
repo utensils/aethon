@@ -1958,6 +1958,25 @@ describe("ChatHistory turn activity feed (mocked Virtuoso renders rows)", () => 
     expect(screen.getByText("bash")).toBeTruthy();
   });
 
+  it("keeps turn activity mounted briefly while collapsing", () => {
+    renderGroupedHistory({
+      messages: toolMessages,
+      transcriptVisibility: { toolCalls: "group-run" },
+    });
+
+    const summary = screen.getByRole("button", { name: /2 tool calls/ });
+    fireEvent.click(summary);
+    expect(screen.getByText("read")).toBeTruthy();
+
+    fireEvent.click(summary);
+
+    expect(summary.getAttribute("aria-expanded")).toBe("false");
+    const closingBody = screen
+      .getByText("read")
+      .closest(".ae-turn-activity-body");
+    expect(closingBody?.getAttribute("data-state")).toBe("closing");
+  });
+
   it("keeps followOutput disabled when completed tool cards collapse into a group after user scroll-away", () => {
     const registry = new ExtensionRegistry();
     registry.register({

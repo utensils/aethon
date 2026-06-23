@@ -9815,9 +9815,19 @@ button.ae-vcs-chip:focus-visible {
   min-width: 0;
   max-width: min(100%, 76ch);
   padding-left: 18px;
+  transform-origin: top;
+}
+
+.ae-turn-activity-body[data-state="open"],
+.ae-turn-activity-live-tools[data-state="open"] {
   animation: ae-turn-activity-open var(--motion-chat-expand, 240ms)
     var(--ease-panel) both;
-  transform-origin: top;
+}
+
+.ae-turn-activity-body[data-state="closing"] {
+  pointer-events: none;
+  animation: ae-turn-activity-close var(--motion-chat-expand, 240ms)
+    var(--ease-panel) both;
 }
 
 @keyframes ae-turn-activity-open {
@@ -9828,6 +9838,17 @@ button.ae-vcs-chip:focus-visible {
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+
+@keyframes ae-turn-activity-close {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-3px);
   }
 }
 

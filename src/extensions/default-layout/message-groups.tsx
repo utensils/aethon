@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from "react";
 import type { A2UIComponent, ChatMessage } from "../../types/a2ui";
 import A2UIRenderer, {
   type BuiltinComponentProps,
@@ -13,6 +14,8 @@ import {
 import type { ConversationTurn } from "../../utils/transcriptRows";
 import type { ToolCallsMode, VisibilityMode } from "../../config";
 import { ChatMessageRow, TypingIndicator } from "./message-row";
+
+const ACTIVITY_DISCLOSURE_EXIT_MS = 240;
 
 export interface CanvasFooterContext {
   liveSubtree: { components: A2UIComponent[] } | null;
@@ -164,6 +167,14 @@ function fileChangeStatsLabel(summary: ToolMessageSummary): string {
   if (additions > 0) parts.push(`+${additions}`);
   if (deletions > 0) parts.push(`-${deletions}`);
   return parts.join(" ");
+}
+
+function prefersReducedMotion(): boolean {
+  return (
+    typeof window !== "undefined" &&
+    typeof window.matchMedia === "function" &&
+    window.matchMedia("(prefers-reduced-motion: reduce)").matches
+  );
 }
 
 interface ToolFileChangeEntry {
@@ -396,22 +407,37 @@ function TurnActivity({
   live: boolean;
   forceOpen: boolean;
 }) {
+  const [closingBodyRetained, setClosingBodyRetained] = useState(false);
+  const closingTimerRef = useRef<number | null>(null);
   const progressMessages = live || forceOpen ? [] : turn.progressMessages;
   const toolMessages = toolCallsVisibility === "hide" ? [] : turn.toolMessages;
   const summary = summarizeToolMessages(toolMessages);
   const runningTools = toolMessages.filter(isRunningToolCard);
   const detailsOpen = forceOpen || expanded || toolCallsVisibility === "show";
+  const detailsBodyVisible = detailsOpen || closingBodyRetained;
+  const detailsBodyState = detailsOpen ? "open" : "closing";
   const visibleTools = detailsOpen ? toolMessages : runningTools;
-  const fileChangeEntries = detailsOpen
-    ? collectFileChangeEntries(visibleTools)
+  const detailTools = detailsBodyVisible ? toolMessages : [];
+  const fileChangeEntries = detailsBodyVisible
+    ? collectFileChangeEntries(detailTools)
     : [];
-  const visibleToolRows = detailsOpen
-    ? visibleTools.filter((message) => !hasFileChange(message))
-    : visibleTools;
+  const detailToolRows = detailTools.filter(
+    (message) => !hasFileChange(message),
+  );
   const hasActivity =
     progressMessages.length > 0 ||
     toolMessages.length > 0 ||
     visibleTools.length > 0;
+
+  useEffect(
+    () => () => {
+      if (closingTimerRef.current !== null) {
+        window.clearTimeout(closingTimerRef.current);
+      }
+    },
+    [],
+  );
+
   if (!hasActivity) return null;
   const label = activityLabel({
     summary,
@@ -431,6 +457,29 @@ function TurnActivity({
   ]
     .filter(Boolean)
     .join(" · ");
+  const clearClosingTimer = () => {
+    if (closingTimerRef.current === null) return;
+    window.clearTimeout(closingTimerRef.current);
+    closingTimerRef.current = null;
+  };
+  const handleToggle = () => {
+    clearClosingTimer();
+    if (detailsOpen) {
+      if (prefersReducedMotion()) {
+        setClosingBodyRetained(false);
+      } else {
+        setClosingBodyRetained(true);
+        closingTimerRef.current = window.setTimeout(() => {
+          setClosingBodyRetained(false);
+          closingTimerRef.current = null;
+        }, ACTIVITY_DISCLOSURE_EXIT_MS);
+      }
+    } else {
+      setClosingBodyRetained(false);
+    }
+    onToggle();
+  };
+
   return (
     <div
       className="ae-turn-activity"
@@ -441,7 +490,7 @@ function TurnActivity({
         className="ae-turn-activity-summary"
         aria-expanded={detailsOpen}
         aria-label={accessibleSummary}
-        onClick={onToggle}
+        onClick={handleToggle}
       >
         <span className="ae-turn-block-caret" aria-hidden="true">
           {detailsOpen ? "▾" : "▸"}
@@ -450,8 +499,8 @@ function TurnActivity({
         {meta ? <span className="ae-turn-block-meta">{meta}</span> : null}
         <FileChangeStats summary={summary} hideLabel={label === fileLabel} />
       </button>
-      {detailsOpen && (
-        <div className="ae-turn-activity-body">
+      {detailsBodyVisible && (
+        <div className="ae-turn-activity-body" data-state={detailsBodyState}>
           {progressMessages.map((message, index) => (
             <ChatMessageRow
               key={message.id}
@@ -469,7 +518,7 @@ function TurnActivity({
             summary={summary}
             onEvent={onEvent}
           />
-          {visibleToolRows.map((message) => (
+          {detailToolRows.map((message) => (
             <ToolActivityRow
               key={message.id}
               message={message}
@@ -479,7 +528,7 @@ function TurnActivity({
         </div>
       )}
       {!detailsOpen && runningTools.length > 0 && (
-        <div className="ae-turn-activity-live-tools">
+        <div className="ae-turn-activity-live-tools" data-state="open">
           {runningTools.map((message) => (
             <ToolActivityRow
               key={message.id}
