@@ -36,6 +36,31 @@ function resolveTaskProject(
   return null;
 }
 
+function availableModelIds(state: Record<string, unknown>): string[] {
+  const sidebar = state.sidebar as
+    | { models?: Array<{ id?: unknown }> }
+    | undefined;
+  return (sidebar?.models ?? [])
+    .map((model) => model.id)
+    .filter((id): id is string => typeof id === "string" && id.length > 0);
+}
+
+function validateRequiredModel(
+  state: Record<string, unknown>,
+  model: unknown,
+): string {
+  const ids = availableModelIds(state);
+  const suffix = ids.length > 0 ? ` Use one of: ${ids.join(", ")}.` : "";
+  if (typeof model !== "string" || model.trim().length === 0) {
+    throw new Error(
+      `start_task requires an explicit provider-qualified model id.${suffix}`,
+    );
+  }
+  const normalized = model.trim();
+  if (ids.includes(normalized)) return normalized;
+  throw new Error(`Unknown model id '${normalized}'.${suffix}`);
+}
+
 /** Bridge proxy for `aethon.tasks.start` + `aethon.dashboard.{getRepoOverview, refresh}`.
  *
  *  Three ops:
@@ -69,6 +94,7 @@ export const handleDashboardQuery: BridgeMessageHandler = (data, ctx) => {
         throw new Error(`unknown project path: ${projectPath}`);
       }
       const { project, workspaceId } = resolved;
+      const model = validateRequiredModel(ctx.stateRef.current, args.model);
       const launched = await ctx.startTaskInProject({
         projectId: project.id,
         prompt,
@@ -76,9 +102,7 @@ export const handleDashboardQuery: BridgeMessageHandler = (data, ctx) => {
         newWorkspace: args.newWorkspace === true,
         branch: args.branch as string | undefined,
         baseBranch: args.baseBranch as string | undefined,
-        ...(typeof args.model === "string" && args.model.length > 0
-          ? { model: args.model }
-          : {}),
+        model,
         ...(typeof args.bridgePrompt === "string" && args.bridgePrompt.length > 0
           ? { bridgePrompt: args.bridgePrompt }
           : {}),

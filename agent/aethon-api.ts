@@ -119,9 +119,10 @@ export interface TasksApi {
     newWorkspace?: boolean;
     branch?: string;
     baseBranch?: string;
-    /** Model the launched session should use. Mirrors the task-launcher
-     *  model chip; overrides the global default for this launch. */
-    model?: string;
+    /** Provider-qualified model the launched session must use. Agent-side
+     *  launches require this explicitly so they cannot inherit a wrong
+     *  dashboard/default model. */
+    model: string;
     /** Optional hidden bridge prompt; `prompt` remains the visible tab text. */
     bridgePrompt?: string;
     /** Defaults true. False creates the tab without switching focus. */

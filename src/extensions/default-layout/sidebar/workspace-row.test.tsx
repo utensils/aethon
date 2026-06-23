@@ -138,6 +138,20 @@ describe("WorkspaceRow", () => {
     );
   });
 
+  it("renders a stop action for running workspace agents", () => {
+    const { onEvent } = harness(
+      wt({ agent: { status: "running", activeCount: 1, runningCount: 1 } }),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Stop agent" }));
+
+    expect(onEvent).toHaveBeenCalledWith(
+      "stop-workspace-agent",
+      expect.objectContaining({ workspaceId: "wt-1", sectionId: "projects" }),
+      "wt-1",
+    );
+  });
+
   it("renders needs-attention agent activity as an attention dot", () => {
     harness(
       wt({

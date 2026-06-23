@@ -124,6 +124,22 @@ describe("buildRuntimeSection failedExtensions", () => {
     expect(out).toContain("`t2` — model `(none)`, 0 messages");
   });
 
+  it("lists available frontend model ids from the mirrored sidebar state", () => {
+    const out = buildRuntimeSection(
+      snapshot({
+        uiState: {
+          "/sidebar/models": [
+            { id: "openai-codex/gpt-5.5", label: "GPT-5.5" },
+            { id: "github-copilot/gpt-5.5", label: "Copilot: GPT-5.5" },
+          ],
+        },
+      }),
+    );
+    expect(out).toContain("Available model ids");
+    expect(out).toContain("`openai-codex/gpt-5.5` — GPT-5.5");
+    expect(out).toContain("bare names like `gpt-5.5` are invalid");
+  });
+
   it("lists open native canvas windows and window-scoped handlers", () => {
     const out = buildRuntimeSection(
       snapshot({

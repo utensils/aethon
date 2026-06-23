@@ -64,6 +64,16 @@ export interface ScheduledTaskCreateInput {
   schedule: ScheduledTaskSchedule;
 }
 
+export interface ScheduledTaskReuseInput {
+  taskId: string;
+  tabId: string;
+  cwd: string;
+  model?: string | null;
+  thinkingLevel?: string | null;
+  hardEnforce?: boolean | null;
+  authProfileId?: string | null;
+}
+
 export interface LoopPromptResolution {
   prompt: string;
   source: string;
@@ -102,7 +112,7 @@ export async function updateScheduledTask(
   patch: Partial<
     Pick<
       ScheduledTaskCreateInput,
-      "label" | "prompt" | "visiblePrompt" | "schedule"
+      "label" | "prompt" | "visiblePrompt" | "mode" | "schedule"
     >
   >,
 ): Promise<ScheduledTaskRecord> {
@@ -134,6 +144,12 @@ export async function deleteScheduledTask(
   id: string,
 ): Promise<ScheduledTaskRecord> {
   return await invoke<ScheduledTaskRecord>("scheduled_task_delete", { id });
+}
+
+export async function reuseScheduledTask(
+  input: ScheduledTaskReuseInput,
+): Promise<ScheduledTaskRecord> {
+  return await invoke<ScheduledTaskRecord>("scheduled_task_reuse", { input });
 }
 
 export async function runScheduledTaskNow(

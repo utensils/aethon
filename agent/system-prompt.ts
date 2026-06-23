@@ -68,6 +68,35 @@ export function buildSubagentsSection(
   return lines.join("\n");
 }
 
+function runtimeModelList(
+  snapshot: RuntimeSnapshot,
+): { id: string; label?: string }[] {
+  const uiState = snapshot.uiState as {
+    "/sidebar/models"?: unknown;
+    sidebar?: unknown;
+  };
+  const sidebar = uiState.sidebar;
+  const models =
+    uiState["/sidebar/models"] ??
+    (sidebar && typeof sidebar === "object"
+      ? (sidebar as { models?: unknown }).models
+      : undefined);
+  if (!Array.isArray(models)) return [];
+  return models
+    .map((model) => {
+      if (!model || typeof model !== "object") return null;
+      const rec = model as { id?: unknown; label?: unknown };
+      if (typeof rec.id !== "string" || rec.id.length === 0) return null;
+      return {
+        id: rec.id,
+        ...(typeof rec.label === "string" && rec.label.length > 0
+          ? { label: rec.label }
+          : {}),
+      };
+    })
+    .filter((model): model is { id: string; label?: string } => model !== null);
+}
+
 export function buildRuntimeSection(snapshot: RuntimeSnapshot): string {
   const lines: string[] = ["# Current runtime snapshot"];
   lines.push(
@@ -218,6 +247,18 @@ export function buildRuntimeSection(snapshot: RuntimeSnapshot): string {
           ? `, ${w.componentCount} components`
           : "";
       lines.push(`- \`${w.id}\` — "${w.title}" (${w.kind}${tab}${count})`);
+    }
+  }
+
+  const models = runtimeModelList(snapshot);
+  if (models.length > 0) {
+    lines.push("");
+    lines.push(
+      "Available model ids for task launch/model switching. Use these exact provider-qualified ids; bare names like `gpt-5.5` are invalid:",
+    );
+    for (const model of models) {
+      const label = model.label ? ` — ${model.label}` : "";
+      lines.push(`- \`${model.id}\`${label}`);
     }
   }
 

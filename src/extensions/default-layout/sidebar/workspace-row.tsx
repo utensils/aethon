@@ -107,6 +107,7 @@ export function WorkspaceRow({
   const isPendingActive =
     pending === "queued" || pending === "starting" || pending === "removing";
   const isFailed = pending === "failed";
+  const agentRunning = item.agent?.status === "running";
   const canRenameInline = renaming && !isPendingActive && !isFailed;
   const canRemoveInline =
     !item.isMain && !isPendingActive && !isFailed && !canRenameInline;
@@ -464,6 +465,26 @@ export function WorkspaceRow({
             aria-label="Dismiss"
           >
             ×
+          </button>
+        </span>
+      ) : null}
+      {!isPendingActive && !isFailed && agentRunning ? (
+        <span className="ae-workspace-pending-status">
+          <button
+            type="button"
+            className="ae-workspace-action"
+            onClick={(e) => {
+              e.stopPropagation();
+              onEvent(
+                "stop-workspace-agent",
+                { sectionId, workspaceId: item.id },
+                item.id,
+              );
+            }}
+            aria-label="Stop agent"
+            title="Stop the running agent turn"
+          >
+            stop
           </button>
         </span>
       ) : null}
