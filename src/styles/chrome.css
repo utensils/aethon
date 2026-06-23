@@ -3817,6 +3817,7 @@ body.ae-resizing-composer * {
    absolute-positioned INSIDE the textarea's visual footprint. The
    textarea fills the wrap; the button overlays its bottom-right. */
 .a2ui-chat-input-field-wrap {
+  --a2ui-chat-input-action-lane: 116px;
   position: relative;
   display: flex;
   min-width: 0;
@@ -4074,8 +4075,8 @@ body.ae-resizing-composer * {
   /* Right padding clears the absolute-positioned Send button so text
      doesn't run under it. Bottom padding clears the Send button when
      the user types multiple lines. Right padding reserves room for the
-     full three-button cluster (send + mic + conversation, out to ~108px). */
-  padding: 10px 116px 10px 12px;
+     full three-button cluster (send + mic + conversation). */
+  padding: 10px var(--a2ui-chat-input-action-lane) 10px 12px;
   font: inherit;
   outline: none;
   line-height: 1.5;
@@ -4226,9 +4227,9 @@ body.ae-resizing-composer * {
 .a2ui-chat-input-voice-status,
 .a2ui-chat-input-voice-error {
   position: absolute;
-  right: 82px;
+  right: var(--a2ui-chat-input-action-lane);
   bottom: 12px;
-  max-width: min(340px, calc(100% - 120px));
+  max-width: min(340px, calc(100% - var(--a2ui-chat-input-action-lane) - 16px));
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -4453,7 +4454,7 @@ body.ae-resizing-composer * {
    with the action buttons. */
 .a2ui-chat-input-queue {
   position: absolute;
-  right: 82px;
+  right: var(--a2ui-chat-input-action-lane);
   bottom: 12px;
   padding: 2px 8px;
   border-radius: 999px;
