@@ -1026,10 +1026,18 @@
     --motion-base: 0ms;
     --motion-slow: 60ms;
     --motion-panel: 0ms;
+    --motion-chat-enter: 0ms;
+    --motion-chat-expand: 0ms;
   }
   .a2ui-terminal,
+  .a2ui-chat-message-flash,
+  .a2ui-msg-row-enter,
   .ae-agent-pill-dot,
   .app-header-pill[data-state="thinking"]::before,
+  .ae-turn-activity-body,
+  .ae-turn-activity-live-tools,
+  .ae-tool-activity-row,
+  .ae-vis-menu,
   .ae-typing-dot,
   .ae-tool-spinner {
     animation: none !important;

@@ -323,6 +323,7 @@ function TurnActivity({
   expanded,
   onToggle,
   live,
+  forceOpen,
 }: {
   turn: ConversationTurn;
   state: Record<string, unknown>;
@@ -334,12 +335,13 @@ function TurnActivity({
   expanded: boolean;
   onToggle: () => void;
   live: boolean;
+  forceOpen: boolean;
 }) {
-  const progressMessages = live ? [] : turn.progressMessages;
+  const progressMessages = live || forceOpen ? [] : turn.progressMessages;
   const toolMessages = toolCallsVisibility === "hide" ? [] : turn.toolMessages;
   const summary = summarizeToolMessages(toolMessages);
   const runningTools = toolMessages.filter(isRunningToolCard);
-  const detailsOpen = expanded || toolCallsVisibility === "show";
+  const detailsOpen = forceOpen || expanded || toolCallsVisibility === "show";
   const visibleTools = detailsOpen ? toolMessages : runningTools;
   const hasActivity =
     progressMessages.length > 0 ||
@@ -447,11 +449,18 @@ export function ConversationTurnRow({
   deliveryText?: string;
 }) {
   const live = isLatest && state.waiting === true;
+  const stopped = turn.systemMessages.some(
+    (message) =>
+      message.text?.replace(/\s+/g, " ").trim().toLowerCase() ===
+      "agent stopped.",
+  );
   const visibleAgentMessages = live
     ? turn.agentMessages
-    : turn.finalMessage
-      ? [turn.finalMessage]
-      : turn.progressMessages;
+    : stopped
+      ? turn.agentMessages
+      : turn.finalMessage
+        ? [turn.finalMessage]
+        : turn.progressMessages;
   return (
     <div className="ae-conversation-turn">
       {turn.systemMessages.map((message) => (
@@ -500,6 +509,7 @@ export function ConversationTurnRow({
         expanded={expanded}
         onToggle={onToggle}
         live={live}
+        forceOpen={stopped}
       />
     </div>
   );

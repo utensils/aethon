@@ -129,6 +129,8 @@
   --motion-panel: 300ms;
   --motion-toast: 200ms;
   --motion-modal: 220ms;
+  --motion-chat-enter: 140ms;
+  --motion-chat-expand: 240ms;
 
   /* Focus ring — width is exposed here so themes can tune ring
      thickness; --focus-ring-color is set per-theme to --accent-soft

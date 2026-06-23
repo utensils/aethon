@@ -3513,6 +3513,22 @@ body.ae-resizing-sidebar .a2ui-layout {
   padding-top: 0;
 }
 
+.a2ui-msg-row-enter {
+  animation: ae-chat-row-enter var(--motion-chat-enter, 140ms)
+    var(--ease-out-strong) both;
+}
+
+@keyframes ae-chat-row-enter {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 .a2ui-chat-load-older {
   align-self: center;
   border: 1px solid var(--border);
@@ -3748,8 +3764,13 @@ body.ae-resizing-sidebar .a2ui-layout {
   height: 6px;
   background: var(--text-dim);
   border-radius: 50%;
-  opacity: 0.4;
-  animation: ae-dot-pulse 1.2s ease-in-out infinite both;
+  opacity: 0.35;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .ae-typing-dot {
+    animation: ae-dot-pulse 1.2s ease-in-out infinite both;
+  }
 }
 .ae-typing-dot:nth-child(1) {
   animation-delay: 0s;
@@ -9648,7 +9669,21 @@ button.ae-vcs-chip:focus-visible {
   border-radius: 8px;
   box-shadow: 0 14px 40px rgba(0, 0, 0, 0.4);
   padding: 4px;
+  transform-origin: bottom right;
+  animation: ae-vis-menu-enter var(--motion-base) var(--ease-out-strong) both;
 }
+
+@keyframes ae-vis-menu-enter {
+  from {
+    opacity: 0;
+    transform: translateY(4px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
 .ae-vis-menu-item {
   display: block;
   width: 100%;
@@ -9661,6 +9696,9 @@ button.ae-vcs-chip:focus-visible {
   font-size: 12px;
   padding: 7px 10px;
   cursor: pointer;
+  transition:
+    background var(--motion-fast) var(--ease-out),
+    color var(--motion-fast) var(--ease-out);
 }
 .ae-vis-menu-item:hover {
   background: var(--bg-hover);
@@ -9760,6 +9798,7 @@ button.ae-vcs-chip:focus-visible {
   font-size: var(--chrome-text);
   text-align: left;
   cursor: pointer;
+  transition: color var(--motion-fast) var(--ease-out);
 }
 
 .ae-turn-activity-summary:hover {
@@ -9774,6 +9813,20 @@ button.ae-vcs-chip:focus-visible {
   min-width: 0;
   max-width: min(100%, 76ch);
   padding-left: 18px;
+  animation: ae-turn-activity-open var(--motion-chat-expand, 240ms)
+    var(--ease-panel) both;
+  transform-origin: top;
+}
+
+@keyframes ae-turn-activity-open {
+  from {
+    opacity: 0;
+    transform: translateY(-3px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .ae-turn-progress-message.a2ui-chat-message {
@@ -9805,6 +9858,18 @@ button.ae-vcs-chip:focus-visible {
   min-width: 0;
   color: var(--text-secondary, var(--text-dim));
   font-size: var(--chrome-text);
+  animation: ae-tool-row-in var(--motion-base) var(--ease-out-strong) both;
+}
+
+@keyframes ae-tool-row-in {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .ae-tool-activity-dot {
@@ -9882,6 +9947,7 @@ button.ae-vcs-chip:focus-visible {
   color: var(--text-secondary, var(--text-dim));
   cursor: pointer;
   font: inherit;
+  transition: color var(--motion-fast) var(--ease-out);
 }
 
 .ae-tool-activity-file-open:hover {
@@ -9921,15 +9987,24 @@ button.ae-vcs-chip:focus-visible {
   color: var(--text-dim);
   cursor: pointer;
   font: inherit;
+  transition:
+    color var(--motion-fast) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out);
 }
 
 .ae-tool-activity-file-diff:hover {
   color: var(--text);
+  transform: translateY(-1px);
 }
 
 .ae-turn-block-caret {
+  display: inline-block;
   font-size: 10px;
   opacity: 0.8;
+  transition: transform var(--motion-fast) var(--ease-out);
+}
+.ae-turn-activity[data-expanded="true"] .ae-turn-block-caret {
+  transform: translateY(1px);
 }
 .ae-turn-block-label {
   font-weight: 500;
@@ -10165,12 +10240,15 @@ button.ae-vcs-chip:focus-visible {
 }
 .ae-msg-branch-actions {
   position: absolute;
-  top: 4px;
+  top: 2px;
   right: 8px;
   display: flex;
   gap: 4px;
   opacity: 0;
-  transition: opacity var(--motion-fast) ease;
+  transform: translateY(-2px);
+  transition:
+    opacity var(--motion-fast) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out);
   pointer-events: none;
   /* Keep the action row on one line. The parent message is
      `overflow-wrap: anywhere` + `min-width: 0`, so as an absolutely
@@ -10188,6 +10266,7 @@ button.ae-vcs-chip:focus-visible {
 .a2ui-canvas-message:hover .ae-msg-branch-actions,
 .ae-msg-branch-actions:focus-within {
   opacity: 1;
+  transform: translateY(0);
   pointer-events: auto;
 }
 .ae-msg-branch-btn {
@@ -10204,11 +10283,17 @@ button.ae-vcs-chip:focus-visible {
   white-space: nowrap;
   flex-shrink: 0;
   overflow-wrap: normal;
+  transition:
+    background var(--motion-fast) var(--ease-out),
+    border-color var(--motion-fast) var(--ease-out),
+    color var(--motion-fast) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out);
 }
 .ae-msg-branch-btn:hover {
   background: var(--bg-hover);
   color: var(--text);
   border-color: var(--border-strong);
+  transform: translateY(-1px);
 }
 .ae-msg-branch-confirm {
   color: var(--danger);

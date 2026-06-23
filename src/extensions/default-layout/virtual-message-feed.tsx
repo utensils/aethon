@@ -1,4 +1,10 @@
-import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { Virtuoso, type VirtuosoHandle } from "react-virtuoso";
 import type { ChatMessage } from "../../types/a2ui";
 import type { BuiltinComponentProps } from "../../components/A2UIRenderer";
@@ -78,6 +84,11 @@ export function VirtualMessageFeed({
     [messages, visibility.toolCalls, expandedGroups],
   );
   const { groups, rows, heightEstimates } = transcript;
+  const rowKeys = useMemo(() => rows.map(rowKey), [rows]);
+  const seededRowKeysRef = useRef(false);
+  const seenRowKeysRef = useRef<Set<string>>(new Set());
+  const enteringRowKeysRef = useRef<Set<string>>(new Set());
+  const [, setMotionEpoch] = useState(0);
   const toggleGroup = useCallback((id: string) => {
     setExpandedGroups((prev) => {
       const next = new Set(prev);
@@ -114,12 +125,33 @@ export function VirtualMessageFeed({
       }`;
       const turn = row.turn;
       const userMessageId = turn.userMessage?.id;
+      const stableKey = rowKey(row);
+      if (!seededRowKeysRef.current && rowKeys.length > 0) {
+        seededRowKeysRef.current = true;
+        seenRowKeysRef.current = new Set(rowKeys);
+      }
+      let isNewRow = enteringRowKeysRef.current.has(stableKey);
+      if (seededRowKeysRef.current && !seenRowKeysRef.current.has(stableKey)) {
+        seenRowKeysRef.current.add(stableKey);
+        enteringRowKeysRef.current.add(stableKey);
+        isNewRow = true;
+      }
       return (
         <div
           className={
             index === scrollController.flashIndex
               ? `${rowClass} a2ui-chat-message-flash`
-              : rowClass
+              : isNewRow
+                ? `${rowClass} a2ui-msg-row-enter`
+                : rowClass
+          }
+          onAnimationEnd={
+            isNewRow
+              ? () => {
+                  enteringRowKeysRef.current.delete(stableKey);
+                  setMotionEpoch((value) => value + 1);
+                }
+              : undefined
           }
         >
           <ConversationTurnRow
@@ -152,6 +184,7 @@ export function VirtualMessageFeed({
       expandedGroups,
       toggleGroup,
       rows,
+      rowKeys,
     ],
   );
 

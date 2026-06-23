@@ -1856,13 +1856,15 @@ describe("ChatHistory turn activity feed (mocked Virtuoso renders rows)", () => 
 
   // Single tool cards render through A2UIRenderer, which resolves the
   // `tool-card` component from the registry — so wrap in a provider that has it.
-  function renderGroupedHistory(state: Record<string, unknown>) {
-    const registry = new ExtensionRegistry();
+  function groupedHistoryElement(
+    state: Record<string, unknown>,
+    registry = new ExtensionRegistry(),
+  ) {
     registry.register({
       name: "test-tool-card",
       components: { "tool-card": ToolCard },
     });
-    return render(
+    return (
       <ExtensionRegistryProvider registry={registry}>
         <ChatHistory
           component={{
@@ -1873,8 +1875,12 @@ describe("ChatHistory turn activity feed (mocked Virtuoso renders rows)", () => 
           state={state}
           onEvent={vi.fn()}
         />
-      </ExtensionRegistryProvider>,
+      </ExtensionRegistryProvider>
     );
+  }
+
+  function renderGroupedHistory(state: Record<string, unknown>) {
+    return render(groupedHistoryElement(state));
   }
 
   it("group-run summarizes a completed tool run inside the turn activity", () => {
@@ -2057,7 +2063,7 @@ describe("ChatHistory turn activity feed (mocked Virtuoso renders rows)", () => 
     expect(screen.getByText("reading files")).toBeTruthy();
   });
 
-  it("keeps stopped assistant progress visible when there is no final answer", () => {
+  it("keeps stopped assistant progress visible and expanded when there is no final answer", () => {
     renderGroupedHistory({
       messages: [
         { id: "u1", role: "user", text: "Review this implementation" },
@@ -2065,6 +2071,12 @@ describe("ChatHistory turn activity feed (mocked Virtuoso renders rows)", () => 
           id: "a1",
           role: "agent",
           text: "I’ll inspect the branch diff and relevant files.",
+          model: "openai-codex/gpt-5.5",
+        },
+        {
+          id: "a2",
+          role: "agent",
+          text: "I don’t see any uncommitted changes.",
           model: "openai-codex/gpt-5.5",
         },
         {
@@ -2080,6 +2092,12 @@ describe("ChatHistory turn activity feed (mocked Virtuoso renders rows)", () => 
             ],
           },
         },
+        {
+          id: "stop",
+          role: "system",
+          text: "Agent stopped.",
+          createdAt: 2,
+        },
       ],
       waiting: false,
       transcriptVisibility: { toolCalls: "group-block" },
@@ -2088,7 +2106,59 @@ describe("ChatHistory turn activity feed (mocked Virtuoso renders rows)", () => 
     expect(
       screen.getByText("I’ll inspect the branch diff and relevant files."),
     ).toBeTruthy();
+    expect(
+      screen.getByText("I don’t see any uncommitted changes."),
+    ).toBeTruthy();
     expect(screen.getByText(/1 tool call/)).toBeTruthy();
+    expect(screen.getByText("bash")).toBeTruthy();
+    expect(
+      screen
+        .getByRole("button", { name: /1 tool call/ })
+        .getAttribute("aria-expanded"),
+    ).toBe("true");
+  });
+
+  it("does not animate restored rows on the first rendered transcript", () => {
+    renderGroupedHistory({
+      messages: [
+        { id: "u1", role: "user", text: "restored request" },
+        { id: "a1", role: "agent", text: "restored answer" },
+      ],
+      transcriptVisibility: { toolCalls: "group-block" },
+    });
+
+    expect(document.querySelector(".a2ui-msg-row-enter")).toBeNull();
+  });
+
+  it("marks only appended rows for transcript entrance motion", () => {
+    const initialState = {
+      messages: [
+        { id: "u1", role: "user", text: "restored request" },
+        { id: "a1", role: "agent", text: "restored answer" },
+      ],
+      transcriptVisibility: { toolCalls: "group-block" },
+    };
+    const registry = new ExtensionRegistry();
+    const { rerender } = render(groupedHistoryElement(initialState, registry));
+
+    expect(document.querySelector(".a2ui-msg-row-enter")).toBeNull();
+
+    rerender(
+      groupedHistoryElement(
+        {
+          ...initialState,
+          messages: [
+            ...initialState.messages,
+            { id: "u2", role: "user", text: "new request" },
+          ],
+        },
+        registry,
+      ),
+    );
+
+    const enteredRows = document.querySelectorAll(".a2ui-msg-row-enter");
+    expect(enteredRows).toHaveLength(1);
+    expect(enteredRows[0].textContent).toContain("new request");
   });
 
   it("hide drops tool cards while keeping final prose and progress disclosure", () => {
