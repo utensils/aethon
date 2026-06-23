@@ -2151,6 +2151,8 @@ describe("ChatHistory turn activity feed (mocked Virtuoso renders rows)", () => 
                   fileChange: {
                     kind: "edited",
                     path: "src/App.tsx",
+                    preview:
+                      "diff --git a/src/App.tsx b/src/App.tsx\n@@ -1 +1 @@\n-old title\n+new title",
                     additions: 3,
                     deletions: 1,
                   },
@@ -2186,6 +2188,8 @@ describe("ChatHistory turn activity feed (mocked Virtuoso renders rows)", () => 
       transcriptVisibility: { toolCalls: "group-block" },
     });
 
+    expect(screen.queryByText("+new title")).toBeNull();
+
     fireEvent.click(screen.getByRole("button", { name: /Edited 2 files/ }));
 
     expect(screen.getAllByText("Edited 2 files").length).toBeGreaterThan(1);
@@ -2196,6 +2200,9 @@ describe("ChatHistory turn activity feed (mocked Virtuoso renders rows)", () => 
     expect(screen.getByText("message-groups.tsx")).toBeTruthy();
     expect(screen.getAllByText("+13").length).toBeGreaterThan(0);
     expect(screen.getAllByText("-3").length).toBeGreaterThan(0);
+    expect(screen.getByText("+new title")).toBeTruthy();
+    expect(screen.getByText("-old title")).toBeTruthy();
+    expect(screen.getByText("@@ -1 +1 @@")).toBeTruthy();
     expect(screen.queryByText("Completed in 0.0s")).toBeNull();
   });
 

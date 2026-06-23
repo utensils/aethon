@@ -10011,13 +10011,17 @@ button.ae-vcs-chip:focus-visible {
   flex-direction: column;
 }
 
-.ae-file-activity-list .ae-tool-activity-file {
+.ae-file-activity-list .ae-tool-activity-file-item {
   padding: 7px 12px;
   border-top: 1px solid color-mix(in oklab, var(--border) 60%, transparent);
 }
 
-.ae-file-activity-list .ae-tool-activity-file:first-child {
+.ae-file-activity-list .ae-tool-activity-file-item:first-child {
   border-top: 0;
+}
+
+.ae-tool-activity-file-item {
+  min-width: 0;
 }
 
 .ae-tool-activity-file {
@@ -10086,6 +10090,12 @@ button.ae-vcs-chip:focus-visible {
 .ae-tool-activity-file-diff:hover {
   color: var(--text);
   transform: translateY(-1px);
+}
+
+.ae-tool-activity-file-preview {
+  margin-top: 7px;
+  max-height: 220px;
+  border-top: 1px solid color-mix(in oklab, var(--border) 55%, transparent);
 }
 
 .ae-turn-block-caret {

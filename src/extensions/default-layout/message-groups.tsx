@@ -203,6 +203,28 @@ function parentPath(path: string): string {
   return idx > 0 ? trimmed.slice(0, idx) : "";
 }
 
+function previewLines(preview: string): string[] {
+  return preview
+    .replace(/\r?\n$/, "")
+    .split(/\r?\n/)
+    .slice(0, 80);
+}
+
+function lineTone(line: string): "add" | "del" | "hunk" | "meta" | "ctx" {
+  if (line.startsWith("+") && !line.startsWith("+++")) return "add";
+  if (line.startsWith("-") && !line.startsWith("---")) return "del";
+  if (line.startsWith("@@")) return "hunk";
+  if (
+    line.startsWith("diff --git ") ||
+    line.startsWith("index ") ||
+    line.startsWith("+++") ||
+    line.startsWith("---")
+  ) {
+    return "meta";
+  }
+  return "ctx";
+}
+
 function toolStateLabel(details: ReturnType<typeof toolCardDetails>): string {
   if (details.isRunning) return "Running";
   if (details.status === "cancelled") return "Cancelled";
@@ -223,10 +245,12 @@ function ToolFileChangeRow({
   change,
   onEvent,
   componentId,
+  showPreview = false,
 }: {
   change: ToolCardFileChange;
   onEvent?: BuiltinComponentProps["onEvent"];
   componentId?: string;
+  showPreview?: boolean;
 }) {
   const filePath = change.path ?? "";
   if (!filePath) return null;
@@ -238,40 +262,64 @@ function ToolFileChangeRow({
   const deletions = change.deletions ?? 0;
   const dir = parentPath(filePath);
   return (
-    <div className="ae-tool-activity-file">
-      <button
-        type="button"
-        className="ae-tool-activity-file-open"
-        title={`Open ${filePath}`}
-        onClick={() => onEvent?.("tool-file-open", eventPayload, componentId)}
-      >
-        <FileIcon
-          path={filePath}
-          isDir={false}
-          className="ae-tool-activity-file-icon"
-        />
-        <span className="ae-tool-activity-file-name">{basename(filePath)}</span>
-        {dir ? <span className="ae-tool-activity-file-dir">{dir}</span> : null}
-      </button>
-      {(additions > 0 || deletions > 0) && (
-        <span className="ae-tool-activity-file-stat" aria-label="Line changes">
-          {additions > 0 ? (
-            <span className="ae-turn-block-add">+{additions}</span>
+    <div className="ae-tool-activity-file-item">
+      <div className="ae-tool-activity-file">
+        <button
+          type="button"
+          className="ae-tool-activity-file-open"
+          title={`Open ${filePath}`}
+          onClick={() => onEvent?.("tool-file-open", eventPayload, componentId)}
+        >
+          <FileIcon
+            path={filePath}
+            isDir={false}
+            className="ae-tool-activity-file-icon"
+          />
+          <span className="ae-tool-activity-file-name">
+            {basename(filePath)}
+          </span>
+          {dir ? (
+            <span className="ae-tool-activity-file-dir">{dir}</span>
           ) : null}
-          {deletions > 0 ? (
-            <span className="ae-turn-block-del">-{deletions}</span>
-          ) : null}
-        </span>
-      )}
-      <button
-        type="button"
-        className="ae-tool-activity-file-diff"
-        title={`Open diff for ${filePath}`}
-        aria-label={`Open diff for ${basename(filePath)}`}
-        onClick={() => onEvent?.("tool-file-diff", eventPayload, componentId)}
-      >
-        ⧉
-      </button>
+        </button>
+        {(additions > 0 || deletions > 0) && (
+          <span
+            className="ae-tool-activity-file-stat"
+            aria-label="Line changes"
+          >
+            {additions > 0 ? (
+              <span className="ae-turn-block-add">+{additions}</span>
+            ) : null}
+            {deletions > 0 ? (
+              <span className="ae-turn-block-del">-{deletions}</span>
+            ) : null}
+          </span>
+        )}
+        <button
+          type="button"
+          className="ae-tool-activity-file-diff"
+          title={`Open diff for ${filePath}`}
+          aria-label={`Open diff for ${basename(filePath)}`}
+          onClick={() => onEvent?.("tool-file-diff", eventPayload, componentId)}
+        >
+          ⧉
+        </button>
+      </div>
+      {showPreview && change.preview ? (
+        <pre className="ae-tool-file-diff-preview ae-tool-activity-file-preview">
+          <code>
+            {previewLines(change.preview).map((line, index) => (
+              <span
+                key={`${index}-${line}`}
+                className={`ae-tool-file-diff-line is-${lineTone(line)}`}
+              >
+                <span className="ae-tool-file-diff-lineno">{index + 1}</span>
+                <span className="ae-tool-file-diff-text">{line || " "}</span>
+              </span>
+            ))}
+          </code>
+        </pre>
+      ) : null}
     </div>
   );
 }
@@ -304,6 +352,7 @@ function ToolFileChangesCard({
             change={change}
             onEvent={onEvent}
             componentId={componentId}
+            showPreview
           />
         ))}
       </div>
