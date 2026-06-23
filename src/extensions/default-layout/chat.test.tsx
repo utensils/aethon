@@ -751,6 +751,7 @@ describe("ChatInput", () => {
     const indicator = screen.getByRole("status", {
       name: "Agent is thinking",
     });
+    expect(indicator.textContent).toContain("Thinking...");
     expect(indicator.closest(".a2ui-msg-row-footer")).toBeTruthy();
     expect(indicator.closest(".ae-conversation-turn")).toBeTruthy();
     expect(indicator.closest(".a2ui-canvas-message.agent")).toBeTruthy();

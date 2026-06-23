@@ -1038,12 +1038,15 @@
   .ae-turn-activity-live-tools,
   .ae-tool-activity-row,
   .ae-vis-menu,
-  .ae-typing-dot,
+  .ae-typing-label,
   .ae-tool-spinner {
     animation: none !important;
   }
-  .ae-typing-dot {
-    opacity: 0.35;
+  .ae-typing-label {
+    color: var(--text-dim);
+    background: none;
+    opacity: 0.78;
+    -webkit-text-fill-color: currentColor;
   }
   .ae-tool-spinner {
     opacity: 0.6;
