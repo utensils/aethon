@@ -16,6 +16,14 @@ function cssRuleBody(css: string, selector: string): string {
   return match?.[1] ?? "";
 }
 
+function exactCssRuleBody(css: string, selector: string): string {
+  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const match = css.match(
+    new RegExp(`(?:^|\\n)${escaped}\\s*\\{([\\s\\S]*?)\\}`),
+  );
+  return match?.[1] ?? "";
+}
+
 describe("scrollbar sizing CSS", () => {
   it("uses one slim token for native and xterm scrollbars", () => {
     expect(tokensCss).toMatch(/--scrollbar-size:\s*4px;/);
@@ -106,5 +114,18 @@ describe("chat overflow containment CSS", () => {
     expect(codeBlock).toMatch(/min-width:\s*0;/);
     expect(codeBlock).toMatch(/max-width:\s*100%;/);
     expect(codeBlock).toMatch(/overflow-x:\s*auto;/);
+  });
+});
+
+describe("sidebar scroll containment CSS", () => {
+  it("keeps the sidebar titlebar outside the scrollable region", () => {
+    const sidebar = exactCssRuleBody(chromeCss, ".a2ui-sidebar");
+    expect(sidebar).not.toMatch(/overflow-y:\s*auto;/);
+    expect(sidebar).toMatch(/overflow:\s*hidden;/);
+
+    const sections = cssRuleBody(chromeCss, ".a2ui-sidebar-sections");
+    expect(sections).toMatch(/flex:\s*1 1 auto;/);
+    expect(sections).toMatch(/overflow-y:\s*auto;/);
+    expect(sections).toMatch(/overscroll-behavior:\s*none;/);
   });
 });

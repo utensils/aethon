@@ -113,6 +113,7 @@ body {
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  --ae-mac-titlebar-clearance: calc(94px / var(--app-ui-scale, 1));
 }
 
 /* Dark, slim scrollbars — defaults are jarring on the elevated panels. */
@@ -439,7 +440,7 @@ body.ae-resizing-composer .a2ui-layout {
   width: 100%;
   min-width: 0;
   min-height: 0;
-  overflow-y: auto;
+  overflow: hidden;
   overscroll-behavior: none;
   position: relative;
   /* Shared gutter geometry for the project → workspace hierarchy. The
@@ -931,6 +932,7 @@ body.ae-resizing-sidebar .a2ui-layout {
   letter-spacing: 0;
   min-width: 0;
   border-bottom: 1px solid var(--border);
+  position: relative;
 }
 
 .a2ui-sidebar-title .ae-mark {
@@ -941,16 +943,38 @@ body.ae-resizing-sidebar .a2ui-layout {
    reserve the top-left for the floating traffic lights — with extra gap
    so the Æthon wordmark clears the green control. Only on mac. */
 [data-platform="mac"] .a2ui-sidebar-title {
-  padding-left: 94px;
+  padding-left: var(--ae-mac-titlebar-clearance);
+}
+
+[data-platform="mac"] .a2ui-sidebar-title .ae-wordmark {
+  position: absolute;
+  left: var(--ae-mac-titlebar-clearance);
+  top: 50%;
+  transform: translateY(-50%);
 }
 
 .a2ui-sidebar-title-version {
   margin-left: auto;
-  flex-shrink: 0;
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: var(--text-dim);
   font-size: var(--chrome-text-compact);
   font-family: var(--font-mono);
   letter-spacing: 0.02em;
+}
+
+[data-platform="mac"] .a2ui-sidebar-title-version {
+  position: absolute;
+  right: var(--space-3);
+  top: 50%;
+  max-width: max(
+    0px,
+    calc(100% - var(--ae-mac-titlebar-clearance) - 96px)
+  );
+  transform: translateY(-50%);
 }
 
 /* ---- Host group (top tier of host → project → workspace) --------------- */
@@ -1084,9 +1108,12 @@ body.ae-resizing-sidebar .a2ui-layout {
 .a2ui-sidebar-sections {
   display: flex;
   flex-direction: column;
+  flex: 1 1 auto;
   gap: var(--space-1);
   padding: var(--space-2) 0;
   min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: none;
 }
 
 .a2ui-sidebar-section {
@@ -2045,7 +2072,7 @@ body.ae-resizing-sidebar .a2ui-layout {
    the leftmost drag row and must inherit the traffic-light clearance that the
    sidebar brand strip normally owns. */
 [data-platform="mac"][data-sidebar-collapsed="true"] .app-header {
-  padding-left: 94px !important;
+  padding-left: var(--ae-mac-titlebar-clearance) !important;
 }
 
 .app-header-brand {
