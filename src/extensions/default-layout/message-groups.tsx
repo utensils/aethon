@@ -140,23 +140,8 @@ function activityLabel({
   return `${progressCount} ${progressCount === 1 ? "update" : "updates"}`;
 }
 
-function activityMeta({
-  summary,
-  progressCount,
-}: {
-  summary: ToolMessageSummary;
-  progressCount: number;
-}): string {
-  const parts: string[] = [];
-  if (summary.total > 0) parts.push(toolCountLabel(summary));
-  if (progressCount > 0) {
-    parts.push(
-      `${progressCount} ${progressCount === 1 ? "update" : "updates"}`,
-    );
-  }
-  const peek = summary.names.slice(0, 4).join(" · ");
-  if (peek) parts.push(peek);
-  return parts.join(" · ");
+function activityMeta(summary: ToolMessageSummary): string {
+  return summary.total > 0 ? toolCountLabel(summary) : "";
 }
 
 function fileChangeStatsLabel(summary: ToolMessageSummary): string {
@@ -443,10 +428,7 @@ function TurnActivity({
     summary,
     progressCount: progressMessages.length,
   });
-  const meta = activityMeta({
-    summary,
-    progressCount: progressMessages.length,
-  });
+  const meta = activityMeta(summary);
   const fileLabel = fileChangeLabel(summary);
   const accessibleSummary = [
     label,

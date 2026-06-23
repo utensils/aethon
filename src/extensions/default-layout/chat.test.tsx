@@ -1912,14 +1912,14 @@ describe("ChatHistory turn activity feed (mocked Virtuoso renders rows)", () => 
     return render(groupedHistoryElement(state));
   }
 
-  it("group-run summarizes a completed tool run inside the turn activity", () => {
+  it("group-run summarizes completed tool work without leaking tool names", () => {
     renderGroupedHistory({
       messages: toolMessages,
       transcriptVisibility: { toolCalls: "group-run" },
     });
     expect(screen.getByText("done")).toBeTruthy();
     expect(screen.getByText(/2 tool calls/)).toBeTruthy();
-    expect(screen.getByText(/read · bash/)).toBeTruthy();
+    expect(screen.queryByText(/read · bash/)).toBeNull();
   });
 
   it("passes per-row height estimates and overscan hints to Virtuoso", () => {
@@ -2090,13 +2090,13 @@ describe("ChatHistory turn activity feed (mocked Virtuoso renders rows)", () => 
     ).toBeTruthy();
   });
 
-  it("group-turn shows the tool count and name peek in the activity row", () => {
+  it("group-turn shows a compact tool count in the activity row", () => {
     renderGroupedHistory({
       messages: toolMessages,
       transcriptVisibility: { toolCalls: "group-turn" },
     });
     expect(screen.getByText(/2 tool calls/)).toBeTruthy();
-    expect(screen.getByText(/read · bash/)).toBeTruthy();
+    expect(screen.queryByText(/read · bash/)).toBeNull();
   });
 
   it("group-block keeps the final answer visible and folds earlier work", () => {
@@ -2106,7 +2106,8 @@ describe("ChatHistory turn activity feed (mocked Virtuoso renders rows)", () => 
     });
     expect(screen.getByText("done")).toBeTruthy();
     expect(screen.queryByText("reading files")).toBeNull();
-    expect(screen.getByText(/2 tool calls · 1 update/)).toBeTruthy();
+    expect(screen.getByText(/2 tool calls/)).toBeTruthy();
+    expect(screen.queryByText(/1 update/)).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: /2 tool calls/ }));
     expect(screen.getByText("reading files")).toBeTruthy();
   });
