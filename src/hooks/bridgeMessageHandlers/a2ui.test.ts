@@ -5,6 +5,17 @@ import { buildHandlerFixture } from "./testFixtures";
 import { makeEmptyTab } from "../../types/tab";
 import type { ChatMessage } from "../../types/a2ui";
 
+function applyAppendByMessageId(
+  tab: ReturnType<typeof makeEmptyTab>,
+  msg: ChatMessage,
+) {
+  const messages = [...tab.messages];
+  const index = messages.findIndex((message) => message.id === msg.id);
+  if (index >= 0) messages[index] = msg;
+  else messages.push(msg);
+  return { ...tab, messages };
+}
+
 describe("handleA2ui", () => {
   it("appends an a2ui bubble and flips waiting on done", () => {
     const { ctx, mocks } = buildHandlerFixture({
@@ -91,6 +102,256 @@ describe("handleA2ui", () => {
       }),
       "tab-1",
     );
+  });
+
+  it("updates a running task_batch tool card by identity when message ids differ", () => {
+    let tab = makeEmptyTab("tab-1", "Tab 1");
+    const { ctx, mocks } = buildHandlerFixture({
+      state: { activeTabId: "tab-1", tabs: [tab] },
+    });
+    ctx.updateTab = vi.fn((_tabId, updater) => {
+      tab = updater(tab);
+    });
+    ctx.appendMessage = vi.fn((message: ChatMessage) => {
+      tab = applyAppendByMessageId(tab, message);
+    });
+
+    const startPayload = {
+      components: [
+        {
+          id: "tool-1-call_batch_1-fc_abc",
+          type: "tool-card",
+          props: {
+            title: "task_batch",
+            toolName: "task_batch",
+            description: "gpt-5-4-mini, qwen3-coder · inline",
+            startedAt: 1_000,
+          },
+          children: [],
+        },
+      ],
+    };
+    const updatePayload = {
+      components: [
+        {
+          id: "tool-2-call_batch_1-fc_abc",
+          type: "tool-card",
+          props: {
+            title: "task_batch",
+            toolName: "task_batch",
+            description: "gpt-5-4-mini, qwen3-coder · inline",
+            startedAt: 1_000,
+          },
+          children: [
+            {
+              id: "tool-2-call_batch_1-fc_abc-result",
+              type: "subagent-result",
+              props: { content: "partial audit from subagents" },
+            },
+          ],
+        },
+      ],
+    };
+
+    handleA2ui(
+      {
+        type: "a2ui",
+        payload: startPayload,
+        id: "tool-1-call_batch_1-fc_abc",
+        tabId: "tab-1",
+      },
+      ctx,
+    );
+    handleA2ui(
+      {
+        type: "a2ui",
+        payload: updatePayload,
+        id: "tool-2-call_batch_1-fc_abc",
+        tabId: "tab-1",
+      },
+      ctx,
+    );
+
+    expect(tab.messages).toHaveLength(1);
+    expect(tab.messages[0]).toMatchObject({
+      id: "tool-2-call_batch_1-fc_abc",
+      role: "agent",
+      a2ui: updatePayload,
+    });
+    expect(tab.messages[0].a2ui?.components[0].children).toEqual([
+      expect.objectContaining({
+        type: "subagent-result",
+        props: { content: "partial audit from subagents" },
+      }),
+    ]);
+    expect(mocks.persistLocalChatMessage).toHaveBeenLastCalledWith(
+      expect.objectContaining({ id: "tool-2-call_batch_1-fc_abc" }),
+      "tab-1",
+    );
+  });
+
+  it("replaces a running task_batch card with a synthetic cancellation by identity", () => {
+    let tab = makeEmptyTab("tab-1", "Tab 1");
+    const { ctx } = buildHandlerFixture({
+      state: { activeTabId: "tab-1", tabs: [tab] },
+    });
+    ctx.updateTab = vi.fn((_tabId, updater) => {
+      tab = updater(tab);
+    });
+    ctx.appendMessage = vi.fn((message: ChatMessage) => {
+      tab = applyAppendByMessageId(tab, message);
+    });
+
+    const startPayload = {
+      components: [
+        {
+          id: "tool-1-call_batch_2-fc_def",
+          type: "tool-card",
+          props: {
+            title: "task_batch",
+            toolName: "task_batch",
+            startedAt: 1_000,
+          },
+          children: [],
+        },
+      ],
+    };
+    const cancelPayload = {
+      components: [
+        {
+          id: "tool-2-call_batch_2-fc_def",
+          type: "tool-card",
+          props: {
+            title: "task_batch",
+            toolName: "task_batch",
+            startedAt: 1_000,
+            endedAt: 1_500,
+            status: "cancelled",
+          },
+          children: [
+            {
+              id: "tool-2-call_batch_2-fc_def-result",
+              type: "subagent-result",
+              props: { content: "Cancelled by user.", isError: true },
+            },
+          ],
+        },
+      ],
+    };
+
+    handleA2ui(
+      {
+        type: "a2ui",
+        payload: startPayload,
+        id: "tool-1-call_batch_2-fc_def",
+        tabId: "tab-1",
+      },
+      ctx,
+    );
+    handleA2ui(
+      {
+        type: "a2ui",
+        payload: cancelPayload,
+        id: "tool-2-call_batch_2-fc_def",
+        tabId: "tab-1",
+      },
+      ctx,
+    );
+
+    expect(tab.messages).toHaveLength(1);
+    expect(tab.messages[0]).toMatchObject({
+      id: "tool-2-call_batch_2-fc_def",
+      a2ui: cancelPayload,
+    });
+  });
+
+  it("preserves cancellation state when a late running update has a sibling id", () => {
+    const cancelledId = "tool-1-call_batch_late-fc_jkl";
+    const updateId = "tool-2-call_batch_late-fc_jkl";
+    const tab = {
+      ...makeEmptyTab("tab-1", "Tab 1"),
+      messages: [
+        {
+          id: cancelledId,
+          role: "agent",
+          a2ui: {
+            components: [
+              {
+                id: cancelledId,
+                type: "tool-card",
+                props: {
+                  title: "task_batch",
+                  toolName: "task_batch",
+                  startedAt: 1_000,
+                  endedAt: 1_500,
+                  status: "cancelled",
+                },
+              },
+            ],
+          },
+        } satisfies ChatMessage,
+      ],
+    };
+    const { ctx, mocks } = buildHandlerFixture({
+      state: { activeTabId: "tab-1", tabs: [tab] },
+    });
+    const payload = {
+      components: [
+        {
+          id: updateId,
+          type: "tool-card",
+          props: {
+            title: "task_batch",
+            toolName: "task_batch",
+            startedAt: 1_000,
+          },
+          children: [
+            {
+              id: `${updateId}-result`,
+              type: "subagent-result",
+              props: { content: "late partial body" },
+            },
+          ],
+        },
+      ],
+    };
+
+    handleA2ui({ type: "a2ui", payload, id: updateId, tabId: "tab-1" }, ctx);
+
+    expect(mocks.appendMessage).not.toHaveBeenCalled();
+    const [, updater] = mocks.updateTab.mock.calls[0];
+    const out = updater(tab);
+    expect(out.messages).toHaveLength(1);
+    expect(out.messages[0]).toMatchObject({
+      id: updateId,
+      role: "agent",
+      a2ui: {
+        components: [
+          {
+            id: updateId,
+            props: {
+              status: "cancelled",
+              startedAt: 1_000,
+              endedAt: 1_500,
+            },
+            children: [
+              {
+                id: `${updateId}-late-completion-notice`,
+                props: {
+                  content: expect.stringContaining(
+                    "reported a final result after it had already been marked stopped",
+                  ),
+                },
+              },
+              {
+                id: `${updateId}-result`,
+                props: { content: "late partial body" },
+              },
+            ],
+          },
+        ],
+      },
+    });
   });
 
   it("preserves cancellation state when a late final event has a sibling id", () => {

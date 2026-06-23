@@ -22,6 +22,7 @@ import { parseSessionHistoryLines } from "./parse-pi";
 import { isSubagentToolName } from "./subagent-tool-results";
 import {
   MAX_RESTORED_MESSAGES,
+  toolCardRecordsFromA2ui,
   type RestoredChatAttachment,
   type RestoredChatMessage,
 } from "./shared";
@@ -97,47 +98,8 @@ function isCoveredByPiContent(
   });
 }
 
-function normalizeToolCallId(value: string): string {
-  return value.replace(/[^A-Za-z0-9_-]+/g, "-").slice(0, 96);
-}
-
-function toolCardIdentityFromId(id: string): string | undefined {
-  if (id.startsWith("restored-tool-")) {
-    return id.slice("restored-tool-".length);
-  }
-  const liveMatch = /^tool-\d+-(.+)$/.exec(id);
-  if (liveMatch) return normalizeToolCallId(liveMatch[1]);
-  return undefined;
-}
-
-function toolCardRecords(
-  message: RestoredChatMessage,
-): Array<{ identity: string; status?: unknown; toolName?: unknown }> {
-  const components = message.a2ui?.components ?? [];
-  const records: Array<{
-    identity: string;
-    status?: unknown;
-    toolName?: unknown;
-  }> = [];
-  for (const component of components) {
-    if (!component || typeof component !== "object") continue;
-    const record = component as Record<string, unknown>;
-    if (record.type !== "tool-card" || typeof record.id !== "string") {
-      continue;
-    }
-    const identity = toolCardIdentityFromId(record.id);
-    if (!identity) continue;
-    const props =
-      record.props && typeof record.props === "object"
-        ? (record.props as Record<string, unknown>)
-        : undefined;
-    records.push({
-      identity,
-      status: props?.status,
-      toolName: props?.toolName,
-    });
-  }
-  return records;
+function toolCardRecords(message: RestoredChatMessage) {
+  return toolCardRecordsFromA2ui(message.a2ui);
 }
 
 function toolCardIdentities(message: RestoredChatMessage): string[] {

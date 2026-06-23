@@ -18,8 +18,46 @@ import {
   isChatRole,
   normalizeCwd,
   parseChatAttachments,
+  toolCardRecordsFromA2ui,
   trimText,
 } from "./shared";
+
+function toolCardDedupeKeys(message: RestoredChatMessage): string[] {
+  return toolCardRecordsFromA2ui(message.a2ui).map(
+    (record) => `${record.identity}\0${record.startedAt ?? ""}`,
+  );
+}
+
+function clearSeenToolCardKeys(
+  seenToolCards: Map<string, number>,
+  message: RestoredChatMessage,
+  index: number,
+): void {
+  for (const key of toolCardDedupeKeys(message)) {
+    if (seenToolCards.get(key) === index) seenToolCards.delete(key);
+  }
+}
+
+function rememberToolCardKeys(
+  seenToolCards: Map<string, number>,
+  message: RestoredChatMessage,
+  index: number,
+): void {
+  for (const key of toolCardDedupeKeys(message)) {
+    seenToolCards.set(key, index);
+  }
+}
+
+function firstSeenToolCardIndex(
+  seenToolCards: ReadonlyMap<string, number>,
+  message: RestoredChatMessage,
+): number | undefined {
+  for (const key of toolCardDedupeKeys(message)) {
+    const index = seenToolCards.get(key);
+    if (index !== undefined) return index;
+  }
+  return undefined;
+}
 
 export function parseLocalChatLines(
   lines: Iterable<string>,
@@ -27,6 +65,7 @@ export function parseLocalChatLines(
 ): RestoredChatMessage[] {
   const messages: RestoredChatMessage[] = [];
   const seen = new Map<string, number>();
+  const seenToolCards = new Map<string, number>();
   const targetCwd = normalizeCwd(expectedCwd);
   for (const line of lines) {
     const trimmed = line.trim();
@@ -70,11 +109,18 @@ export function parseLocalChatLines(
         : {}),
       ...(entryCwd ? { cwd: entryCwd } : {}),
     };
-    const existingIndex = seen.get(id);
+    const existingIndex =
+      seen.get(id) ?? firstSeenToolCardIndex(seenToolCards, message);
     if (existingIndex !== undefined) {
+      const previous = messages[existingIndex];
+      seen.delete(previous.id);
+      clearSeenToolCardKeys(seenToolCards, previous, existingIndex);
       messages[existingIndex] = message;
+      seen.set(id, existingIndex);
+      rememberToolCardKeys(seenToolCards, message, existingIndex);
     } else {
       seen.set(id, messages.length);
+      rememberToolCardKeys(seenToolCards, message, messages.length);
       messages.push(message);
     }
   }
