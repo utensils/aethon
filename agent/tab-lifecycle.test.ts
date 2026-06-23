@@ -1316,6 +1316,59 @@ describe("handleSessionEvent", () => {
     }
   });
 
+  it("auto-compacts after a completed turn when live output crossed the threshold", async () => {
+    const f = makeFixture();
+    f.state.settingsManager = {
+      getCompactionSettings: () => ({
+        enabled: true,
+        reserveTokens: 200,
+        keepRecentTokens: 100,
+      }),
+    } as unknown as AethonAgentState["settingsManager"];
+    const compact = vi.fn(() => Promise.resolve({ tokensBefore: 1_850 }));
+    const rec = fakeRec("anthropic/claude-x");
+    rec.promptInFlight = true;
+    rec.contextUsageTransientTokens = 150;
+    rec.session = {
+      ...rec.session,
+      model: {
+        id: "claude-x",
+        provider: "anthropic",
+        name: "Claude X",
+        contextWindow: 2_000,
+      },
+      getContextUsage: () => ({
+        tokens: 1_700,
+        contextWindow: 2_000,
+        percent: 85,
+      }),
+      compact,
+    } as unknown as TabRecord["session"];
+    f.state.tabs.set("tab-1", rec);
+    f.state.currentAgentTabId = "tab-1";
+
+    handleSessionEvent(f.state, f.deps, rec, "tab-1", {
+      type: "agent_end",
+      messages: [{ role: "assistant", stopReason: "stop" }],
+    });
+
+    expect(compact).toHaveBeenCalledOnce();
+    expect(rec.promptInFlight).toBe(true);
+    expect(f.sent).toContainEqual({
+      type: "notice",
+      tabId: "tab-1",
+      busy: true,
+      message: "Context threshold reached; compacting before the next turn...",
+    });
+    expect(f.sent.some((m) => m.type === "response_end")).toBe(false);
+
+    await vi.waitFor(() => {
+      expect(f.sent.some((m) => m.type === "response_end")).toBe(true);
+    });
+    expect(rec.promptInFlight).toBe(false);
+    expect(rec.contextUsageTransientTokens).toBe(0);
+  });
+
   it("resumes after overflow compaction when pi does not mark willRetry", async () => {
     vi.useFakeTimers();
     try {

@@ -403,6 +403,11 @@ export function TabStrip({ component, state, onEvent }: BuiltinComponentProps) {
         label: "Rename Session",
         onSelect: () => beginRename(tab),
       },
+      {
+        id: "copy-session-id",
+        label: "Copy Session ID",
+        onSelect: () => copyToClipboard(tab.id),
+      },
       { type: "separator" },
       ...closeFamily,
     ];

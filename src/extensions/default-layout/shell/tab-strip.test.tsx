@@ -82,6 +82,22 @@ describe("TabStrip", () => {
     });
   });
 
+  it("copies the agent session id from the tab context menu", async () => {
+    const writeText = vi.fn(() => Promise.resolve());
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText },
+    });
+    renderTabStrip();
+
+    fireEvent.contextMenu(screen.getByText("Tab 1").closest('[role="tab"]')!);
+    fireEvent.click(screen.getByRole("menuitem", { name: "Copy Session ID" }));
+
+    await vi.waitFor(() => {
+      expect(writeText).toHaveBeenCalledWith("tab-1");
+    });
+  });
+
   it("keeps rename input focused while active agent state re-renders", () => {
     const onEvent = vi.fn<TabStripOnEvent>();
     const { rerender } = render(
