@@ -54,9 +54,17 @@ export const handleSidebarSwitchWorkspace: EventRouteHandler = (
   for (const project of sidebar.projects ?? []) {
     const workspace = project.workspaces?.find((w) => w.id === workspaceId);
     if (workspace) {
+      const activeProjectId = ctx.stateRef.current.activeProjectId;
+      const activeWorkspaceId = ctx.stateRef.current.activeWorkspaceId;
+      const routeWorkspaceId = workspace.isMain === true ? null : workspace.id;
       const wasAlreadyActiveWorkspace =
-        ctx.stateRef.current.activeWorkspaceId === workspaceId;
-      ctx.activateWorkspace(workspaceId);
+        workspace.isMain === true
+          ? activeProjectId === project.id && activeWorkspaceId == null
+          : activeWorkspaceId === workspace.id;
+      if (workspace.isMain === true) {
+        ctx.setActiveProjectById(project.id);
+      }
+      ctx.activateWorkspace(routeWorkspaceId);
       const tabs = Array.isArray(ctx.stateRef.current.tabs)
         ? ctx.stateRef.current.tabs
         : [];
