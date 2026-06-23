@@ -2239,6 +2239,56 @@ describe("ChatHistory turn activity feed (mocked Virtuoso renders rows)", () => 
     ).toBe("true");
   });
 
+  it("keeps the latest stopped status turn expanded when no stop notice is in the transcript", () => {
+    renderGroupedHistory({
+      status: "stopped",
+      messages: [
+        { id: "u1", role: "user", text: "Review this implementation" },
+        {
+          id: "a1",
+          role: "agent",
+          text: "I’ll inspect the branch diff and relevant files.",
+          model: "openai-codex/gpt-5.5",
+        },
+        {
+          id: "a2",
+          role: "agent",
+          text: "I don’t see any uncommitted changes.",
+          model: "openai-codex/gpt-5.5",
+        },
+        {
+          id: "t1",
+          role: "agent",
+          a2ui: {
+            components: [
+              {
+                id: "c1",
+                type: "tool-card",
+                props: { title: "bash", startedAt: 1, endedAt: 2 },
+              },
+            ],
+          },
+        },
+      ],
+      waiting: false,
+      transcriptVisibility: { toolCalls: "group-block" },
+    });
+
+    expect(
+      screen.getByText("I’ll inspect the branch diff and relevant files."),
+    ).toBeTruthy();
+    expect(
+      screen.getByText("I don’t see any uncommitted changes."),
+    ).toBeTruthy();
+    expect(screen.getByText(/1 tool call/)).toBeTruthy();
+    expect(screen.getByText("bash")).toBeTruthy();
+    expect(
+      screen
+        .getByRole("button", { name: /1 tool call/ })
+        .getAttribute("aria-expanded"),
+    ).toBe("true");
+  });
+
   it("does not animate restored rows on the first rendered transcript", () => {
     renderGroupedHistory({
       messages: [

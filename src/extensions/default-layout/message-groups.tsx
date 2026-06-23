@@ -519,11 +519,13 @@ export function ConversationTurnRow({
   deliveryText?: string;
 }) {
   const live = isLatest && state.waiting === true;
-  const stopped = turn.systemMessages.some(
+  const hasStopNotice = turn.systemMessages.some(
     (message) =>
       message.text?.replace(/\s+/g, " ").trim().toLowerCase() ===
       "agent stopped.",
   );
+  const stopped =
+    hasStopNotice || (isLatest && !live && state.status === "stopped");
   const visibleAgentMessages = live
     ? turn.agentMessages
     : stopped
