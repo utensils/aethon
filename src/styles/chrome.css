@@ -970,10 +970,7 @@ body.ae-resizing-sidebar .a2ui-layout {
   position: absolute;
   right: var(--space-3);
   top: 50%;
-  max-width: max(
-    0px,
-    calc(100% - var(--ae-mac-titlebar-clearance) - 96px)
-  );
+  max-width: max(0px, calc(100% - var(--ae-mac-titlebar-clearance) - 96px));
   transform: translateY(-50%);
 }
 
@@ -6461,13 +6458,19 @@ body.ae-resizing-terminal * {
   padding: var(--space-5);
 }
 .ae-scheduled-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  display: flex;
+  flex-direction: column;
   gap: var(--space-3);
   padding: var(--space-3);
   border: 1px solid var(--card-border, var(--border));
   border-radius: var(--radius-md);
   background: var(--card-bg, var(--bg-elev));
+}
+.ae-scheduled-row-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
 }
 .ae-scheduled-row-main {
   min-width: 0;
@@ -6483,10 +6486,10 @@ body.ae-resizing-terminal * {
   gap: var(--space-2);
   flex-wrap: wrap;
 }
-.ae-scheduled-title strong,
-.ae-scheduled-prompt {
-  overflow: hidden;
-  text-overflow: ellipsis;
+.ae-scheduled-title strong {
+  max-width: 64ch;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
 }
 .ae-scheduled-title code {
   font-size: var(--chrome-text-muted);
@@ -6496,15 +6499,26 @@ body.ae-resizing-terminal * {
   color: var(--text-dim);
   font-size: var(--chrome-text-muted);
 }
-.ae-scheduled-prompt {
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  color: var(--text-secondary, var(--text));
-  font-size: var(--chrome-text);
-  line-height: 1.35;
+.ae-scheduled-edit-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(180px, 260px));
+  gap: var(--space-3);
+  align-items: start;
+}
+.ae-scheduled-edit-grid .ae-scheduled-field--mode,
+.ae-scheduled-edit-grid .ae-scheduled-field--schedule {
+  width: min(260px, 100%);
+}
+.ae-scheduled-edit-grid .ae-scheduled-field--wide {
+  grid-column: 1 / -1;
+}
+.ae-scheduled-edit-grid textarea {
+  min-height: 180px;
+  max-height: min(42vh, 360px);
 }
 .ae-scheduled-row-actions {
+  align-content: flex-start;
+  align-items: flex-start;
   justify-content: flex-end;
 }
 .ae-scheduled-row-actions button {
@@ -6531,8 +6545,8 @@ body.ae-resizing-terminal * {
     border-right: 0;
     border-bottom: 1px solid var(--border);
   }
-  .ae-scheduled-row {
-    grid-template-columns: 1fr;
+  .ae-scheduled-row-head {
+    flex-direction: column;
   }
   .ae-scheduled-row-actions {
     justify-content: flex-start;
@@ -7281,12 +7295,20 @@ body.ae-resizing-terminal * {
 }
 
 .ae-tool-file-diff-line.is-add {
-  background: color-mix(in srgb, var(--state-success-bg, var(--success)) 28%, transparent);
+  background: color-mix(
+    in srgb,
+    var(--state-success-bg, var(--success)) 28%,
+    transparent
+  );
   color: var(--state-success-fg, var(--text));
 }
 
 .ae-tool-file-diff-line.is-del {
-  background: color-mix(in srgb, var(--state-error-bg, var(--danger)) 28%, transparent);
+  background: color-mix(
+    in srgb,
+    var(--state-error-bg, var(--danger)) 28%,
+    transparent
+  );
   color: var(--state-error-fg, var(--text));
 }
 

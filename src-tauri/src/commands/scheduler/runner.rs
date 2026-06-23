@@ -8,7 +8,8 @@ use crate::agent_process::{AgentProcesses, lock_recover, prompt_wedged, tab_agen
 use super::MAX_FIRES_PER_TICK;
 use super::policy::{delay_due_task_record, now_ms};
 use super::store::{
-    ScheduledTasksState, ensure_loaded, persist_emit, persist_emit_notify, refresh_expired,
+    ScheduledTasksState, SchedulerInner, ensure_loaded, persist_emit, persist_emit_notify,
+    refresh_expired,
 };
 use super::types::{
     ScheduledTaskError, ScheduledTaskFired, ScheduledTaskMode, ScheduledTaskRecord,
@@ -60,12 +61,7 @@ fn scheduler_delay(app: &AppHandle) -> Result<Option<Duration>, String> {
     if !inner.live_tabs_known {
         return Ok(None);
     }
-    let next = inner
-        .tasks
-        .values()
-        .filter(|task| task.status == ScheduledTaskStatus::Scheduled)
-        .filter_map(|task| task.next_run_at)
-        .min();
+    let next = next_eligible_due_at(&inner);
     Ok(next.map(|due| {
         if due <= now {
             Duration::from_millis(0)
@@ -275,6 +271,16 @@ fn delay_due_task(
     persist_emit_notify(state, app)
 }
 
+fn next_eligible_due_at(inner: &SchedulerInner) -> Option<i64> {
+    inner
+        .tasks
+        .values()
+        .filter(|task| task.status == ScheduledTaskStatus::Scheduled)
+        .filter(|task| inner.live_tab_ids.contains(&task.tab_id))
+        .filter_map(|task| task.next_run_at)
+        .min()
+}
+
 fn tab_busy(app: &AppHandle, tab_id: &str) -> bool {
     let key = tab_agent_key(tab_id);
     let state = app.state::<AgentProcesses>();
@@ -282,4 +288,57 @@ fn tab_busy(app: &AppHandle, tab_id: &str) -> bool {
     meta.get(&key)
         .map(|m| m.prompt_in_flight && !prompt_wedged(m, std::time::Instant::now()))
         .unwrap_or(false)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::commands::scheduler::{TASK_TTL_MS, TASK_VERSION, types::ScheduledTaskSchedule};
+
+    fn test_task(now: i64, id: &str, tab_id: &str) -> ScheduledTaskRecord {
+        ScheduledTaskRecord {
+            version: TASK_VERSION,
+            id: id.to_string(),
+            tab_id: tab_id.to_string(),
+            cwd: "/tmp".into(),
+            model: None,
+            thinking_level: None,
+            hard_enforce: None,
+            auth_profile_id: None,
+            label: id.to_string(),
+            prompt: "do it".into(),
+            visible_prompt: "do it".into(),
+            prompt_source: "inline".into(),
+            mode: ScheduledTaskMode::OneShot,
+            schedule: ScheduledTaskSchedule::OneShot { run_at: now },
+            created_at: now - 1,
+            updated_at: now - 1,
+            next_run_at: Some(now),
+            last_run_at: None,
+            last_completed_at: None,
+            expires_at: now + TASK_TTL_MS,
+            run_count: 0,
+            coalesced_misses: 0,
+            last_error: None,
+            status: ScheduledTaskStatus::Scheduled,
+            current_run_id: None,
+        }
+    }
+
+    #[test]
+    fn scheduler_delay_ignores_due_tasks_for_non_live_tabs() {
+        let now = 1_700_000_000_000;
+        let mut orphan = test_task(now, "orphan", "closed-tab");
+        orphan.next_run_at = Some(now);
+        let mut live = test_task(now, "live", "live-tab");
+        live.next_run_at = Some(now + 5 * 60_000);
+
+        let mut inner = SchedulerInner::default();
+        inner.live_tabs_known = true;
+        inner.live_tab_ids.insert("live-tab".to_string());
+        inner.tasks.insert(orphan.id.clone(), orphan);
+        inner.tasks.insert(live.id.clone(), live);
+
+        assert_eq!(next_eligible_due_at(&inner), Some(now + 5 * 60_000));
+    }
 }

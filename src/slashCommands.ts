@@ -101,6 +101,7 @@ export interface SlashCommandContext {
   runScheduledTask?: (id: string) => Promise<ScheduledTaskRecord>;
   pauseScheduledTask?: (id: string) => Promise<ScheduledTaskRecord>;
   resumeScheduledTask?: (id: string) => Promise<ScheduledTaskRecord>;
+  reuseScheduledTask?: (id: string) => Promise<ScheduledTaskRecord>;
   cancelScheduledTask?: (id: string) => Promise<ScheduledTaskRecord>;
   deleteScheduledTask?: (id: string) => Promise<ScheduledTaskRecord>;
   /** Currently active tab id, or null when none. Used by `/rename` so
@@ -428,13 +429,47 @@ export function buildBuiltinSlashCommands(): SlashCommand[] {
     {
       name: "loop",
       description: "Run a repeated scheduled task in this session",
-      usage: "[interval] [prompt]",
+      usage: "[interval] [prompt] | reuse <id>",
       run: async (args, ctx) => {
         if (!args.trim()) {
           ctx.openScheduledTasks?.();
           ctx.appendSystem(
-            "No loop scheduled. Use `/loop <prompt>` for a self-paced loop, `/loop <interval> <prompt>` for a fixed loop, or create one from Scheduled Tasks.",
+            "No loop scheduled. Use `/loop <prompt>` for a self-paced loop, `/loop <interval> <prompt>` for a fixed loop, `/loop reuse <id>` to adopt an existing loop here, or create one from Scheduled Tasks.",
           );
+          return;
+        }
+        const [subRaw, ...rest] = args.trim().split(/\s+/).filter(Boolean);
+        const sub = subRaw?.toLowerCase();
+        if (sub === "reuse" || sub === "adopt") {
+          try {
+            if (!ctx.listScheduledTasks || !ctx.reuseScheduledTask) {
+              throw new Error("Scheduled tasks are unavailable.");
+            }
+            const task = matchTask(await ctx.listScheduledTasks(), rest[0] ?? "");
+            if (!task) {
+              ctx.notify({
+                title: "Unknown loop",
+                message: "Use `/tasks list` to find the id.",
+                kind: "error",
+              });
+              return;
+            }
+            const updated = await ctx.reuseScheduledTask(task.id);
+            ctx.notify({
+              title: "Loop reused here",
+              message: updated.label,
+              kind: "success",
+            });
+            ctx.appendSystem(
+              `Loop reused on this session: ${updated.label}\nTask: \`${updated.id.slice(0, 8)}\`\nStatus: ${formatTaskStatus(updated)}`,
+            );
+          } catch (err) {
+            ctx.notify({
+              title: "Loop reuse failed",
+              message: err instanceof Error ? err.message : String(err),
+              kind: "error",
+            });
+          }
           return;
         }
         const parsed = parseLoopArgs(args);

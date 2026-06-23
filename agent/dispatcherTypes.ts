@@ -6,9 +6,12 @@ import type {
 import { emitReady, refreshCachedModels } from "./tab-lifecycle";
 import { refreshPersistedTabs } from "./extension-loader";
 
-const WORKER_MODE =
-  typeof process.env.AETHON_WORKER_TAB_ID === "string" &&
-  process.env.AETHON_WORKER_TAB_ID.length > 0;
+function isWorkerMode(): boolean {
+  return (
+    typeof process.env.AETHON_WORKER_TAB_ID === "string" &&
+    process.env.AETHON_WORKER_TAB_ID.length > 0
+  );
+}
 
 export interface DispatcherDeps {
   send: (obj: Record<string, unknown>) => void;
@@ -94,7 +97,7 @@ export async function emitGlobalReady(
   state: AethonAgentState,
   deps: { send: (obj: Record<string, unknown>) => void },
 ): Promise<void> {
-  if (WORKER_MODE) return;
+  if (isWorkerMode()) return;
   await refreshCachedModels(state);
   state.discoveredTabs = await refreshPersistedTabs(state);
   emitReady(state, deps);

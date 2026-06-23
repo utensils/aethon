@@ -20,7 +20,8 @@ mod types;
 pub use store::ScheduledTasksState;
 pub(crate) use types::{
     LoopPromptResolution, ScheduledTaskCompleteInput, ScheduledTaskCreate, ScheduledTaskRecord,
-    ScheduledTaskTabFailureInput, ScheduledTaskUpdate, ScheduledTaskWakeupInput,
+    ScheduledTaskReuseInput, ScheduledTaskTabFailureInput, ScheduledTaskUpdate,
+    ScheduledTaskWakeupInput,
 };
 
 const STORE_FILE: &str = "scheduled-tasks.json";
@@ -199,34 +200,7 @@ pub(crate) fn scheduled_task_update(
         if matches!(task.status, types::ScheduledTaskStatus::Running) {
             return Err("cannot edit a running task".to_string());
         }
-        if let Some(label) = patch.label.as_deref().map(str::trim)
-            && !label.is_empty()
-        {
-            task.label = label.to_string();
-        }
-        if let Some(prompt) = patch.prompt.as_deref().map(str::trim)
-            && !prompt.is_empty()
-        {
-            task.prompt = prompt.to_string();
-            task.visible_prompt = patch
-                .visible_prompt
-                .as_deref()
-                .map(str::trim)
-                .filter(|s| !s.is_empty())
-                .unwrap_or(prompt)
-                .to_string();
-        }
-        if let Some(schedule) = patch.schedule {
-            let normalized = policy::normalize_schedule(schedule, now, task.expires_at)?;
-            policy::validate_mode_schedule(task.mode, &normalized)?;
-            task.next_run_at = policy::initial_next_run_at(&normalized, now, task.expires_at)?;
-            task.schedule = normalized;
-            if !task.status.terminal() {
-                task.status = types::ScheduledTaskStatus::Scheduled;
-            }
-        }
-        task.updated_at = now;
-        task.last_error = None;
+        policy::apply_task_update(task, patch, now)?;
         task.clone()
     };
     store::persist_emit_notify(&state, &app)?;
@@ -299,6 +273,35 @@ pub(crate) fn scheduled_task_delete(
     };
     store::persist_emit_notify(&state, &app)?;
     Ok(removed)
+}
+
+#[tauri::command]
+pub(crate) fn scheduled_task_reuse(
+    input: ScheduledTaskReuseInput,
+    state: State<'_, ScheduledTasksState>,
+    app: AppHandle,
+) -> Result<ScheduledTaskRecord, String> {
+    store::ensure_loaded(&state, &app)?;
+    let now = policy::now_ms();
+    let updated = {
+        let mut inner = state.lock();
+        let tab_id = {
+            let task = inner
+                .tasks
+                .get_mut(&input.task_id)
+                .ok_or_else(|| format!("unknown task: {}", input.task_id))?;
+            policy::reuse_task_record(task, input.clone(), now)?;
+            task.tab_id.clone()
+        };
+        inner.live_tab_ids.insert(tab_id);
+        inner
+            .tasks
+            .get(&input.task_id)
+            .ok_or_else(|| format!("unknown task: {}", input.task_id))?
+            .clone()
+    };
+    store::persist_emit_notify(&state, &app)?;
+    Ok(updated)
 }
 
 #[tauri::command]

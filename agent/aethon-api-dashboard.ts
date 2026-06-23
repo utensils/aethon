@@ -63,6 +63,9 @@ export function buildTasksApi(
       if (typeof input.prompt !== "string" || !input.prompt.trim()) {
         return Promise.resolve({ ok: false, error: "prompt required" });
       }
+      if (typeof input.model !== "string" || !input.model.trim()) {
+        return Promise.resolve({ ok: false, error: "model required" });
+      }
       return dashboardQuery(
         state,
         deps,
@@ -77,9 +80,7 @@ export function buildTasksApi(
           ...(typeof input.baseBranch === "string"
             ? { baseBranch: input.baseBranch }
             : {}),
-          ...(typeof input.model === "string" && input.model
-            ? { model: input.model }
-            : {}),
+          model: input.model.trim(),
           ...(typeof input.bridgePrompt === "string" && input.bridgePrompt
             ? { bridgePrompt: input.bridgePrompt }
             : {}),

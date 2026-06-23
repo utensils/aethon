@@ -26,6 +26,7 @@ import {
   listScheduledTasks,
   pauseScheduledTask,
   resolveLoopPrompt,
+  reuseScheduledTask,
   resumeScheduledTask,
   runScheduledTaskNow,
   type ScheduledTaskMode,
@@ -399,6 +400,29 @@ export function useAppSlashCommandContext({
       runScheduledTask: runScheduledTaskNow,
       pauseScheduledTask,
       resumeScheduledTask,
+      reuseScheduledTask: async (id: string) => {
+        const tabs = (stateRef.current.tabs as Tab[] | undefined) ?? [];
+        const activeId = stateRef.current.activeTabId;
+        const tab = tabs.find((t) => t.id === activeId);
+        if (!tab || tab.kind !== "agent") {
+          throw new Error("Open an agent tab before reusing a loop.");
+        }
+        const project = activeProject(projectsRef.current);
+        const cwd =
+          tab.cwd ??
+          project?.path ??
+          (await invoke<string>("aethon_home_dir").catch(() => ""));
+        if (!cwd) throw new Error("Could not resolve a working directory.");
+        return await reuseScheduledTask({
+          taskId: id,
+          tabId: tab.id,
+          cwd,
+          model: tab.model || null,
+          thinkingLevel: tab.thinkingLevel ?? null,
+          hardEnforce: tab.hardEnforceProjectRoot ?? null,
+          authProfileId: tab.authProfileId ?? null,
+        });
+      },
       cancelScheduledTask,
       deleteScheduledTask,
       activeTabId: () => {

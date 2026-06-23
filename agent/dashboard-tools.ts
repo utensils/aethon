@@ -16,6 +16,7 @@
 import type { ToolDefinition } from "@mariozechner/pi-coding-agent";
 import { defineTool } from "@mariozechner/pi-coding-agent";
 import { Type, type Static } from "typebox";
+import type { AethonAgentState, ModelDescriptor } from "./state";
 
 interface TasksApi {
   start(args: {
@@ -56,6 +57,10 @@ function getApi(): { tasks: TasksApi; dashboard: DashboardApi } | null {
   return { tasks: g.aethon.tasks, dashboard: g.aethon.dashboard };
 }
 
+function configuredModels(state?: AethonAgentState): ModelDescriptor[] {
+  return state?.cachedModels ?? [];
+}
+
 function fail(message: string): never {
   throw new Error(message);
 }
@@ -87,12 +92,10 @@ const StartTaskParams = Type.Object({
         "Base branch to fork the new workspace from. Defaults to the project's configured workspace base when omitted.",
     }),
   ),
-  model: Type.Optional(
-    Type.String({
-      description:
-        "Optional model id to use in the launched task tab, matching the dashboard model chip.",
-    }),
-  ),
+  model: Type.String({
+    description:
+      "Required provider-qualified model id to use in the launched task tab. Must exactly match one of the configured Aethon model ids from listAvailableModels, for example `openai-codex/gpt-5.5`; never omit this and never pass a bare name like `gpt-5.5`.",
+  }),
   bridgePrompt: Type.Optional(
     Type.String({
       description:
@@ -156,12 +159,43 @@ const GetIssueParams = Type.Object({
 });
 type GetIssueParamsT = Static<typeof GetIssueParams>;
 
-export function buildDashboardTools(): ToolDefinition[] {
+export function buildDashboardTools(
+  state?: AethonAgentState,
+): ToolDefinition[] {
+  const listModelsTool = defineTool({
+    name: "listAvailableModels",
+    label: "List available Aethon models",
+    description:
+      "Return the exact provider-qualified model ids from Aethon's configured model catalog. Use this before startTask when selecting a model; the ids here are authoritative, unlike subagent model names.",
+    promptSnippet:
+      "listAvailableModels: inspect exact provider-qualified Aethon model ids",
+    parameters: Type.Object({}),
+    execute: () => {
+      const models = configuredModels(state).filter((model) => model.id);
+      const lines = models.map((model) => {
+        const label = model.label ? `\t${model.label}` : "";
+        return `${model.id}${label}`;
+      });
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text:
+              lines.length > 0
+                ? lines.join("\n")
+                : "No configured Aethon models are currently available.",
+          },
+        ],
+        details: { models },
+      };
+    },
+  });
+
   const startTaskTool = defineTool({
     name: "startTask",
     label: "Start a task in a project",
     description:
-      "Spawn a new agent tab in the named project (optionally creating a fresh git worktree first) and forward `prompt` as the tab's first user message. UI parity with the per-project dashboard's task launcher.",
+      "Spawn a new agent tab in the named project (optionally creating a fresh git worktree first) and forward `prompt` as the tab's first user message. UI parity with the per-project dashboard's task launcher. You must set `model` to one of the configured Aethon model ids from listAvailableModels, such as `openai-codex/gpt-5.5`; missing or invalid ids are rejected before a tab is created.",
     promptSnippet:
       "startTask: launch a new project task, optionally in a fresh workspace",
     parameters: StartTaskParams,
@@ -178,7 +212,7 @@ export function buildDashboardTools(): ToolDefinition[] {
         ...(typeof params.baseBranch === "string"
           ? { baseBranch: params.baseBranch }
           : {}),
-        ...(typeof params.model === "string" ? { model: params.model } : {}),
+        model: params.model,
         ...(typeof params.bridgePrompt === "string"
           ? { bridgePrompt: params.bridgePrompt }
           : {}),
@@ -190,7 +224,10 @@ export function buildDashboardTools(): ToolDefinition[] {
       if (!r.ok) fail(r.error ?? "unknown");
       return {
         content: [
-          { type: "text" as const, text: JSON.stringify(r.data ?? {}, null, 2) },
+          {
+            type: "text" as const,
+            text: JSON.stringify(r.data ?? {}, null, 2),
+          },
         ],
         details: r.data,
       };
@@ -214,7 +251,10 @@ export function buildDashboardTools(): ToolDefinition[] {
       if (!r.ok) fail(r.error ?? "unknown");
       return {
         content: [
-          { type: "text" as const, text: JSON.stringify(r.data ?? {}, null, 2) },
+          {
+            type: "text" as const,
+            text: JSON.stringify(r.data ?? {}, null, 2),
+          },
         ],
         details: r.data,
       };
@@ -250,8 +290,7 @@ export function buildDashboardTools(): ToolDefinition[] {
     label: "List open GitHub issues",
     description:
       "Fetch open issues for the gh-resolved repository at projectPath. Cached for 90s; returns the same array the per-project dashboard's Issues section renders.",
-    promptSnippet:
-      "listOpenIssues: read the open issue list for a project",
+    promptSnippet: "listOpenIssues: read the open issue list for a project",
     parameters: ListIssuesParams,
     async execute(_callId: string, params: ListIssuesParamsT) {
       const api = getApi();
@@ -263,7 +302,10 @@ export function buildDashboardTools(): ToolDefinition[] {
       if (!r.ok) fail(r.error ?? "unknown");
       return {
         content: [
-          { type: "text" as const, text: JSON.stringify(r.data ?? {}, null, 2) },
+          {
+            type: "text" as const,
+            text: JSON.stringify(r.data ?? {}, null, 2),
+          },
         ],
         details: r.data,
       };
@@ -275,8 +317,7 @@ export function buildDashboardTools(): ToolDefinition[] {
     label: "Fetch a single GitHub issue's body",
     description:
       "Return the full title + url + author + body for one open issue. Pair with `startTask` to launch a fresh workspace with the issue text as the first user message.",
-    promptSnippet:
-      "getOpenIssue: fetch the body of one GitHub issue by number",
+    promptSnippet: "getOpenIssue: fetch the body of one GitHub issue by number",
     parameters: GetIssueParams,
     async execute(_callId: string, params: GetIssueParamsT) {
       const api = getApi();
@@ -288,7 +329,10 @@ export function buildDashboardTools(): ToolDefinition[] {
       if (!r.ok) fail(r.error ?? "unknown");
       return {
         content: [
-          { type: "text" as const, text: JSON.stringify(r.data ?? {}, null, 2) },
+          {
+            type: "text" as const,
+            text: JSON.stringify(r.data ?? {}, null, 2),
+          },
         ],
         details: r.data,
       };
@@ -296,6 +340,7 @@ export function buildDashboardTools(): ToolDefinition[] {
   }) as ToolDefinition;
 
   return [
+    listModelsTool,
     startTaskTool,
     repoOverviewTool,
     refreshTool,

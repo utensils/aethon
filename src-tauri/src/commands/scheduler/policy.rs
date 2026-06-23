@@ -2,9 +2,10 @@ use std::collections::{HashMap, HashSet};
 
 use super::cron::cron_next_run;
 use super::types::{
-    ScheduledTaskMode, ScheduledTaskRecord, ScheduledTaskSchedule, ScheduledTaskStatus,
+    ScheduledTaskMode, ScheduledTaskRecord, ScheduledTaskReuseInput, ScheduledTaskSchedule,
+    ScheduledTaskStatus, ScheduledTaskUpdate,
 };
-use super::{MAX_DELAY_MS, MIN_INTERVAL_MS};
+use super::{MAX_DELAY_MS, MIN_INTERVAL_MS, TASK_TTL_MS};
 
 pub(super) fn recover_loaded_running_tasks(
     tasks: &mut HashMap<String, ScheduledTaskRecord>,
@@ -168,6 +169,47 @@ pub(super) fn delay_due_task_record(task: &mut ScheduledTaskRecord, now: i64, re
     }
 }
 
+pub(super) fn apply_task_update(
+    task: &mut ScheduledTaskRecord,
+    patch: ScheduledTaskUpdate,
+    now: i64,
+) -> Result<(), String> {
+    if let Some(label) = patch.label.as_deref().map(str::trim)
+        && !label.is_empty()
+    {
+        task.label = label.to_string();
+    }
+    if let Some(prompt) = patch.prompt.as_deref().map(str::trim)
+        && !prompt.is_empty()
+    {
+        task.prompt = prompt.to_string();
+        task.visible_prompt = patch
+            .visible_prompt
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .unwrap_or(prompt)
+            .to_string();
+    }
+    let requested_mode = patch.mode.unwrap_or(task.mode);
+    if let Some(schedule) = patch.schedule {
+        let normalized = normalize_schedule(schedule, now, task.expires_at)?;
+        validate_mode_schedule(requested_mode, &normalized)?;
+        task.next_run_at = initial_next_run_at(&normalized, now, task.expires_at)?;
+        task.mode = requested_mode;
+        task.schedule = normalized;
+        if !task.status.terminal() && task.status != ScheduledTaskStatus::Paused {
+            task.status = ScheduledTaskStatus::Scheduled;
+        }
+    } else if let Some(mode) = patch.mode {
+        validate_mode_schedule(mode, &task.schedule)?;
+        task.mode = mode;
+    }
+    task.updated_at = now;
+    task.last_error = None;
+    Ok(())
+}
+
 pub(super) fn set_status_record(
     task: &mut ScheduledTaskRecord,
     status: ScheduledTaskStatus,
@@ -202,6 +244,43 @@ pub(super) fn resume_task_record(task: &mut ScheduledTaskRecord, now: i64) -> Re
         }
         task.last_error = None;
     }
+    Ok(())
+}
+
+pub(super) fn reuse_task_record(
+    task: &mut ScheduledTaskRecord,
+    input: ScheduledTaskReuseInput,
+    now: i64,
+) -> Result<(), String> {
+    if task.status == ScheduledTaskStatus::Running {
+        return Err("cannot reuse a running task".to_string());
+    }
+    if !matches!(
+        task.mode,
+        ScheduledTaskMode::LoopFixed | ScheduledTaskMode::LoopSelfPaced | ScheduledTaskMode::Cron
+    ) {
+        return Err("only loop tasks can be reused".to_string());
+    }
+    let tab_id = input.tab_id.trim();
+    if tab_id.is_empty() {
+        return Err("tabId required".to_string());
+    }
+    let cwd = input.cwd.trim();
+    if cwd.is_empty() {
+        return Err("cwd required".to_string());
+    }
+    task.tab_id = tab_id.to_string();
+    task.cwd = cwd.to_string();
+    task.model = non_empty(input.model);
+    task.thinking_level = non_empty(input.thinking_level);
+    task.hard_enforce = input.hard_enforce;
+    task.auth_profile_id = non_empty(input.auth_profile_id);
+    task.expires_at = now.saturating_add(TASK_TTL_MS);
+    task.current_run_id = None;
+    task.last_error = None;
+    task.status = ScheduledTaskStatus::Scheduled;
+    task.next_run_at = resume_next_run_at(&task.schedule, now, task.expires_at)?;
+    task.updated_at = now;
     Ok(())
 }
 
@@ -338,7 +417,7 @@ mod tests {
     use std::collections::HashMap;
 
     use super::*;
-    use crate::commands::scheduler::{TASK_TTL_MS, TASK_VERSION, types::*};
+    use crate::commands::scheduler::{TASK_VERSION, types::*};
 
     fn test_task(now: i64, status: ScheduledTaskStatus) -> ScheduledTaskRecord {
         ScheduledTaskRecord {
@@ -542,5 +621,112 @@ mod tests {
             assert!(err.contains("cannot resume terminal task"));
             assert_eq!(task.status, status);
         }
+    }
+
+    #[test]
+    fn update_keeps_paused_tasks_paused_when_schedule_changes() {
+        let now = 1_700_000_000_000;
+        let mut task = test_task(now, ScheduledTaskStatus::Paused);
+        task.mode = ScheduledTaskMode::LoopFixed;
+        task.schedule = ScheduledTaskSchedule::Interval {
+            interval_ms: 30 * 60_000,
+            label: "30m".to_string(),
+        };
+        task.next_run_at = None;
+
+        apply_task_update(
+            &mut task,
+            ScheduledTaskUpdate {
+                label: None,
+                prompt: Some("updated prompt".to_string()),
+                visible_prompt: Some("updated prompt".to_string()),
+                mode: Some(ScheduledTaskMode::LoopFixed),
+                schedule: Some(ScheduledTaskSchedule::Interval {
+                    interval_ms: 5 * 60_000,
+                    label: "5m".to_string(),
+                }),
+            },
+            now,
+        )
+        .unwrap();
+
+        assert_eq!(task.status, ScheduledTaskStatus::Paused);
+        assert_eq!(task.prompt, "updated prompt");
+        assert_eq!(task.next_run_at, Some(now + 5 * 60_000));
+    }
+
+    #[test]
+    fn reuse_rebinds_cancelled_loop_to_new_tab() {
+        let now = 1_700_000_000_000;
+        let mut task = test_task(now, ScheduledTaskStatus::Cancelled);
+        task.mode = ScheduledTaskMode::LoopSelfPaced;
+        task.schedule = ScheduledTaskSchedule::SelfPaced {
+            next_run_at: None,
+            reason: None,
+        };
+        task.next_run_at = None;
+        task.last_error = Some("owning tab is no longer restored".to_string());
+        let task_id = task.id.clone();
+
+        reuse_task_record(
+            &mut task,
+            ScheduledTaskReuseInput {
+                task_id,
+                tab_id: "new-tab".to_string(),
+                cwd: "/repo/new".to_string(),
+                model: Some("openai-codex/gpt-5.5".to_string()),
+                thinking_level: Some("high".to_string()),
+                hard_enforce: Some(true),
+                auth_profile_id: Some("openai-codex-primary".to_string()),
+            },
+            now,
+        )
+        .unwrap();
+
+        assert_eq!(task.tab_id, "new-tab");
+        assert_eq!(task.cwd, "/repo/new");
+        assert_eq!(task.model.as_deref(), Some("openai-codex/gpt-5.5"));
+        assert_eq!(task.thinking_level.as_deref(), Some("high"));
+        assert_eq!(task.hard_enforce, Some(true));
+        assert_eq!(
+            task.auth_profile_id.as_deref(),
+            Some("openai-codex-primary")
+        );
+        assert_eq!(task.status, ScheduledTaskStatus::Scheduled);
+        assert_eq!(task.next_run_at, Some(now));
+        assert_eq!(task.last_error, None);
+    }
+
+    #[test]
+    fn reuse_refreshes_expired_loop_lifetime() {
+        let now = 1_700_000_000_000;
+        let mut task = test_task(now, ScheduledTaskStatus::Expired);
+        task.mode = ScheduledTaskMode::LoopFixed;
+        task.schedule = ScheduledTaskSchedule::Interval {
+            interval_ms: 5 * 60_000,
+            label: "5m".to_string(),
+        };
+        task.next_run_at = None;
+        task.expires_at = now - 1;
+        let task_id = task.id.clone();
+
+        reuse_task_record(
+            &mut task,
+            ScheduledTaskReuseInput {
+                task_id,
+                tab_id: "new-tab".to_string(),
+                cwd: "/repo/new".to_string(),
+                model: None,
+                thinking_level: None,
+                hard_enforce: None,
+                auth_profile_id: None,
+            },
+            now,
+        )
+        .unwrap();
+
+        assert_eq!(task.status, ScheduledTaskStatus::Scheduled);
+        assert_eq!(task.expires_at, now + TASK_TTL_MS);
+        assert_eq!(task.next_run_at, Some(now + 5 * 60_000));
     }
 }

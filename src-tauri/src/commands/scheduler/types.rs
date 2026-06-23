@@ -105,6 +105,7 @@ pub struct ScheduledTaskUpdate {
     pub(crate) label: Option<String>,
     pub(crate) prompt: Option<String>,
     pub(crate) visible_prompt: Option<String>,
+    pub(crate) mode: Option<ScheduledTaskMode>,
     pub(crate) schedule: Option<ScheduledTaskSchedule>,
 }
 
@@ -126,6 +127,18 @@ pub struct ScheduledTaskWakeupInput {
     pub(crate) next_run_at: Option<i64>,
     pub(crate) delay_ms: Option<u64>,
     pub(crate) reason: Option<String>,
+}
+
+#[derive(Clone, Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScheduledTaskReuseInput {
+    pub(crate) task_id: String,
+    pub(crate) tab_id: String,
+    pub(crate) cwd: String,
+    pub(crate) model: Option<String>,
+    pub(crate) thinking_level: Option<String>,
+    pub(crate) hard_enforce: Option<bool>,
+    pub(crate) auth_profile_id: Option<String>,
 }
 
 #[derive(Clone, Debug, serde::Deserialize)]

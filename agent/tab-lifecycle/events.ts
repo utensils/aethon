@@ -1,548 +1,54 @@
-/**
- * Per-tab pi session event dispatcher. The big switch is here so the
- * lifecycle module can import it as a single reference and pass it as
- * the subscriber callback. Closes over the TabRecord (passed in by the
- * caller) so per-turn counters and the tool-args cache stay tab-local.
+/*
+ * Per-tab pi session event dispatcher. The dispatcher intentionally stays
+ * small and delegates domain work to focused modules so the lifecycle module
+ * can still pass one subscriber callback while each event family remains
+ * testable in isolation.
  *
- * Load-bearing contracts upheld here:
+ * Load-bearing contracts upheld by the delegated handlers:
  *  - `tool_execution_end` with a known `toolCallId` updates the same
  *    `uiId` (no duplicate cards) — the cached `uiId` from
  *    `tool_execution_start` is reused on end.
  *  - `agent_start` after a previous `agent_end` while `queuedCount > 0`
  *    re-marks `promptInFlight` so a follow-up chat / set_model on this
- *    tab queues correctly instead of being treated as a fresh idle
- *    prompt (cf. cancelRunningToolCards in `./tools.ts`).
+ *    tab queues correctly instead of being treated as a fresh idle prompt.
  *  - `agent_end` always emits `response_end` so the frontend can release
- *    the turn UI, even on error.
+ *    the turn UI, even on error, except for deliberate held-open recovery
+ *    paths that later finalize or resume.
  *  - Streaming assistant text/thinking ids are synthetic per assistant
  *    segment and roll at tool boundaries; never key them from pi event
  *    timestamps, which can point at earlier transcript records.
  */
 
+import { supportsCodexFastMode } from "../codex-fast-mode";
 import {
-  extractAgentEndError,
-  formatAgentErrorMessage,
-  isContextLengthExceededError,
-  isRetryableAgentEndError,
-  isUsageLimitError,
-} from "../agent-errors";
-import { tryAutoSwitchOnUsageLimit } from "../auth-profiles";
-import { emitSessionEvent } from "../aethon-api-sessions";
+  clearLiveContextUsageEstimate,
+  emitContextUsage,
+} from "../context-usage";
 import { logger } from "../logger";
 import type { AethonAgentState, TabRecord } from "../state";
+import { handleAgentEnd } from "./agent-end";
 import {
-  textFromContent,
-  thinkingFromContent,
-} from "../session-history/shared";
-import { consumeBashTerminalSnapshot } from "../terminal-stream";
+  compactionNotice,
+  handleAgentStartContextRecovery,
+  handleContextOverflowCompactionEvent,
+} from "./context-recovery";
 import {
-  extractToolContent,
-  summarizeToolArgs,
-  toolCardPayload,
-} from "../tool-card";
-import { emitBashResult } from "./terminal";
-import { synthesizeCancelledSubagentToolResults } from "./tools";
+  handleAutoRetryEnd,
+  handleAutoRetryStart,
+} from "./retry-recovery";
 import {
-  cancelAethonRetry,
-  removeTrailingFailureMessage,
-  scheduleAethonRetry,
-} from "./retry";
+  handleResponseMessageUpdate,
+  rollResponseMessage,
+} from "./response-stream";
+import {
+  handleToolExecutionEnd,
+  handleToolExecutionStart,
+  handleToolExecutionUpdate,
+} from "./tool-events";
 import type { TabLifecycleDeps } from "./utils";
 import { modelKey } from "./utils";
-import { supportsCodexFastMode } from "../codex-fast-mode";
-import { isSilentTool } from "../silent-tools";
-import {
-  addLiveContextUsageEstimate,
-  clearLiveContextUsageEstimate,
-  contextUsageSnapshot,
-  emitContextUsage,
-  emitContextUsageThrottled,
-} from "../context-usage";
-import {
-  cancelContextOverflowRecoveryTimer,
-  clearActiveContextOverflowRecovery,
-  resetContextOverflowRecovery,
-} from "../context-overflow-recovery";
 
 const turnLog = logger.scope("turn");
-const CONTEXT_OVERFLOW_RECOVERY_FALLBACK_DELAY_MS = 250;
-
-function assistantEventMessageId(ame: {
-  id?: unknown;
-  messageId?: unknown;
-}): string | undefined {
-  if (typeof ame.messageId === "string" && ame.messageId.length > 0) {
-    return ame.messageId;
-  }
-  if (typeof ame.id === "string" && ame.id.length > 0) return ame.id;
-  return undefined;
-}
-
-function safeIdPart(value: string): string {
-  return value.replace(/[^A-Za-z0-9_-]+/g, "-").slice(0, 96) || "assistant";
-}
-
-function startResponseSegment(
-  rec: TabRecord,
-  canonical: string | undefined,
-): string {
-  rec.responseMessageSeq = (rec.responseMessageSeq ?? 0) + 1;
-  rec.activeResponseCanonicalId = canonical;
-  rec.activeResponseMessageId = canonical
-    ? `text-${safeIdPart(canonical)}-${rec.responseMessageSeq}`
-    : `text-${Date.now()}-${rec.responseMessageSeq}`;
-  rec.activeResponseText = "";
-  rec.activeResponseThinking = "";
-  return rec.activeResponseMessageId;
-}
-
-function responseMessageId(
-  rec: TabRecord,
-  ame: { id?: unknown; messageId?: unknown },
-): string {
-  // Do not derive identity from the outer message_update.message timestamp
-  // (or its surrounding record). In practice that metadata can refer to an
-  // earlier transcript record during streaming, causing later thinking deltas
-  // to amend an older bubble and render above intervening tool cards.
-  const canonical = assistantEventMessageId(ame);
-  if (
-    rec.activeResponseMessageId &&
-    rec.activeResponseCanonicalId === canonical
-  ) {
-    return rec.activeResponseMessageId;
-  }
-  // Even when pi supplies a canonical assistant id, use a segment-scoped UI
-  // id. Some providers use one canonical id for an assistant message that
-  // spans tool calls; reusing it after a tool boundary would amend the
-  // pre-tool bubble above the tool card.
-  return startResponseSegment(rec, canonical);
-}
-
-function currentToolRoot(state: AethonAgentState, tabId: string): string {
-  return (
-    state.tabProjectCwds?.get(tabId) ??
-    state.currentProjectCwd ??
-    state.userDir ??
-    process.cwd()
-  );
-}
-
-function rollResponseMessage(rec: TabRecord): void {
-  rec.activeResponseMessageId = undefined;
-  rec.activeResponseCanonicalId = undefined;
-  rec.activeResponseText = undefined;
-  rec.activeResponseThinking = undefined;
-}
-
-function rememberResponseDelta(
-  rec: TabRecord,
-  channel: "text" | "thinking",
-  delta: string,
-): void {
-  if (channel === "thinking") {
-    rec.activeResponseThinking = (rec.activeResponseThinking ?? "") + delta;
-  } else {
-    rec.activeResponseText = (rec.activeResponseText ?? "") + delta;
-  }
-}
-
-function emitResponseSessionEvent(
-  state: AethonAgentState,
-  rec: TabRecord,
-  tabId: string,
-  messageId: string,
-  previousMessageId: string | undefined,
-): void {
-  const message = {
-    id: messageId,
-    role: "agent" as const,
-    content: rec.activeResponseText ?? "",
-    ...(rec.activeResponseText ? { text: rec.activeResponseText } : {}),
-    ...(rec.activeResponseThinking
-      ? { thinking: rec.activeResponseThinking }
-      : {}),
-  };
-  if (previousMessageId !== messageId) {
-    emitSessionEvent(state, "messageAppended", {
-      sessionId: tabId,
-      message,
-    });
-  } else {
-    emitSessionEvent(state, "messageUpdated", {
-      sessionId: tabId,
-      messageId,
-      message,
-    });
-  }
-}
-
-function assistantMessageCanonicalId(message: {
-  id?: unknown;
-  messageId?: unknown;
-}): string | undefined {
-  return assistantEventMessageId(message);
-}
-
-function missingSuffix(
-  finalContent: string,
-  streamedContent: string | undefined,
-): string {
-  if (!finalContent) return "";
-  const streamed = streamedContent ?? "";
-  if (!streamed) return finalContent;
-  if (finalContent === streamed) return "";
-  if (finalContent.startsWith(streamed))
-    return finalContent.slice(streamed.length);
-  if (streamed.includes(finalContent)) return "";
-  return finalContent;
-}
-
-function emitFinalAssistantContent(
-  state: AethonAgentState,
-  deps: TabLifecycleDeps,
-  rec: TabRecord,
-  tabId: string,
-  assistant:
-    | ({ role?: unknown; content?: unknown } & {
-        id?: unknown;
-        messageId?: unknown;
-      })
-    | undefined,
-): void {
-  if (!assistant || assistant.role !== "assistant") return;
-  const finalThinking = thinkingFromContent(assistant.content);
-  const finalText = textFromContent(assistant.content);
-  if (!finalThinking && !finalText) return;
-
-  const previousMessageId = rec.activeResponseMessageId;
-  const messageId =
-    rec.activeResponseMessageId ??
-    startResponseSegment(rec, assistantMessageCanonicalId(assistant));
-  const thinkingDelta = missingSuffix(
-    finalThinking,
-    rec.activeResponseThinking,
-  );
-  if (thinkingDelta) {
-    deps.send({
-      type: "response_delta",
-      tabId,
-      messageId,
-      content: thinkingDelta,
-      channel: "thinking",
-    });
-    rememberResponseDelta(rec, "thinking", thinkingDelta);
-    emitResponseSessionEvent(state, rec, tabId, messageId, previousMessageId);
-  }
-  const textDelta = missingSuffix(finalText, rec.activeResponseText);
-  if (textDelta) {
-    deps.send({
-      type: "response_delta",
-      tabId,
-      messageId,
-      content: textDelta,
-      channel: "text",
-    });
-    const beforeTextMessageId = thinkingDelta ? messageId : previousMessageId;
-    rememberResponseDelta(rec, "text", textDelta);
-    emitResponseSessionEvent(state, rec, tabId, messageId, beforeTextMessageId);
-  }
-}
-
-function compactionNotice(
-  event: { type: string } & Record<string, unknown>,
-): { message: string; busy?: true } | undefined {
-  const phase = compactionPhase(event);
-  if (!phase) return undefined;
-  if (phase === "start") {
-    return { message: "Compacting context...", busy: true };
-  }
-  if (phase === "failure") {
-    return { message: compactionFailureMessage(event) };
-  }
-  const tokens = compactionTokensBefore(event);
-  const tokensBefore =
-    tokens === undefined
-      ? ""
-      : ` · ${tokens.toLocaleString("en-US")} tokens summarized`;
-  return { message: `Context compacted${tokensBefore}` };
-}
-
-function compactionPhase(
-  event: { type: string } & Record<string, unknown>,
-): "start" | "success" | "failure" | undefined {
-  const type = event.type.toLowerCase();
-  if (!type.includes("compact")) return undefined;
-  if (type.includes("start") || type.includes("begin")) return "start";
-  if (
-    typeof event.errorMessage === "string" ||
-    event.aborted === true ||
-    type.includes("fail") ||
-    type.includes("error")
-  ) {
-    return "failure";
-  }
-  if (
-    type.includes("end") ||
-    type.includes("finish") ||
-    type.includes("complete") ||
-    type.includes("success")
-  ) {
-    return "success";
-  }
-  return undefined;
-}
-
-function compactionFailureMessage(
-  event: { type: string } & Record<string, unknown>,
-): string {
-  if (typeof event.errorMessage === "string" && event.errorMessage.length > 0) {
-    return event.errorMessage;
-  }
-  if (event.aborted === true) {
-    return "Context compaction cancelled.";
-  }
-  const reason =
-    typeof event.error === "string"
-      ? event.error
-      : typeof event.message === "string"
-        ? event.message
-        : "unknown error";
-  return `Context compaction failed: ${reason}`;
-}
-
-function compactionTokensBefore(
-  event: { type: string } & Record<string, unknown>,
-): number | undefined {
-  if (
-    typeof event.tokensBefore === "number" &&
-    Number.isFinite(event.tokensBefore)
-  ) {
-    return event.tokensBefore;
-  }
-  const result = event.result as { tokensBefore?: unknown } | undefined;
-  return typeof result?.tokensBefore === "number" &&
-    Number.isFinite(result.tokensBefore)
-    ? result.tokensBefore
-    : undefined;
-}
-
-interface CompactAndContinueSession {
-  compact?: (customInstructions?: string) => Promise<unknown>;
-  agent?: {
-    continue?: () => Promise<void>;
-  };
-}
-
-function startContextOverflowRecovery(
-  state: AethonAgentState,
-  deps: TabLifecycleDeps,
-  rec: TabRecord,
-  tabId: string,
-  failedMessage: string,
-): void {
-  cancelAethonRetry(rec);
-  cancelContextOverflowRecoveryTimer(rec);
-  rec.contextOverflowRecoveryAttempted = true;
-  rec.contextOverflowRecoveryInFlight = true;
-  rec.contextOverflowRecoveryCompactionStarted = false;
-  rec.contextOverflowRecoveryFallbackRunning = false;
-  rec.contextOverflowRecoveryErrorMessage = failedMessage;
-  rec.promptInFlight = true;
-  rec.agentEndFired = false;
-  state.currentAgentTabId = tabId;
-  deps.send({
-    type: "notice",
-    tabId,
-    busy: true,
-    message: formatAgentErrorMessage(failedMessage),
-  });
-  rec.contextOverflowRecoveryTimer = setTimeout(() => {
-    rec.contextOverflowRecoveryTimer = undefined;
-    void runContextOverflowRecoveryFallback(state, deps, tabId, failedMessage);
-  }, CONTEXT_OVERFLOW_RECOVERY_FALLBACK_DELAY_MS);
-}
-
-async function runContextOverflowRecoveryFallback(
-  state: AethonAgentState,
-  deps: TabLifecycleDeps,
-  tabId: string,
-  failedMessage: string,
-): Promise<void> {
-  const rec = state.tabs.get(tabId);
-  if (!rec?.contextOverflowRecoveryInFlight) return;
-  if (rec.contextOverflowRecoveryCompactionStarted) return;
-  const session = rec.session as CompactAndContinueSession;
-  const agent = session.agent;
-  if (
-    typeof session.compact !== "function" ||
-    typeof agent?.continue !== "function"
-  ) {
-    deps.send({
-      type: "error",
-      tabId,
-      message:
-        "Context window exceeded, but this session cannot compact and resume automatically.",
-    });
-    finalizeFailedTurn(state, deps, tabId, failedMessage);
-    return;
-  }
-
-  rec.contextOverflowRecoveryFallbackRunning = true;
-  rec.contextOverflowRecoveryCompactionStarted = true;
-  deps.send({
-    type: "notice",
-    tabId,
-    busy: true,
-    message: "Context overflow detected; compacting before resuming...",
-  });
-  try {
-    await session.compact();
-    await continueAfterContextCompaction(state, deps, tabId, failedMessage);
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    deps.send({
-      type: "error",
-      tabId,
-      message: `Context overflow recovery failed: ${message}`,
-    });
-    finalizeFailedTurn(state, deps, tabId, failedMessage);
-  } finally {
-    const live = state.tabs.get(tabId);
-    if (live) live.contextOverflowRecoveryFallbackRunning = false;
-  }
-}
-
-async function continueAfterContextCompaction(
-  state: AethonAgentState,
-  deps: TabLifecycleDeps,
-  tabId: string,
-  failedMessage: string,
-): Promise<void> {
-  const rec = state.tabs.get(tabId);
-  if (!rec?.contextOverflowRecoveryInFlight) return;
-  const session = rec.session as CompactAndContinueSession;
-  const agent = session.agent;
-  if (typeof agent?.continue !== "function") {
-    deps.send({
-      type: "error",
-      tabId,
-      message:
-        "Context compacted, but this session cannot resume automatically.",
-    });
-    finalizeFailedTurn(state, deps, tabId, failedMessage);
-    return;
-  }
-  removeTrailingFailureMessage(rec.session);
-  rec.promptInFlight = true;
-  rec.agentEndFired = false;
-  state.currentAgentTabId = tabId;
-  deps.send({
-    type: "notice",
-    tabId,
-    busy: true,
-    message: "Context compacted; resuming...",
-  });
-  try {
-    await agent.continue();
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    deps.send({ type: "error", tabId, message: `resume: ${message}` });
-    finalizeFailedTurn(state, deps, tabId, failedMessage);
-  }
-}
-
-function handleContextOverflowCompactionEvent(
-  state: AethonAgentState,
-  deps: TabLifecycleDeps,
-  rec: TabRecord,
-  tabId: string,
-  event: { type: string } & Record<string, unknown>,
-): void {
-  if (!rec.contextOverflowRecoveryInFlight) return;
-  const failedMessage = rec.contextOverflowRecoveryErrorMessage;
-  if (!failedMessage) return;
-  const phase = compactionPhase(event);
-  if (!phase) return;
-  if (phase === "start") {
-    cancelContextOverflowRecoveryTimer(rec);
-    rec.contextOverflowRecoveryCompactionStarted = true;
-    return;
-  }
-  cancelContextOverflowRecoveryTimer(rec);
-  if (phase === "failure") {
-    if (rec.contextOverflowRecoveryFallbackRunning) return;
-    deps.send({
-      type: "error",
-      tabId,
-      message:
-        event.aborted === true
-          ? "Context overflow recovery cancelled during compaction."
-          : compactionFailureMessage(event),
-    });
-    finalizeFailedTurn(state, deps, tabId, failedMessage);
-    return;
-  }
-  if (rec.contextOverflowRecoveryFallbackRunning) return;
-  if (event.willRetry === true) return;
-  void continueAfterContextCompaction(state, deps, tabId, failedMessage);
-}
-
-function shouldCompactCompletedTurn(
-  state: AethonAgentState,
-  tabId: string,
-  rec: TabRecord,
-): boolean {
-  const snapshot = contextUsageSnapshot(state, tabId, rec);
-  if (!snapshot?.autoCompactEnabled) return false;
-  if (rec.contextUsageTransientTokens === undefined) return false;
-  if (rec.contextUsageTransientTokens <= 0) return false;
-  if (
-    typeof (rec.session as CompactAndContinueSession).compact !== "function"
-  ) {
-    return false;
-  }
-  return snapshot.estimatedTokensUntilCompact === 0;
-}
-
-function compactCompletedTurnThenFinalize(
-  state: AethonAgentState,
-  deps: TabLifecycleDeps,
-  rec: TabRecord,
-  tabId: string,
-  lastAssistant:
-    | {
-        role?: string;
-        stopReason?: string;
-        content?: unknown;
-        id?: unknown;
-        messageId?: unknown;
-      }
-    | undefined,
-): void {
-  rec.promptInFlight = true;
-  rec.agentEndFired = false;
-  state.currentAgentTabId = tabId;
-  deps.send({
-    type: "notice",
-    tabId,
-    busy: true,
-    message: "Context threshold reached; compacting before the next turn...",
-  });
-  const session = rec.session as CompactAndContinueSession;
-  void session
-    .compact?.()
-    .catch((err: unknown) => {
-      const message = err instanceof Error ? err.message : String(err);
-      deps.send({
-        type: "error",
-        tabId,
-        message: `auto-compaction failed: ${message}`,
-      });
-    })
-    .finally(() => {
-      finalizeCompletedTurn(state, deps, rec, tabId, lastAssistant);
-    });
-}
 
 /** Per-tab pi session event subscriber. Extracted so tests can drive it
  *  directly with synthetic event payloads. */
@@ -575,33 +81,7 @@ export function handleSessionEvent(
 
   switch (event.type) {
     case "agent_start": {
-      if (rec.contextOverflowRecoveryInFlight) {
-        clearActiveContextOverflowRecovery(rec);
-      } else {
-        rec.contextOverflowRecoveryAttempted = false;
-      }
-      rollResponseMessage(rec);
-      clearLiveContextUsageEstimate(rec);
-      state.currentAgentTabId = tabId;
-      state.turnStartTimes.set(tabId, Date.now());
-      emitContextUsage(state, deps, tabId, rec);
-      const model = rec.session.model ? modelKey(rec.session.model) : "unknown";
-      turnLog.info(`start model=${model} tabId=${tabId}`);
-      if (rec.queuedCount > 0) {
-        rec.queuedCount -= 1;
-        // The previous agent_end cleared promptInFlight, but pi has
-        // already started the queue-drained turn — re-mark in-flight so
-        // a follow-up chat / set_model on this tab queues correctly
-        // instead of being treated as a fresh idle prompt.
-        rec.promptInFlight = true;
-        rec.agentEndFired = false;
-        deps.send({
-          type: "prompt_started",
-          tabId,
-          source: "queue",
-          queued: rec.queuedCount,
-        });
-      }
+      handleAgentStart(state, deps, rec, tabId);
       break;
     }
     case "thinking_level_changed": {
@@ -617,521 +97,63 @@ export function handleSessionEvent(
       break;
     }
     case "message_update": {
-      const ame = (
-        event as { assistantMessageEvent?: { type?: string; delta?: string } }
-      ).assistantMessageEvent;
-      const channel =
-        ame?.type === "thinking_delta" || ame?.type === "reasoning_delta"
-          ? "thinking"
-          : "text";
-      if (
-        ame?.type === "text_delta" ||
-        ame?.type === "thinking_delta" ||
-        ame?.type === "reasoning_delta"
-      ) {
-        const delta = ame.delta ?? "";
-        if (delta) {
-          const previousMessageId = rec.activeResponseMessageId;
-          const messageId = responseMessageId(rec, ame);
-          deps.send({
-            type: "response_delta",
-            tabId,
-            messageId,
-            content: delta,
-            channel,
-          });
-          rememberResponseDelta(rec, channel, delta);
-          emitResponseSessionEvent(
-            state,
-            rec,
-            tabId,
-            messageId,
-            previousMessageId,
-          );
-          addLiveContextUsageEstimate(rec, delta);
-          emitContextUsageThrottled(state, deps, tabId, rec);
-        }
-      }
+      handleResponseMessageUpdate(state, deps, rec, tabId, event);
       break;
     }
     case "tool_execution_start": {
-      const ev = event as {
-        toolCallId: string;
-        toolName: string;
-        args: unknown;
-      };
-      if (isSilentTool(ev.toolName)) {
-        rec.toolArgsCache.delete(ev.toolCallId);
-        return;
-      }
-      const summary = summarizeToolArgs(ev.toolName, ev.args);
-      const startedAt = Date.now();
-      const uiId = `tool-${++rec.toolCardSeq}-${ev.toolCallId}`;
-      const rootPath = currentToolRoot(state, tabId);
-      rec.toolArgsCache.set(ev.toolCallId, {
-        name: ev.toolName,
-        summary,
-        uiId,
-        args: ev.args,
-        rootPath,
-        startedAt,
-      });
-      const payload = toolCardPayload({
-        id: uiId,
-        toolName: ev.toolName,
-        argsSummary: summary,
-        args: ev.args,
-        rootPath,
-        startedAt,
-      });
-      deps.send({ type: "a2ui", tabId, id: uiId, payload });
-      addLiveContextUsageEstimate(rec, `${ev.toolName} ${summary}`);
-      emitContextUsageThrottled(state, deps, tabId, rec);
-      rollResponseMessage(rec);
-      if (ev.toolName === "bash") {
-        const cmd = String(
-          (ev.args as { command?: unknown } | undefined)?.command ?? "",
-        );
-        const echoed = cmd.replace(/\r?\n/g, "\r\n");
-        deps.send({
-          type: "terminal_output",
-          tabId,
-          content: `\r\n$ ${echoed}\r\n`,
-        });
-      }
+      handleToolExecutionStart(state, deps, rec, tabId, event);
       break;
     }
     case "tool_execution_update": {
-      const ev = event as {
-        toolCallId: string;
-        toolName: string;
-        args: unknown;
-        partialResult: unknown;
-      };
-      if (isSilentTool(ev.toolName)) {
-        return;
-      }
-      if (ev.toolName === "bash") {
-        let cached = rec.toolArgsCache.get(ev.toolCallId);
-        if (!cached) {
-          cached = {
-            name: ev.toolName,
-            summary: summarizeToolArgs(ev.toolName, ev.args),
-            uiId: `tool-${++rec.toolCardSeq}-${ev.toolCallId}`,
-            args: ev.args,
-            rootPath: currentToolRoot(state, tabId),
-          };
-          rec.toolArgsCache.set(ev.toolCallId, cached);
-        }
-        const extracted = extractToolContent(ev.partialResult);
-        const streamed = consumeBashTerminalSnapshot(
-          extracted.text,
-          cached.bashStream,
-        );
-        cached.bashStream = streamed.state;
-        emitBashResult(deps, streamed.delta, tabId);
-        addLiveContextUsageEstimate(rec, streamed.delta);
-        emitContextUsageThrottled(state, deps, tabId, rec);
-      } else if (ev.toolName === "task" || ev.toolName === "task_batch") {
-        let cached = rec.toolArgsCache.get(ev.toolCallId);
-        if (!cached) {
-          cached = {
-            name: ev.toolName,
-            summary: summarizeToolArgs(ev.toolName, ev.args),
-            uiId: `tool-${++rec.toolCardSeq}-${ev.toolCallId}`,
-            args: ev.args,
-            rootPath: currentToolRoot(state, tabId),
-            startedAt: Date.now(),
-          };
-          rec.toolArgsCache.set(ev.toolCallId, cached);
-        }
-        const payload = toolCardPayload({
-          id: cached.uiId,
-          toolName: ev.toolName,
-          argsSummary: cached.summary,
-          args: cached.args ?? ev.args,
-          rootPath: cached.rootPath,
-          result: ev.partialResult,
-          startedAt: cached.startedAt,
-        });
-        deps.send({ type: "a2ui", tabId, id: cached.uiId, payload });
-        const extracted = extractToolContent(ev.partialResult);
-        cached.taskPartialText = extracted.text;
-        const streamed = consumeBashTerminalSnapshot(
-          extracted.text,
-          cached.taskPartialStream,
-        );
-        cached.taskPartialStream = streamed.state;
-        addLiveContextUsageEstimate(rec, streamed.delta);
-        emitContextUsageThrottled(state, deps, tabId, rec);
-      }
+      handleToolExecutionUpdate(state, deps, rec, tabId, event);
       break;
     }
     case "tool_execution_end": {
-      const ev = event as {
-        toolCallId: string;
-        toolName: string;
-        result: unknown;
-        isError?: boolean;
-      };
-      if (isSilentTool(ev.toolName)) {
-        rec.toolArgsCache.delete(ev.toolCallId);
-        return;
-      }
-      const cached = rec.toolArgsCache.get(ev.toolCallId);
-      const uiId = cached?.uiId ?? `tool-${++rec.toolCardSeq}-${ev.toolCallId}`;
-      const payload = toolCardPayload({
-        id: uiId,
-        toolName: ev.toolName,
-        argsSummary: cached?.summary ?? "",
-        args: cached?.args,
-        rootPath: cached?.rootPath,
-        result: ev.result,
-        isError: ev.isError,
-        ...(cached?.status !== undefined ? { status: cached.status } : {}),
-        ...(cached?.startedAt !== undefined
-          ? {
-              startedAt: cached.startedAt,
-              endedAt: cached.endedAt ?? Date.now(),
-            }
-          : {}),
-      });
-      deps.send({ type: "a2ui", tabId, id: uiId, payload });
-      if (ev.toolName === "bash") {
-        const extracted = extractToolContent(ev.result);
-        const streamed = consumeBashTerminalSnapshot(
-          extracted.text,
-          cached?.bashStream,
-        );
-        emitBashResult(deps, streamed.delta, tabId);
-        addLiveContextUsageEstimate(rec, streamed.delta);
-        deps.send({ type: "terminal_output", tabId, content: "\r\n" });
-      } else {
-        addLiveContextUsageEstimate(rec, summarizeToolResult(ev.result));
-      }
-      rec.toolArgsCache.delete(ev.toolCallId);
-      rollResponseMessage(rec);
-      emitContextUsageThrottled(state, deps, tabId, rec);
+      handleToolExecutionEnd(state, deps, rec, tabId, event);
       break;
     }
     case "agent_end": {
-      const messages = (event as { messages?: unknown[] }).messages;
-      const failedMessage = extractAgentEndError(messages);
-      const retrying =
-        (rec.session as { isRetrying?: boolean } | undefined)?.isRetrying ===
-        true;
-      const retryableFailure =
-        failedMessage !== undefined && isRetryableAgentEndError(failedMessage);
-      const keepTurnOpenForRetry =
-        retryableFailure &&
-        (retrying || scheduleAethonRetry(state, deps, rec, tabId));
-      // Codex can surface context-window overflow as a raw JSON payload after
-      // agent_end. Keep the turn open while pi (or Aethon as fallback)
-      // compacts and resumes instead of rendering that payload as terminal.
-      const contextLengthFailure =
-        failedMessage !== undefined &&
-        !keepTurnOpenForRetry &&
-        isContextLengthExceededError(failedMessage);
-      let terminalContextLengthError: string | undefined;
-      const keepTurnOpenForContextRecovery =
-        contextLengthFailure && rec.contextOverflowRecoveryAttempted !== true;
-      if (contextLengthFailure && keepTurnOpenForContextRecovery) {
-        startContextOverflowRecovery(state, deps, rec, tabId, failedMessage);
-      } else if (contextLengthFailure) {
-        terminalContextLengthError =
-          "Context window is still too large after compacting. Try reducing context or switching to a larger-context model.";
-      }
-      // A usage-limit hit triggers an async account hop. Keep the turn open
-      // until that decision resolves — finalizing now would clear `waiting`
-      // and could drain queued messages onto the rate-limited account before
-      // the resumed turn starts.
-      const usageLimitFailure =
-        failedMessage !== undefined &&
-        !keepTurnOpenForRetry &&
-        !keepTurnOpenForContextRecovery &&
-        isUsageLimitError(failedMessage);
-      const keepTurnOpenForAutoSwitch = usageLimitFailure;
-      if (usageLimitFailure) {
-        const clean = formatAgentErrorMessage(failedMessage);
-        void tryAutoSwitchOnUsageLimit(state, deps, tabId)
-          .then((switched) => {
-            if (switched) return; // the resumed turn owns finalization
-            deps.send({ type: "error", tabId, message: clean });
-            finalizeFailedTurn(state, deps, tabId, failedMessage);
-          })
-          .catch(() => {
-            // Auto-switch setup threw (e.g. session recreate failed). The
-            // turn was held open, so finalize it now or the tab stays busy.
-            deps.send({ type: "error", tabId, message: clean });
-            finalizeFailedTurn(state, deps, tabId, failedMessage);
-          });
-      } else if (terminalContextLengthError) {
-        deps.send({
-          type: "error",
-          tabId,
-          message: terminalContextLengthError,
-        });
-      } else if (
-        failedMessage &&
-        !keepTurnOpenForRetry &&
-        !keepTurnOpenForContextRecovery
-      ) {
-        deps.send({
-          type: "error",
-          tabId,
-          message: formatAgentErrorMessage(failedMessage),
-        });
-      } else if (!failedMessage) {
-        // Clean turn — reset recovery loop guards so future turns can switch
-        // accounts or compact again.
-        rec.autoSwitchTried = undefined;
-        resetContextOverflowRecovery(rec);
-      }
-      const startMs = state.turnStartTimes.get(tabId);
-      state.turnStartTimes.delete(tabId);
-      const durationMs = startMs !== undefined ? Date.now() - startMs : -1;
-      const modelStr = rec.session.model
-        ? modelKey(rec.session.model)
-        : "unknown";
-      const lastAssistant = [
-        ...((messages ?? []) as Array<{
-          role?: string;
-          stopReason?: string;
-          content?: unknown;
-          id?: unknown;
-          messageId?: unknown;
-        }>),
-      ]
-        .reverse()
-        .find((m) => m.role === "assistant");
-      const reason = lastAssistant?.stopReason ?? "unknown";
-      const log = `end model=${modelStr} tabId=${tabId} durationMs=${durationMs} stopReason=${reason}`;
-      if (reason === "error") {
-        turnLog.warn(log);
-      } else {
-        turnLog.info(log);
-      }
-      synthesizeCancelledSubagentToolResults(state, rec, tabId);
-      for (const [toolCallId, cached] of rec.toolArgsCache) {
-        if (cached.endedAt !== undefined) rec.toolArgsCache.delete(toolCallId);
-      }
-      if (
-        !keepTurnOpenForRetry &&
-        !keepTurnOpenForAutoSwitch &&
-        !keepTurnOpenForContextRecovery
-      ) {
-        if (!failedMessage && shouldCompactCompletedTurn(state, tabId, rec)) {
-          compactCompletedTurnThenFinalize(
-            state,
-            deps,
-            rec,
-            tabId,
-            lastAssistant,
-          );
-          break;
-        }
-        finalizeCompletedTurn(
-          state,
-          deps,
-          rec,
-          tabId,
-          lastAssistant,
-          failedMessage,
-        );
-      }
+      handleAgentEnd(state, deps, rec, tabId, event);
       break;
     }
     case "auto_retry_start": {
-      const ev = event as {
-        attempt?: number;
-        maxAttempts?: number;
-        delayMs?: number;
-        errorMessage?: string;
-      };
-      cancelAethonRetry(rec);
-      rec.promptInFlight = true;
-      rec.agentEndFired = false;
-      state.currentAgentTabId = tabId;
-      deps.send({
-        type: "notice",
-        tabId,
-        busy: true,
-        message: `Transient provider error; retrying ${
-          ev.attempt ?? "?"
-        }/${ev.maxAttempts ?? "?"} in ${Math.max(
-          0,
-          Math.round((ev.delayMs ?? 0) / 1000),
-        )}s.`,
-      });
+      handleAutoRetryStart(state, deps, rec, tabId, event);
       break;
     }
     case "auto_retry_end": {
-      const ev = event as { success?: boolean; finalError?: string };
-      cancelAethonRetry(rec);
-      if (!ev.success && ev.finalError) {
-        const finalError = ev.finalError;
-        if (isUsageLimitError(finalError)) {
-          // Hop to an account with headroom and resume. Keep the turn open
-          // until the decision resolves — finalizing now would clear
-          // `waiting` and could drain queued messages onto the rate-limited
-          // account before the resumed turn starts.
-          const clean = formatAgentErrorMessage(finalError);
-          void tryAutoSwitchOnUsageLimit(state, deps, tabId)
-            .then((switched) => {
-              if (switched) return; // the resumed turn owns finalization
-              deps.send({ type: "error", tabId, message: clean });
-              finalizeFailedTurn(state, deps, tabId, finalError);
-            })
-            .catch(() => {
-              // Auto-switch setup threw; finalize so the tab doesn't hang.
-              deps.send({ type: "error", tabId, message: clean });
-              finalizeFailedTurn(state, deps, tabId, finalError);
-            });
-          break;
-        }
-        // Transient failures keep the "auto-retry exhausted:" prefix so the
-        // user knows we already retried.
-        deps.send({
-          type: "error",
-          tabId,
-          message: `auto-retry exhausted: ${finalError}`,
-        });
-        resetContextOverflowRecovery(rec);
-        rec.agentEndFired = true;
-        rec.promptInFlight = false;
-        if (state.currentAgentTabId === tabId) {
-          state.currentAgentTabId = undefined;
-        }
-        rollResponseMessage(rec);
-        deps.send({ type: "response_end", tabId });
-        emitScheduledRunComplete(deps, rec, tabId, false, ev.finalError);
-      }
+      handleAutoRetryEnd(state, deps, rec, tabId, event);
       break;
     }
   }
 }
 
-function finalizeCompletedTurn(
+function handleAgentStart(
   state: AethonAgentState,
   deps: TabLifecycleDeps,
   rec: TabRecord,
   tabId: string,
-  lastAssistant:
-    | {
-        role?: string;
-        stopReason?: string;
-        content?: unknown;
-        id?: unknown;
-        messageId?: unknown;
-      }
-    | undefined,
-  failedMessage?: string,
 ): void {
-  cancelAethonRetry(rec);
-  if (failedMessage) resetContextOverflowRecovery(rec);
-  rec.agentEndFired = true;
-  rec.promptInFlight = false;
-  if (state.currentAgentTabId === tabId) {
-    state.currentAgentTabId = undefined;
-  }
-  emitFinalAssistantContent(state, deps, rec, tabId, lastAssistant);
+  handleAgentStartContextRecovery(rec);
   rollResponseMessage(rec);
   clearLiveContextUsageEstimate(rec);
+  state.currentAgentTabId = tabId;
+  state.turnStartTimes.set(tabId, Date.now());
   emitContextUsage(state, deps, tabId, rec);
-  // Back-fill pi entry ids onto the just-streamed messages so the rollback /
-  // fork affordances work without a reload.
-  emitEntryIds(deps, rec, tabId);
-  deps.send({ type: "response_end", tabId });
-  emitScheduledRunComplete(deps, rec, tabId, !failedMessage, failedMessage);
-}
-
-/**
- * Finalize a turn that ended in failure — used by the usage-limit
- * auto-switch path when no alternative account was available, so the turn
- * was held open during the (async) hop decision. Operates on the tab's
- * current record (the auto-switch may have replaced it) and is idempotent.
- */
-function finalizeFailedTurn(
-  state: AethonAgentState,
-  deps: TabLifecycleDeps,
-  tabId: string,
-  failedMessage: string | undefined,
-): void {
-  const rec = state.tabs.get(tabId);
-  if (!rec || rec.agentEndFired) return;
-  cancelAethonRetry(rec);
-  resetContextOverflowRecovery(rec);
-  synthesizeCancelledSubagentToolResults(state, rec, tabId);
-  rec.agentEndFired = true;
-  rec.promptInFlight = false;
-  if (state.currentAgentTabId === tabId) {
-    state.currentAgentTabId = undefined;
-  }
-  rollResponseMessage(rec);
-  deps.send({ type: "response_end", tabId });
-  emitScheduledRunComplete(deps, rec, tabId, false, failedMessage);
-}
-
-function emitScheduledRunComplete(
-  deps: TabLifecycleDeps,
-  rec: TabRecord,
-  tabId: string,
-  success: boolean,
-  error?: string,
-): void {
-  const scheduled = rec.scheduledRun;
-  if (!scheduled) return;
-  deps.send({
-    type: "scheduled_task_run_complete",
-    tabId,
-    taskId: scheduled.taskId,
-    runId: scheduled.runId,
-    success,
-    ...(error ? { error } : {}),
-    ...(scheduled.completeRequested ? { completeTask: true } : {}),
-  });
-  rec.scheduledRun = undefined;
-}
-
-function summarizeToolResult(result: unknown): string {
-  if (typeof result === "string") return result.slice(0, 16_384);
-  try {
-    return JSON.stringify(result).slice(0, 16_384);
-  } catch {
-    return String(result).slice(0, 16_384);
-  }
-}
-
-/** Emit the current branch's user/assistant message entry ids, in order, so
- *  the frontend can back-fill `entryId` onto its live transcript and offer
- *  rollback / fork before a reload. Best-effort: branching is the user's escape
- *  hatch, never a turn-critical path, so any failure is swallowed. */
-function emitEntryIds(
-  deps: TabLifecycleDeps,
-  rec: TabRecord,
-  tabId: string,
-): void {
-  let branch: ReadonlyArray<unknown>;
-  try {
-    branch = rec.session.sessionManager.getBranch();
-  } catch {
-    return;
-  }
-  const entries: { entryId: string; role: "user" | "agent" }[] = [];
-  for (const raw of branch) {
-    const entry = raw as {
-      type?: string;
-      id?: unknown;
-      message?: { role?: unknown };
-    };
-    if (entry.type !== "message" || typeof entry.id !== "string") continue;
-    const role = entry.message?.role;
-    if (role === "user") entries.push({ entryId: entry.id, role: "user" });
-    else if (role === "assistant") {
-      entries.push({ entryId: entry.id, role: "agent" });
-    }
-  }
-  if (entries.length > 0) {
-    deps.send({ type: "entry_ids", tabId, entries });
+  const model = rec.session.model ? modelKey(rec.session.model) : "unknown";
+  turnLog.info(`start model=${model} tabId=${tabId}`);
+  if (rec.queuedCount > 0) {
+    rec.queuedCount -= 1;
+    // The previous agent_end cleared promptInFlight, but pi has already
+    // started the queue-drained turn — re-mark in-flight so a follow-up chat /
+    // set_model on this tab queues correctly instead of being treated as a
+    // fresh idle prompt.
+    rec.promptInFlight = true;
+    rec.agentEndFired = false;
+    deps.send({
+      type: "prompt_started",
+      tabId,
+      source: "queue",
+      queued: rec.queuedCount,
+    });
   }
 }

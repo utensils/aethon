@@ -9,7 +9,13 @@ const flushPromises = () =>
 
 describe("handleDashboardQuery", () => {
   it("resolves start_task project paths from known workspace roots", async () => {
-    const { ctx, mocks } = buildHandlerFixture();
+    const { ctx, mocks } = buildHandlerFixture({
+      state: {
+        sidebar: {
+          models: [{ id: "openai-codex/gpt-5.5", label: "GPT-5.5" }],
+        },
+      },
+    });
     const startTaskInProject = vi.fn(() =>
       Promise.resolve({
         tabId: "tab-bg",
@@ -47,6 +53,7 @@ describe("handleDashboardQuery", () => {
         args: {
           projectPath: "/repo/aethon-work",
           prompt: "review this",
+          model: "openai-codex/gpt-5.5",
           activate: false,
         },
       },
@@ -61,6 +68,7 @@ describe("handleDashboardQuery", () => {
       newWorkspace: false,
       branch: undefined,
       baseBranch: undefined,
+      model: "openai-codex/gpt-5.5",
       activate: false,
     });
     expect(mocks.ackMutation).toHaveBeenCalledWith(
@@ -73,6 +81,111 @@ describe("handleDashboardQuery", () => {
         tabId: "tab-bg",
         cwd: "/repo/aethon-work",
       }),
+    );
+  });
+
+  it("rejects unknown start_task models before creating a session", async () => {
+    const { ctx, mocks } = buildHandlerFixture({
+      state: {
+        sidebar: {
+          models: [
+            { id: "openai-codex/gpt-5.5", label: "GPT-5.5" },
+            { id: "github-copilot/gpt-5.5", label: "Copilot: GPT-5.5" },
+          ],
+        },
+      },
+    });
+    const startTaskInProject = vi.fn(() =>
+      Promise.resolve({
+        tabId: "tab-bg",
+        projectId: "p1",
+        cwd: "/repo/aethon",
+        activated: false,
+      }),
+    );
+    ctx.startTaskInProject = startTaskInProject;
+    ctx.projectsRef.current = {
+      activeId: "p1",
+      activeWorkspaceId: null,
+      activeHostId: null,
+      projects: [
+        { id: "p1", label: "Aethon", path: "/repo/aethon", lastUsed: 1 },
+      ],
+      workspacesByProject: {},
+    };
+
+    handleDashboardQuery(
+      {
+        type: "dashboard_query",
+        mutationId: "m1",
+        op: "start_task",
+        args: {
+          projectPath: "/repo/aethon",
+          prompt: "review this",
+          model: "gpt-5.5",
+        },
+      },
+      ctx,
+    );
+    await flushPromises();
+
+    expect(startTaskInProject).not.toHaveBeenCalled();
+    expect(mocks.ackMutation).toHaveBeenCalledWith(
+      "m1",
+      false,
+      "Unknown model id 'gpt-5.5'. Use one of: openai-codex/gpt-5.5, github-copilot/gpt-5.5.",
+    );
+  });
+
+  it("rejects missing start_task models before creating a session", async () => {
+    const { ctx, mocks } = buildHandlerFixture({
+      state: {
+        sidebar: {
+          models: [
+            { id: "openai-codex/gpt-5.5", label: "GPT-5.5" },
+            { id: "github-copilot/gpt-5.5", label: "Copilot: GPT-5.5" },
+          ],
+        },
+      },
+    });
+    const startTaskInProject = vi.fn(() =>
+      Promise.resolve({
+        tabId: "tab-bg",
+        projectId: "p1",
+        cwd: "/repo/aethon",
+        activated: false,
+      }),
+    );
+    ctx.startTaskInProject = startTaskInProject;
+    ctx.projectsRef.current = {
+      activeId: "p1",
+      activeWorkspaceId: null,
+      activeHostId: null,
+      projects: [
+        { id: "p1", label: "Aethon", path: "/repo/aethon", lastUsed: 1 },
+      ],
+      workspacesByProject: {},
+    };
+
+    handleDashboardQuery(
+      {
+        type: "dashboard_query",
+        mutationId: "m1",
+        op: "start_task",
+        args: {
+          projectPath: "/repo/aethon",
+          prompt: "review this",
+        },
+      },
+      ctx,
+    );
+    await flushPromises();
+
+    expect(startTaskInProject).not.toHaveBeenCalled();
+    expect(mocks.ackMutation).toHaveBeenCalledWith(
+      "m1",
+      false,
+      "start_task requires an explicit provider-qualified model id. Use one of: openai-codex/gpt-5.5, github-copilot/gpt-5.5.",
     );
   });
 });

@@ -212,6 +212,7 @@ pub fn run() {
             commands::scheduler::scheduled_task_resume,
             commands::scheduler::scheduled_task_cancel,
             commands::scheduler::scheduled_task_delete,
+            commands::scheduler::scheduled_task_reuse,
             commands::scheduler::scheduled_task_run_now,
             commands::scheduler::scheduled_task_schedule_wakeup,
             commands::scheduler::scheduled_task_complete,

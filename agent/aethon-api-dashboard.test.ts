@@ -33,12 +33,32 @@ function makeFixture() {
 describe("buildTasksApi", () => {
   it("rejects missing projectPath / prompt without sending", async () => {
     const { tasks, sent } = makeFixture();
-    await expect(tasks.start({ projectPath: "", prompt: "go" })).resolves.toEqual(
-      { ok: false, error: "projectPath required" },
-    );
     await expect(
-      tasks.start({ projectPath: "/repo", prompt: "   " }),
+      tasks.start({
+        projectPath: "",
+        prompt: "go",
+        model: "openai-codex/gpt-5.5",
+      }),
+    ).resolves.toEqual({ ok: false, error: "projectPath required" });
+    await expect(
+      tasks.start({
+        projectPath: "/repo",
+        prompt: "   ",
+        model: "openai-codex/gpt-5.5",
+      }),
     ).resolves.toEqual({ ok: false, error: "prompt required" });
+    expect(sent).toHaveLength(0);
+  });
+
+  it("rejects missing model without sending", async () => {
+    const { tasks, sent } = makeFixture();
+    await expect(
+      tasks.start({
+        projectPath: "/repo",
+        prompt: "go",
+        model: "",
+      }),
+    ).resolves.toEqual({ ok: false, error: "model required" });
     expect(sent).toHaveLength(0);
   });
 

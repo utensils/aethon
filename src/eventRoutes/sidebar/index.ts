@@ -42,6 +42,7 @@ export {
   handleSidebarRemoveWorkspace,
   handleSidebarCancelPendingWorkspace,
   handleSidebarRetryPendingWorkspace,
+  handleSidebarStopWorkspaceAgent,
   handleSidebarRenameWorkspace,
   handleSidebarReorderWorkspace,
   handleSidebarSortProjectWorkspaces,

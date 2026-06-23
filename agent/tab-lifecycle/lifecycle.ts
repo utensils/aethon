@@ -198,7 +198,7 @@ export async function ensureTab(
       ...buildSessionTitleTools(state, deps, tabId),
       ...buildA2uiTools(),
       ...buildShellTools(),
-      ...buildDashboardTools(),
+      ...buildDashboardTools(state),
       ...buildEditorTools(),
       ...buildWindowTools(),
       ...buildMemoryTools(state, tabId),
