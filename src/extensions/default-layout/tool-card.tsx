@@ -242,6 +242,16 @@ function ToolFileChangePreview({
           ✎
         </span>
         <span className="ae-tool-file-change-label">{label}</span>
+        {(additions > 0 || deletions > 0) && (
+          <span className="ae-tool-file-change-stat" aria-label="Line changes">
+            {additions > 0 ? (
+              <span className="ae-tool-file-add">+{additions}</span>
+            ) : null}
+            {deletions > 0 ? (
+              <span className="ae-tool-file-del">-{deletions}</span>
+            ) : null}
+          </span>
+        )}
       </summary>
       <div className="ae-tool-file-change-body">
         <div className="ae-tool-file-row">

@@ -5,16 +5,12 @@ import type { BuiltinComponentProps } from "../../components/A2UIRenderer";
 import {
   buildTranscriptRows,
   rowKey,
-  rowMessageRole,
   type TranscriptRow,
 } from "../../utils/transcriptRows";
 import type { ResolvedVisibility } from "../../utils/visibilityResolver";
-import { ChatMessageRow } from "./message-row";
 import {
   CanvasFooter,
-  ToolGroupChildRow,
-  ToolGroupRow,
-  TurnBlockRow,
+  ConversationTurnRow,
   type CanvasFooterContext,
 } from "./message-groups";
 import { queuedDeliveryLabels } from "./message-rendering-utils";
@@ -116,92 +112,30 @@ export function VirtualMessageFeed({
       const rowClass = `a2ui-msg-row${index === 0 ? " a2ui-msg-row-first" : ""}${
         index === rows.length - 1 ? " a2ui-msg-row-last" : ""
       }`;
-      if (row.type === "tool-group-summary") {
-        return (
-          <div className={rowClass}>
-            <ToolGroupRow
-              group={row.group}
-              state={state}
-              tabId={tabId}
-              onEvent={onEvent}
-              expanded={expandedGroups.has(row.group.id)}
-              onToggle={() => toggleGroup(row.group.id)}
-            />
-          </div>
-        );
-      }
-      if (row.type === "tool-group-child") {
-        return (
-          <div className={rowClass}>
-            <ToolGroupChildRow
-              message={row.message}
-              state={state}
-              tabId={tabId}
-              onEvent={onEvent}
-            />
-          </div>
-        );
-      }
-      if (row.type === "turn-block-summary") {
-        return (
-          <div className={rowClass}>
-            <TurnBlockRow
-              group={row.group}
-              state={state}
-              tabId={tabId}
-              onEvent={onEvent}
-              rowClassName={rowClassName}
-              thinkingVisibility={visibility.thinking}
-              expanded={expandedGroups.has(row.group.id)}
-              onToggle={() => toggleGroup(row.group.id)}
-            />
-          </div>
-        );
-      }
-      if (row.type === "turn-block-child") {
-        const m = row.message;
-        const prevRole = rowMessageRole(rows[index - 1]);
-        return (
-          <div className={`${rowClass} ae-turn-block-child-row`}>
-            <ChatMessageRow
-              message={m}
-              state={state}
-              tabId={tabId}
-              className={
-                index === scrollController.flashIndex
-                  ? `${rowClassName} ae-turn-block-child-message a2ui-chat-message-flash`
-                  : `${rowClassName} ae-turn-block-child-message`
-              }
-              prevRole={prevRole}
-              onEvent={onEvent}
-              deliveryText={queuedLabels.get(m.id)}
-              isLatest={m.id === messages[messages.length - 1]?.id}
-              thinkingVisibility={visibility.thinking}
-            />
-          </div>
-        );
-      }
-      const m = row.message;
-      // prevRole drives role-badge suppression on consecutive same-role rows.
-      // A preceding tool cluster reads as an agent turn, so it counts as
-      // "agent" for that purpose.
-      const prevRole = rowMessageRole(rows[index - 1]);
+      const turn = row.turn;
+      const userMessageId = turn.userMessage?.id;
       return (
-        <div className={rowClass}>
-          <ChatMessageRow
-            message={m}
+        <div
+          className={
+            index === scrollController.flashIndex
+              ? `${rowClass} a2ui-chat-message-flash`
+              : rowClass
+          }
+        >
+          <ConversationTurnRow
+            turn={turn}
             state={state}
             tabId={tabId}
-            className={
-              index === scrollController.flashIndex
-                ? `${rowClassName} a2ui-chat-message-flash`
-                : rowClassName
-            }
-            prevRole={prevRole}
+            rowClassName={rowClassName}
             onEvent={onEvent}
-            deliveryText={queuedLabels.get(m.id)}
-            isLatest={m.id === messages[messages.length - 1]?.id}
             thinkingVisibility={visibility.thinking}
+            toolCallsVisibility={visibility.toolCalls}
+            expanded={expandedGroups.has(turn.id)}
+            onToggle={() => toggleGroup(turn.id)}
+            isLatest={index === rows.length - 1}
+            deliveryText={
+              userMessageId ? queuedLabels.get(userMessageId) : undefined
+            }
           />
         </div>
       );
@@ -214,9 +148,9 @@ export function VirtualMessageFeed({
       onEvent,
       queuedLabels,
       visibility.thinking,
+      visibility.toolCalls,
       expandedGroups,
       toggleGroup,
-      messages,
       rows,
     ],
   );
@@ -308,7 +242,9 @@ export function VirtualMessageFeed({
       />
       <ScrollToBottomPill
         visible={
-          !scrollController.following && scrollController.canScroll && hasContent
+          !scrollController.following &&
+          scrollController.canScroll &&
+          hasContent
         }
         onClick={() => {
           scrollController.setFollowing(true);

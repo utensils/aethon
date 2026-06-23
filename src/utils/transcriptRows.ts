@@ -1,106 +1,55 @@
 import type { ToolCallsMode } from "../config";
 import type { ChatMessage } from "../types/a2ui";
-import {
-  groupKey,
-  groupMessages,
-  isToolCardMessage,
-  type MessageGroup,
-} from "./toolCardGrouping";
+import { isToolCardMessage } from "./toolCardGrouping";
 
-export type TranscriptRow =
-  | {
-      type: "message";
-      message: ChatMessage;
-      group: Extract<MessageGroup, { type: "single" }>;
-    }
-  | {
-      type: "tool-group-summary";
-      group: Extract<MessageGroup, { type: "tool-group" }>;
-    }
-  | {
-      type: "tool-group-child";
-      group: Extract<MessageGroup, { type: "tool-group" }>;
-      message: ChatMessage;
-      childIndex: number;
-    }
-  | {
-      type: "turn-block-summary";
-      group: Extract<MessageGroup, { type: "turn-block" }>;
-    }
-  | {
-      type: "turn-block-child";
-      group: Extract<MessageGroup, { type: "turn-block" }>;
-      message: ChatMessage;
-      childIndex: number;
-    };
+export type TranscriptRow = {
+  type: "conversation-turn";
+  turn: ConversationTurn;
+};
 
 export interface TranscriptModel {
-  groups: MessageGroup[];
+  groups: ConversationTurn[];
   rows: TranscriptRow[];
   heightEstimates: number[];
+}
+
+export interface ConversationTurn {
+  id: string;
+  messages: ChatMessage[];
+  userMessage?: ChatMessage;
+  agentMessages: ChatMessage[];
+  progressMessages: ChatMessage[];
+  finalMessage?: ChatMessage;
+  toolMessages: ChatMessage[];
+  systemMessages: ChatMessage[];
 }
 
 export function buildTranscriptRows(
   messages: ChatMessage[],
   mode: ToolCallsMode,
-  expandedGroupIds: ReadonlySet<string>,
+  _expandedGroupIds: ReadonlySet<string>,
 ): TranscriptModel {
-  const groups = groupMessages(messages, mode);
-  const rows: TranscriptRow[] = [];
-  for (const group of groups) {
-    if (group.type === "single") {
-      rows.push({ type: "message", message: group.message, group });
-      continue;
-    }
-    if (group.type === "tool-group") {
-      rows.push({ type: "tool-group-summary", group });
-      if (expandedGroupIds.has(group.id)) {
-        group.messages.forEach((message, childIndex) => {
-          rows.push({ type: "tool-group-child", group, message, childIndex });
-        });
-      }
-      continue;
-    }
-    rows.push({ type: "turn-block-summary", group });
-    if (expandedGroupIds.has(group.id)) {
-      group.messages.forEach((message, childIndex) => {
-        rows.push({ type: "turn-block-child", group, message, childIndex });
-      });
-    }
-  }
+  const turns = buildConversationTurns(messages, mode);
+  const rows: TranscriptRow[] = turns.map((turn) => ({
+    type: "conversation-turn",
+    turn,
+  }));
   return {
-    groups,
+    groups: turns,
     rows,
     heightEstimates: rows.map(heightEstimateForRow),
   };
 }
 
 export function rowKey(row: TranscriptRow): string {
-  switch (row.type) {
-    case "message":
-      return `msg-${row.message.id}`;
-    case "tool-group-summary":
-    case "turn-block-summary":
-      return groupKey(row.group);
-    case "tool-group-child":
-    case "turn-block-child":
-      return `${groupKey(row.group)}:child:${row.message.id}`;
-  }
+  return `turn-${row.turn.id}`;
 }
 
 export function anchorMessageIdForRow(
   row: TranscriptRow | undefined,
 ): string | undefined {
   if (!row) return undefined;
-  switch (row.type) {
-    case "message":
-    case "tool-group-child":
-    case "turn-block-child":
-      return row.message.id;
-    case "tool-group-summary":
-    case "turn-block-summary":
-      return row.group.messages[0]?.id;
-  }
+  return row.turn.messages[0]?.id;
 }
 
 export function findRowIndexForMessageId(
@@ -108,55 +57,20 @@ export function findRowIndexForMessageId(
   id: string | undefined,
 ): number {
   if (!id) return -1;
-  const directIndex = rows.findIndex((row) => {
-    switch (row.type) {
-      case "message":
-      case "tool-group-child":
-      case "turn-block-child":
-        return row.message.id === id;
-      case "tool-group-summary":
-      case "turn-block-summary":
-        return false;
-    }
-  });
-  if (directIndex >= 0) return directIndex;
-  return rows.findIndex((row) => {
-    switch (row.type) {
-      case "message":
-      case "tool-group-child":
-      case "turn-block-child":
-        return false;
-      case "tool-group-summary":
-      case "turn-block-summary":
-        return row.group.messages.some((message) => message.id === id);
-    }
-  });
+  return rows.findIndex((row) =>
+    row.turn.messages.some((message) => message.id === id),
+  );
 }
 
-export function rowMessageRole(row: TranscriptRow | undefined): string | undefined {
+export function rowMessageRole(
+  row: TranscriptRow | undefined,
+): string | undefined {
   if (!row) return undefined;
-  switch (row.type) {
-    case "message":
-    case "turn-block-child":
-      return row.message.role;
-    case "tool-group-summary":
-    case "tool-group-child":
-    case "turn-block-summary":
-      return "agent";
-  }
+  return row.turn.messages.at(-1)?.role;
 }
 
 export function searchableTextForRow(row: TranscriptRow): string {
-  switch (row.type) {
-    case "message":
-    case "turn-block-child":
-      return searchableTextForMessage(row.message);
-    case "tool-group-summary":
-    case "turn-block-summary":
-      return row.group.messages.map(searchableTextForMessage).join("\n");
-    case "tool-group-child":
-      return searchableTextForMessage(row.message);
-  }
+  return row.turn.messages.map(searchableTextForMessage).join("\n");
 }
 
 function searchableTextForMessage(message: ChatMessage): string {
@@ -173,17 +87,85 @@ function searchableTextForMessage(message: ChatMessage): string {
 }
 
 export function heightEstimateForRow(row: TranscriptRow): number {
-  switch (row.type) {
-    case "tool-group-summary":
-      return 52;
-    case "turn-block-summary":
-      return 64;
-    case "tool-group-child":
-      return 148;
-    case "turn-block-child":
-    case "message":
-      return estimateMessageHeight(row.message);
+  const { turn } = row;
+  const visibleMessages =
+    (turn.userMessage ? 1 : 0) +
+    (turn.finalMessage ? 1 : 0) +
+    turn.systemMessages.length;
+  const textHeight =
+    (turn.userMessage ? estimateMessageHeight(turn.userMessage) : 0) +
+    (turn.finalMessage ? estimateMessageHeight(turn.finalMessage) : 0) +
+    turn.systemMessages.reduce(
+      (sum, message) => sum + estimateMessageHeight(message),
+      0,
+    );
+  const activityHeight =
+    turn.toolMessages.length > 0 || turn.progressMessages.length > 0 ? 44 : 0;
+  return Math.max(96, textHeight + activityHeight + visibleMessages * 6);
+}
+
+function buildConversationTurns(
+  messages: ChatMessage[],
+  mode: ToolCallsMode,
+): ConversationTurn[] {
+  const turns: ChatMessage[][] = [];
+  let current: ChatMessage[] = [];
+  for (const message of messages) {
+    if (message.role === "user" && current.length > 0) {
+      turns.push(current);
+      current = [];
+    }
+    current.push(message);
   }
+  if (current.length > 0) turns.push(current);
+  return turns
+    .map((turnMessages, index) =>
+      buildConversationTurn(turnMessages, index, mode),
+    )
+    .filter((turn) => turn.messages.length > 0);
+}
+
+function buildConversationTurn(
+  messages: ChatMessage[],
+  index: number,
+  mode: ToolCallsMode,
+): ConversationTurn {
+  const visibleMessages =
+    mode === "hide"
+      ? messages.filter((message) => !isToolCardMessage(message))
+      : messages;
+  const userMessage = visibleMessages.find(
+    (message) => message.role === "user",
+  );
+  const toolMessages =
+    mode === "hide"
+      ? []
+      : visibleMessages.filter((message) => isToolCardMessage(message));
+  const systemMessages = visibleMessages.filter(
+    (message) => message.role === "system",
+  );
+  const agentMessages = visibleMessages.filter(
+    (message) =>
+      message.role === "agent" &&
+      !isToolCardMessage(message) &&
+      (Boolean(message.text) ||
+        Boolean(message.thinking) ||
+        Boolean(message.a2ui)),
+  );
+  const finalMessage = agentMessages.at(-1);
+  const progressMessages = finalMessage
+    ? agentMessages.filter((message) => message !== finalMessage)
+    : agentMessages;
+  return {
+    id: userMessage?.id ?? visibleMessages[0]?.id ?? `turn-${index}`,
+    messages: visibleMessages,
+    ...(userMessage ? { userMessage } : {}),
+    agentMessages,
+    progressMessages,
+    ...(finalMessage ? { finalMessage } : {}),
+    toolMessages,
+    systemMessages,
+  };
 }
 
 function estimateMessageHeight(message: ChatMessage): number {
@@ -195,6 +177,7 @@ function estimateMessageHeight(message: ChatMessage): number {
   const textBonus = Math.min(360, Math.ceil(text.length / 90) * 22);
   const lineBonus = Math.min(240, lineCount * 12);
   const attachmentBonus = attachmentCount > 0 ? 96 : 0;
-  const base = message.role === "user" ? 92 : message.role === "system" ? 72 : 112;
+  const base =
+    message.role === "user" ? 92 : message.role === "system" ? 72 : 112;
   return base + textBonus + lineBonus + codeFenceBonus + attachmentBonus;
 }

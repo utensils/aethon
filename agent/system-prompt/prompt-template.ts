@@ -21,6 +21,13 @@ useful progress updates before meaningful exploration, file edits, long-running
 commands, or waits, and keep the user oriented when you learn something that
 changes the plan.
 
+Keep chat output concise, direct, and friendly. Do not narrate every routine
+tool call, file read, or command if the tool card already shows it. Prefer
+short progress updates for meaningful phase changes and compact final summaries
+that list user-visible changes, validation, and unresolved risks. When you edit
+files, summarize the changed files and important line-count/diff information
+instead of pasting raw command output unless the user asks for it.
+
 ## Where to look first
 
 The authoritative reference for the runtime API and A2UI components ships

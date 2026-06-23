@@ -8,12 +8,23 @@ import {
 } from "./transcriptRows";
 import type { ChatMessage } from "../types/a2ui";
 
-function text(id: string, role: ChatMessage["role"] = "agent"): ChatMessage {
-  return { id, role, text: `msg ${id}` };
+function text(
+  id: string,
+  role: ChatMessage["role"] = "agent",
+  value = `msg ${id}`,
+): ChatMessage {
+  return { id, role, text: value };
 }
 
-function tool(id: string, opts: { running?: boolean } = {}): ChatMessage {
-  const props: Record<string, unknown> = { title: "bash", startedAt: 1 };
+function tool(
+  id: string,
+  opts: { running?: boolean; description?: string } = {},
+): ChatMessage {
+  const props: Record<string, unknown> = {
+    title: "bash",
+    description: opts.description ?? "bun test",
+    startedAt: 1,
+  };
   if (!opts.running) props.endedAt = 2;
   return {
     id,
@@ -22,150 +33,121 @@ function tool(id: string, opts: { running?: boolean } = {}): ChatMessage {
   };
 }
 
-const rowTypes = (messages: ChatMessage[], expanded: Iterable<string> = []) =>
-  buildTranscriptRows(messages, "group-block", new Set(expanded)).rows.map(
-    (row) => row.type,
-  );
-
 describe("buildTranscriptRows", () => {
-  it("keeps collapsed turn blocks as one virtual row by default", () => {
+  it("builds one virtual row per conversation turn", () => {
     const messages = [
       text("u1", "user"),
       text("a1"),
       tool("t1"),
-      tool("t2"),
+      text("a2"),
       text("u2", "user"),
-      tool("t3"),
+      tool("t2"),
+      text("a3"),
     ];
 
     const model = buildTranscriptRows(messages, "group-block", new Set());
 
-    expect(model.rows.map(rowKey)).toEqual([
-      "msg-u1",
-      "turnblock-a1",
-      "msg-u2",
-      "msg-t3",
+    expect(model.rows.map(rowKey)).toEqual(["turn-u1", "turn-u2"]);
+    expect(model.groups.map((turn) => turn.messages.map((m) => m.id))).toEqual([
+      ["u1", "a1", "t1", "a2"],
+      ["u2", "t2", "a3"],
     ]);
     expect(model.heightEstimates).toEqual(
       model.rows.map((row) => heightEstimateForRow(row)),
     );
   });
 
-  it("flattens expanded turn blocks into summary and child virtual rows", () => {
-    const messages = [
-      text("u1", "user"),
-      text("a1"),
-      tool("t1"),
-      tool("t2"),
-      text("u2", "user"),
-      tool("t3"),
-    ];
-
-    expect(rowTypes(messages, ["turnblock-a1"])).toEqual([
-      "message",
-      "turn-block-summary",
-      "turn-block-child",
-      "turn-block-child",
-      "turn-block-child",
-      "message",
-      "message",
-    ]);
-  });
-
-  it("flattens expanded tool groups into summary and tool child rows", () => {
-    const messages = [text("u1", "user"), tool("t1"), tool("t2"), text("a1")];
-
+  it("keeps the latest assistant prose as the visible final answer", () => {
     const model = buildTranscriptRows(
-      messages,
-      "group-run",
-      new Set(["toolgroup-t1"]),
-    );
-
-    expect(model.rows.map((row) => row.type)).toEqual([
-      "message",
-      "tool-group-summary",
-      "tool-group-child",
-      "tool-group-child",
-      "message",
-    ]);
-    expect(model.rows.map(rowKey)).toEqual([
-      "msg-u1",
-      "toolgroup-t1",
-      "toolgroup-t1:child:t1",
-      "toolgroup-t1:child:t2",
-      "msg-a1",
-    ]);
-  });
-
-  it("anchors message ids inside expanded and collapsed rows", () => {
-    const messages = [
-      text("u1", "user"),
-      text("a1"),
-      tool("t1"),
-      tool("t2"),
-      text("u2", "user"),
-      tool("t3"),
-    ];
-
-    const collapsed = buildTranscriptRows(messages, "group-block", new Set());
-    expect(findRowIndexForMessageId(collapsed.rows, "t2")).toBe(1);
-
-    const expanded = buildTranscriptRows(
-      messages,
+      [
+        text("u1", "user", "Please fix this"),
+        text("a1", "agent", "I will inspect it"),
+        tool("t1"),
+        text("a2", "agent", "Fixed and verified."),
+      ],
       "group-block",
-      new Set(["turnblock-a1"]),
+      new Set(),
     );
-    expect(findRowIndexForMessageId(expanded.rows, "t2")).toBe(4);
+
+    const turn = model.rows[0].turn;
+    expect(turn.userMessage?.id).toBe("u1");
+    expect(turn.finalMessage?.id).toBe("a2");
+    expect(turn.progressMessages.map((message) => message.id)).toEqual(["a1"]);
+    expect(turn.toolMessages.map((message) => message.id)).toEqual(["t1"]);
   });
 
-  it("keeps collapsed summary rows searchable over hidden turn text and tool metadata", () => {
-    const messages = [
-      text("u1", "user"),
-      { ...text("a1"), text: "The hidden migration finished" },
-      {
-        ...tool("t1"),
-        a2ui: {
-          components: [
-            {
-              id: "c-t1",
-              type: "tool-card",
-              props: {
-                title: "bash",
-                description: "cargo test hidden-output",
-                startedAt: 1,
-                endedAt: 2,
-              },
-            },
-          ],
-        },
-      },
-      text("u2", "user"),
-      tool("t2"),
-    ];
+  it("preserves running tool cards inside the active turn", () => {
+    const model = buildTranscriptRows(
+      [
+        text("u1", "user"),
+        tool("t1"),
+        tool("t2", { running: true }),
+        text("a1"),
+      ],
+      "group-run",
+      new Set(),
+    );
 
-    const model = buildTranscriptRows(messages, "group-block", new Set());
-    const summary = model.rows[1];
-
-    expect(summary.type).toBe("turn-block-summary");
-    expect(searchableTextForRow(summary)).toContain("hidden migration");
-    expect(searchableTextForRow(summary)).toContain("cargo test hidden-output");
+    expect(model.rows).toHaveLength(1);
+    expect(
+      model.rows[0].turn.toolMessages.map((message) => message.id),
+    ).toEqual(["t1", "t2"]);
   });
 
-  it("keeps running tool cards visible as normal message rows", () => {
-    const messages = [
-      text("u1", "user"),
-      tool("t1"),
-      tool("t2", { running: true }),
-      text("u2", "user"),
-      tool("t3"),
-    ];
+  it("hides tool messages in hide mode while keeping answer/progress structure", () => {
+    const model = buildTranscriptRows(
+      [
+        text("u1", "user"),
+        text("a1", "agent", "checking"),
+        tool("t1"),
+        text("a2", "agent", "done"),
+      ],
+      "hide",
+      new Set(),
+    );
 
-    expect(rowTypes(messages)).toEqual([
-      "message",
-      "message",
-      "message",
-      "message",
-      "message",
+    const turn = model.rows[0].turn;
+    expect(turn.messages.map((message) => message.id)).toEqual([
+      "u1",
+      "a1",
+      "a2",
     ]);
+    expect(turn.toolMessages).toEqual([]);
+    expect(turn.progressMessages.map((message) => message.id)).toEqual(["a1"]);
+    expect(turn.finalMessage?.id).toBe("a2");
+  });
+
+  it("anchors any message id back to the containing turn row", () => {
+    const model = buildTranscriptRows(
+      [
+        text("u1", "user"),
+        text("a1"),
+        tool("t1"),
+        text("u2", "user"),
+        tool("t2"),
+      ],
+      "group-block",
+      new Set(),
+    );
+
+    expect(findRowIndexForMessageId(model.rows, "t1")).toBe(0);
+    expect(findRowIndexForMessageId(model.rows, "u2")).toBe(1);
+  });
+
+  it("keeps hidden progress and tool metadata searchable", () => {
+    const model = buildTranscriptRows(
+      [
+        text("u1", "user"),
+        text("a1", "agent", "The hidden migration finished"),
+        tool("t1", { description: "cargo test hidden-output" }),
+        text("a2", "agent", "All set"),
+      ],
+      "group-block",
+      new Set(),
+    );
+
+    const textValue = searchableTextForRow(model.rows[0]);
+    expect(textValue).toContain("hidden migration");
+    expect(textValue).toContain("cargo test hidden-output");
   });
 });

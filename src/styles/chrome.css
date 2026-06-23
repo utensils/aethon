@@ -3490,12 +3490,12 @@ body.ae-resizing-sidebar .a2ui-layout {
 }
 
 .a2ui-canvas-scroller .a2ui-msg-row {
-  padding-inline: 20px;
+  padding-inline: max(20px, calc((100% - 920px) / 2));
   zoom: var(--app-ui-scale, 1);
 }
 
 .a2ui-chat-history .a2ui-msg-row {
-  padding-inline: 12px;
+  padding-inline: max(12px, calc((100% - 860px) / 2));
   zoom: var(--app-ui-scale, 1);
 }
 
@@ -3552,14 +3552,14 @@ body.ae-resizing-sidebar .a2ui-layout {
 .a2ui-chat-message.user {
   background: var(--user-bubble);
   border: 1px solid var(--border);
-  border-radius: 14px 14px 4px 14px;
+  border-radius: 12px;
   align-self: flex-end;
-  margin-left: 14%;
+  margin-left: 18%;
   margin-right: 0;
   margin-top: 10px;
 }
 .a2ui-chat-message.user.ae-msg-cont {
-  border-radius: 14px 4px 4px 14px;
+  border-radius: 12px;
   margin-top: 2px;
 }
 
@@ -3567,11 +3567,10 @@ body.ae-resizing-sidebar .a2ui-layout {
 .a2ui-chat-message.agent {
   background: transparent;
   border: 0;
-  border-top: 1px solid color-mix(in oklab, var(--border) 45%, transparent);
   align-self: stretch;
   max-width: 100%;
-  padding: 8px 12px 4px 4px;
-  margin-top: 8px;
+  padding: 8px 4px 4px;
+  margin-top: 10px;
 }
 .a2ui-chat-message.agent.ae-msg-cont {
   border-top: none;
@@ -3610,7 +3609,7 @@ body.ae-resizing-sidebar .a2ui-layout {
   display: block;
   font-size: 10px;
   font-weight: 700;
-  letter-spacing: 0.09em;
+  letter-spacing: 0;
   text-transform: uppercase;
   color: var(--accent);
   margin-bottom: 3px;
@@ -7171,6 +7170,16 @@ body.ae-resizing-terminal * {
   font-weight: 500;
 }
 
+.ae-tool-file-change-stat {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: 3px;
+  font-family: var(--font-mono);
+  font-size: var(--chrome-text-muted);
+  font-weight: 600;
+}
+
 .ae-tool-file-change-body {
   display: flex;
   flex-direction: column;
@@ -9721,69 +9730,6 @@ button.ae-vcs-chip:focus-visible {
   color: var(--text);
 }
 
-/* ── Grouped tool-call cluster (tool visibility = "group-run" / "group-turn") ── */
-.ae-tool-group {
-  border: 1px solid color-mix(in oklab, var(--border) 72%, transparent);
-  border-radius: var(--radius-md);
-  width: fit-content;
-  max-width: 100%;
-}
-.ae-tool-group[data-expanded="true"] {
-  width: 100%;
-  border-color: transparent;
-  background: transparent;
-}
-.ae-tool-group-summary {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  width: 100%;
-  background: transparent;
-  border: none;
-  color: var(--text-dim);
-  font: inherit;
-  font-size: 12px;
-  padding: 4px 9px;
-  cursor: pointer;
-  text-align: left;
-  border-radius: inherit;
-  transition:
-    background 120ms ease,
-    border-color 120ms ease,
-    color 120ms ease;
-}
-.ae-tool-group-summary:hover {
-  background: var(--bg-hover);
-  color: var(--text);
-}
-.ae-tool-group[data-expanded="true"] .ae-tool-group-summary {
-  width: fit-content;
-  max-width: 100%;
-  border: 1px solid color-mix(in oklab, var(--border) 80%, transparent);
-  border-radius: var(--radius-md);
-  background: color-mix(in oklab, var(--bg-elev) 72%, transparent);
-}
-.ae-tool-group-caret {
-  font-size: 10px;
-  opacity: 0.8;
-}
-.ae-tool-group-label {
-  font-weight: 500;
-}
-.ae-tool-group-peek {
-  min-width: 0;
-  color: var(--text-dim);
-  opacity: 0.7;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.ae-tool-group-body {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 0 8px 8px;
-}
 .ae-tool-group-child-row {
   min-width: 0;
   max-width: min(100%, 76ch);
@@ -9792,81 +9738,103 @@ button.ae-vcs-chip:focus-visible {
   width: 100%;
 }
 
-/* ── Folded agent turn (tool-call visibility = "group-block") ─────────── */
-.ae-turn-block {
-  border: 1px solid color-mix(in oklab, var(--border) 72%, transparent);
-  border-radius: var(--radius-md);
-  width: fit-content;
+/* ── Codex-style conversation turns: prose first, activity folded ───────── */
+.ae-conversation-turn {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
   max-width: 100%;
 }
-.ae-turn-block[data-expanded="true"] {
-  width: 100%;
-  border-color: transparent;
-  background: transparent;
+
+.ae-turn-activity {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  max-width: 100%;
+  padding-left: 4px;
 }
-.ae-turn-block-summary {
+
+.ae-turn-activity-summary {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  width: 100%;
-  background: transparent;
-  border: none;
-  color: var(--text-dim);
-  font: inherit;
-  font-size: 12px;
-  padding: 4px 9px;
-  cursor: pointer;
-  text-align: left;
-  border-radius: inherit;
-  transition:
-    background 120ms ease,
-    border-color 120ms ease,
-    color 120ms ease;
-}
-.ae-turn-block-summary:hover {
-  background: var(--bg-hover);
-  color: var(--text);
-}
-.ae-turn-block[data-expanded="true"] .ae-turn-block-summary {
+  gap: 8px;
   width: fit-content;
   max-width: 100%;
-  border: 1px solid color-mix(in oklab, var(--border) 80%, transparent);
-  border-radius: var(--radius-md);
-  background: color-mix(in oklab, var(--bg-elev) 72%, transparent);
+  padding: 3px 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-dim);
+  font: inherit;
+  font-size: var(--chrome-text);
+  text-align: left;
+  cursor: pointer;
 }
+
+.ae-turn-activity-summary:hover {
+  color: var(--text);
+}
+
+.ae-turn-activity-body,
+.ae-turn-activity-live-tools {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  max-width: min(100%, 76ch);
+  padding-left: 18px;
+}
+
+.ae-turn-progress-message.a2ui-chat-message {
+  max-width: 100%;
+  padding: 4px 0;
+  margin-top: 0;
+  color: var(--text-secondary, var(--text-dim));
+}
+
+.ae-turn-progress-message .a2ui-chat-meta {
+  display: none;
+}
+
 .ae-turn-block-caret {
   font-size: 10px;
   opacity: 0.8;
 }
 .ae-turn-block-label {
   font-weight: 500;
-  color: var(--text);
+  color: var(--text-secondary, var(--text-dim));
 }
 .ae-turn-block-meta {
   color: var(--text-dim);
   opacity: 0.85;
 }
-.ae-turn-block-peek {
+.ae-turn-block-files {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   min-width: 0;
-  color: var(--text-dim);
-  opacity: 0.7;
+  color: var(--text-secondary, var(--text-dim));
+  font-size: var(--chrome-text);
+}
+.ae-turn-block-files-label {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.ae-turn-block-body {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding: 4px 8px 10px;
+.ae-turn-block-add,
+.ae-turn-block-del {
+  font-family: var(--font-mono);
+  font-size: var(--chrome-text-muted);
+  font-weight: 600;
 }
-.ae-turn-block-child-row.a2ui-msg-row {
-  margin-top: 4px;
+.ae-turn-block-add {
+  color: var(--state-success-fg, var(--success));
 }
-.ae-turn-block-child-message.a2ui-chat-message {
-  max-width: min(100%, 76ch);
+.ae-turn-block-del {
+  color: var(--state-error-fg, var(--danger));
 }
-
 /* --------------------------------------------------------------------------
  * Subagents config (overview editor) — project + host overview surfaces.
  * ------------------------------------------------------------------------ */

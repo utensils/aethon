@@ -21,6 +21,8 @@ import {
 const visibility: ResolvedVisibility = { thinking: "show", toolCalls: "show" };
 
 const messages: ChatMessage[] = [
+  { id: "m0", role: "user", text: "zero" },
+  { id: "m0a", role: "agent", text: "zero answer" },
   { id: "m1", role: "user", text: "one" },
   { id: "m2", role: "agent", text: "two" },
   { id: "m3", role: "agent", text: "three" },
@@ -171,7 +173,7 @@ describe("useScrollFollowController", () => {
     });
 
     expect(result.current.following).toBe(false);
-    expect(getScrollFollowCacheAnchorForTests("tab-1")).toBe("m2");
+    expect(getScrollFollowCacheAnchorForTests("tab-1")).toBe("m1");
   });
 
   it("restores from a cached anchor and clears it when the user returns to bottom", () => {
@@ -192,7 +194,7 @@ describe("useScrollFollowController", () => {
       fireEvent.wheel(scroller);
       fireEvent.scroll(scroller);
     });
-    expect(getScrollFollowCacheAnchorForTests("tab-1")).toBe("m2");
+    expect(getScrollFollowCacheAnchorForTests("tab-1")).toBe("m1");
     first.unmount();
 
     const second = renderController();
@@ -240,7 +242,11 @@ describe("useScrollFollowController", () => {
           ],
         },
       },
-      { id: "u2", role: "user", text: "next turn keeps the previous one completed" },
+      {
+        id: "u2",
+        role: "user",
+        text: "next turn keeps the previous one completed",
+      },
       { id: "a2", role: "agent", text: "latest visible reply" },
     ];
 
@@ -251,14 +257,12 @@ describe("useScrollFollowController", () => {
     });
 
     expect(rows.map((row) => row.type)).toEqual([
-      "message",
-      "turn-block-summary",
-      "message",
-      "message",
+      "conversation-turn",
+      "conversation-turn",
     ]);
     await waitFor(() =>
       expect(scrollToIndex).toHaveBeenCalledWith({
-        index: 1,
+        index: 0,
         align: "center",
       }),
     );

@@ -3,11 +3,12 @@ import A2UIRenderer, {
   type BuiltinComponentProps,
 } from "../../components/A2UIRenderer";
 import {
-  isToolCardMessage,
-  toolCardTitle,
-  type MessageGroup,
+  isRunningToolCard,
+  summarizeToolMessages,
+  type ToolMessageSummary,
 } from "../../utils/toolCardGrouping";
-import type { VisibilityMode } from "../../config";
+import type { ConversationTurn } from "../../utils/transcriptRows";
+import type { ToolCallsMode, VisibilityMode } from "../../config";
 import { ChatMessageRow, TypingIndicator } from "./message-row";
 import { forwardNestedA2UIEvent } from "./message-rendering-utils";
 
@@ -37,71 +38,310 @@ export function CanvasFooter({ context }: { context?: CanvasFooterContext }) {
   );
 }
 
-/** A short "name · name · …" peek of the tools inside a collapsed group, so the
- *  user can tell what's hidden without expanding. Caps at 4 names. */
-function toolPeek(messages: ChatMessage[]): string {
-  const names = messages
-    .map(toolCardTitle)
-    .filter((n): n is string => Boolean(n));
-  if (names.length === 0) return "";
-  const shown = names.slice(0, 4).join(" · ");
-  return names.length > 4 ? `${shown} · …` : shown;
+function compactDuration(ms: number): string {
+  if (ms <= 0) return "";
+  const seconds = Math.max(1, Math.round(ms / 1000));
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  const remSeconds = seconds % 60;
+  if (minutes < 60) {
+    return remSeconds > 0 ? `${minutes}m ${remSeconds}s` : `${minutes}m`;
+  }
+  const hours = Math.floor(minutes / 60);
+  const remMinutes = minutes % 60;
+  return remMinutes > 0 ? `${hours}h ${remMinutes}m` : `${hours}h`;
 }
 
-/** Collapsed cluster of completed tool-call cards (tool visibility =
- *  "group-run" / "group-turn"). One disclosure row labelled "N tool calls"
- *  with a name peek, expanding to the individual cards. Expansion is local UI
- *  state in VirtualMessageFeed. */
-export function ToolGroupRow({
-  group,
+function toolCountLabel(summary: ToolMessageSummary): string {
+  const base = `${summary.total} ${summary.total === 1 ? "tool call" : "tool calls"}`;
+  const states: string[] = [];
+  if (summary.running > 0) states.push(`${summary.running} running`);
+  if (summary.failed > 0) states.push(`${summary.failed} failed`);
+  if (summary.cancelled > 0) states.push(`${summary.cancelled} cancelled`);
+  return states.length > 0 ? `${base} · ${states.join(" · ")}` : base;
+}
+
+function workedLabel(summary: ToolMessageSummary): string {
+  const duration = compactDuration(summary.durationMs);
+  return duration ? `Worked for ${duration}` : "Agent activity";
+}
+
+function fileChangeLabel(summary: ToolMessageSummary): string {
+  const changes = summary.fileChanges;
+  if (changes.total === 0) return "";
+  const verb =
+    changes.created > 0 && changes.edited === 0
+      ? "Created"
+      : changes.edited > 0 && changes.created === 0
+        ? "Edited"
+        : "Changed";
+  const fileText = `${changes.total} ${changes.total === 1 ? "file" : "files"}`;
+  return `${verb} ${fileText}`;
+}
+
+function FileChangeStats({
+  summary,
+  hideLabel = false,
+}: {
+  summary: ToolMessageSummary;
+  hideLabel?: boolean;
+}) {
+  const label = fileChangeLabel(summary);
+  if (!label) return null;
+  const { additions, deletions } = summary.fileChanges;
+  return (
+    <span className="ae-turn-block-files">
+      {!hideLabel ? (
+        <span className="ae-turn-block-files-label">{label}</span>
+      ) : null}
+      {additions > 0 ? (
+        <span className="ae-turn-block-add">+{additions}</span>
+      ) : null}
+      {deletions > 0 ? (
+        <span className="ae-turn-block-del">-{deletions}</span>
+      ) : null}
+    </span>
+  );
+}
+
+function activityLabel({
+  summary,
+  progressCount,
+}: {
+  summary: ToolMessageSummary;
+  progressCount: number;
+}): string {
+  if (summary.running > 0) {
+    return `${summary.running} ${summary.running === 1 ? "tool" : "tools"} running`;
+  }
+  const fileLabel = fileChangeLabel(summary);
+  if (fileLabel) return fileLabel;
+  if (summary.total > 0) return workedLabel(summary);
+  return `${progressCount} ${progressCount === 1 ? "update" : "updates"}`;
+}
+
+function activityMeta({
+  summary,
+  progressCount,
+}: {
+  summary: ToolMessageSummary;
+  progressCount: number;
+}): string {
+  const parts: string[] = [];
+  if (summary.total > 0) parts.push(toolCountLabel(summary));
+  if (progressCount > 0) {
+    parts.push(
+      `${progressCount} ${progressCount === 1 ? "update" : "updates"}`,
+    );
+  }
+  const peek = summary.names.slice(0, 4).join(" · ");
+  if (peek) parts.push(peek);
+  return parts.join(" · ");
+}
+
+function fileChangeStatsLabel(summary: ToolMessageSummary): string {
+  const parts: string[] = [];
+  const label = fileChangeLabel(summary);
+  if (label) parts.push(label);
+  const { additions, deletions } = summary.fileChanges;
+  if (additions > 0) parts.push(`+${additions}`);
+  if (deletions > 0) parts.push(`-${deletions}`);
+  return parts.join(" ");
+}
+
+function TurnActivity({
+  turn,
   state,
   tabId,
   onEvent,
+  rowClassName,
+  thinkingVisibility,
+  toolCallsVisibility,
   expanded,
   onToggle,
-  renderExpandedBody = false,
+  live,
 }: {
-  group: Extract<MessageGroup, { type: "tool-group" }>;
+  turn: ConversationTurn;
   state: Record<string, unknown>;
   tabId?: string;
   onEvent?: BuiltinComponentProps["onEvent"];
+  rowClassName: string;
+  thinkingVisibility: VisibilityMode;
+  toolCallsVisibility: ToolCallsMode;
   expanded: boolean;
   onToggle: () => void;
-  renderExpandedBody?: boolean;
+  live: boolean;
 }) {
-  const count = group.messages.length;
-  const peek = toolPeek(group.messages);
+  const progressMessages = live ? [] : turn.progressMessages;
+  const toolMessages = toolCallsVisibility === "hide" ? [] : turn.toolMessages;
+  const summary = summarizeToolMessages(toolMessages);
+  const runningTools = toolMessages.filter(isRunningToolCard);
+  const detailsOpen = expanded || toolCallsVisibility === "show";
+  const visibleTools = detailsOpen ? toolMessages : runningTools;
+  const hasActivity =
+    progressMessages.length > 0 ||
+    toolMessages.length > 0 ||
+    visibleTools.length > 0;
+  if (!hasActivity) return null;
+  const label = activityLabel({
+    summary,
+    progressCount: progressMessages.length,
+  });
+  const meta = activityMeta({
+    summary,
+    progressCount: progressMessages.length,
+  });
+  const fileLabel = fileChangeLabel(summary);
+  const accessibleSummary = [
+    label,
+    meta,
+    label === fileLabel
+      ? fileChangeStatsLabel(summary).replace(fileLabel, "").trim()
+      : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
   return (
-    <div className="ae-tool-group" data-expanded={expanded ? "true" : "false"}>
+    <div
+      className="ae-turn-activity"
+      data-expanded={detailsOpen ? "true" : "false"}
+    >
       <button
         type="button"
-        className="ae-tool-group-summary"
-        aria-expanded={expanded}
+        className="ae-turn-activity-summary"
+        aria-expanded={detailsOpen}
+        aria-label={accessibleSummary}
         onClick={onToggle}
       >
-        <span className="ae-tool-group-caret" aria-hidden="true">
-          {expanded ? "▾" : "▸"}
+        <span className="ae-turn-block-caret" aria-hidden="true">
+          {detailsOpen ? "▾" : "▸"}
         </span>
-        <span className="ae-tool-group-label">{count} tool calls</span>
-        {!expanded && peek && (
-          <span className="ae-tool-group-peek">{peek}</span>
-        )}
+        <span className="ae-turn-block-label">{label}</span>
+        {meta ? <span className="ae-turn-block-meta">{meta}</span> : null}
+        <FileChangeStats summary={summary} hideLabel={label === fileLabel} />
       </button>
-      {expanded && renderExpandedBody && (
-        <div className="ae-tool-group-body">
-          {group.messages.map((m) =>
-            m.a2ui ? (
-              <A2UIRenderer
-                key={m.id}
-                payload={m.a2ui}
-                state={state}
-                onEvent={forwardNestedA2UIEvent(onEvent)}
-                tabId={tabId}
-              />
-            ) : null,
-          )}
+      {detailsOpen && (
+        <div className="ae-turn-activity-body">
+          {progressMessages.map((message, index) => (
+            <ChatMessageRow
+              key={message.id}
+              message={message}
+              state={state}
+              tabId={tabId}
+              className={`${rowClassName} ae-turn-progress-message`}
+              prevRole={index > 0 ? "agent" : undefined}
+              onEvent={onEvent}
+              thinkingVisibility={thinkingVisibility}
+            />
+          ))}
+          {visibleTools.map((message) => (
+            <ToolGroupChildRow
+              key={message.id}
+              message={message}
+              state={state}
+              tabId={tabId}
+              onEvent={onEvent}
+            />
+          ))}
         </div>
       )}
+      {!detailsOpen && runningTools.length > 0 && (
+        <div className="ae-turn-activity-live-tools">
+          {runningTools.map((message) => (
+            <ToolGroupChildRow
+              key={message.id}
+              message={message}
+              state={state}
+              tabId={tabId}
+              onEvent={onEvent}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function ConversationTurnRow({
+  turn,
+  state,
+  tabId,
+  onEvent,
+  rowClassName,
+  thinkingVisibility,
+  toolCallsVisibility,
+  expanded,
+  onToggle,
+  isLatest,
+  deliveryText,
+}: {
+  turn: ConversationTurn;
+  state: Record<string, unknown>;
+  tabId?: string;
+  onEvent?: BuiltinComponentProps["onEvent"];
+  rowClassName: string;
+  thinkingVisibility: VisibilityMode;
+  toolCallsVisibility: ToolCallsMode;
+  expanded: boolean;
+  onToggle: () => void;
+  isLatest: boolean;
+  deliveryText?: string;
+}) {
+  const live = isLatest && state.waiting === true;
+  const visibleAgentMessages = live
+    ? turn.agentMessages
+    : turn.finalMessage
+      ? [turn.finalMessage]
+      : [];
+  return (
+    <div className="ae-conversation-turn">
+      {turn.systemMessages.map((message) => (
+        <ChatMessageRow
+          key={message.id}
+          message={message}
+          state={state}
+          tabId={tabId}
+          className={rowClassName}
+          onEvent={onEvent}
+          thinkingVisibility={thinkingVisibility}
+        />
+      ))}
+      {turn.userMessage && (
+        <ChatMessageRow
+          message={turn.userMessage}
+          state={state}
+          tabId={tabId}
+          className={rowClassName}
+          onEvent={onEvent}
+          deliveryText={deliveryText}
+          thinkingVisibility={thinkingVisibility}
+        />
+      )}
+      {visibleAgentMessages.map((message, index) => (
+        <ChatMessageRow
+          key={message.id}
+          message={message}
+          state={state}
+          tabId={tabId}
+          className={rowClassName}
+          prevRole={index > 0 ? "agent" : undefined}
+          onEvent={onEvent}
+          isLatest={message.id === turn.messages.at(-1)?.id}
+          thinkingVisibility={thinkingVisibility}
+        />
+      ))}
+      <TurnActivity
+        turn={turn}
+        state={state}
+        tabId={tabId}
+        onEvent={onEvent}
+        rowClassName={rowClassName}
+        thinkingVisibility={thinkingVisibility}
+        toolCallsVisibility={toolCallsVisibility}
+        expanded={expanded}
+        onToggle={onToggle}
+        live={live}
+      />
     </div>
   );
 }
@@ -127,87 +367,6 @@ export function ToolGroupChildRow({
           tabId={tabId}
         />
       ) : null}
-    </div>
-  );
-}
-
-/** Header label for a folded agent turn: "N replies · M tool calls". Counts
- *  only text-bearing non-tool messages as replies — a thinking-only message
- *  may render nothing when thinking is hidden, so it shouldn't inflate the
- *  count. */
-function turnBlockLabel(messages: ChatMessage[]): string {
-  const tools = messages.filter(isToolCardMessage).length;
-  const replies = messages.filter(
-    (m) => !isToolCardMessage(m) && Boolean(m.text),
-  ).length;
-  const parts: string[] = [];
-  if (replies > 0) {
-    parts.push(`${replies} ${replies === 1 ? "reply" : "replies"}`);
-  }
-  parts.push(`${tools} ${tools === 1 ? "tool call" : "tool calls"}`);
-  return parts.join(" · ");
-}
-
-/** A whole completed agent turn folded into one collapsible block (tool
- *  visibility = "group-block"). Expands to the turn's messages — narration and
- *  tool cards — rendered in order via ChatMessageRow. */
-export function TurnBlockRow({
-  group,
-  state,
-  tabId,
-  onEvent,
-  rowClassName,
-  thinkingVisibility,
-  expanded,
-  onToggle,
-  renderExpandedBody = false,
-}: {
-  group: Extract<MessageGroup, { type: "turn-block" }>;
-  state: Record<string, unknown>;
-  tabId?: string;
-  onEvent?: BuiltinComponentProps["onEvent"];
-  rowClassName: string;
-  thinkingVisibility: VisibilityMode;
-  expanded: boolean;
-  onToggle: () => void;
-  renderExpandedBody?: boolean;
-}) {
-  const peek = toolPeek(group.messages);
-  return (
-    <div className="ae-turn-block" data-expanded={expanded ? "true" : "false"}>
-      <button
-        type="button"
-        className="ae-turn-block-summary"
-        aria-expanded={expanded}
-        onClick={onToggle}
-      >
-        <span className="ae-turn-block-caret" aria-hidden="true">
-          {expanded ? "▾" : "▸"}
-        </span>
-        <span className="ae-turn-block-label">Agent turn</span>
-        <span className="ae-turn-block-meta">
-          {turnBlockLabel(group.messages)}
-        </span>
-        {!expanded && peek && (
-          <span className="ae-turn-block-peek">{peek}</span>
-        )}
-      </button>
-      {expanded && renderExpandedBody && (
-        <div className="ae-turn-block-body">
-          {group.messages.map((m, i) => (
-            <ChatMessageRow
-              key={m.id}
-              message={m}
-              state={state}
-              tabId={tabId}
-              className={rowClassName}
-              prevRole={i > 0 ? group.messages[i - 1].role : undefined}
-              onEvent={onEvent}
-              thinkingVisibility={thinkingVisibility}
-            />
-          ))}
-        </div>
-      )}
     </div>
   );
 }

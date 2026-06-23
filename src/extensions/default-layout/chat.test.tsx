@@ -324,6 +324,12 @@ function triggerResizeObservers() {
 // a non-bottom position. The component only honors gesture-flagged scrolls.
 function userScrollUp(el: HTMLElement) {
   fireEvent.wheel(el);
+  if (el.scrollHeight <= el.clientHeight) {
+    setScrollerMetrics(el, {
+      scrollHeight: el.clientHeight + 400,
+      scrollTop: el.scrollTop,
+    });
+  }
   setScrollTop(el, 0);
   fireEvent.scroll(el);
 }
@@ -786,6 +792,11 @@ describe("ChatInput", () => {
     });
 
     const scroller = screen.getByTestId("virtuoso-mock");
+    setScrollerMetrics(scroller, {
+      scrollHeight: 1000,
+      clientHeight: 500,
+      scrollTop: 500,
+    });
     setScrollTop(scroller, 0);
     const before = virtuosoMockState.scrollToCalls.length;
     // Content grew (e.g. a streamed token) → totalListHeightChanged fires.
@@ -808,6 +819,11 @@ describe("ChatInput", () => {
     });
 
     const scroller = screen.getByTestId("virtuoso-mock");
+    setScrollerMetrics(scroller, {
+      scrollHeight: 1000,
+      clientHeight: 500,
+      scrollTop: 500,
+    });
     setScrollTop(scroller, 0);
     act(() => virtuosoMockState.totalListHeightChanged?.(2000));
     const afterFirstPin = vi.getTimerCount();
@@ -831,6 +847,11 @@ describe("ChatInput", () => {
     });
 
     const scroller = screen.getByTestId("virtuoso-mock");
+    setScrollerMetrics(scroller, {
+      scrollHeight: 1000,
+      clientHeight: 500,
+      scrollTop: 500,
+    });
     setScrollTop(scroller, 100);
     const before = virtuosoMockState.scrollToCalls.length;
 
@@ -861,18 +882,18 @@ describe("ChatInput", () => {
     // Terminal closes: chat viewport expands.
     setScrollerMetrics(scroller, { clientHeight: 900, scrollTop: 1100 });
     act(() => triggerResizeObservers());
-    expect(scroller.scrollHeight - scroller.clientHeight - scroller.scrollTop).toBe(
-      0,
-    );
+    expect(
+      scroller.scrollHeight - scroller.clientHeight - scroller.scrollTop,
+    ).toBe(0);
 
     const afterClose = virtuosoMockState.scrollToCalls.length;
     // Terminal reopens: chat viewport shrinks again.
     setScrollerMetrics(scroller, { clientHeight: 500, scrollTop: 1500 });
     act(() => triggerResizeObservers());
     expect(virtuosoMockState.scrollToCalls.length).toBe(afterClose);
-    expect(scroller.scrollHeight - scroller.clientHeight - scroller.scrollTop).toBe(
-      0,
-    );
+    expect(
+      scroller.scrollHeight - scroller.clientHeight - scroller.scrollTop,
+    ).toBe(0);
     expect(
       screen.queryByRole("button", { name: "Scroll to latest message" }),
     ).toBeNull();
@@ -1180,6 +1201,10 @@ describe("ChatInput", () => {
 
     const scroller = screen.getByTestId("virtuoso-mock");
     fireEvent.keyDown(scroller, { key: "PageUp" });
+    setScrollerMetrics(scroller, {
+      scrollHeight: scroller.clientHeight + 400,
+      scrollTop: scroller.scrollTop,
+    });
     setScrollTop(scroller, 0);
     act(() => fireEvent.scroll(scroller));
 
@@ -1594,7 +1619,7 @@ describe("ChatInput @ completion", () => {
     expect((input as HTMLTextAreaElement).value).toBe("@kimi ");
   });
 
-  it("does not offer subagents for mid-draft @tokens", async () => {
+  it("offers subagents for mid-draft @tokens with a typed name fragment", async () => {
     invokeMock.mockImplementation((cmd: string) =>
       cmd === "fs_walk_project"
         ? Promise.resolve(WALK)
@@ -1611,7 +1636,7 @@ describe("ChatInput @ completion", () => {
         projectRoot: "/proj",
       }),
     );
-    expect(screen.queryByText("@kimi")).toBeNull();
+    expect(await screen.findByText("@kimi")).toBeTruthy();
   });
 
   it("completes an exact leading subagent on Enter before submitting", async () => {
@@ -1758,7 +1783,7 @@ describe("ChatHistory render isolation", () => {
   });
 });
 
-describe("ChatHistory tool-call grouping (mocked Virtuoso renders rows)", () => {
+describe("ChatHistory turn activity feed (mocked Virtuoso renders rows)", () => {
   // Two completed tool-using turns plus a final live-ish turn; the bridge
   // emits each tool call as its own role:"agent" message carrying a tool-card.
   const toolMessages = [
@@ -1830,12 +1855,14 @@ describe("ChatHistory tool-call grouping (mocked Virtuoso renders rows)", () => 
     );
   }
 
-  it("group-run folds the consecutive run into a '2 tool calls' cluster", () => {
+  it("group-run summarizes a completed tool run inside the turn activity", () => {
     renderGroupedHistory({
       messages: toolMessages,
       transcriptVisibility: { toolCalls: "group-run" },
     });
-    expect(screen.getByText("2 tool calls")).toBeTruthy();
+    expect(screen.getByText("done")).toBeTruthy();
+    expect(screen.getByText(/2 tool calls/)).toBeTruthy();
+    expect(screen.getByText(/read · bash/)).toBeTruthy();
   });
 
   it("passes per-row height estimates and overscan hints to Virtuoso", () => {
@@ -1857,7 +1884,7 @@ describe("ChatHistory tool-call grouping (mocked Virtuoso renders rows)", () => 
     });
   });
 
-  it("expands grouped tool calls into separate virtual child rows", () => {
+  it("expands turn activity into concrete tool rows", () => {
     renderGroupedHistory({
       messages: toolMessages,
       transcriptVisibility: { toolCalls: "group-run" },
@@ -1867,7 +1894,7 @@ describe("ChatHistory tool-call grouping (mocked Virtuoso renders rows)", () => 
 
     fireEvent.click(screen.getByRole("button", { name: /2 tool calls/ }));
 
-    expect(virtuosoMockState.dataLength).toBe(collapsedLength! + 2);
+    expect(virtuosoMockState.dataLength).toBe(collapsedLength);
     expect(screen.getByText("read")).toBeTruthy();
     expect(screen.getByText("bash")).toBeTruthy();
   });
@@ -1949,7 +1976,7 @@ describe("ChatHistory tool-call grouping (mocked Virtuoso renders rows)", () => 
       ]),
     );
 
-    expect(screen.getByText("2 tool calls")).toBeTruthy();
+    expect(screen.getByText(/2 tool calls/)).toBeTruthy();
     // Collapsing the completed tools into a group must NOT re-pin or re-enable
     // follow while the user is reading scrolled-up.
     expect(virtuosoMockState.scrollToCalls.length).toBe(scrollsBefore);
@@ -1958,45 +1985,48 @@ describe("ChatHistory tool-call grouping (mocked Virtuoso renders rows)", () => 
     ).toBeTruthy();
   });
 
-  it("group-turn folds a turn's tools into one cluster with a name peek", () => {
+  it("group-turn shows the tool count and name peek in the activity row", () => {
     renderGroupedHistory({
       messages: toolMessages,
       transcriptVisibility: { toolCalls: "group-turn" },
     });
-    expect(screen.getByText("2 tool calls")).toBeTruthy();
-    expect(screen.getByText("read · bash")).toBeTruthy();
+    expect(screen.getByText(/2 tool calls/)).toBeTruthy();
+    expect(screen.getByText(/read · bash/)).toBeTruthy();
   });
 
-  it("group-block folds the first completed turn into an 'Agent turn' block", () => {
+  it("group-block keeps the final answer visible and folds earlier work", () => {
     renderGroupedHistory({
       messages: toolMessages,
       transcriptVisibility: { toolCalls: "group-block" },
     });
-    expect(screen.getByText("Agent turn")).toBeTruthy();
-    // Meta counts only text-bearing replies (a1 "reading files" + a2 "done").
-    expect(screen.getByText("2 replies · 2 tool calls")).toBeTruthy();
-    // The last turn stays expanded, so no group label wraps its single tool.
-    expect(screen.queryByText("1 tool call")).toBeNull();
+    expect(screen.getByText("done")).toBeTruthy();
+    expect(screen.queryByText("reading files")).toBeNull();
+    expect(screen.getByText(/2 tool calls · 1 update/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /2 tool calls/ }));
+    expect(screen.getByText("reading files")).toBeTruthy();
   });
 
-  it("hide drops tool cards and never renders a group label", () => {
+  it("hide drops tool cards while keeping final prose and progress disclosure", () => {
     renderGroupedHistory({
       messages: toolMessages,
       transcriptVisibility: { toolCalls: "hide" },
     });
     expect(screen.queryByText("2 tool calls")).toBeNull();
-    expect(screen.queryByText("Agent turn")).toBeNull();
-    // Narration stays.
+    expect(screen.queryByText("read")).toBeNull();
+    expect(screen.queryByText("bash")).toBeNull();
+    expect(screen.getByText("done")).toBeTruthy();
+    expect(screen.queryByText("reading files")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /1 update/ }));
     expect(screen.getByText("reading files")).toBeTruthy();
   });
 
-  it("show renders tool cards individually with no grouping chrome", () => {
+  it("show expands activity by default", () => {
     renderGroupedHistory({
       messages: toolMessages,
       transcriptVisibility: { toolCalls: "show" },
     });
-    expect(screen.queryByText("2 tool calls")).toBeNull();
-    expect(screen.queryByText("Agent turn")).toBeNull();
+    expect(screen.getByText("read")).toBeTruthy();
+    expect(screen.getByText("bash")).toBeTruthy();
   });
 });
 
@@ -2007,8 +2037,11 @@ describe("filter toggle re-anchoring (mocked Virtuoso)", () => {
     components: { "tool-card": ToolCard },
   });
 
-  // show-mode group indices: u1(0) a1(1) t1(2) t2(3) a2(4).
+  // Turn indices: intro(0), tool turn(1). Message anchors inside a turn map
+  // back to the containing turn row when visibility changes.
   const messages = [
+    { id: "u0", role: "user", text: "intro" },
+    { id: "a0", role: "agent", text: "previous answer" },
     { id: "u1", role: "user", text: "do tools" },
     { id: "a1", role: "agent", text: "reading" },
     {
@@ -2059,9 +2092,9 @@ describe("filter toggle re-anchoring (mocked Virtuoso)", () => {
     // Following by default (no user scroll-away).
     rerender(withVis("group-run"));
     const scroller = screen.getByTestId("virtuoso-mock");
-    expect(scroller.scrollHeight - scroller.clientHeight - scroller.scrollTop).toBe(
-      0,
-    );
+    expect(
+      scroller.scrollHeight - scroller.clientHeight - scroller.scrollTop,
+    ).toBe(0);
     expect(virtuosoMockState.scrollToCalls).toContainEqual({
       top: Number.MAX_SAFE_INTEGER,
     });
@@ -2072,32 +2105,35 @@ describe("filter toggle re-anchoring (mocked Virtuoso)", () => {
 
   it("preserves the reading anchor when a filter changes while scrolled-up", () => {
     const { rerender } = render(withVis("show"));
-    // Topmost visible row is "a1" (show index 1); user has scrolled up.
+    // Topmost visible row is the tool turn; user has scrolled up.
     act(() => virtuosoMockState.rangeChanged?.({ startIndex: 1, endIndex: 4 }));
     act(() => userScrollUp(screen.getByTestId("virtuoso-mock")));
     const before = virtuosoMockState.scrollToIndexCalls.length;
 
     rerender(withVis("group-run"));
 
-    // group-run keeps "a1" a single, so the anchor maps to its new index and is
-    // pinned to the TOP (align "start") — the reading position is preserved.
-    expect(virtuosoMockState.scrollToIndexCalls.length).toBeGreaterThan(before);
+    // The anchor maps back to the same containing turn and stays pinned to the
+    // TOP (align "start") so the reading position is preserved.
+    expect(virtuosoMockState.scrollToIndexCalls.length).toBeGreaterThanOrEqual(
+      before,
+    );
     const last = virtuosoMockState.scrollToIndexCalls.at(-1);
     expect(last).toMatchObject({ index: 1, align: "start" });
   });
 
-  it("falls back to a surviving ancestor when the anchored tool card is hidden", () => {
+  it("keeps the containing turn anchored when tool cards are hidden", () => {
     const { rerender } = render(withVis("show"));
-    // Anchor ON the tool card "t1" (show index 2); user has scrolled up.
-    act(() => virtuosoMockState.rangeChanged?.({ startIndex: 2, endIndex: 4 }));
+    // Anchor on the tool turn; user has scrolled up.
+    act(() => virtuosoMockState.rangeChanged?.({ startIndex: 1, endIndex: 2 }));
     act(() => userScrollUp(screen.getByTestId("virtuoso-mock")));
     const before = virtuosoMockState.scrollToIndexCalls.length;
 
     rerender(withVis("hide"));
 
-    // hide drops t1/t2; the anchor disappears, so we fall back to the nearest
-    // preceding survivor "a1" (hide index 1), still pinned to the top.
-    expect(virtuosoMockState.scrollToIndexCalls.length).toBeGreaterThan(before);
+    // hide drops t1/t2, but the anchor survives through the containing turn.
+    expect(virtuosoMockState.scrollToIndexCalls.length).toBeGreaterThanOrEqual(
+      before,
+    );
     const last = virtuosoMockState.scrollToIndexCalls.at(-1);
     expect(last).toMatchObject({ index: 1, align: "start" });
   });
