@@ -553,7 +553,6 @@ pub(crate) fn scheduled_task_reuse(
             reuse_task_record(task, input.clone(), now)?;
             task.tab_id.clone()
         };
-        inner.live_tabs_known = true;
         inner.live_tab_ids.insert(tab_id);
         inner
             .tasks
@@ -698,12 +697,7 @@ fn scheduler_delay(app: &AppHandle) -> Result<Option<Duration>, String> {
     if !inner.live_tabs_known {
         return Ok(None);
     }
-    let next = inner
-        .tasks
-        .values()
-        .filter(|task| task.status == ScheduledTaskStatus::Scheduled)
-        .filter_map(|task| task.next_run_at)
-        .min();
+    let next = next_eligible_due_at(&inner);
     Ok(next.map(|due| {
         if due <= now {
             Duration::from_millis(0)
@@ -711,6 +705,16 @@ fn scheduler_delay(app: &AppHandle) -> Result<Option<Duration>, String> {
             Duration::from_millis((due - now) as u64)
         }
     }))
+}
+
+fn next_eligible_due_at(inner: &SchedulerInner) -> Option<i64> {
+    inner
+        .tasks
+        .values()
+        .filter(|task| task.status == ScheduledTaskStatus::Scheduled)
+        .filter(|task| inner.live_tab_ids.contains(&task.tab_id))
+        .filter_map(|task| task.next_run_at)
+        .min()
 }
 
 async fn fire_due_tasks(app: &AppHandle) -> Result<(), String> {
@@ -1855,5 +1859,27 @@ mod tests {
         assert_eq!(task.status, ScheduledTaskStatus::Scheduled);
         assert_eq!(task.expires_at, now + TASK_TTL_MS);
         assert_eq!(task.next_run_at, Some(now + 5 * 60_000));
+    }
+
+    #[test]
+    fn scheduler_delay_ignores_due_tasks_for_non_live_tabs() {
+        let now = 1_700_000_000_000;
+        let mut orphan = test_task(now, ScheduledTaskStatus::Scheduled);
+        orphan.tab_id = "closed-tab".to_string();
+        orphan.next_run_at = Some(now);
+        let mut live = test_task(now, ScheduledTaskStatus::Scheduled);
+        live.id = "live".to_string();
+        live.tab_id = "live-tab".to_string();
+        live.next_run_at = Some(now + 5 * 60_000);
+
+        let mut inner = SchedulerInner {
+            live_tabs_known: true,
+            ..SchedulerInner::default()
+        };
+        inner.live_tab_ids.insert("live-tab".to_string());
+        inner.tasks.insert(orphan.id.clone(), orphan);
+        inner.tasks.insert(live.id.clone(), live);
+
+        assert_eq!(next_eligible_due_at(&inner), Some(now + 5 * 60_000));
     }
 }
