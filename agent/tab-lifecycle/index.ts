@@ -14,7 +14,13 @@
  *                        ensurePickerHasModel
  *  - slash-commands.ts — collectPiSlashCommands / refreshPiSlashCommands
  *  - ready-handshake.ts — emitReady (startup payload)
- *  - events.ts         — handleSessionEvent (per-turn state machine)
+ *  - events.ts         — handleSessionEvent routing/orchestration
+ *  - response-stream.ts — assistant text/thinking stream identity + backfill
+ *  - tool-events.ts    — tool-card lifecycle + terminal mirroring
+ *  - agent-end.ts      — agent_end routing across finalization/recovery paths
+ *  - turn-finalization.ts — response_end, entry-id backfill, scheduled runs
+ *  - retry-recovery.ts — SDK auto-retry events + usage-limit retry exhaustion
+ *  - context-recovery.ts — context overflow compaction/resume flow
  *  - retry.ts          — Aethon-specific transient provider retry classifier
  *  - lifecycle.ts      — ensureTab + EnsureTabOptions
  */
