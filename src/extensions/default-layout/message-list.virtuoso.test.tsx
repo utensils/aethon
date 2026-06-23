@@ -90,7 +90,11 @@ describe("ChatHistory + real Virtuoso", () => {
         role: "agent",
         a2ui: {
           components: [
-            { id: "c1", type: "tool-card", props: { title: "read", startedAt: 1, endedAt: 2 } },
+            {
+              id: "c1",
+              type: "tool-card",
+              props: { title: "read", startedAt: 1, endedAt: 2 },
+            },
           ],
         },
       },
@@ -99,7 +103,11 @@ describe("ChatHistory + real Virtuoso", () => {
         role: "agent",
         a2ui: {
           components: [
-            { id: "c2", type: "tool-card", props: { title: "bash", startedAt: 1, endedAt: 2 } },
+            {
+              id: "c2",
+              type: "tool-card",
+              props: { title: "bash", startedAt: 1, endedAt: 2 },
+            },
           ],
         },
       },
@@ -110,7 +118,11 @@ describe("ChatHistory + real Virtuoso", () => {
         role: "agent",
         a2ui: {
           components: [
-            { id: "c3", type: "tool-card", props: { title: "edit", startedAt: 1, endedAt: 2 } },
+            {
+              id: "c3",
+              type: "tool-card",
+              props: { title: "edit", startedAt: 1, endedAt: 2 },
+            },
           ],
         },
       },
@@ -139,7 +151,13 @@ describe("ChatHistory + real Virtuoso", () => {
   // computeItemKey. Rendered-content assertions live in chat.test.tsx, which
   // mocks Virtuoso and actually mounts the rows.
   it("mounts every tool-call visibility mode without crashing", () => {
-    for (const mode of ["show", "group-run", "group-turn", "group-block", "hide"]) {
+    for (const mode of [
+      "show",
+      "group-run",
+      "group-turn",
+      "group-block",
+      "hide",
+    ]) {
       expect(() => renderToolChat(mode)).not.toThrow();
     }
   });
@@ -158,9 +176,15 @@ describe("ChatHistory + real Virtuoso", () => {
       />
     );
     const { rerender } = render(view("show"));
-    // Cycling exercises rangeChanged / groupKey / the anchor-lookup effect.
+    // Cycling exercises rangeChanged and the turn-anchor lookup effect.
     expect(() => {
-      for (const mode of ["group-run", "group-turn", "group-block", "hide", "show"]) {
+      for (const mode of [
+        "group-run",
+        "group-turn",
+        "group-block",
+        "hide",
+        "show",
+      ]) {
         rerender(view(mode));
       }
     }).not.toThrow();
