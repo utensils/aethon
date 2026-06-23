@@ -1,12 +1,24 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { makeEmptyTab } from "../../types/tab";
 import {
   handleAuthProfileChanged,
+  handleAuthProfileLoginEvent,
   handleAuthProfiles,
 } from "./authProfiles";
 import { buildHandlerFixture } from "./testFixtures";
+import { clearTauriMocks, installTauriMocks } from "../../test/tauriMocks";
 
 describe("auth profile bridge handlers", () => {
+  let harness: ReturnType<typeof installTauriMocks>;
+
+  beforeEach(() => {
+    harness = installTauriMocks();
+  });
+
+  afterEach(() => {
+    clearTauriMocks();
+  });
+
   it("hydrates auth profiles and mirrors active profile ids onto tabs", () => {
     const tab = makeEmptyTab("default", "Tab 1");
     const { ctx, applySetState } = buildHandlerFixture({
@@ -129,6 +141,110 @@ describe("auth profile bridge handlers", () => {
     });
     expect(applySetState().authProfiles).toMatchObject({
       activeByTab: { default: "anthropic-work" },
+    });
+  });
+
+  it("asks an idle target worker tab to apply completed OAuth login", async () => {
+    const tab = {
+      ...makeEmptyTab("tab-1", "Tab 1"),
+      cwd: "/repo",
+      model: "github-copilot/gpt-5.5",
+    };
+    const { ctx, applySetState } = buildHandlerFixture({
+      state: {
+        activeTabId: "tab-1",
+        tabs: [tab],
+        authProfiles: {
+          profiles: [],
+          defaultByProvider: {},
+          providers: [],
+          activeByTab: {},
+        },
+      },
+    });
+
+    handleAuthProfileLoginEvent(
+      {
+        type: "auth_profile_login_event",
+        event: {
+          type: "complete",
+          challengeId: "challenge-1",
+          profileId: "copilot-work",
+          providerId: "github-copilot",
+          targetTabId: "tab-1",
+          ok: true,
+        },
+      },
+      ctx,
+    );
+
+    await vi.waitFor(() => {
+      expect(harness.invoke).toHaveBeenCalledWith("agent_command", {
+        payload: JSON.stringify({
+          type: "auth_profile_apply",
+          tabId: "tab-1",
+          profileId: "copilot-work",
+          cwd: "/repo",
+          model: "github-copilot/gpt-5.5",
+        }),
+      });
+    });
+    expect(applySetState().authProfiles).toMatchObject({
+      activeByTab: {},
+      login: expect.objectContaining({ ok: true }),
+    });
+  });
+
+  it("does not apply completed OAuth login to a busy target worker tab", () => {
+    const tab = {
+      ...makeEmptyTab("tab-1", "Tab 1"),
+      cwd: "/repo",
+      model: "github-copilot/gpt-5.5",
+      waiting: true,
+    };
+    const { ctx, mocks, applySetState } = buildHandlerFixture({
+      state: {
+        activeTabId: "tab-1",
+        tabs: [tab],
+        authProfiles: {
+          profiles: [],
+          defaultByProvider: {},
+          providers: [],
+          activeByTab: {},
+        },
+      },
+    });
+
+    handleAuthProfileLoginEvent(
+      {
+        type: "auth_profile_login_event",
+        event: {
+          type: "complete",
+          challengeId: "challenge-1",
+          profileId: "copilot-work",
+          providerId: "github-copilot",
+          targetTabId: "tab-1",
+          ok: true,
+        },
+      },
+      ctx,
+    );
+
+    expect(harness.invoke).not.toHaveBeenCalledWith(
+      "agent_command",
+      expect.objectContaining({
+        payload: expect.stringContaining("auth_profile_apply"),
+      }),
+    );
+    expect(mocks.pushNotification).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: "Account ready",
+        kind: "info",
+      }),
+    );
+    expect(applySetState().authProfiles).toMatchObject({
+      activeByTab: {},
+      login: expect.objectContaining({ ok: true }),
     });
   });
 });

@@ -30,6 +30,7 @@ import {
 const tempDirs: string[] = [];
 
 afterEach(() => {
+  vi.restoreAllMocks();
   for (const dir of tempDirs.splice(0)) {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -183,6 +184,55 @@ describe("auth profile manager", () => {
           (message as { event?: { ok?: boolean } }).event?.ok === false,
       ),
     ).toBe(true);
+  });
+
+  it("emits OAuth completion target without pre-recording worker tab state", async () => {
+    const userDir = tempUserDir();
+    const state = withReadyState(makeState(userDir));
+    const sent: Record<string, unknown>[] = [];
+    const deps = {
+      send: (message: Record<string, unknown>) => sent.push(message),
+    } as DispatcherDeps;
+    vi.spyOn(AuthStorage.prototype, "login").mockImplementation(
+      (_providerId, callbacks) => {
+        callbacks.onAuth?.({
+          url: "https://github.com/login/device",
+          instructions: "Enter code: 1A2B-3C4D",
+        });
+        return Promise.resolve();
+      },
+    );
+
+    await handleAuthProfileMessage(state, deps, {
+      type: "auth_profile_login_start",
+      providerId: "github-copilot",
+      label: "Copilot Work",
+      tabId: "tab-worker",
+    });
+
+    await vi.waitFor(() => {
+      expect(sent).toContainEqual(
+        expect.objectContaining({
+          type: "auth_profile_login_event",
+          event: expect.objectContaining({
+            type: "complete",
+            targetTabId: "tab-worker",
+            ok: true,
+          }),
+        }),
+      );
+    });
+    const profileId = state.authProfiles.profiles[0]?.id;
+    expect(profileId).toBeTruthy();
+    expect(state.tabAuthProfileIds.has("tab-worker")).toBe(false);
+    expect(sent).toContainEqual(
+      expect.objectContaining({
+        type: "auth_profiles",
+        authProfiles: expect.objectContaining({
+          activeByTab: {},
+        }),
+      }),
+    );
   });
 
   it("falls back to the global model registry for stale or unsafe profile ids", () => {
@@ -371,6 +421,33 @@ describe("auth profile manager", () => {
     expect(state.tabAuthProfileIds.get("tab-worker")).toBe("openai-codex-other");
     expect(sent).toContainEqual(
       expect.objectContaining({ type: "notice", tabId: "tab-worker" }),
+    );
+  });
+
+  it("auth_profile_apply emits a change event after a worker tab switches", async () => {
+    const userDir = tempUserDir();
+    const state = withReadyState(makeState(userDir));
+    const profileId = addProfile(state, "openai-codex", "Codex Two");
+    saveAuthProfilesState(userDir, state.authProfiles);
+    state.tabs.set("tab-worker", fakeTab("openai-codex/gpt-5.5"));
+    const sent: Record<string, unknown>[] = [];
+    const deps = {
+      send: (m: Record<string, unknown>) => sent.push(m),
+    } as DispatcherDeps;
+
+    await handleAuthProfileMessage(state, deps, {
+      type: "auth_profile_apply",
+      tabId: "tab-worker",
+      profileId,
+    });
+
+    expect(state.tabAuthProfileIds.get("tab-worker")).toBe(profileId);
+    expect(sent).toContainEqual(
+      expect.objectContaining({
+        type: "auth_profile_changed",
+        tabId: "tab-worker",
+        profileId,
+      }),
     );
   });
 
