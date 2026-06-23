@@ -2924,10 +2924,6 @@ body.ae-resizing-sidebar .a2ui-layout {
   padding-top: 2px;
   margin-top: 1px;
 }
-.a2ui-canvas-message.agent .a2ui-canvas-role {
-  color: color-mix(in oklab, var(--accent) 55%, var(--text-dim));
-}
-
 .a2ui-canvas-message.system {
   align-self: center;
   background: transparent;
@@ -2952,6 +2948,13 @@ body.ae-resizing-sidebar .a2ui-layout {
   color: var(--text-dim);
   text-align: right;
   opacity: 0.55;
+}
+.a2ui-canvas-message.agent .a2ui-canvas-role {
+  color: color-mix(in oklab, var(--accent) 42%, var(--text-dim));
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  text-transform: none;
+  opacity: 0.9;
 }
 
 .a2ui-chat-text,
@@ -3591,10 +3594,6 @@ body.ae-resizing-sidebar .a2ui-layout {
   padding-top: 2px;
   margin-top: 1px;
 }
-.a2ui-chat-message.agent .a2ui-chat-role {
-  color: color-mix(in oklab, var(--accent) 55%, var(--text-dim));
-}
-
 /* System bubbles: faint log-line style — not part of the conversation. */
 .a2ui-chat-message.system {
   background: transparent;
@@ -3634,6 +3633,13 @@ body.ae-resizing-sidebar .a2ui-layout {
   color: var(--text-dim);
   text-align: right;
   opacity: 0.55;
+}
+.a2ui-chat-message.agent .a2ui-chat-role {
+  color: color-mix(in oklab, var(--accent) 42%, var(--text-dim));
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  text-transform: none;
+  opacity: 0.9;
 }
 
 .a2ui-chat-meta {
