@@ -12,6 +12,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   ChatHistory,
   ChatInput,
+  MainCanvas,
   QueuedMessagesPopover,
   ToolCard,
 } from "./chat";
@@ -726,6 +727,33 @@ describe("ChatInput", () => {
     // the terminal-close view above latest.
     expect(virtuosoMockState.followOutput).toBe(false);
     expect(virtuosoMockState.alignToBottom).toBeUndefined();
+  });
+
+  it("renders the typing indicator inside the transcript row column", () => {
+    render(
+      <MainCanvas
+        component={{
+          id: "main-canvas",
+          type: "main-canvas",
+          props: { messages: { $ref: "/messages" } },
+        }}
+        state={{
+          waiting: true,
+          messages: [
+            { id: "1", role: "user", text: "start" },
+            { id: "2", role: "agent", text: "streaming update" },
+          ],
+        }}
+        onEvent={vi.fn()}
+      />,
+    );
+
+    const indicator = screen.getByRole("status", {
+      name: "Agent is thinking",
+    });
+    expect(indicator.closest(".a2ui-msg-row-footer")).toBeTruthy();
+    expect(indicator.closest(".ae-conversation-turn")).toBeTruthy();
+    expect(indicator.closest(".a2ui-canvas-message.agent")).toBeTruthy();
   });
 
   it("shows the pill and stops following when the user scrolls up", () => {
@@ -1512,7 +1540,7 @@ describe("ChatInput", () => {
     ).toBeTruthy();
   });
 
-  it("lets collapsed thinking blocks stay user-expanded across rerenders", () => {
+  it("treats legacy collapsed thinking as hidden and show as a static block", () => {
     const message = {
       id: "1",
       role: "agent",
@@ -1524,12 +1552,8 @@ describe("ChatInput", () => {
       transcriptVisibility: { thinking: "collapse", toolCalls: "show" },
     });
 
-    const details = screen.getByText("Thinking").closest("details");
-    expect(details).toBeInstanceOf(HTMLDetailsElement);
-    const thinkingBlock = details as HTMLDetailsElement;
-    expect(thinkingBlock.hasAttribute("open")).toBe(false);
-
-    thinkingBlock.open = true;
+    expect(screen.queryByText("Thinking")).toBeNull();
+    expect(screen.queryByText("check the plan")).toBeNull();
 
     rerender(
       <ChatHistory
@@ -1541,16 +1565,14 @@ describe("ChatInput", () => {
         state={{
           messages: [message],
           waiting: true,
-          transcriptVisibility: { thinking: "collapse", toolCalls: "show" },
+          transcriptVisibility: { thinking: "show", toolCalls: "show" },
         }}
         onEvent={onEvent}
       />,
     );
 
-    expect(
-      (screen.getByText("Thinking").closest("details") as HTMLDetailsElement)
-        .open,
-    ).toBe(true);
+    expect(screen.getByText("Thinking").closest("details")).toBeNull();
+    expect(screen.getByText("check the plan")).toBeTruthy();
   });
 });
 
@@ -1884,6 +1906,35 @@ describe("ChatHistory turn activity feed (mocked Virtuoso renders rows)", () => 
     });
   });
 
+  it("labels assistant turns with the message model when available", () => {
+    renderGroupedHistory({
+      sidebar: {
+        models: [{ id: "openai-codex/gpt-5.5", label: "GPT-5.5" }],
+      },
+      messages: [
+        { id: "u1", role: "user", text: "hi" },
+        {
+          id: "a1",
+          role: "agent",
+          text: "done",
+          model: "openai-codex/gpt-5.5",
+        },
+        { id: "u2", role: "user", text: "again" },
+        {
+          id: "a2",
+          role: "agent",
+          text: "ok",
+          model: "ollama/qwen3.6-128k:latest",
+        },
+      ],
+      transcriptVisibility: { toolCalls: "group-block" },
+    });
+
+    expect(screen.getByText("GPT-5.5")).toBeTruthy();
+    expect(screen.getByText("qwen3.6-128k:latest")).toBeTruthy();
+    expect(screen.queryByText("AI")).toBeNull();
+  });
+
   it("expands turn activity into concrete tool rows", () => {
     renderGroupedHistory({
       messages: toolMessages,
@@ -2004,6 +2055,40 @@ describe("ChatHistory turn activity feed (mocked Virtuoso renders rows)", () => 
     expect(screen.getByText(/2 tool calls · 1 update/)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: /2 tool calls/ }));
     expect(screen.getByText("reading files")).toBeTruthy();
+  });
+
+  it("keeps stopped assistant progress visible when there is no final answer", () => {
+    renderGroupedHistory({
+      messages: [
+        { id: "u1", role: "user", text: "Review this implementation" },
+        {
+          id: "a1",
+          role: "agent",
+          text: "I’ll inspect the branch diff and relevant files.",
+          model: "openai-codex/gpt-5.5",
+        },
+        {
+          id: "t1",
+          role: "agent",
+          a2ui: {
+            components: [
+              {
+                id: "c1",
+                type: "tool-card",
+                props: { title: "bash", startedAt: 1, endedAt: 2 },
+              },
+            ],
+          },
+        },
+      ],
+      waiting: false,
+      transcriptVisibility: { toolCalls: "group-block" },
+    });
+
+    expect(
+      screen.getByText("I’ll inspect the branch diff and relevant files."),
+    ).toBeTruthy();
+    expect(screen.getByText(/1 tool call/)).toBeTruthy();
   });
 
   it("hide drops tool cards while keeping final prose and progress disclosure", () => {

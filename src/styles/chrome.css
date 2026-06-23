@@ -3394,21 +3394,14 @@ body.ae-resizing-sidebar .a2ui-layout {
 
 .a2ui-thinking-block {
   margin: 0.3em 0;
-  padding: 5px 10px;
-  background: var(--state-info-bg, transparent);
-  border: none;
-  /* Left gutter picks up the cool secondary accent — keeps the visual
-     distinct from agent message bodies (warm primary) and gives the
-     "thinking" passages their own voice in the transcript. */
-  border-left: 2px solid
-    var(--accent-2, color-mix(in oklab, var(--text-dim) 40%, transparent));
-  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  padding: 7px 10px;
+  background: color-mix(in oklab, var(--bg-input) 72%, transparent);
+  border: 1px solid var(--border-subtle, var(--border));
+  border-radius: var(--radius-sm);
   color: var(--text-dim);
 }
 
-.a2ui-thinking-block summary {
-  cursor: pointer;
-  user-select: none;
+.a2ui-thinking-label {
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.08em;
@@ -3513,6 +3506,11 @@ body.ae-resizing-sidebar .a2ui-layout {
 
 .a2ui-chat-history .a2ui-msg-row-last {
   padding-bottom: 8px;
+}
+
+.a2ui-chat-history .a2ui-msg-row-footer,
+.a2ui-canvas-scroller .a2ui-msg-row-footer {
+  padding-top: 0;
 }
 
 .a2ui-chat-load-older {
@@ -9787,6 +9785,15 @@ button.ae-vcs-chip:focus-visible {
 
 .ae-turn-progress-message .a2ui-chat-meta {
   display: none;
+}
+
+.ae-typing-message.a2ui-chat-message,
+.ae-typing-message.a2ui-canvas-message {
+  background: transparent;
+  border: 0;
+  margin-top: 2px;
+  padding-top: 0;
+  padding-bottom: 8px;
 }
 
 .ae-tool-activity-row {

@@ -159,7 +159,10 @@ export function VirtualMessageFeed({
   // `components={undefined}` explicitly trips Virtuoso's internal
   // `components.EmptyPlaceholder` access, so omit the props entirely otherwise.
   const footerProps = footerContext
-    ? { context: footerContext, components: { Footer: CanvasFooter } }
+    ? {
+        context: { ...footerContext, rowClassName },
+        components: { Footer: CanvasFooter },
+      }
     : {};
 
   // The canvas can be scrollable with zero messages (a live subtree / typing

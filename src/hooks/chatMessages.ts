@@ -11,6 +11,7 @@ export interface ChatMessageController {
     messageId?: string,
     tabId?: string,
     channel?: "text" | "thinking",
+    model?: string,
   ) => void;
   appendSystem: (text: string) => void;
   clearChat: () => void;
@@ -81,6 +82,7 @@ export function useChatMessageController(
     messageId?: string,
     tabId?: string,
     channel: "text" | "thinking" = "text",
+    model?: string,
   ) {
     const id =
       tabId ??
@@ -94,6 +96,7 @@ export function useChatMessageController(
         if (idx >= 0) {
           nextMessage = {
             ...messages[idx],
+            ...(model ? { model } : {}),
             createdAt: messages[idx].createdAt ?? Date.now(),
             [channel]: (messages[idx][channel] ?? "") + delta,
           };
@@ -102,6 +105,7 @@ export function useChatMessageController(
           nextMessage = {
             id: messageId,
             role: "agent",
+            ...(model ? { model } : {}),
             createdAt: Date.now(),
             [channel]: delta,
           };
@@ -116,6 +120,7 @@ export function useChatMessageController(
       if (activeId && last && last.id === activeId && last.role === "agent") {
         const nextMessage = {
           ...last,
+          ...(model ? { model } : {}),
           createdAt: last.createdAt ?? Date.now(),
           [channel]: (last[channel] ?? "") + delta,
         };
@@ -127,6 +132,7 @@ export function useChatMessageController(
         const nextMessage = {
           id: newId,
           role: "agent" as const,
+          ...(model ? { model } : {}),
           createdAt: Date.now(),
           [channel]: delta,
         };

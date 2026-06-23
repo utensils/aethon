@@ -835,12 +835,14 @@ describe("useChat setModel", () => {
         "agent-1",
         "tab-1",
         "thinking",
+        "openai-codex/gpt-5.5",
       );
       result.current.appendOrAmendAgentText(
         "\nDone",
         "agent-1",
         "tab-1",
         "text",
+        "openai-codex/gpt-5.5",
       );
     });
 
@@ -848,6 +850,7 @@ describe("useChat setModel", () => {
       id: "agent-1",
       role: "agent",
       createdAt: expect.any(Number),
+      model: "openai-codex/gpt-5.5",
       thinking: "Inspecting",
       text: "\nDone",
     });
@@ -856,6 +859,7 @@ describe("useChat setModel", () => {
         id: "agent-1",
         role: "agent",
         createdAt: expect.any(Number),
+        model: "openai-codex/gpt-5.5",
         thinking: "Inspecting",
         text: "\nDone",
       }),

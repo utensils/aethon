@@ -19,6 +19,7 @@ export interface CanvasFooterContext {
   showTyping: boolean;
   state: Record<string, unknown>;
   tabId?: string;
+  rowClassName?: string;
 }
 
 // Footer riding below the last message inside Virtuoso's scroller, so the live
@@ -26,7 +27,13 @@ export interface CanvasFooterContext {
 // dynamic data via Virtuoso's `context` so its component identity stays stable.
 export function CanvasFooter({ context }: { context?: CanvasFooterContext }) {
   if (!context) return null;
-  const { liveSubtree, showTyping, state, tabId } = context;
+  const {
+    liveSubtree,
+    showTyping,
+    state,
+    tabId,
+    rowClassName = "a2ui-chat-message",
+  } = context;
   if (!liveSubtree && !showTyping) return null;
   return (
     <>
@@ -35,7 +42,15 @@ export function CanvasFooter({ context }: { context?: CanvasFooterContext }) {
           <A2UIRenderer payload={liveSubtree} state={state} tabId={tabId} />
         </div>
       )}
-      {showTyping && <TypingIndicator />}
+      {showTyping && (
+        <div className="a2ui-msg-row a2ui-msg-row-footer">
+          <div className="ae-conversation-turn">
+            <div className={`${rowClassName} agent ae-typing-message`}>
+              <TypingIndicator />
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }
@@ -436,7 +451,7 @@ export function ConversationTurnRow({
     ? turn.agentMessages
     : turn.finalMessage
       ? [turn.finalMessage]
-      : [];
+      : turn.progressMessages;
   return (
     <div className="ae-conversation-turn">
       {turn.systemMessages.map((message) => (

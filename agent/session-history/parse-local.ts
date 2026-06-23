@@ -97,9 +97,14 @@ export function parseLocalChatLines(
       typeof record.id === "string" && record.id.length > 0
         ? record.id
         : `aethon-local-${messages.length}`;
+    const model =
+      typeof record.model === "string" && record.model.length > 0
+        ? record.model
+        : undefined;
     const message = {
       id,
       role: record.role,
+      ...(model ? { model } : {}),
       ...(text ? { text } : {}),
       ...(thinking ? { thinking } : {}),
       ...(attachments.length > 0 ? { attachments } : {}),

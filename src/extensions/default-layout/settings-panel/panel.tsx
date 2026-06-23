@@ -131,47 +131,43 @@ export function SettingsPanel({ state, onEvent }: BuiltinComponentProps) {
               <Field label="Thinking blocks (global default)">
                 <select
                   className="ae-settings-input"
-                  value={eff.ui.thinkingVisibility}
+                  value={
+                    eff.ui.thinkingVisibility === "show" ? "show" : "hide"
+                  }
                   onChange={(e) =>
                     update({
                       ui: {
                         ...eff.ui,
-                        thinkingVisibility: e.target.value as
-                          | "show"
-                          | "collapse"
-                          | "hide",
+                        thinkingVisibility: e.target.value as "show" | "hide",
                       },
                     })
                   }
                 >
-                  <option value="show">Show</option>
-                  <option value="collapse">Collapse to a label</option>
-                  <option value="hide">Hide</option>
+                  <option value="show">On</option>
+                  <option value="hide">Off</option>
                 </select>
               </Field>
               <Field label="Tool calls (global default)">
                 <select
                   className="ae-settings-input"
-                  value={eff.ui.toolCallsVisibility}
+                  value={
+                    eff.ui.toolCallsVisibility === "show"
+                      ? "show"
+                      : "group-block"
+                  }
                   onChange={(e) =>
                     update({
                       ui: {
                         ...eff.ui,
                         toolCallsVisibility: e.target.value as
                           | "show"
-                          | "group-turn"
-                          | "group-run"
-                          | "group-block"
-                          | "hide",
+                          | "group-block",
                       },
                     })
                   }
                 >
-                  <option value="show">Show</option>
-                  <option value="group-turn">Group by turn</option>
-                  <option value="group-run">Group by run</option>
-                  <option value="group-block">Group whole turn</option>
-                  <option value="hide">Hide</option>
+                  <option value="show">Shown</option>
+                  <option value="group-block">Collapsed</option>
                 </select>
               </Field>
             </Section>

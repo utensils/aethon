@@ -64,9 +64,43 @@ export function TypingIndicator() {
   );
 }
 
-function roleBadge(role: string): string {
+function sidebarModelLabel(
+  state: Record<string, unknown>,
+  model: string | undefined,
+): string | undefined {
+  if (!model) return undefined;
+  const sidebar = state.sidebar;
+  if (!sidebar || typeof sidebar !== "object") return undefined;
+  const models = (sidebar as { models?: unknown }).models;
+  if (!Array.isArray(models)) return undefined;
+  const match = models.find((item) => {
+    if (!item || typeof item !== "object") return false;
+    return (item as { id?: unknown }).id === model;
+  });
+  if (!match || typeof match !== "object") return undefined;
+  const label = (match as { label?: unknown }).label;
+  return typeof label === "string" && label.trim().length > 0
+    ? label.trim()
+    : undefined;
+}
+
+function compactModelLabel(model: string): string {
+  const tail = model.split("/").filter(Boolean).at(-1) ?? model;
+  return tail || model;
+}
+
+function roleBadge(
+  role: string,
+  message: ChatMessage,
+  state: Record<string, unknown>,
+): string {
   if (role === "user") return "YOU";
-  if (role === "agent") return "AI";
+  if (role === "agent") {
+    return (
+      sidebarModelLabel(state, message.model) ??
+      (message.model ? compactModelLabel(message.model) : "AI")
+    );
+  }
   return "SYS";
 }
 
@@ -86,25 +120,18 @@ function deliveryLabel(delivery: ChatMessage["delivery"]): string | null {
 function ThinkingBlock({
   children,
   complete = true,
-  collapsed = false,
 }: {
   children: string;
   complete?: boolean;
-  /** When true (visibility = "collapse") the block never auto-expands, even
-   *  while streaming — it stays a quiet "Thinking" label the user can open. */
-  collapsed?: boolean;
 }) {
   const label = complete ? "Thinking" : "Thinking...";
   return (
-    <details
-      className="a2ui-thinking-block"
-      open={collapsed ? undefined : !complete}
-    >
-      <summary>{label}</summary>
+    <div className="a2ui-thinking-block">
+      <div className="a2ui-thinking-label">{label}</div>
       <div className="a2ui-thinking-content a2ui-markdown">
         <ReactMarkdown {...CHAT_MARKDOWN_PROPS}>{children}</ReactMarkdown>
       </div>
-    </details>
+    </div>
   );
 }
 
@@ -129,13 +156,9 @@ function MarkdownWithThinking({
       {splitThinkingBlocks(text).map((segment, index) => {
         if (!segment.content) return null;
         if (segment.type === "thinking") {
-          if (thinkingVisibility === "hide") return null;
+          if (thinkingVisibility !== "show") return null;
           return (
-            <ThinkingBlock
-              key={index}
-              complete={segment.closed !== false}
-              collapsed={thinkingVisibility === "collapse"}
-            >
+            <ThinkingBlock key={index} complete={segment.closed !== false}>
               {segment.content}
             </ThinkingBlock>
           );
@@ -232,7 +255,9 @@ export const ChatMessageRow = memo(
         {message.role !== "system" && (showRole || delivery) && (
           <span className="a2ui-chat-meta">
             {showRole && (
-              <span className={roleClass}>{roleBadge(message.role)}</span>
+              <span className={roleClass}>
+                {roleBadge(message.role, message, state)}
+              </span>
             )}
             {delivery && (
               <span
@@ -257,11 +282,8 @@ export const ChatMessageRow = memo(
             )}
           </span>
         )}
-        {displayMessage.thinking && thinkingVisibility !== "hide" && (
-          <ThinkingBlock
-            complete={Boolean(displayMessage.text)}
-            collapsed={thinkingVisibility === "collapse"}
-          >
+        {displayMessage.thinking && thinkingVisibility === "show" && (
+          <ThinkingBlock complete={Boolean(displayMessage.text)}>
             {displayMessage.thinking}
           </ThinkingBlock>
         )}

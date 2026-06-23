@@ -772,6 +772,7 @@ describe("handleSessionEvent", () => {
       content: "hello",
       messageId: expect.stringMatching(/^text-\d+-1$/),
       channel: "text",
+      model: "anthropic/claude-x",
     });
   });
 
@@ -789,6 +790,7 @@ describe("handleSessionEvent", () => {
       content: "plan",
       messageId: expect.stringMatching(/^text-\d+-1$/),
       channel: "thinking",
+      model: "anthropic/claude-x",
     });
   });
 

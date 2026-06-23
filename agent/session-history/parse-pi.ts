@@ -120,6 +120,8 @@ export function parseSessionHistoryLines(
   const messages: RestoredChatMessage[] = [];
   const seen = new Set<string>();
   const toolCalls = new Map<string, RestoredToolCall>();
+  const modelByAssistantId = new Map<string, string>();
+  let currentModel: string | undefined;
 
   for (const line of lines) {
     const trimmed = line.trim();
@@ -138,6 +140,37 @@ export function parseSessionHistoryLines(
       if (message && !seen.has(message.id)) {
         seen.add(message.id);
         messages.push(message);
+      }
+      continue;
+    }
+    if (record.type === "model_change") {
+      const provider =
+        typeof record.provider === "string" && record.provider.length > 0
+          ? record.provider
+          : undefined;
+      const modelId =
+        typeof record.modelId === "string" && record.modelId.length > 0
+          ? record.modelId
+          : undefined;
+      const model =
+        provider && modelId
+          ? `${provider}/${modelId}`
+          : typeof record.model === "string" && record.model.length > 0
+            ? record.model
+            : undefined;
+      if (model) {
+        currentModel = model;
+        if (
+          typeof record.parentId === "string" &&
+          record.parentId.length > 0
+        ) {
+          modelByAssistantId.set(record.parentId, model);
+          const existing = messages.find(
+            (message) =>
+              message.id === record.parentId && message.role === "agent",
+          );
+          if (existing) existing.model = model;
+        }
       }
       continue;
     }
@@ -211,6 +244,10 @@ export function parseSessionHistoryLines(
     const id = hasRealId
       ? (record.id as string)
       : `restored-${messages.length}`;
+    const model =
+      role === "agent"
+        ? modelByAssistantId.get(id) ?? currentModel
+        : undefined;
     if ((text || thinking) && !seen.has(id)) {
       seen.add(id);
       const createdAt = parseMessageTime(record, msg);
@@ -220,6 +257,7 @@ export function parseSessionHistoryLines(
         // a real session id (not the positional `restored-N` fallback).
         ...(hasRealId ? { entryId: id } : {}),
         role,
+        ...(model ? { model } : {}),
         ...(text ? { text: trimText(text) } : {}),
         ...(thinking ? { thinking: trimText(thinking) } : {}),
         ...(createdAt !== undefined ? { createdAt } : {}),

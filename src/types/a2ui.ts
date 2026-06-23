@@ -314,6 +314,9 @@ export interface ChatMessage {
    *  tool-card / system rows. */
   entryId?: string;
   role: "user" | "agent" | "system";
+  /** Provider-qualified model id that produced this row, when known. Used for
+   *  historical mixed-model sessions instead of a generic assistant label. */
+  model?: string;
   text?: string;
   attachments?: ChatAttachment[];
   thinking?: string;

@@ -87,6 +87,50 @@ describe("parseSessionHistoryLines", () => {
     ]);
   });
 
+  it("attaches model_change records to the restored assistant message", () => {
+    const lines = [
+      JSON.stringify({
+        type: "message",
+        id: "a1",
+        message: {
+          role: "assistant",
+          content: [{ type: "text", text: "Done." }],
+        },
+      }),
+      JSON.stringify({
+        type: "model_change",
+        parentId: "a1",
+        provider: "openai-codex",
+        modelId: "gpt-5.5",
+      }),
+      JSON.stringify({
+        type: "message",
+        id: "a2",
+        message: {
+          role: "assistant",
+          content: [{ type: "text", text: "Next." }],
+        },
+      }),
+    ];
+
+    expect(parseSessionHistoryLines(lines)).toEqual([
+      {
+        id: "a1",
+        entryId: "a1",
+        role: "agent",
+        text: "Done.",
+        model: "openai-codex/gpt-5.5",
+      },
+      {
+        id: "a2",
+        entryId: "a2",
+        role: "agent",
+        text: "Next.",
+        model: "openai-codex/gpt-5.5",
+      },
+    ]);
+  });
+
   it("restores completed tool calls as stable tool-card messages", () => {
     const lines = [
       JSON.stringify({
@@ -540,6 +584,27 @@ describe("readSessionTranscript", () => {
         role: "agent",
         text: "done",
         createdAt: 3_000,
+      },
+    ]);
+  });
+
+  it("preserves Aethon-local assistant model labels", async () => {
+    const dir = await tempRoot();
+    await appendLocalChatMessage(dir, {
+      id: "agent-1",
+      role: "agent",
+      text: "streamed answer",
+      model: "openai-codex/gpt-5.5",
+      createdAt: 1,
+    });
+
+    await expect(readSessionTranscript(dir)).resolves.toEqual([
+      {
+        id: "agent-1",
+        role: "agent",
+        text: "streamed answer",
+        model: "openai-codex/gpt-5.5",
+        createdAt: 1,
       },
     ]);
   });

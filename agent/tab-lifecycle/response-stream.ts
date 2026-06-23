@@ -8,6 +8,7 @@ import {
   textFromContent,
   thinkingFromContent,
 } from "../session-history/shared";
+import { modelKey } from "./utils";
 import type { TabLifecycleDeps } from "./utils";
 
 function assistantEventMessageId(ame: {
@@ -90,6 +91,7 @@ function emitResponseSessionEvent(
   const message = {
     id: messageId,
     role: "agent" as const,
+    ...(rec.session.model ? { model: modelKey(rec.session.model) } : {}),
     content: rec.activeResponseText ?? "",
     ...(rec.activeResponseText ? { text: rec.activeResponseText } : {}),
     ...(rec.activeResponseThinking
@@ -160,6 +162,7 @@ export function handleResponseMessageUpdate(
         messageId,
         content: delta,
         channel,
+        ...(rec.session.model ? { model: modelKey(rec.session.model) } : {}),
       });
       rememberResponseDelta(rec, channel, delta);
       emitResponseSessionEvent(
@@ -207,6 +210,7 @@ export function emitFinalAssistantContent(
       messageId,
       content: thinkingDelta,
       channel: "thinking",
+      ...(rec.session.model ? { model: modelKey(rec.session.model) } : {}),
     });
     rememberResponseDelta(rec, "thinking", thinkingDelta);
     emitResponseSessionEvent(state, rec, tabId, messageId, previousMessageId);
@@ -219,6 +223,7 @@ export function emitFinalAssistantContent(
       messageId,
       content: textDelta,
       channel: "text",
+      ...(rec.session.model ? { model: modelKey(rec.session.model) } : {}),
     });
     const beforeTextMessageId = thinkingDelta ? messageId : previousMessageId;
     rememberResponseDelta(rec, "text", textDelta);
