@@ -81,12 +81,12 @@ export function activateWorkspace(
   workspaceId: string | null,
 ): void {
   const current = deps.projectsRef.current;
-  if (current.activeWorkspaceId === workspaceId) return;
   const fromKey = projectScopeBucketKey(
     current.activeId,
     current.activeWorkspaceId,
   );
   let activeProjectId = current.activeId;
+  let nextWorkspaceId = workspaceId;
   let nextCwd: string | null;
   let nextProjectPath: string | null;
   if (workspaceId) {
@@ -95,10 +95,19 @@ export function activateWorkspace(
     activeProjectId = hit.project.id;
     nextCwd = hit.workspace.path;
     nextProjectPath = hit.project.path;
+    if (hit.workspace.isMain) {
+      nextWorkspaceId = null;
+    }
   } else {
     const project = activeProject(current);
     nextCwd = project?.path ?? null;
     nextProjectPath = project?.path ?? null;
+  }
+  if (
+    current.activeId === activeProjectId &&
+    current.activeWorkspaceId === nextWorkspaceId
+  ) {
+    return;
   }
   const previousActive = activeProject(current);
   const crossingProjects =
@@ -108,11 +117,11 @@ export function activateWorkspace(
     previousActive.path !== nextProjectPath;
   deps.projectsRef.current = setActiveWorkspaceState(
     { ...current, activeId: activeProjectId },
-    workspaceId,
+    nextWorkspaceId,
   );
   const nextTabId = deps.switchProjectBucket(
     fromKey,
-    projectScopeBucketKey(activeProjectId, workspaceId),
+    projectScopeBucketKey(activeProjectId, nextWorkspaceId),
     { mirrorProjects: true },
   );
   deps.scheduleProjectsSave();

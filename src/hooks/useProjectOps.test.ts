@@ -360,6 +360,72 @@ describe("useProjectOps session scoping", () => {
     expect(stateRef.current.activeTabId).toBe("root-tab");
   });
 
+  it("treats the expanded main workspace row as the project root bucket", () => {
+    const rootTab = nonEmptyAgentTab(
+      "root-tab",
+      "Root chat",
+      "project-1",
+      "/projects/aethon",
+    );
+    const workspaceTab = nonEmptyAgentTab(
+      "workspace-tab",
+      "Workspace chat",
+      "project-1",
+      "/projects/aethon-fix-issue",
+    );
+    const { result, stateRef, projectsRef } = renderProjectOps(
+      makeProjectsState({
+        activeId: "project-1",
+        activeWorkspaceId: "wt-issue",
+        workspacesByProject: {
+          "project-1": [
+            {
+              id: "wt-main",
+              projectId: "project-1",
+              path: "/projects/aethon",
+              branch: "main",
+              isMain: true,
+            },
+            {
+              id: "wt-issue",
+              projectId: "project-1",
+              path: "/projects/aethon-fix-issue",
+              branch: "fix/issue",
+              isMain: false,
+            },
+          ],
+        },
+      }),
+    );
+    result.current.tabBucketsRef.current.set(
+      projectScopeBucketKey("project-1", null),
+      {
+        tabs: [rootTab],
+        activeTabId: "root-tab",
+      },
+    );
+    stateRef.current = {
+      ...stateRef.current,
+      tabs: [workspaceTab],
+      activeTabId: "workspace-tab",
+    };
+
+    act(() => {
+      result.current.activateWorkspace("wt-main");
+    });
+
+    expect(projectsRef.current.activeWorkspaceId).toBeNull();
+    expect((stateRef.current.tabs as Tab[]).map((t) => t.id)).toEqual([
+      "root-tab",
+    ]);
+    expect(stateRef.current.activeTabId).toBe("root-tab");
+    expect(
+      result.current.tabBucketsRef.current.has(
+        projectScopeBucketKey("project-1", "wt-main"),
+      ),
+    ).toBe(false);
+  });
+
   it("clears stale landing when activateWorkspace restores a saved tab", () => {
     const workspaceTab = {
       ...nonEmptyAgentTab("workspace-tab", "Workspace chat", "project-1"),

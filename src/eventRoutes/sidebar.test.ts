@@ -312,6 +312,13 @@ describe("handleSidebarSwitchWorkspace", () => {
           iconUrl: "asset://localhost/project-icons/aethon.png",
           workspaces: [
             {
+              id: "wt-main",
+              label: "main",
+              branch: "main",
+              path: "/repo/aethon",
+              isMain: true,
+            },
+            {
               id: "wt-1",
               label: "fix/issue",
               branch: "fix/issue",
@@ -344,6 +351,36 @@ describe("handleSidebarSwitchWorkspace", () => {
       iconUrl: "asset://localhost/project-icons/aethon.png",
       workspaceId: "wt-1",
       path: "/repo/aethon-fix-issue",
+    });
+  });
+
+  it("routes the expanded main workspace row through the project root scope", async () => {
+    const { ctx, mocks, applySetState } = buildRouteFixture({
+      state: {
+        ...sidebarState,
+        activeProjectId: "proj-2",
+        activeWorkspaceId: "wt-other",
+      },
+    });
+
+    const handled = await handleSidebarSwitchWorkspace(
+      {
+        component: { id: "sidebar" },
+        eventType: "switch-workspace",
+        data: { workspaceId: "wt-main" },
+      },
+      ctx,
+    );
+
+    expect(handled).toBe(true);
+    expect(mocks.setActiveProjectById).toHaveBeenCalledWith("proj-1");
+    expect(mocks.activateWorkspace).toHaveBeenCalledWith(null);
+    expect(applySetState().landing).toMatchObject({
+      kind: "workspace",
+      projectId: "proj-1",
+      workspaceId: "wt-main",
+      isMain: true,
+      path: "/repo/aethon",
     });
   });
 
