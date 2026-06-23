@@ -69,6 +69,55 @@ export function hasA2ui(value: unknown): value is { components: unknown[] } {
   );
 }
 
+export interface ToolCardRecord {
+  identity: string;
+  startedAt?: number;
+  status?: unknown;
+  toolName?: unknown;
+}
+
+export function normalizeToolCallId(value: string): string {
+  return value.replace(/[^A-Za-z0-9_-]+/g, "-").slice(0, 96);
+}
+
+export function toolCardIdentityFromId(id: string): string | undefined {
+  if (id.startsWith("restored-tool-")) {
+    return id.slice("restored-tool-".length);
+  }
+  const liveMatch = /^tool-\d+-(.+)$/.exec(id);
+  if (liveMatch) return normalizeToolCallId(liveMatch[1]);
+  return undefined;
+}
+
+export function toolCardRecordsFromA2ui(
+  a2ui: { components: unknown[] } | undefined,
+): ToolCardRecord[] {
+  const records: ToolCardRecord[] = [];
+  for (const component of a2ui?.components ?? []) {
+    if (!component || typeof component !== "object") continue;
+    const record = component as Record<string, unknown>;
+    if (record.type !== "tool-card" || typeof record.id !== "string") {
+      continue;
+    }
+    const identity = toolCardIdentityFromId(record.id);
+    if (!identity) continue;
+    const props =
+      record.props && typeof record.props === "object"
+        ? (record.props as Record<string, unknown>)
+        : undefined;
+    records.push({
+      identity,
+      ...(typeof props?.startedAt === "number" &&
+      Number.isFinite(props.startedAt)
+        ? { startedAt: props.startedAt }
+        : {}),
+      ...(props && "status" in props ? { status: props.status } : {}),
+      ...(props && "toolName" in props ? { toolName: props.toolName } : {}),
+    });
+  }
+  return records;
+}
+
 export function parseChatAttachments(value: unknown): RestoredChatAttachment[] {
   if (!Array.isArray(value)) return [];
   return value.flatMap((item) => {

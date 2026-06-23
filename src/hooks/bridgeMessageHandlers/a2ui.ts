@@ -6,7 +6,7 @@ import type { BridgeMessageHandler } from "./types";
 import { clearHangWarn } from "./hangWarn";
 import { flushResponseDeltas } from "./responseDelta";
 
-function completedToolCard(payload: A2UIPayload): A2UIComponent | undefined {
+function upsertableToolCard(payload: A2UIPayload): A2UIComponent | undefined {
   const toolCards = (payload.components ?? []).filter(
     (component) =>
       component?.type === "tool-card" && typeof component.id === "string",
@@ -14,7 +14,6 @@ function completedToolCard(payload: A2UIPayload): A2UIComponent | undefined {
   if (toolCards.length !== 1) return undefined;
   const component = toolCards[0];
   if (component.props?.startedAt === undefined) return undefined;
-  if (component.props.endedAt === undefined) return undefined;
   return component;
 }
 
@@ -67,36 +66,39 @@ function componentMatchesIncomingToolId(
 function componentMatchesToolIdentity(
   component: A2UIComponent | undefined,
   identity: string,
+  incomingStartedAt: number | undefined,
 ): boolean {
   if (component?.type !== "tool-card") return false;
-  if (component.props?.startedAt === undefined) return false;
+  const currentStartedAt = numericProp(component, "startedAt");
+  if (currentStartedAt === undefined) return false;
+  if (
+    incomingStartedAt !== undefined &&
+    currentStartedAt !== incomingStartedAt
+  ) {
+    return false;
+  }
   return (
     typeof component.id === "string" &&
     toolCardIdentityFromId(component.id) === identity
   );
 }
 
-function findCurrentToolCardMatch(
+function findCurrentToolCardMatches(
   messages: ChatMessage[],
   incomingId: string | undefined,
   identity: string | undefined,
-): { index: number; component: A2UIComponent } | undefined {
-  if (incomingId) {
-    for (let index = 0; index < messages.length; index += 1) {
-      const component = (messages[index].a2ui?.components ?? []).find((item) =>
-        componentMatchesIncomingToolId(item, incomingId),
-      );
-      if (component) return { index, component };
-    }
-  }
-  if (!identity) return undefined;
+  incomingStartedAt: number | undefined,
+): Array<{ index: number; component: A2UIComponent }> {
+  const matches: Array<{ index: number; component: A2UIComponent }> = [];
   for (let index = 0; index < messages.length; index += 1) {
-    const component = (messages[index].a2ui?.components ?? []).find((item) =>
-      componentMatchesToolIdentity(item, identity),
-    );
-    if (component) return { index, component };
+    const component = (messages[index].a2ui?.components ?? []).find((item) => {
+      if (componentMatchesIncomingToolId(item, incomingId ?? "")) return true;
+      if (!identity) return false;
+      return componentMatchesToolIdentity(item, identity, incomingStartedAt);
+    });
+    if (component) matches.push({ index, component });
   }
-  return undefined;
+  return matches;
 }
 
 function insertChronologically(
@@ -107,8 +109,7 @@ function insertChronologically(
   if (typeof createdAt !== "number") return [...messages, message];
   const insertAt = messages.findIndex(
     (current) =>
-      typeof current.createdAt === "number" &&
-      current.createdAt > createdAt,
+      typeof current.createdAt === "number" && current.createdAt > createdAt,
   );
   if (insertAt < 0) return [...messages, message];
   const next = [...messages];
@@ -128,15 +129,20 @@ function cancellationHistoryNotice(componentId: string): A2UIComponent {
   };
 }
 
-function preserveCancelledToolState(payload: A2UIPayload): A2UIPayload {
+function preserveCancelledToolState(
+  payload: A2UIPayload,
+  fallbackEndedAt?: number,
+): A2UIPayload {
   return {
     ...payload,
     components: (payload.components ?? []).map((component) => {
       if (component?.type !== "tool-card") return component;
+      const endedAt = numericProp(component, "endedAt") ?? fallbackEndedAt;
       return {
         ...component,
         props: {
           ...(component.props ?? {}),
+          ...(endedAt !== undefined ? { endedAt } : {}),
           status: "cancelled",
         },
         children: [
@@ -148,29 +154,48 @@ function preserveCancelledToolState(payload: A2UIPayload): A2UIPayload {
   };
 }
 
-function upsertCompletedToolCardMessage(
+function upsertToolCardMessage(
   current: Tab,
   message: ChatMessage,
   payload: A2UIPayload,
-  completedCard: A2UIComponent,
+  toolCard: A2UIComponent,
   identity: string | undefined,
 ): { tab: Tab; message: ChatMessage } {
-  const incomingId = completedCard.id;
-  const matched = findCurrentToolCardMatch(
+  const incomingId = toolCard.id;
+  const incomingStartedAt = numericProp(toolCard, "startedAt");
+  const matches = findCurrentToolCardMatches(
     current.messages,
     incomingId,
     identity,
+    incomingStartedAt,
   );
-  if (matched) {
+  if (matches.length > 0) {
+    const targetIndex = matches[0].index;
+    const duplicateIndexes = new Set(
+      matches.slice(1).map((match) => match.index),
+    );
+    const matchedCancelled = matches.some((match) =>
+      isCancelledToolCard(match.component),
+    );
+    const matchedCancelledEndedAt = matches
+      .map((match) => numericProp(match.component, "endedAt"))
+      .find((value) => value !== undefined);
+    const incomingCancelled =
+      payload.components?.some(isCancelledToolCard) === true;
     const finalPayload =
-      isCancelledToolCard(matched.component) &&
-      payload.components?.some(isCancelledToolCard) !== true
-        ? preserveCancelledToolState(payload)
+      matchedCancelled && !incomingCancelled
+        ? preserveCancelledToolState(payload, matchedCancelledEndedAt)
         : payload;
-    const nextMessages = [...current.messages];
     const finalMessage = { ...message, a2ui: finalPayload };
-    nextMessages[matched.index] = finalMessage;
-    return { tab: { ...current, messages: nextMessages }, message: finalMessage };
+    const nextMessages = current.messages.flatMap((currentMessage, index) => {
+      if (index === targetIndex) return [finalMessage];
+      if (duplicateIndexes.has(index)) return [];
+      return [currentMessage];
+    });
+    return {
+      tab: { ...current, messages: nextMessages },
+      message: finalMessage,
+    };
   }
 
   const sameMessageIndex = current.messages.findIndex(
@@ -203,24 +228,22 @@ export const handleA2ui: BridgeMessageHandler = (data, ctx) => {
   flushResponseDeltas(tabId);
   if (payload) {
     const createdAt = createdAtFromPayload(payload);
-    const completedCard = completedToolCard(payload);
-    const identity = completedCard
-      ? toolCardIdentityFromId(completedCard.id)
-      : undefined;
+    const toolCard = upsertableToolCard(payload);
+    const identity = toolCard ? toolCardIdentityFromId(toolCard.id) : undefined;
     const message: ChatMessage = {
       id,
       role: "agent",
       a2ui: payload,
       ...(createdAt !== undefined ? { createdAt } : {}),
     };
-    if (completedCard) {
+    if (toolCard) {
       let durableMessage = message;
       ctx.updateTab(tabId, (current) => {
-        const result = upsertCompletedToolCardMessage(
+        const result = upsertToolCardMessage(
           current,
           message,
           payload,
-          completedCard,
+          toolCard,
           identity,
         );
         durableMessage = result.message;

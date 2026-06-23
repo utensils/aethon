@@ -1269,6 +1269,63 @@ describe("readSessionTranscript", () => {
     ]);
   });
 
+  it("keeps the latest local tool-card snapshot by logical identity", async () => {
+    const dir = await tempRoot();
+    await appendLocalChatMessage(dir, {
+      id: "tool-1-call_batch_3-fc_ghi",
+      role: "agent",
+      a2ui: {
+        components: [
+          {
+            id: "tool-1-call_batch_3-fc_ghi",
+            type: "tool-card",
+            props: {
+              toolName: "task_batch",
+              startedAt: 1_000,
+            },
+            children: [],
+          },
+        ],
+      },
+      createdAt: 1_000,
+    });
+    await appendLocalChatMessage(dir, {
+      id: "tool-2-call_batch_3-fc_ghi",
+      role: "agent",
+      a2ui: {
+        components: [
+          {
+            id: "tool-2-call_batch_3-fc_ghi",
+            type: "tool-card",
+            props: {
+              toolName: "task_batch",
+              startedAt: 1_000,
+            },
+            children: [
+              {
+                id: "tool-2-call_batch_3-fc_ghi-result",
+                type: "subagent-result",
+                props: { content: "partial body" },
+              },
+            ],
+          },
+        ],
+      },
+      createdAt: 1_100,
+    });
+
+    const restored = await readSessionTranscript(dir);
+    expect(restored.map((message) => message.id)).toEqual([
+      "tool-2-call_batch_3-fc_ghi",
+    ]);
+    expect(restored[0].a2ui?.components[0].children).toEqual([
+      expect.objectContaining({
+        type: "subagent-result",
+        props: { content: "partial body" },
+      }),
+    ]);
+  });
+
   it("bounds the Aethon-local slash command overlay on append", async () => {
     const dir = await tempRoot();
     await writeFile(
