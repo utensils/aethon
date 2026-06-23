@@ -94,6 +94,8 @@ const fakeExtensionApi = {} as Parameters<typeof dispatchInboundMessage>[3];
 describe("dispatchInboundMessage", () => {
   it("refreshes persisted session discovery before report ready payloads", async () => {
     const root = mkdtempSync(join(tmpdir(), "aethon-report-"));
+    const previousWorkerTabId = process.env.AETHON_WORKER_TAB_ID;
+    delete process.env.AETHON_WORKER_TAB_ID;
     try {
       const sessionsDir = join(root, "sessions");
       const tabDir = join(sessionsDir, "tab-new");
@@ -135,6 +137,11 @@ describe("dispatchInboundMessage", () => {
         ],
       });
     } finally {
+      if (previousWorkerTabId === undefined) {
+        delete process.env.AETHON_WORKER_TAB_ID;
+      } else {
+        process.env.AETHON_WORKER_TAB_ID = previousWorkerTabId;
+      }
       rmSync(root, { recursive: true, force: true });
     }
   });
