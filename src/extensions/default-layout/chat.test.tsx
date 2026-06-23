@@ -1943,6 +1943,7 @@ describe("ChatHistory turn activity feed (mocked Virtuoso renders rows)", () => 
 
   it("labels assistant turns with the message model when available", () => {
     renderGroupedHistory({
+      model: "openai-codex/gpt-5.5",
       sidebar: {
         models: [{ id: "openai-codex/gpt-5.5", label: "GPT-5.5" }],
       },
@@ -1967,6 +1968,23 @@ describe("ChatHistory turn activity feed (mocked Virtuoso renders rows)", () => 
 
     expect(screen.getByText("GPT-5.5")).toBeTruthy();
     expect(screen.getByText("qwen3.6-128k:latest")).toBeTruthy();
+    expect(screen.queryByText("AI")).toBeNull();
+  });
+
+  it("labels unlabeled assistant turns with the current session model", () => {
+    renderGroupedHistory({
+      model: "openai-codex/gpt-5.5",
+      sidebar: {
+        models: [{ id: "openai-codex/gpt-5.5", label: "GPT-5.5" }],
+      },
+      messages: [
+        { id: "u1", role: "user", text: "hi" },
+        { id: "a1", role: "agent", text: "restored answer" },
+      ],
+      transcriptVisibility: { toolCalls: "group-block" },
+    });
+
+    expect(screen.getByText("GPT-5.5")).toBeTruthy();
     expect(screen.queryByText("AI")).toBeNull();
   });
 
@@ -2285,6 +2303,48 @@ describe("ChatHistory turn activity feed (mocked Virtuoso renders rows)", () => 
         .getByRole("button", { name: /1 tool call/ })
         .getAttribute("aria-expanded"),
     ).toBe("true");
+  });
+
+  it("keeps prior assistant prose visible when the latest agent row is hidden thinking", () => {
+    renderGroupedHistory({
+      messages: [
+        { id: "u1", role: "user", text: "Review this implementation" },
+        {
+          id: "a1",
+          role: "agent",
+          text: "I’ll inspect the branch diff and relevant files.",
+          model: "openai-codex/gpt-5.5",
+        },
+        {
+          id: "t1",
+          role: "agent",
+          a2ui: {
+            components: [
+              {
+                id: "c1",
+                type: "tool-card",
+                props: { title: "bash", startedAt: 1, endedAt: 2 },
+              },
+            ],
+          },
+        },
+        {
+          id: "thinking-tail",
+          role: "agent",
+          thinking: "I am about to summarize, but the user stopped me.",
+        },
+      ],
+      waiting: false,
+      transcriptVisibility: { thinking: "hide", toolCalls: "group-block" },
+    });
+
+    expect(
+      screen.getByText("I’ll inspect the branch diff and relevant files."),
+    ).toBeTruthy();
+    expect(
+      screen.queryByText("I am about to summarize, but the user stopped me."),
+    ).toBeNull();
+    expect(screen.getByText(/1 tool call/)).toBeTruthy();
   });
 
   it("keeps the latest stopped status turn expanded when no stop notice is in the transcript", () => {

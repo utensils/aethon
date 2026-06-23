@@ -379,6 +379,7 @@ function TurnActivity({
   onToggle,
   live,
   forceOpen,
+  visibleAgentMessageIds,
 }: {
   turn: ConversationTurn;
   state: Record<string, unknown>;
@@ -391,10 +392,16 @@ function TurnActivity({
   onToggle: () => void;
   live: boolean;
   forceOpen: boolean;
+  visibleAgentMessageIds?: ReadonlySet<string>;
 }) {
   const [closingBodyRetained, setClosingBodyRetained] = useState(false);
   const closingTimerRef = useRef<number | null>(null);
-  const progressMessages = live || forceOpen ? [] : turn.progressMessages;
+  const progressMessages =
+    live || forceOpen
+      ? []
+      : turn.progressMessages.filter(
+          (message) => !visibleAgentMessageIds?.has(message.id),
+        );
   const toolMessages = toolCallsVisibility === "hide" ? [] : turn.toolMessages;
   const summary = summarizeToolMessages(toolMessages);
   const runningTools = toolMessages.filter(isRunningToolCard);
@@ -524,6 +531,21 @@ function TurnActivity({
   );
 }
 
+function hasDisplayableAgentContent(
+  message: ChatMessage,
+  thinkingVisibility: VisibilityMode,
+): boolean {
+  if (typeof message.text === "string" && message.text.trim().length > 0) {
+    return true;
+  }
+  if (message.a2ui) return true;
+  return (
+    thinkingVisibility === "show" &&
+    typeof message.thinking === "string" &&
+    message.thinking.trim().length > 0
+  );
+}
+
 export function ConversationTurnRow({
   turn,
   state,
@@ -557,13 +579,23 @@ export function ConversationTurnRow({
   );
   const stopped =
     hasStopNotice || (isLatest && !live && state.status === "stopped");
+  const displayableAgentMessages = turn.agentMessages.filter((message) =>
+    hasDisplayableAgentContent(message, thinkingVisibility),
+  );
+  const visibleFinalMessage = displayableAgentMessages.at(-1);
   const visibleAgentMessages = live
-    ? turn.agentMessages
+    ? displayableAgentMessages
     : stopped
-      ? turn.agentMessages
-      : turn.finalMessage
-        ? [turn.finalMessage]
-        : turn.progressMessages;
+      ? displayableAgentMessages
+      : visibleFinalMessage
+        ? [visibleFinalMessage]
+        : turn.progressMessages.filter((message) =>
+            hasDisplayableAgentContent(message, thinkingVisibility),
+          );
+  const visibleAgentMessageIds =
+    visibleAgentMessages.length > 0
+      ? new Set(visibleAgentMessages.map((message) => message.id))
+      : undefined;
   return (
     <div className="ae-conversation-turn">
       {turn.systemMessages.map((message) => (
@@ -613,6 +645,7 @@ export function ConversationTurnRow({
         onToggle={onToggle}
         live={live}
         forceOpen={stopped}
+        visibleAgentMessageIds={visibleAgentMessageIds}
       />
     </div>
   );

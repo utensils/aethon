@@ -89,6 +89,12 @@ function compactModelLabel(model: string): string {
   return tail || model;
 }
 
+function sessionModelId(state: Record<string, unknown>): string | undefined {
+  return typeof state.model === "string" && state.model.trim().length > 0
+    ? state.model
+    : undefined;
+}
+
 function roleBadge(
   role: string,
   message: ChatMessage,
@@ -96,9 +102,10 @@ function roleBadge(
 ): string {
   if (role === "user") return "YOU";
   if (role === "agent") {
+    const model = message.model ?? sessionModelId(state);
     return (
-      sidebarModelLabel(state, message.model) ??
-      (message.model ? compactModelLabel(message.model) : "AI")
+      sidebarModelLabel(state, model) ??
+      (model ? compactModelLabel(model) : "AI")
     );
   }
   return "SYS";
