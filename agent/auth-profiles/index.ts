@@ -13,7 +13,11 @@ export {
   isSafeProfileId,
   sanitizeProfileId,
 } from "./store";
-export type { AuthProfileProvider, AuthProfilesSnapshot } from "./manager";
+export type {
+  AuthProfileProvider,
+  AuthProfileServices,
+  AuthProfilesSnapshot,
+} from "./manager";
 export {
   authProfileServicesForTab,
   authProfilesSnapshot,
