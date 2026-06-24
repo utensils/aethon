@@ -8,6 +8,7 @@ import type {
   PaletteMode,
 } from "../../extensions/default-layout/palette-items";
 import type { AethonConfig } from "../../config";
+import type { ConfigWritePatch } from "../../configWrites";
 import type { SlashCommand } from "../../slashCommands";
 import type { NotificationInput } from "../useNotifications";
 
@@ -61,18 +62,8 @@ export interface UseUiOverlaysActions {
   openSettings: (section?: string) => void;
   toggleSettings: () => void;
   closeSettings: () => void;
-  applySettingsPatch: (
-    patch: Partial<{
-      ui: unknown;
-      agent: unknown;
-      shell: unknown;
-      shortcuts: unknown;
-      voice: unknown;
-      updates: unknown;
-      devshell: unknown;
-    }>,
-  ) => void;
-  saveSettings: () => Promise<void>;
+  applySettingsPatch: (patch: ConfigWritePatch) => void;
+  saveSettings: (options?: { reopenOnFailure?: boolean }) => Promise<void>;
 
   // Session search.
   toggleSessionSearch: () => void;

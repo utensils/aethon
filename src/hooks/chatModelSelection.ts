@@ -3,7 +3,8 @@ import { invoke } from "@tauri-apps/api/core";
 
 import type { ChatMessage } from "../types/a2ui";
 import type { Tab } from "../types/tab";
-import { getConfig, clearConfigCache, type AethonConfig } from "../config";
+import { clearConfigCache } from "../config";
+import { writeConfigPatch } from "../configWrites";
 import {
   recomputeModelPicker,
   PI_DEFAULT_MODEL_SENTINEL,
@@ -85,28 +86,8 @@ export function useChatModelSelectionController(
     const patch = pendingAgentDefaultsRef.current;
     if (Object.keys(patch).length === 0) return;
     pendingAgentDefaultsRef.current = {};
-    let live: AethonConfig | null = null;
     try {
-      live = await getConfig();
-    } catch {
-      /* fall through with nulls — write_config seeds a fresh document */
-    }
-    // write_config is whole-config destructive: it removes keys it does
-    // not see and always re-emits [shell] default_share_mode. Merge the
-    // full live config before writing, mirroring the Settings save path
-    // (uiOverlays/settings.ts) so unrelated sections survive the round-trip.
-    const merged = {
-      ui: { ...(live?.ui ?? {}) },
-      agent: { ...(live?.agent ?? {}), ...patch },
-      shell: { ...(live?.shell ?? {}) },
-      shortcuts: { ...(live?.shortcuts ?? {}) },
-      voice: { ...(live?.voice ?? {}) },
-      updates: { ...(live?.updates ?? {}) },
-      devshell: { ...(live?.devshell ?? {}) },
-      guardrails: { ...(live?.guardrails ?? {}) },
-    };
-    try {
-      await invoke("write_config", { config: merged });
+      await writeConfigPatch({ agent: patch });
       // Drop the read-once cache so an open Settings panel + the next
       // getConfig() reflect the header-chosen defaults.
       clearConfigCache();
@@ -355,24 +336,8 @@ export function useChatModelSelectionController(
   async function setCodexFastMode(enabled: boolean) {
     const previousCodexFastMode = stateRef.current.codexFastMode === true;
     setState((prev) => ({ ...prev, codexFastMode: enabled }));
-    let live: AethonConfig | null = null;
     try {
-      try {
-        live = await getConfig();
-      } catch {
-        /* fall through with defaults */
-      }
-      const merged = {
-        ui: { ...(live?.ui ?? {}) },
-        agent: { ...(live?.agent ?? {}), codexFastMode: enabled },
-        shell: { ...(live?.shell ?? {}) },
-        shortcuts: { ...(live?.shortcuts ?? {}) },
-        voice: { ...(live?.voice ?? {}) },
-        updates: { ...(live?.updates ?? {}) },
-        devshell: { ...(live?.devshell ?? {}) },
-        guardrails: { ...(live?.guardrails ?? {}) },
-      };
-      await invoke("write_config", { config: merged });
+      await writeConfigPatch({ agent: { codexFastMode: enabled } });
       clearConfigCache();
       await invoke("agent_broadcast_command", {
         payload: JSON.stringify({

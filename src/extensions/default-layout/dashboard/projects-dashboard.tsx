@@ -24,6 +24,7 @@ import { AeMarkInline } from "../layout";
 import { RegistryComponent } from "../../../components/A2UIRenderer";
 import { DashboardSessionRow } from "./session-row";
 import { clearConfigCache } from "../../../config";
+import { writeConfigPatch } from "../../../configWrites";
 
 interface ProjectListItem {
   id: string;
@@ -181,19 +182,7 @@ export function ProjectsDashboard({
     setHostStartupSaving(true);
     setHostStartupError(null);
     try {
-      const config = await invoke<Record<string, unknown>>("read_config");
-      const currentStartup =
-        typeof config.startup === "object" && config.startup !== null
-          ? (config.startup as Record<string, unknown>)
-          : {};
-      const next = {
-        ...config,
-        startup: {
-          ...currentStartup,
-          autoApprove: enabled,
-        },
-      };
-      await invoke("write_config", { config: next });
+      await writeConfigPatch({ startup: { autoApprove: enabled } });
       clearConfigCache();
       setHostStartupAutoApprove(enabled);
     } catch (err) {
