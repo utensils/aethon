@@ -1,8 +1,5 @@
 import {
   createElement,
-  useCallback,
-  useEffect,
-  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -26,21 +23,11 @@ import { useExtensionRegistry } from "../ExtensionRegistry";
 import type { QueuedMessage } from "../../types/tab";
 import { SlashPicker } from "./slash-picker";
 import { AtPicker } from "./at-picker";
-import {
-  atMentionRoot,
-  formatAtMentionInsertion,
-  type AtMentionMatch,
-} from "./at-mention";
-import { useAtMention } from "./use-at-mention";
+import { atMentionRoot } from "./at-mention";
+import { useAtMentionTextarea } from "./use-at-mention-textarea";
 import { useComposerResize } from "./use-composer-resize";
 import { useDraftCommit } from "./use-draft-commit";
-import { useVoiceHotkey } from "../../hooks/useVoiceHotkey";
-import { useVoiceInput } from "../../hooks/useVoiceInput";
 import { useVoiceConversation } from "../../hooks/useVoiceConversation";
-import {
-  insertTranscriptAtSelection,
-  shouldOpenVoiceSettingsForError,
-} from "../../utils/voice";
 import { ConversationHud } from "./conversation-hud";
 import {
   VoiceConversationButton,
@@ -56,6 +43,7 @@ import {
 } from "./use-slash-matching";
 import { ImageAttachmentImage } from "./image-attachment-image";
 import { ImageLightbox } from "./image-lightbox";
+import { useTextareaVoiceInput } from "./use-textarea-voice-input";
 
 export function ChatInput({
   component,
@@ -123,69 +111,27 @@ export function ChatInput({
       commandsRaw: props.commands,
       state,
     });
-  // Caret offset in the draft, tracked so the @file picker knows which
-  // token the user is editing. Updated on change + select (clicks,
-  // arrow keys) and after programmatic insertions.
-  const [cursor, setCursor] = useState(0);
+  const inputContainerRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const { composerHeight, startComposerResize } = useComposerResize();
   const {
     atMatch,
-    highlightIdx: atHighlightIdx,
-    setHighlightIdx: setAtHighlightIdx,
-    dismissPicker: dismissAtPicker,
-  } = useAtMention({
+    atHighlightIdx,
+    setAtHighlightIdx,
+    setCursor,
+    insertAtMention,
+    handleAtMentionKeyDown,
+  } = useAtMentionTextarea({
     value,
-    cursor,
+    setValue,
+    onValueCommit: commitDraft,
+    textareaRef,
     root: atMentionRoot(state),
     // The slash picker owns the keyboard while it's open; `/command @arg`
     // drafts stay slash-flavored.
     enabled: !slashMatch,
   });
-  const inputContainerRef = useRef<HTMLDivElement>(null);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const { composerHeight, startComposerResize } = useComposerResize();
-  const handleTranscript = useCallback(
-    (transcript: string, options?: { autoSend?: boolean }) => {
-      const textarea = textareaRef.current;
-      const start = textarea?.selectionStart ?? value.length;
-      const end = textarea?.selectionEnd ?? value.length;
-      const next = insertTranscriptAtSelection(
-        textarea?.value ?? value,
-        transcript,
-        start,
-        end,
-      );
-      setValue(next.text);
-      commitDraft(next.text);
-      setCursor(next.cursor);
-      // Push-to-talk (hold-hotkey release) sends straight away rather than
-      // parking the dictation in the composer for a manual Enter.
-      if (options?.autoSend && next.text.trim().length > 0) {
-        onEvent("submit", {
-          value: next.text,
-          mode: "normal",
-          ...(attachments.length > 0 ? { attachments } : {}),
-        });
-        return;
-      }
-      requestAnimationFrame(() => {
-        const current = textareaRef.current;
-        if (!current) return;
-        current.focus();
-        current.selectionStart = current.selectionEnd = next.cursor;
-      });
-    },
-    [attachments, commitDraft, onEvent, setValue, value],
-  );
   const voiceSurfaceVisible = !!state.agentTabActive;
-  const voice = useVoiceInput(
-    handleTranscript,
-    (providerId) => {
-      onEvent("voice:setup", { providerId });
-    },
-    { surfaceActive: voiceSurfaceVisible },
-  );
-  const voiceState = voice.state;
-  const cancelVoice = voice.cancel;
   const voiceConfig = (state.voice as
     | {
         toggleHotkey?: string | null;
@@ -204,58 +150,30 @@ export function ChatInput({
   const settings = state.settings as { open?: boolean } | undefined;
   const palette = state.commandPalette as { open?: boolean } | undefined;
   const search = state.search as { open?: boolean } | undefined;
-  // The composer and the dashboard task-launcher both mount at once — the
-  // layout grid hides cells with display:none rather than unmounting — so each
-  // registers the same global voice hotkey against one shared mic. Block START
-  // unless this surface actually owns the canvas (`voiceSurfaceVisible` mirrors
-  // the composer-area's `visible: /agentTabActive` binding); otherwise both
-  // hotkeys fire and the loser reports "Voice recording is already active".
-  // Stop/cancel stay live.
-  const voiceInputBlocked =
-    !voiceSurfaceVisible || !!settings?.open || !!palette?.open || !!search?.open;
-  const voiceInputBlockedRef = useRef(voiceInputBlocked);
-  useLayoutEffect(() => {
-    voiceInputBlockedRef.current = voiceInputBlocked;
-  }, [voiceInputBlocked]);
-  const isVoiceInputBlocked = useCallback(
-    () => voiceInputBlockedRef.current,
-    [],
-  );
-  useVoiceHotkey(
-    voice,
-    voiceConfig.toggleHotkey ?? "mod+shift+m",
-    voiceConfig.holdHotkey ?? null,
-    isVoiceInputBlocked,
-    conversation,
-  );
-  const [reducedMotion, setReducedMotion] = useState(() => {
-    if (typeof window === "undefined" || !window.matchMedia) return false;
-    return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  });
-  useEffect(() => {
-    if (typeof window === "undefined" || !window.matchMedia) return;
-    const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
-    const onChange = (event: MediaQueryListEvent) =>
-      setReducedMotion(event.matches);
-    mq.addEventListener?.("change", onChange);
-    return () => mq.removeEventListener?.("change", onChange);
-  }, []);
-  useEffect(() => {
-    if (voiceState !== "recording") return;
-    const onKey = (event: globalThis.KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      event.preventDefault();
-      event.stopPropagation();
-      cancelVoice();
-    };
-    window.addEventListener("keydown", onKey, true);
-    return () => window.removeEventListener("keydown", onKey, true);
-  }, [voiceState, cancelVoice]);
-  const useDynamicMeter =
-    !reducedMotion && voice.activeProvider?.recordingMode === "native";
-  const voiceErrorOpensSettings = shouldOpenVoiceSettingsForError(
-    voice.activeProvider,
-  );
+  const { voice, useDynamicMeter, voiceErrorOpensSettings } =
+    useTextareaVoiceInput({
+      value,
+      setValue,
+      onValueCommit: commitDraft,
+      setCursor,
+      textareaRef,
+      surfaceActive: voiceSurfaceVisible,
+      overlays: {
+        settingsOpen: settings?.open,
+        paletteOpen: palette?.open,
+        searchOpen: search?.open,
+      },
+      voiceConfig,
+      onNeedsSetup: (providerId) => onEvent("voice:setup", { providerId }),
+      onAutoSend: (text) => {
+        onEvent("submit", {
+          value: text,
+          mode: "normal",
+          ...(attachments.length > 0 ? { attachments } : {}),
+        });
+      },
+      conversation,
+    });
 
   const insertMatch = (m: PickerMatch) => {
     const text =
@@ -264,25 +182,6 @@ export function ChatInput({
         : `/${m.cmd.name} ${m.choice.value}`;
     setValue(text);
     commitDraft(text);
-  };
-
-  // Replace the active `@token` with the chosen mention and park
-  // the caret after the trailing space so typing continues naturally.
-  const insertAtMention = (m: AtMentionMatch) => {
-    if (!atMatch) return;
-    const insertion = formatAtMentionInsertion(m);
-    const next =
-      value.slice(0, atMatch.start) + insertion + value.slice(atMatch.end);
-    const nextCursor = atMatch.start + insertion.length;
-    setValue(next);
-    commitDraft(next);
-    setCursor(nextCursor);
-    requestAnimationFrame(() => {
-      const current = textareaRef.current;
-      if (!current) return;
-      current.focus();
-      current.selectionStart = current.selectionEnd = nextCursor;
-    });
   };
 
   const submitPayload = (value: string, mode: "normal" | "steer") => ({
@@ -370,43 +269,7 @@ export function ChatInput({
         return;
       }
     }
-    if (!slashMatch && atMatch) {
-      const list = atMatch.matches;
-      if (e.key === "ArrowDown") {
-        e.preventDefault();
-        setAtHighlightIdx((i) => (i + 1) % list.length);
-        return;
-      }
-      if (e.key === "ArrowUp") {
-        e.preventDefault();
-        setAtHighlightIdx((i) => (i - 1 + list.length) % list.length);
-        return;
-      }
-      if (e.key === "Tab") {
-        e.preventDefault();
-        const match = list[atHighlightIdx] ?? list[0];
-        if (match) insertAtMention(match);
-        return;
-      }
-      if (e.key === "Enter" && !e.shiftKey) {
-        const match = list[atHighlightIdx] ?? list[0];
-        // Exact file references submit like before. Agent mentions complete
-        // first so `@kimi` becomes `@kimi ` before a later Enter sends.
-        const exactFile = list.some(
-          (m) => m.kind === "file" && m.rel === atMatch.query,
-        );
-        if (match?.kind === "agent" || !exactFile) {
-          e.preventDefault();
-          if (match) insertAtMention(match);
-          return;
-        }
-      }
-      if (e.key === "Escape") {
-        e.preventDefault();
-        dismissAtPicker();
-        return;
-      }
-    }
+    if (!slashMatch && handleAtMentionKeyDown(e)) return;
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       submit("normal");
