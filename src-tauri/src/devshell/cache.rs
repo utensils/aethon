@@ -106,7 +106,7 @@ pub struct EnvForPath {
     pub env: BTreeMap<String, String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PreparedEnv {
     pub kind: Option<String>,

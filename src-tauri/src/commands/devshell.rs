@@ -229,8 +229,12 @@ pub async fn devshell_prepare_for_path<R: Runtime>(
     let cwd = PathBuf::from(&args.cwd);
     let include_env = args.include_env.unwrap_or(false);
     let (enabled, configured_mode) = crate::devshell::effective_config(&app, &cwd).into_parts();
-    if enabled == "never" {
-        return Ok(PrepareForPathResponse {
+    let emitter = crate::devshell::prepare_policy::emitter_for(&app);
+    let decision = crate::devshell::prepare_env_for_root(&app, &cache, &cwd, Some(&emitter)).await;
+
+    let empty_env = || include_env.then(BTreeMap::new);
+    match decision {
+        crate::devshell::PrepareDecision::Disabled => Ok(PrepareForPathResponse {
             enabled,
             mode: mode_str(configured_mode).to_string(),
             state: "disabled".to_string(),
@@ -240,60 +244,23 @@ pub async fn devshell_prepare_for_path<R: Runtime>(
             var_count: 0,
             direnv_allowed: false,
             reason: None,
-            env: include_env.then(BTreeMap::new),
-        });
-    }
-
-    let detected_kind = crate::devshell::detect_mode(&cwd, configured_mode);
-    let Some(kind) = detected_kind else {
-        let reason = forced_mode_mismatch_reason(&cwd, configured_mode)
-            .unwrap_or_else(|| format!("no devshell detected at {}", cwd.display()));
-        if let Some(error) = required_devshell_missing_error(&enabled, reason.clone()) {
-            return Err(error);
-        }
-        let is_mismatch = crate::devshell::forced_mode_mismatch(&cwd, configured_mode).is_some();
-        return Ok(PrepareForPathResponse {
-            enabled,
-            mode: mode_str(configured_mode).to_string(),
-            state: if is_mismatch { "failed" } else { "none" }.to_string(),
-            kind: None,
-            stale: false,
-            duration_ms: None,
-            var_count: 0,
-            direnv_allowed: false,
-            reason: Some(reason),
-            env: include_env.then(BTreeMap::new),
-        });
-    };
-
-    let mut direnv_allowed = false;
-    if kind.as_str() == "direnv" {
-        if let Err(reason) = direnv_allow(&cwd).await {
-            if enabled == "always" {
-                return Err(reason);
-            }
-            return Ok(PrepareForPathResponse {
+            env: empty_env(),
+        }),
+        crate::devshell::PrepareDecision::MissingOptional { reason } => {
+            Ok(PrepareForPathResponse {
                 enabled,
                 mode: mode_str(configured_mode).to_string(),
-                state: "failed".to_string(),
-                kind: Some(kind.as_str().to_string()),
+                state: "none".to_string(),
+                kind: None,
                 stale: false,
                 duration_ms: None,
                 var_count: 0,
                 direnv_allowed: false,
                 reason: Some(reason),
-                env: include_env.then(BTreeMap::new),
-            });
+                env: empty_env(),
+            })
         }
-        direnv_allowed = true;
-    }
-
-    let emitter = emitter_for(&app);
-    match cache
-        .prepare_for(Some(&emitter), &cwd, configured_mode)
-        .await
-    {
-        Ok(prepared) => {
+        crate::devshell::PrepareDecision::Prepared { kind, prepared } => {
             let var_count = prepared.env.len();
             Ok(PrepareForPathResponse {
                 enabled,
@@ -303,15 +270,13 @@ pub async fn devshell_prepare_for_path<R: Runtime>(
                 stale: prepared.stale,
                 duration_ms: prepared.duration_ms,
                 var_count,
-                direnv_allowed,
+                direnv_allowed: kind == crate::devshell::detect::DevshellKind::Direnv,
                 reason: None,
                 env: include_env.then_some(prepared.env),
             })
         }
-        Err(reason) => {
-            if enabled == "always" {
-                return Err(reason);
-            }
+        crate::devshell::PrepareDecision::DirenvAllowFailedOptional { kind, reason }
+        | crate::devshell::PrepareDecision::CachePrepareFailedOptional { kind, reason } => {
             Ok(PrepareForPathResponse {
                 enabled,
                 mode: mode_str(configured_mode).to_string(),
@@ -320,11 +285,35 @@ pub async fn devshell_prepare_for_path<R: Runtime>(
                 stale: false,
                 duration_ms: None,
                 var_count: 0,
-                direnv_allowed,
+                direnv_allowed: false,
                 reason: Some(reason),
-                env: include_env.then(BTreeMap::new),
+                env: empty_env(),
             })
         }
+        crate::devshell::PrepareDecision::MissingRequired { reason } => {
+            Err(required_devshell_missing_error(&enabled, reason)
+                .unwrap_or_else(|| format!("no devshell detected at {}", cwd.display())))
+        }
+        crate::devshell::PrepareDecision::ForcedModeMismatch { reason } => {
+            if devshell_prepare_is_required(&enabled) {
+                Err(reason)
+            } else {
+                Ok(PrepareForPathResponse {
+                    enabled,
+                    mode: mode_str(configured_mode).to_string(),
+                    state: "failed".to_string(),
+                    kind: None,
+                    stale: false,
+                    duration_ms: None,
+                    var_count: 0,
+                    direnv_allowed: false,
+                    reason: Some(reason),
+                    env: empty_env(),
+                })
+            }
+        }
+        crate::devshell::PrepareDecision::DirenvAllowFailedRequired { reason }
+        | crate::devshell::PrepareDecision::CachePrepareFailedRequired { reason } => Err(reason),
     }
 }
 
