@@ -61,6 +61,7 @@ export interface UseChatActions {
     messageId?: string,
     tabId?: string,
     channel?: "text" | "thinking",
+    model?: string,
   ) => void;
   appendSystem: (text: string) => void;
   setStatusFlags: (

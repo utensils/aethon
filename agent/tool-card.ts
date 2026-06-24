@@ -106,6 +106,90 @@ function countDiffStats(text: string): { additions: number; deletions: number } 
   return { additions, deletions };
 }
 
+function looksLikeUnifiedDiff(text: string | undefined): text is string {
+  if (!text) return false;
+  return /(^|\n)(diff --git |@@ |--- |\+\+\+ )/.test(text);
+}
+
+function lineCount(value: string): number {
+  if (value.length === 0) return 0;
+  return value.replace(/\r?\n$/, "").split(/\r?\n/).length;
+}
+
+function editStatsFromArgs(args: unknown): { additions: number; deletions: number } | undefined {
+  if (!args || typeof args !== "object") return undefined;
+  const raw = args as Record<string, unknown>;
+  const oldText =
+    stringArg(raw, "oldString") ||
+    stringArg(raw, "old_string") ||
+    stringArg(raw, "old_str") ||
+    stringArg(raw, "old");
+  const newText =
+    stringArg(raw, "newString") ||
+    stringArg(raw, "new_string") ||
+    stringArg(raw, "new_str") ||
+    stringArg(raw, "new");
+  if (oldText || newText) {
+    return {
+      additions: lineCount(newText),
+      deletions: lineCount(oldText),
+    };
+  }
+  const content =
+    stringArg(raw, "content") || stringArg(raw, "text") || stringArg(raw, "body");
+  if (content) {
+    return { additions: lineCount(content), deletions: 0 };
+  }
+  return undefined;
+}
+
+function prefixedLines(prefix: string, value: string): string {
+  if (!value) return "";
+  return value
+    .replace(/\r?\n$/, "")
+    .split(/\r?\n/)
+    .map((line) => `${prefix}${line}`)
+    .join("\n");
+}
+
+function syntheticDiffFromArgs(path: string, args: unknown): string | undefined {
+  if (!args || typeof args !== "object") return undefined;
+  const raw = args as Record<string, unknown>;
+  const oldText =
+    stringArg(raw, "oldString") ||
+    stringArg(raw, "old_string") ||
+    stringArg(raw, "old_str") ||
+    stringArg(raw, "old");
+  const newText =
+    stringArg(raw, "newString") ||
+    stringArg(raw, "new_string") ||
+    stringArg(raw, "new_str") ||
+    stringArg(raw, "new");
+  if (oldText || newText) {
+    return [
+      `--- a/${path}`,
+      `+++ b/${path}`,
+      "@@ replacement @@",
+      prefixedLines("-", oldText),
+      prefixedLines("+", newText),
+    ]
+      .filter(Boolean)
+      .join("\n");
+  }
+  const content =
+    stringArg(raw, "content") || stringArg(raw, "text") || stringArg(raw, "body");
+  if (content) {
+    return [
+      "new file mode 100644",
+      `--- /dev/null`,
+      `+++ b/${path}`,
+      "@@ created file @@",
+      prefixedLines("+", content),
+    ].join("\n");
+  }
+  return undefined;
+}
+
 function writeLooksCreated(text: string): boolean {
   return /\b(created|new file|wrote new|created file)\b/i.test(text);
 }
@@ -121,10 +205,18 @@ function fileChangeForTool(opts: {
   if (!path) return undefined;
   const extracted =
     opts.result !== undefined ? extractToolContent(opts.result) : undefined;
-  const preview = extracted?.text ? truncate(extracted.text, 4000) : undefined;
-  const stats = preview ? countDiffStats(preview) : undefined;
+  const resultText = extracted?.text ? truncate(extracted.text, 4000) : undefined;
+  const preview = looksLikeUnifiedDiff(resultText)
+    ? resultText
+    : syntheticDiffFromArgs(path, opts.args);
+  const stats = preview
+    ? countDiffStats(preview)
+    : (editStatsFromArgs(opts.args) ??
+      (resultText ? countDiffStats(resultText) : undefined));
   const kind =
-    opts.toolName === "write" && preview && writeLooksCreated(preview)
+    opts.toolName === "write" &&
+    ((resultText && writeLooksCreated(resultText)) ||
+      (preview && writeLooksCreated(preview)))
       ? "created"
       : "edited";
   return {

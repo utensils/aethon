@@ -22,6 +22,7 @@ import { parseSessionHistoryLines } from "./parse-pi";
 import { isSubagentToolName } from "./subagent-tool-results";
 import {
   MAX_RESTORED_MESSAGES,
+  toolCardIdentityFromId,
   toolCardRecordsFromA2ui,
   type RestoredChatAttachment,
   type RestoredChatMessage,
@@ -100,6 +101,147 @@ function isCoveredByPiContent(
 
 function toolCardRecords(message: RestoredChatMessage) {
   return toolCardRecordsFromA2ui(message.a2ui);
+}
+
+function componentRecord(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === "object"
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
+function propsRecord(value: unknown): Record<string, unknown> | undefined {
+  const record = componentRecord(value);
+  return record?.props && typeof record.props === "object"
+    ? (record.props as Record<string, unknown>)
+    : undefined;
+}
+
+function fileChangeRecord(value: unknown): Record<string, unknown> | undefined {
+  const props = propsRecord(value);
+  return props?.fileChange && typeof props.fileChange === "object"
+    ? (props.fileChange as Record<string, unknown>)
+    : undefined;
+}
+
+function fileChangeRichness(fileChange: Record<string, unknown>): number {
+  let score = 0;
+  for (const key of [
+    "path",
+    "rootPath",
+    "preview",
+    "additions",
+    "deletions",
+    "kind",
+  ]) {
+    if (fileChange[key] !== undefined) score += 1;
+  }
+  return score;
+}
+
+function localToolFileChanges(
+  localMessages: RestoredChatMessage[],
+): Map<string, Record<string, unknown>> {
+  const fileChanges = new Map<string, Record<string, unknown>>();
+  for (const message of localMessages) {
+    for (const component of message.a2ui?.components ?? []) {
+      const record = componentRecord(component);
+      if (record?.type !== "tool-card" || typeof record.id !== "string") {
+        continue;
+      }
+      const identity = toolCardIdentityFromId(record.id);
+      const fileChange = fileChangeRecord(record);
+      if (!identity || !fileChange) continue;
+      const existing = fileChanges.get(identity);
+      if (!existing || fileChangeRichness(fileChange) >= fileChangeRichness(existing)) {
+        fileChanges.set(identity, fileChange);
+      }
+    }
+  }
+  return fileChanges;
+}
+
+function mergeFileChange(
+  piFileChange: Record<string, unknown> | undefined,
+  localFileChange: Record<string, unknown>,
+): Record<string, unknown> {
+  if (!piFileChange) return localFileChange;
+  if (
+    typeof piFileChange.path === "string" &&
+    typeof localFileChange.path === "string" &&
+    piFileChange.path !== localFileChange.path
+  ) {
+    return piFileChange;
+  }
+  const piPreview =
+    typeof piFileChange.preview === "string" ? piFileChange.preview : undefined;
+  const localPreview =
+    typeof localFileChange.preview === "string"
+      ? localFileChange.preview
+      : undefined;
+  const preview =
+    localPreview && looksLikeUnifiedDiff(localPreview)
+      ? localPreview
+      : (piPreview ?? localPreview);
+  const preferLocalSnapshot = preview === localPreview;
+  return {
+    ...localFileChange,
+    ...piFileChange,
+    rootPath: piFileChange.rootPath ?? localFileChange.rootPath,
+    preview,
+    additions: preferLocalSnapshot
+      ? (localFileChange.additions ?? piFileChange.additions)
+      : (piFileChange.additions ?? localFileChange.additions),
+    deletions: preferLocalSnapshot
+      ? (localFileChange.deletions ?? piFileChange.deletions)
+      : (piFileChange.deletions ?? localFileChange.deletions),
+    kind: piFileChange.kind ?? localFileChange.kind,
+    path: piFileChange.path ?? localFileChange.path,
+  };
+}
+
+function looksLikeUnifiedDiff(value: string): boolean {
+  return /(^|\n)---\s/.test(value) && /(^|\n)\+\+\+\s/.test(value);
+}
+
+function mergeLocalFileChangesIntoPiMessages(
+  piMessages: RestoredChatMessage[],
+  localMessages: RestoredChatMessage[],
+): RestoredChatMessage[] {
+  const localFileChanges = localToolFileChanges(localMessages);
+  if (localFileChanges.size === 0) return piMessages;
+  let mergedMessages = piMessages;
+  for (let messageIndex = 0; messageIndex < piMessages.length; messageIndex += 1) {
+    const message = piMessages[messageIndex];
+    const components = message.a2ui?.components;
+    if (!components) continue;
+    let nextComponents: unknown[] | undefined;
+    for (let componentIndex = 0; componentIndex < components.length; componentIndex += 1) {
+      const record = componentRecord(components[componentIndex]);
+      if (record?.type !== "tool-card" || typeof record.id !== "string") {
+        continue;
+      }
+      const identity = toolCardIdentityFromId(record.id);
+      const localFileChange = identity ? localFileChanges.get(identity) : undefined;
+      if (!localFileChange) continue;
+      const props = propsRecord(record) ?? {};
+      const nextFileChange = mergeFileChange(fileChangeRecord(record), localFileChange);
+      nextComponents ??= [...components];
+      nextComponents[componentIndex] = {
+        ...record,
+        props: {
+          ...props,
+          fileChange: nextFileChange,
+        },
+      };
+    }
+    if (!nextComponents) continue;
+    if (mergedMessages === piMessages) mergedMessages = [...piMessages];
+    mergedMessages[messageIndex] = {
+      ...message,
+      a2ui: { components: nextComponents },
+    };
+  }
+  return mergedMessages;
 }
 
 function toolCardIdentities(message: RestoredChatMessage): string[] {
@@ -361,8 +503,12 @@ export async function readSessionTranscript(
     parseSessionHistoryLines(raw.split(/\r?\n/)),
     localMessages,
   );
-  const mergedPiMessages = mergeLocalAttachmentsIntoPiMessages(
+  const piMessagesWithLocalFileChanges = mergeLocalFileChangesIntoPiMessages(
     piMessages,
+    localMessages,
+  );
+  const mergedPiMessages = mergeLocalAttachmentsIntoPiMessages(
+    piMessagesWithLocalFileChanges,
     localMessages,
   );
   const localOnly = dedupeLocalMessages(mergedPiMessages, localMessages);
@@ -371,3 +517,7 @@ export async function readSessionTranscript(
     localOnly,
   ).slice(-MAX_RESTORED_MESSAGES);
 }
+
+export const __testing = {
+  mergeFileChange,
+};

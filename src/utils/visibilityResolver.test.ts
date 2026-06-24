@@ -2,10 +2,10 @@ import { describe, expect, it } from "vitest";
 import { resolveVisibility } from "./visibilityResolver";
 
 describe("resolveVisibility", () => {
-  it("defaults to show when nothing is set", () => {
+  it("defaults tool calls to hide when no global value is mirrored", () => {
     expect(resolveVisibility({}, undefined)).toEqual({
-      thinking: "show",
-      toolCalls: "show",
+      thinking: "hide",
+      toolCalls: "hide",
     });
   });
 
@@ -75,7 +75,9 @@ describe("resolveVisibility", () => {
     ).toBe("group-turn");
     expect(
       resolveVisibility(
-        { tabs: [{ id: "t1", visibilityOverrides: { toolCalls: "collapse" } }] },
+        {
+          tabs: [{ id: "t1", visibilityOverrides: { toolCalls: "collapse" } }],
+        },
         "t1",
       ).toolCalls,
     ).toBe("group-turn");

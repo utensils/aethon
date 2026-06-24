@@ -20,6 +20,7 @@ export interface RestoredChatMessage {
    *  fork. Absent on tool-card and system rows (you don't branch to those). */
   entryId?: string;
   role: "user" | "agent" | "system";
+  model?: string;
   text?: string;
   thinking?: string;
   attachments?: RestoredChatAttachment[];

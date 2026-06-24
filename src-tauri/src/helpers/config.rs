@@ -32,8 +32,10 @@ pub struct UiConfig {
     /// via the composer pills; this is the default new tabs inherit.
     pub thinking_visibility: Option<String>,
     /// Global default visibility for tool-call cards in the transcript.
-    /// Allowed: `"show"` (default), `"collapse"` (group consecutive cards),
-    /// `"hide"`. Unknown values fall back to `"show"`.
+    /// Allowed: `"show"`, `"group-turn"`, `"group-run"`, `"group-block"`
+    /// (legacy grouped modes), `"hide"` (default when the key is missing).
+    /// Unknown values fall back to `"show"` so a typo cannot silently hide
+    /// content.
     pub tool_calls_visibility: Option<String>,
 }
 
@@ -137,6 +139,14 @@ pub struct ServerConfig {
 }
 
 #[derive(Default, Deserialize)]
+pub struct StartupHostConfig {
+    /// Trust configured workspace startup commands globally. Default false:
+    /// project startup commands are an execution boundary and should stay
+    /// visible until the user explicitly opts in.
+    pub auto_approve: Option<bool>,
+}
+
+#[derive(Default, Deserialize)]
 pub struct DevshellConfig {
     /// Whether to detect + apply a Nix devshell on shell + agent
     /// spawn. Accepted values: `"auto"` (default — detect via marker
@@ -212,18 +222,21 @@ pub struct AethonConfig {
     #[serde(default)]
     pub server: ServerConfig,
     #[serde(default)]
+    pub startup: StartupHostConfig,
+    #[serde(default)]
     pub guardrails: GuardrailsConfig,
 }
 
-/// Validate-and-normalize a tri-state transcript visibility value
-/// (`[ui] thinking_visibility` / `tool_calls_visibility`). Unknown strings,
-/// missing values, and parse failures all fall through to `"show"` so a typo
-/// can't silently hide the transcript.
+/// Validate-and-normalize a tri-state thinking visibility value
+/// (`[ui] thinking_visibility`). Missing config follows the clean transcript
+/// default (`"hide"`), but unknown explicit values fall through to `"show"` so
+/// a typo can't silently hide content.
 pub fn normalize_visibility(input: Option<&str>) -> &'static str {
     match input {
         Some("collapse") => "collapse",
         Some("hide") => "hide",
-        // Includes Some("show"), Some(<unknown>), and None.
+        None => "hide",
+        // Includes Some("show") and Some(<unknown>).
         _ => "show",
     }
 }
@@ -234,7 +247,9 @@ pub fn normalize_visibility(input: Option<&str>) -> &'static str {
 /// agent turn), `group-run` (one cluster per consecutive run), and
 /// `group-block` (the whole agent turn folded into one block). The legacy
 /// `"collapse"` value (written by PR #204) maps to `group-turn` so existing
-/// configs adopt the natural per-turn grouping. Unknown/missing → `"show"`.
+/// configs adopt the natural per-turn grouping. Unknown values fall back to
+/// `"show"` so a typo can't silently hide content; missing config keys are
+/// handled by `parse_config_toml` and default to `"hide"`.
 pub fn normalize_tool_visibility(input: Option<&str>) -> &'static str {
     match input {
         Some("group-turn") => "group-turn",
@@ -362,6 +377,16 @@ pub fn normalize_thinking_level(value: Option<&str>) -> Option<&str> {
     }
 }
 
+pub fn parse_host_startup_auto_approve(input: &str) -> bool {
+    if input.is_empty() {
+        return false;
+    }
+    toml::from_str::<AethonConfig>(input)
+        .ok()
+        .and_then(|cfg| cfg.startup.auto_approve)
+        .unwrap_or(false)
+}
+
 /// Parse a TOML config string into the canonical JSON shape the frontend
 /// consumes. Falls back to defaults on parse error so a malformed user
 /// file never blocks app boot. Returns the same shape regardless of what
@@ -381,7 +406,12 @@ pub fn parse_config_toml(input: &str) -> serde_json::Value {
         .unwrap_or(8);
     let new_tab_kind = normalize_new_tab_kind(cfg.shortcuts.new_tab_kind.as_deref());
     let thinking_visibility = normalize_visibility(cfg.ui.thinking_visibility.as_deref());
-    let tool_calls_visibility = normalize_tool_visibility(cfg.ui.tool_calls_visibility.as_deref());
+    let tool_calls_visibility = cfg
+        .ui
+        .tool_calls_visibility
+        .as_deref()
+        .map(|value| normalize_tool_visibility(Some(value)))
+        .unwrap_or("hide");
     let thinking_level = normalize_thinking_level(cfg.agent.thinking_level.as_deref());
     let provider_timeout_seconds =
         normalize_optional_timeout_seconds(cfg.agent.provider_timeout_seconds);
@@ -464,6 +494,9 @@ pub fn parse_config_toml(input: &str) -> serde_json::Value {
         },
         "server": {
             "enabled": cfg.server.enabled.unwrap_or(true),
+        },
+        "startup": {
+            "autoApprove": cfg.startup.auto_approve.unwrap_or(false),
         },
         "guardrails": {
             "softPromptAnchor": soft_prompt_anchor,
@@ -611,6 +644,22 @@ mod tests {
             parse_config_toml("[server]\nenabled = false\n")["server"]["enabled"],
             false
         );
+    }
+
+    #[test]
+    fn startup_auto_approve_defaults_false_and_honors_override() {
+        assert_eq!(parse_config_toml("")["startup"]["autoApprove"], false);
+        assert_eq!(
+            parse_config_toml("[startup]\nauto_approve = true\n")["startup"]["autoApprove"],
+            true
+        );
+        assert!(parse_host_startup_auto_approve(
+            "[startup]\nauto_approve = true\n"
+        ));
+        assert!(!parse_host_startup_auto_approve(
+            "[startup]\nauto_approve = false\n"
+        ));
+        assert!(!parse_host_startup_auto_approve("broken = toml = nope"));
     }
 
     #[test]
@@ -788,6 +837,7 @@ prompt_before_close = false
             assert!(v["ui"].is_object());
             assert!(v["agent"].is_object());
             assert!(v["extensions"].is_object());
+            assert!(v["startup"].is_object());
             assert!(v["ui"].as_object().unwrap().contains_key("theme"));
             assert!(v["ui"].as_object().unwrap().contains_key("fontSize"));
             assert!(v["ui"].as_object().unwrap().contains_key("restoreTabs"));
@@ -827,6 +877,12 @@ prompt_before_close = false
                     .as_object()
                     .unwrap()
                     .contains_key("stateHardKb")
+            );
+            assert!(
+                v["startup"]
+                    .as_object()
+                    .unwrap()
+                    .contains_key("autoApprove")
             );
         }
     }
@@ -1014,18 +1070,22 @@ enabled = "never"
     }
 
     #[test]
-    fn normalize_visibility_falls_back_to_show() {
-        assert_eq!(normalize_visibility(None), "show");
+    fn normalize_visibility_defaults_missing_to_hide() {
+        assert_eq!(normalize_visibility(None), "hide");
+    }
+
+    #[test]
+    fn normalize_visibility_keeps_malformed_explicit_values_visible() {
         assert_eq!(normalize_visibility(Some("")), "show");
         assert_eq!(normalize_visibility(Some("Hide")), "show");
         assert_eq!(normalize_visibility(Some("gone")), "show");
     }
 
     #[test]
-    fn parse_config_toml_visibility_defaults_to_show() {
+    fn parse_config_toml_visibility_defaults_to_hidden_thinking_and_tools() {
         let v = parse_config_toml("");
-        assert_eq!(v["ui"]["thinkingVisibility"], "show");
-        assert_eq!(v["ui"]["toolCallsVisibility"], "show");
+        assert_eq!(v["ui"]["thinkingVisibility"], "hide");
+        assert_eq!(v["ui"]["toolCallsVisibility"], "hide");
     }
 
     #[test]

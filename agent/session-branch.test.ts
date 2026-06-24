@@ -2,6 +2,17 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+const ensureTabMock = vi.hoisted(() => vi.fn());
+
+vi.mock("./tab-lifecycle", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./tab-lifecycle")>();
+  return {
+    ...actual,
+    ensureTab: ensureTabMock,
+  };
+});
+
 import { handleForkSession, handleRollbackSession } from "./session-branch";
 import type { AethonAgentState } from "./state";
 import type { DispatcherDeps, InboundMessage } from "./dispatcherTypes";
@@ -62,6 +73,7 @@ function makeState(opts?: {
     sessionsDir,
     tabs,
     tabProjectCwds: new Map([["t1", "/proj"]]),
+    frontendState: new Map(),
     currentAgentTabId: undefined,
   } as unknown as AethonAgentState;
   return { state, sm, abort };
@@ -73,6 +85,7 @@ function msg(extra: Partial<InboundMessage>): InboundMessage {
 
 beforeEach(() => {
   sessionsDir = mkdtempSync(join(tmpdir(), "aethon-branch-"));
+  ensureTabMock.mockReset();
 });
 
 afterEach(() => {
@@ -131,6 +144,38 @@ describe("handleRollbackSession", () => {
     expect(sent.some((m) => m.type === "error")).toBe(true);
   });
 
+  it("opens a mirrored restored tab before rolling back", async () => {
+    const { state, sm } = makeState();
+    const rec = state.tabs.get("t1");
+    if (!rec) throw new Error("missing test tab");
+    state.tabs.delete("t1");
+    state.tabProjectCwds.delete("t1");
+    state.frontendState.set("/tabs", [
+      { id: "t1", kind: "agent", cwd: "/proj" },
+    ]);
+    ensureTabMock.mockImplementation(() => {
+      state.tabs.set("t1", rec);
+      return rec;
+    });
+    const { deps, sent } = makeDeps();
+
+    await handleRollbackSession(
+      state,
+      deps,
+      msg({ tabId: "t1", entryId: "e2" }),
+    );
+
+    expect(ensureTabMock).toHaveBeenCalledWith(state, deps, "t1", {
+      cwdOverride: "/proj",
+    });
+    expect(sm.branch).toHaveBeenCalledWith("e2");
+    expect(sent).toContainEqual({
+      type: "session_rolled_back",
+      tabId: "t1",
+      entryId: "e2",
+    });
+  });
+
   it("requires tabId and entryId", async () => {
     const { state } = makeState();
     const { deps, sent } = makeDeps();
@@ -172,5 +217,58 @@ describe("handleForkSession", () => {
     );
     expect(sm.createBranchedSession).not.toHaveBeenCalled();
     expect(sent.some((m) => m.type === "error")).toBe(true);
+  });
+
+  it("opens a mirrored restored tab before forking", async () => {
+    const { state, sm } = makeState();
+    const rec = state.tabs.get("t1");
+    if (!rec) throw new Error("missing test tab");
+    state.tabs.delete("t1");
+    state.tabProjectCwds.delete("t1");
+    state.frontendState.set("/tabs", [
+      { id: "t1", kind: "agent", cwd: "/proj" },
+    ]);
+    ensureTabMock.mockImplementation(() => {
+      state.tabs.set("t1", rec);
+      return rec;
+    });
+    const { deps, sent } = makeDeps();
+
+    await handleForkSession(state, deps, msg({ tabId: "t1", entryId: "e2" }));
+
+    expect(ensureTabMock).toHaveBeenCalledWith(state, deps, "t1", {
+      cwdOverride: "/proj",
+    });
+    expect(sm.createBranchedSession).toHaveBeenCalledWith("e2");
+    const forked = sent.find((m) => m.type === "session_forked");
+    expect(forked?.cwd).toBe("/proj");
+    expect(sent.some((m) => m.type === "error")).toBe(false);
+  });
+
+  it("uses an explicit cwd hint to open a restored tab before forking", async () => {
+    const { state, sm } = makeState();
+    const rec = state.tabs.get("t1");
+    if (!rec) throw new Error("missing test tab");
+    state.tabs.delete("t1");
+    state.tabProjectCwds.delete("t1");
+    ensureTabMock.mockImplementation(() => {
+      state.tabs.set("t1", rec);
+      return rec;
+    });
+    const { deps, sent } = makeDeps();
+
+    await handleForkSession(
+      state,
+      deps,
+      msg({ tabId: "t1", entryId: "e2", cwd: "/repo/from-message" }),
+    );
+
+    expect(ensureTabMock).toHaveBeenCalledWith(state, deps, "t1", {
+      cwdOverride: "/repo/from-message",
+    });
+    expect(sm.createBranchedSession).toHaveBeenCalledWith("e2");
+    const forked = sent.find((m) => m.type === "session_forked");
+    expect(forked?.cwd).toBe("/repo/from-message");
+    expect(sent.some((m) => m.type === "error")).toBe(false);
   });
 });

@@ -3,20 +3,23 @@ import { resolveVisibility } from "../utils/visibilityResolver";
 import type { ToolCallsMode, VisibilityMode } from "../config";
 import type { Tab } from "../types/tab";
 
-// Thinking cycles show → collapse → hide. Tool calls cycle through the three
-// grouping styles between show and hide so one pill reaches every mode.
-const THINKING_CYCLE: readonly VisibilityMode[] = ["show", "collapse", "hide"];
-const TOOLCALLS_CYCLE: readonly ToolCallsMode[] = [
-  "show",
-  "group-turn",
-  "group-run",
-  "group-block",
-  "hide",
-];
+// The UI intentionally exposes only the two decisions users make in the chat:
+// thinking on/off and tool calls on/off. Older persisted grouped modes still
+// resolve, but the button no longer walks users through them.
+function nextThinking(current: VisibilityMode): VisibilityMode {
+  return current === "show" ? "hide" : "show";
+}
 
-function nextIn<T>(cycle: readonly T[], current: T): T {
-  const i = cycle.indexOf(current);
-  return cycle[(i + 1) % cycle.length];
+function nextToolCalls(current: ToolCallsMode): ToolCallsMode {
+  return current === "show" ? "hide" : "show";
+}
+
+function simplifiedThinkingDefault(current: VisibilityMode): VisibilityMode {
+  return current === "show" ? "show" : "hide";
+}
+
+function simplifiedToolCallsDefault(current: ToolCallsMode): ToolCallsMode {
+  return current;
 }
 
 const GROUPING_MODES: readonly ToolCallsMode[] = [
@@ -27,10 +30,9 @@ const GROUPING_MODES: readonly ToolCallsMode[] = [
 
 /**
  * Composer visibility pills (`type:composer-visibility-pills`):
- *   - `cycle`            — advance the active session's override for one
- *                          category. Thinking: show → collapse → hide. Tool
- *                          calls: show → group-turn → group-run → group-block →
- *                          hide.
+ *   - `cycle`            — toggle the active session's override for one
+ *                          category. Thinking: show ↔ hide. Tool calls:
+ *                          show ↔ hide.
  *   - `set-tool-grouping`— jump the active session's tool-call mode straight to
  *                          a specific grouping style (popover radios).
  *   - `reset-to-global`  — drop the session's per-tab overrides so it follows
@@ -73,7 +75,7 @@ export const handleComposerPills: EventRouteHandler = (event, ctx) => {
       ?.category;
     const eff = resolveVisibility(state, activeId);
     if (category === "thinking") {
-      const next = nextIn(THINKING_CYCLE, eff.thinking);
+      const next = nextThinking(eff.thinking);
       ctx.updateActiveTab((tab) => ({
         ...tab,
         visibilityOverrides: { ...tab.visibilityOverrides, thinking: next },
@@ -81,7 +83,7 @@ export const handleComposerPills: EventRouteHandler = (event, ctx) => {
       return true;
     }
     if (category === "toolCalls") {
-      const next = nextIn(TOOLCALLS_CYCLE, eff.toolCalls);
+      const next = nextToolCalls(eff.toolCalls);
       ctx.updateActiveTab((tab) => ({
         ...tab,
         visibilityOverrides: { ...tab.visibilityOverrides, toolCalls: next },
@@ -119,8 +121,8 @@ export const handleComposerPills: EventRouteHandler = (event, ctx) => {
     const eff = resolveVisibility(state, activeId);
     ctx.applySettingsPatch({
       ui: {
-        thinkingVisibility: eff.thinking,
-        toolCallsVisibility: eff.toolCalls,
+        thinkingVisibility: simplifiedThinkingDefault(eff.thinking),
+        toolCallsVisibility: simplifiedToolCallsDefault(eff.toolCalls),
       },
     });
     return true;

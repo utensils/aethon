@@ -15,10 +15,7 @@ describe("handleError", () => {
       state: { activeTabId: "default" },
     });
     ctx.activeResponseIdRef.current = "msg-1";
-    handleError(
-      { type: "error", message: "boom", tabId: "default" },
-      ctx,
-    );
+    handleError({ type: "error", message: "boom", tabId: "default" }, ctx);
     expect(ctx.activeResponseIdRef.current).toBeNull();
     expect(mocks.appendMessage).toHaveBeenCalledWith(
       expect.objectContaining({ role: "agent", text: "Error: boom" }),
@@ -27,6 +24,30 @@ describe("handleError", () => {
     const [, updater] = mocks.updateTab.mock.calls[0];
     expect(updater(makeEmptyTab("default", "Tab 1")).waiting).toBe(false);
     expect(mocks.setStatusFlags).toHaveBeenCalledWith({ status: "error" });
+  });
+
+  it("surfaces branch action failures as notifications", () => {
+    const { ctx, mocks } = buildHandlerFixture({
+      state: { activeTabId: "tab-1" },
+    });
+    handleError(
+      {
+        type: "error",
+        message: "fork_session: unknown entry abc123",
+        tabId: "tab-1",
+      },
+      ctx,
+    );
+
+    expect(mocks.dismissNotification).toHaveBeenCalledWith(
+      "session-fork-tab-1",
+    );
+    expect(mocks.pushNotification).toHaveBeenCalledWith({
+      title: "Fork failed",
+      message: "unknown entry abc123",
+      kind: "error",
+      durationMs: 6000,
+    });
   });
 
   it("keeps API errors chronological when restored history rehydrates later", () => {

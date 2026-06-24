@@ -6,6 +6,10 @@ import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 import { makeEmptyTab, type Tab } from "../types/tab";
 import { useChat, type UseChatContext } from "./useChat";
 import { PI_DEFAULT_MODEL_SENTINEL } from "../utils/modelPicker";
+import {
+  loadSessionUiSnapshot,
+  saveSessionUiSnapshot,
+} from "../state/sessionUiSnapshot";
 
 const invoke = vi.fn<(...args: unknown[]) => Promise<unknown>>(() =>
   Promise.resolve(undefined),
@@ -21,6 +25,7 @@ afterEach(() => {
   // leaks into the next test.
   invoke.mockReset();
   invoke.mockImplementation(() => Promise.resolve(undefined));
+  window.sessionStorage.clear();
 });
 
 function buildContext(overrides: Record<string, unknown> = {}): {
@@ -830,12 +835,14 @@ describe("useChat setModel", () => {
         "agent-1",
         "tab-1",
         "thinking",
+        "openai-codex/gpt-5.5",
       );
       result.current.appendOrAmendAgentText(
         "\nDone",
         "agent-1",
         "tab-1",
         "text",
+        "openai-codex/gpt-5.5",
       );
     });
 
@@ -843,6 +850,7 @@ describe("useChat setModel", () => {
       id: "agent-1",
       role: "agent",
       createdAt: expect.any(Number),
+      model: "openai-codex/gpt-5.5",
       thinking: "Inspecting",
       text: "\nDone",
     });
@@ -851,6 +859,7 @@ describe("useChat setModel", () => {
         id: "agent-1",
         role: "agent",
         createdAt: expect.any(Number),
+        model: "openai-codex/gpt-5.5",
         thinking: "Inspecting",
         text: "\nDone",
       }),
@@ -877,6 +886,11 @@ describe("useChat setModel", () => {
     expect(stateRef.current.model).toBe("openai/gpt-5.5");
     expect(stateRef.current.defaultModel).toBe("openai/gpt-5.5");
     expect((stateRef.current.tabs as Tab[])[0].model).toBe("openai/gpt-5.5");
+    saveSessionUiSnapshot(stateRef.current);
+    expect(loadSessionUiSnapshot()).toMatchObject({
+      activeTabId: "tab-1",
+      tabs: [{ id: "tab-1", model: "openai/gpt-5.5" }],
+    });
     expect(
       (
         stateRef.current.sidebar as {
@@ -884,6 +898,24 @@ describe("useChat setModel", () => {
         }
       ).models.find((m) => m.id === "openai/gpt-5.5")?.active,
     ).toBe(true);
+  });
+
+  it("does not retarget a hidden session while workspace landing owns the picker", async () => {
+    const { ctx, stateRef } = buildContext({
+      landing: { kind: "workspace", workspaceId: "wt-1" },
+    });
+    const { result } = renderHook(() => useChat(ctx));
+
+    await act(async () => {
+      await result.current.setModel("openai/gpt-5.5");
+    });
+
+    expect(invoke).not.toHaveBeenCalledWith("agent_command", expect.anything());
+    expect(stateRef.current.model).toBe("openai/gpt-5.5");
+    expect(stateRef.current.defaultModel).toBe("openai/gpt-5.5");
+    expect((stateRef.current.tabs as Tab[])[0].model).toBe(
+      "anthropic/claude-opus-4-7",
+    );
   });
 
   it("preserves non-Codex model ids with colon suffixes that look like reasoning levels", async () => {

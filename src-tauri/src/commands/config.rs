@@ -297,6 +297,7 @@ pub fn write_config(config: serde_json::Value, app: AppHandle) -> Result<(), Str
     let voice = config.get("voice").and_then(|v| v.as_object());
     let updates = config.get("updates").and_then(|v| v.as_object());
     let devshell = config.get("devshell").and_then(|v| v.as_object());
+    let startup = config.get("startup").and_then(|v| v.as_object());
     let guardrails = config.get("guardrails").and_then(|v| v.as_object());
 
     let theme = ui
@@ -421,6 +422,9 @@ pub fn write_config(config: serde_json::Value, app: AppHandle) -> Result<(), Str
         .map(|n| n.min(u32::MAX as u64));
     let devshell_refresh_on_lockfile = devshell
         .and_then(|m| m.get("refreshOnLockfileChange"))
+        .and_then(|v| v.as_bool());
+    let startup_auto_approve = startup
+        .and_then(|m| m.get("autoApprove"))
         .and_then(|v| v.as_bool());
     let soft_prompt_anchor = guardrails
         .and_then(|m| m.get("softPromptAnchor"))
@@ -613,6 +617,12 @@ pub fn write_config(config: serde_json::Value, app: AppHandle) -> Result<(), Str
             "refresh_on_lockfile_change",
             devshell_refresh_on_lockfile,
         );
+    }
+
+    // ── [startup] ──
+    {
+        let startup_table = ensure_table(&mut doc, "startup");
+        set_or_clear_bool(startup_table, "auto_approve", startup_auto_approve);
     }
 
     // ── [guardrails] ──

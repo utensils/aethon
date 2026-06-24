@@ -1,22 +1,30 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { Virtuoso, type VirtuosoHandle } from "react-virtuoso";
 import type { ChatMessage } from "../../types/a2ui";
 import type { BuiltinComponentProps } from "../../components/A2UIRenderer";
 import {
-  groupMessages,
-  groupKey,
-  type MessageGroup,
-} from "../../utils/toolCardGrouping";
+  buildTranscriptRows,
+  rowKey,
+  type TranscriptRow,
+} from "../../utils/transcriptRows";
 import type { ResolvedVisibility } from "../../utils/visibilityResolver";
-import { ChatMessageRow } from "./message-row";
 import {
   CanvasFooter,
-  ToolGroupRow,
-  TurnBlockRow,
+  ConversationTurnRow,
   type CanvasFooterContext,
 } from "./message-groups";
 import { queuedDeliveryLabels } from "./message-rendering-utils";
 import { useScrollFollowController } from "./useScrollFollowController";
+import { recordTranscriptPerfSnapshot } from "./transcript-perf";
+
+const ENTER_ROW_FALLBACK_CLEAR_MS = 1200;
 
 function ScrollToBottomPill({
   visible,
@@ -71,19 +79,19 @@ export function VirtualMessageFeed({
     () => queuedDeliveryLabels(messages),
     [messages],
   );
-  // Tool-call visibility transforms the flat list into render groups: `show`
-  // → one single per message, `hide` → tool cards dropped, and the grouped
-  // modes fold tool cards into expandable clusters (`group-run` / `group-turn`
-  // → tool-group rows) or whole turns into one block (`group-block` →
-  // turn-block rows). Virtuoso renders groups, so its data length / keys track
-  // groups, not raw messages.
-  const groups = useMemo(
-    () => groupMessages(messages, visibility.toolCalls),
-    [messages, visibility.toolCalls],
-  );
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(
     () => new Set(),
   );
+  const transcript = useMemo(
+    () => buildTranscriptRows(messages, visibility.toolCalls, expandedGroups),
+    [messages, visibility.toolCalls, expandedGroups],
+  );
+  const { groups, rows, heightEstimates } = transcript;
+  const rowKeys = useMemo(() => rows.map(rowKey), [rows]);
+  const seededRowKeysRef = useRef(false);
+  const seenRowKeysRef = useRef<Set<string>>(new Set());
+  const enteringRowKeysRef = useRef<Set<string>>(new Set());
+  const [, setMotionEpoch] = useState(0);
   const toggleGroup = useCallback((id: string) => {
     setExpandedGroups((prev) => {
       const next = new Set(prev);
@@ -92,6 +100,19 @@ export function VirtualMessageFeed({
       return next;
     });
   }, []);
+  useEffect(() => {
+    if (enteringRowKeysRef.current.size === 0) return;
+    const prefersReducedMotion =
+      globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches ??
+      false;
+    const delay = prefersReducedMotion ? 0 : ENTER_ROW_FALLBACK_CLEAR_MS;
+    const timer = globalThis.setTimeout(() => {
+      if (enteringRowKeysRef.current.size === 0) return;
+      enteringRowKeysRef.current.clear();
+      setMotionEpoch((value) => value + 1);
+    }, delay);
+    return () => globalThis.clearTimeout(timer);
+  }, [rowKeys]);
   const terminalOpen = Boolean(
     (state.terminal as { open?: boolean } | undefined)?.open,
   );
@@ -99,7 +120,7 @@ export function VirtualMessageFeed({
     (state.layout as { rows?: unknown } | undefined)?.rows ?? null;
   const scrollController = useScrollFollowController({
     messages,
-    groups,
+    rows,
     tabId,
     scrollToMatch,
     visibility,
@@ -109,77 +130,65 @@ export function VirtualMessageFeed({
   });
 
   const itemContent = useCallback(
-    (index: number, group: MessageGroup) => {
+    (index: number, row: TranscriptRow) => {
       // flow-root establishes a BFC so the row's vertical margins (role-change
       // spacing, etc.) are CONTAINED in this wrapper rather than collapsing
       // through it. Virtuoso measures the wrapper, so the margins are counted —
       // bare margins on the row would escape measurement and drift the
       // follow-to-bottom / scrollToIndex offsets in long transcripts.
       const rowClass = `a2ui-msg-row${index === 0 ? " a2ui-msg-row-first" : ""}${
-        index === groups.length - 1 ? " a2ui-msg-row-last" : ""
+        index === rows.length - 1 ? " a2ui-msg-row-last" : ""
       }`;
-      if (group.type === "tool-group") {
-        return (
-          <div className={rowClass}>
-            <ToolGroupRow
-              group={group}
-              state={state}
-              tabId={tabId}
-              onEvent={onEvent}
-              expanded={expandedGroups.has(group.id)}
-              onToggle={() => toggleGroup(group.id)}
-            />
-          </div>
-        );
+      const turn = row.turn;
+      const userMessageId = turn.userMessage?.id;
+      const stableKey = rowKey(row);
+      if (!seededRowKeysRef.current && rowKeys.length > 0) {
+        seededRowKeysRef.current = true;
+        seenRowKeysRef.current = new Set(rowKeys);
       }
-      if (group.type === "turn-block") {
-        return (
-          <div className={rowClass}>
-            <TurnBlockRow
-              group={group}
-              state={state}
-              tabId={tabId}
-              onEvent={onEvent}
-              rowClassName={rowClassName}
-              thinkingVisibility={visibility.thinking}
-              expanded={expandedGroups.has(group.id)}
-              onToggle={() => toggleGroup(group.id)}
-            />
-          </div>
-        );
+      let isNewRow = enteringRowKeysRef.current.has(stableKey);
+      if (seededRowKeysRef.current && !seenRowKeysRef.current.has(stableKey)) {
+        seenRowKeysRef.current.add(stableKey);
+        enteringRowKeysRef.current.add(stableKey);
+        isNewRow = true;
       }
-      const m = group.message;
-      // prevRole drives role-badge suppression on consecutive same-role rows.
-      // A preceding tool cluster reads as an agent turn, so it counts as
-      // "agent" for that purpose.
-      const prev = groups[index - 1];
-      const prevRole = prev
-        ? prev.type === "single"
-          ? prev.message.role
-          : "agent"
-        : undefined;
       return (
-        <div className={rowClass}>
-          <ChatMessageRow
-            message={m}
+        <div
+          className={
+            index === scrollController.flashIndex
+              ? `${rowClass} a2ui-chat-message-flash`
+              : isNewRow
+                ? `${rowClass} a2ui-msg-row-enter`
+                : rowClass
+          }
+          onAnimationEnd={
+            isNewRow
+              ? () => {
+                  enteringRowKeysRef.current.delete(stableKey);
+                  setMotionEpoch((value) => value + 1);
+                }
+              : undefined
+          }
+        >
+          <ConversationTurnRow
+            turn={turn}
             state={state}
             tabId={tabId}
-            className={
-              index === scrollController.flashIndex
-                ? `${rowClassName} a2ui-chat-message-flash`
-                : rowClassName
-            }
-            prevRole={prevRole}
+            rowClassName={rowClassName}
             onEvent={onEvent}
-            deliveryText={queuedLabels.get(m.id)}
-            isLatest={index === groups.length - 1}
             thinkingVisibility={visibility.thinking}
+            toolCallsVisibility={visibility.toolCalls}
+            expanded={expandedGroups.has(turn.id)}
+            onToggle={() => toggleGroup(turn.id)}
+            isLatest={index === rows.length - 1}
+            deliveryText={
+              userMessageId ? queuedLabels.get(userMessageId) : undefined
+            }
           />
         </div>
       );
     },
     [
-      groups,
       state,
       tabId,
       rowClassName,
@@ -187,8 +196,11 @@ export function VirtualMessageFeed({
       onEvent,
       queuedLabels,
       visibility.thinking,
+      visibility.toolCalls,
       expandedGroups,
       toggleGroup,
+      rows,
+      rowKeys,
     ],
   );
 
@@ -196,7 +208,10 @@ export function VirtualMessageFeed({
   // `components={undefined}` explicitly trips Virtuoso's internal
   // `components.EmptyPlaceholder` access, so omit the props entirely otherwise.
   const footerProps = footerContext
-    ? { context: footerContext, components: { Footer: CanvasFooter } }
+    ? {
+        context: { ...footerContext, rowClassName },
+        components: { Footer: CanvasFooter },
+      }
     : {};
 
   // The canvas can be scrollable with zero messages (a live subtree / typing
@@ -206,15 +221,55 @@ export function VirtualMessageFeed({
   );
   const hasContent = messages.length > 0 || hasFooterContent;
 
+  useLayoutEffect(() => {
+    if (!import.meta.env.DEV) return;
+    const scroller = scrollController.scrollerElement;
+    const metrics = scroller
+      ? {
+          scrollTop: scroller.scrollTop,
+          scrollHeight: scroller.scrollHeight,
+          clientHeight: scroller.clientHeight,
+          bottomGap:
+            scroller.scrollHeight - scroller.clientHeight - scroller.scrollTop,
+        }
+      : null;
+    recordTranscriptPerfSnapshot({
+      tabId,
+      activeTabId:
+        typeof state.activeTabId === "string" ? state.activeTabId : undefined,
+      messageCount: messages.length,
+      groupCount: groups.length,
+      rowCount: rows.length,
+      mountedRowCount: scroller?.querySelectorAll(".a2ui-msg-row").length ?? 0,
+      mountedToolCardCount:
+        scroller?.querySelectorAll(".ae-tool-card").length ?? 0,
+      following: scrollController.following,
+      canScroll: scrollController.canScroll,
+      scroll: metrics,
+    });
+  }, [
+    groups.length,
+    messages.length,
+    rows.length,
+    scrollController.canScroll,
+    scrollController.following,
+    scrollController.scrollerElement,
+    state.activeTabId,
+    tabId,
+  ]);
+
   return (
     <div className="a2ui-msg-list-shell">
       <Virtuoso
         ref={virtuosoRef}
         className={className}
         style={{ flex: 1, minHeight: 0 }}
-        data={groups}
-        computeItemKey={(index, g) => (g ? groupKey(g) : String(index))}
+        data={rows}
+        computeItemKey={(index, row) => (row ? rowKey(row) : String(index))}
         itemContent={itemContent}
+        heightEstimates={heightEstimates}
+        increaseViewportBy={{ top: 600, bottom: 200 }}
+        minOverscanItemCount={{ top: 4, bottom: 2 }}
         // Open at the saved per-tab anchor (top-aligned) when restoring a
         // scrolled-up tab, else pinned to the BOTTOM of the newest message.
         // `align: "end"` pins the last item's bottom to the viewport bottom — a
@@ -239,7 +294,9 @@ export function VirtualMessageFeed({
       />
       <ScrollToBottomPill
         visible={
-          !scrollController.following && scrollController.canScroll && hasContent
+          !scrollController.following &&
+          scrollController.canScroll &&
+          hasContent
         }
         onClick={() => {
           scrollController.setFollowing(true);

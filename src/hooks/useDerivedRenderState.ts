@@ -50,12 +50,15 @@ export function useDerivedRenderState({
       (state.recentSessions as RecentSessionItem[] | undefined) ?? [];
     const sidebar =
       (state.sidebar as Record<string, unknown> | undefined) ?? {};
+    const activeTabId = state.activeTabId as string | undefined;
+    const landing = state.landing as { kind?: string } | null | undefined;
+    const landingVisible = !!landing && landing.kind === "workspace";
+    const effectiveActiveTabId = landingVisible ? OVERVIEW_TAB_ID : activeTabId;
     const history = buildSidebarHistory(
       tabs,
-      state.activeTabId as string | undefined,
+      effectiveActiveTabId,
       recentSessions,
     );
-    const activeTabId = state.activeTabId as string | undefined;
     const hasTabs = tabs.length > 0;
     // Shell tabs live in /tabs but render only in the bottom terminal
     // panel — they must not suppress the overview. Only agent + editor
@@ -65,8 +68,6 @@ export function useDerivedRenderState({
     );
     const activeKind = activeTabKind(tabs, activeTabId);
     const overviewActive = activeKind === null || activeKind === "shell";
-    const landing = state.landing as { kind?: string } | null | undefined;
-    const landingVisible = !!landing && landing.kind === "workspace";
     // The overview owns the canvas when there are no session tabs *or*
     // when the user has explicitly selected the overview pseudo-tab.
     // Either case keeps the host / project dashboards visible while
@@ -198,9 +199,10 @@ export function useDerivedRenderState({
 
     return {
       ...state,
+      activeTabId: effectiveActiveTabId,
       hasTabs,
       hasSessionTabs,
-      overviewActive,
+      overviewActive: landingVisible ? true : overviewActive,
       overviewTabId: OVERVIEW_TAB_ID,
       empty,
       emptyAndProject,

@@ -16,12 +16,14 @@
  *   - "select-project-card" (forwarded from project-card) → activates.
  *   - "restore-session" — reuses tabStrip route too.
  */
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import type { BuiltinComponentProps } from "../../../components/A2UIRenderer";
 import { resolvePointer } from "../../../utils/jsonPointer";
 import { AeMarkInline } from "../layout";
 import { RegistryComponent } from "../../../components/A2UIRenderer";
 import { DashboardSessionRow } from "./session-row";
+import { clearConfigCache } from "../../../config";
 
 interface ProjectListItem {
   id: string;
@@ -77,6 +79,12 @@ interface WorkspaceLite {
   path: string;
 }
 
+interface HostStartupConfig {
+  startup?: {
+    autoApprove?: boolean;
+  };
+}
+
 function isRef(v: unknown): v is { $ref: string } {
   return typeof v === "object" && v !== null && "$ref" in v;
 }
@@ -95,6 +103,11 @@ export function ProjectsDashboard({
   state,
   onEvent,
 }: BuiltinComponentProps) {
+  const [hostStartupAutoApprove, setHostStartupAutoApprove] = useState<
+    boolean | null
+  >(null);
+  const [hostStartupSaving, setHostStartupSaving] = useState(false);
+  const [hostStartupError, setHostStartupError] = useState<string | null>(null);
   const props = component.props as
     | {
         projects?: unknown;
@@ -124,9 +137,11 @@ export function ProjectsDashboard({
   );
   const workspacesByProject = useMemo(() => {
     const sidebarProjects =
-      (state.sidebar as
-        | { projects?: Array<{ id?: string; workspaces?: WorkspaceLite[] }> }
-        | undefined)?.projects ?? [];
+      (
+        state.sidebar as
+          | { projects?: Array<{ id?: string; workspaces?: WorkspaceLite[] }> }
+          | undefined
+      )?.projects ?? [];
     const byProject: Record<string, WorkspaceLite[]> = {};
     for (const project of sidebarProjects) {
       if (!project.id || !Array.isArray(project.workspaces)) continue;
@@ -134,6 +149,59 @@ export function ProjectsDashboard({
     }
     return byProject;
   }, [state.sidebar]);
+  const showHostStartupPolicy = host?.isLocal === true;
+
+  useEffect(() => {
+    if (!showHostStartupPolicy) {
+      queueMicrotask(() => {
+        setHostStartupAutoApprove(null);
+        setHostStartupError(null);
+      });
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      setHostStartupAutoApprove(null);
+      setHostStartupError(null);
+      try {
+        const config = await invoke<HostStartupConfig>("read_config");
+        if (!cancelled) {
+          setHostStartupAutoApprove(config.startup?.autoApprove === true);
+        }
+      } catch (err) {
+        if (!cancelled) setHostStartupError(String(err));
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [showHostStartupPolicy]);
+
+  const setHostStartupPolicy = async (enabled: boolean) => {
+    setHostStartupSaving(true);
+    setHostStartupError(null);
+    try {
+      const config = await invoke<Record<string, unknown>>("read_config");
+      const currentStartup =
+        typeof config.startup === "object" && config.startup !== null
+          ? (config.startup as Record<string, unknown>)
+          : {};
+      const next = {
+        ...config,
+        startup: {
+          ...currentStartup,
+          autoApprove: enabled,
+        },
+      };
+      await invoke("write_config", { config: next });
+      clearConfigCache();
+      setHostStartupAutoApprove(enabled);
+    } catch (err) {
+      setHostStartupError(String(err));
+    } finally {
+      setHostStartupSaving(false);
+    }
+  };
 
   return (
     <div className="a2ui-projects-dashboard">
@@ -192,6 +260,27 @@ export function ProjectsDashboard({
                   "Start a task on this host… choose a project, use @<subagent> or @path",
               }}
             />
+          </section>
+        )}
+        {showHostStartupPolicy && (
+          <section className="a2ui-projects-dashboard-section a2ui-project-dashboard-startup-policy a2ui-projects-dashboard-startup-policy">
+            <label className="a2ui-project-dashboard-startup-checkbox">
+              <input
+                type="checkbox"
+                checked={hostStartupAutoApprove === true}
+                disabled={hostStartupSaving || hostStartupAutoApprove === null}
+                onChange={(event) =>
+                  void setHostStartupPolicy(event.currentTarget.checked)
+                }
+              />
+              <span className="a2ui-project-dashboard-startup-label">
+                Auto-approve startup commands on this host
+              </span>
+            </label>
+            <span className="a2ui-project-dashboard-startup-hint">
+              {hostStartupError ??
+                "Applies to all projects using this host's Aethon config"}
+            </span>
           </section>
         )}
         {projects.length > 0 && (

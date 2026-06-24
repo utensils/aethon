@@ -314,10 +314,16 @@ export interface ChatMessage {
    *  tool-card / system rows. */
   entryId?: string;
   role: "user" | "agent" | "system";
+  /** Provider-qualified model id that produced this row, when known. Used for
+   *  historical mixed-model sessions instead of a generic assistant label. */
+  model?: string;
   text?: string;
   attachments?: ChatAttachment[];
   thinking?: string;
   a2ui?: A2UIPayload;
   createdAt?: number;
+  /** Working directory for restored/local transcript rows. Used as a restore
+   *  hint for session actions when the bridge has not reopened the tab yet. */
+  cwd?: string;
   delivery?: "sent" | "queued" | "steered" | "failed";
 }

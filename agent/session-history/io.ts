@@ -92,6 +92,9 @@ export async function appendLocalChatMessage(
     type: "aethon_chat",
     id: message.id || randomUUID(),
     role: message.role,
+    ...(typeof message.model === "string" && message.model.length > 0
+      ? { model: message.model }
+      : {}),
     ...(text ? { text } : {}),
     ...(thinking ? { thinking } : {}),
     ...(attachments.length > 0 ? { attachments } : {}),
@@ -115,6 +118,7 @@ function serializeLocalChatEntry(m: RestoredChatMessage): string {
     type: "aethon_chat",
     id: m.id,
     role: m.role,
+    ...(m.model ? { model: m.model } : {}),
     ...(m.text ? { text: m.text } : {}),
     ...(m.thinking ? { thinking: m.thinking } : {}),
     ...(m.attachments && m.attachments.length > 0

@@ -64,6 +64,7 @@ describe("handleA2ui", () => {
       "msg-1",
       "tab-1",
       "thinking",
+      undefined,
     );
     expect(mocks.appendMessage).toHaveBeenCalledWith(
       expect.objectContaining({ id: "tool-1", role: "agent", a2ui: payload }),

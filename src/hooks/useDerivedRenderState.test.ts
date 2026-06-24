@@ -175,6 +175,45 @@ describe("useDerivedRenderState", () => {
     expect(result.current.renderState.agentTabActive).toBe(true);
   });
 
+  it("does not expose a selected session tab while workspace landing owns the canvas", () => {
+    const agent = makeEmptyTab("agent-1", "Tab 1");
+    const buildSidebarHistory = vi.fn(
+      (_tabs, activeId) =>
+        [
+          {
+            id: "agent-1",
+            label: "Tab 1",
+            active: activeId === "agent-1",
+          },
+        ],
+    );
+    const { result } = renderHook(() =>
+      useDerivedRenderState({
+        state: {
+          tabs: [agent],
+          activeTabId: "agent-1",
+          landing: { kind: "workspace", workspaceId: "wt-1" },
+          sidebar: {},
+        },
+        buildSidebarHistory,
+        hostInfo,
+      }),
+    );
+
+    expect(result.current.renderState.landingVisible).toBe(true);
+    expect(result.current.renderState.activeTabId).toBe(OVERVIEW_TAB_ID);
+    expect(result.current.renderState.overviewActive).toBe(true);
+    expect(result.current.renderState.agentTabActive).toBe(false);
+    expect(buildSidebarHistory).toHaveBeenCalledWith(
+      [agent],
+      OVERVIEW_TAB_ID,
+      [],
+    );
+    expect(result.current.renderState.sidebar).toMatchObject({
+      history: [{ id: "agent-1", active: false }],
+    });
+  });
+
   it("builds the active project dashboard from matching sessions and workspaces", () => {
     const { result } = renderHook(() =>
       useDerivedRenderState({

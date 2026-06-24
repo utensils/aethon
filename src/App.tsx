@@ -1039,6 +1039,7 @@ export default function App() {
     dismissNotification,
     sendChat,
     stopPrompt,
+    updateTab: updateTabRouted,
     updateActiveTab,
     editQueuedMessage,
     deleteQueuedMessage,

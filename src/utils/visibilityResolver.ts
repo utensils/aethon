@@ -1,4 +1,5 @@
 import {
+  DEFAULT_TOOL_CALLS_VISIBILITY,
   normalizeToolCallsVisibility,
   normalizeVisibility,
   type ToolCallsMode,
@@ -14,7 +15,8 @@ export interface ResolvedVisibility {
 /**
  * Resolve effective transcript visibility for a tab: a concrete per-tab
  * override wins; otherwise fall back to the global default mirrored at
- * `/transcriptVisibility` (seeded from `[ui]` config); otherwise `show`.
+ * `/transcriptVisibility` (seeded from `[ui]` config); when the mirror omits
+ * tool-call visibility, use the configured default mode.
  *
  * Kept pure (state + tabId in, modes out) so it's trivially testable and the
  * renderer can memoize on `[state, tabId]`.
@@ -28,7 +30,10 @@ export function resolveVisibility(
     toolCalls?: unknown;
   };
   const globalThinking = normalizeVisibility(global.thinking);
-  const globalTool = normalizeToolCallsVisibility(global.toolCalls);
+  const globalTool =
+    global.toolCalls === undefined
+      ? DEFAULT_TOOL_CALLS_VISIBILITY
+      : normalizeToolCallsVisibility(global.toolCalls);
 
   const overrides = findTabOverrides(state, tabId);
   return {

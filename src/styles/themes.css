@@ -1026,18 +1026,35 @@
     --motion-base: 0ms;
     --motion-slow: 60ms;
     --motion-panel: 0ms;
+    --motion-chat-enter: 0ms;
+    --motion-chat-expand: 0ms;
   }
   .a2ui-terminal,
+  .a2ui-chat-message-flash,
+  .a2ui-msg-row-enter,
+  .a2ui-scroll-to-bottom,
   .ae-agent-pill-dot,
   .app-header-pill[data-state="thinking"]::before,
+  .ae-turn-activity-body,
+  .ae-turn-activity-live-tools,
+  .ae-tool-activity-row,
+  .ae-vis-menu,
   .ae-typing-dot,
   .ae-tool-spinner {
     animation: none !important;
   }
   .ae-typing-dot {
-    opacity: 0.35;
+    color: var(--text-dim);
+    opacity: 0.62;
+    transform: translateY(0);
   }
   .ae-tool-spinner {
     opacity: 0.6;
+  }
+  .ae-turn-activity-summary,
+  .ae-turn-block-caret,
+  .ae-tool-activity-file-diff,
+  .ae-tool-activity-file-open {
+    transition: none !important;
   }
 }

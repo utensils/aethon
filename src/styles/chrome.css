@@ -1383,6 +1383,11 @@ body.ae-resizing-sidebar .a2ui-layout {
   background: transparent;
   box-shadow: inset 0 0 0 1.5px var(--state-success-border, var(--text-dim));
 }
+.ae-sb-agent-dot--dormant {
+  background: transparent;
+  opacity: 0.62;
+  box-shadow: inset 0 0 0 1.5px var(--border-hover);
+}
 @media (prefers-reduced-motion: reduce) {
   .ae-sb-agent-dot--running {
     animation: none;
@@ -2924,10 +2929,6 @@ body.ae-resizing-sidebar .a2ui-layout {
   padding-top: 2px;
   margin-top: 1px;
 }
-.a2ui-canvas-message.agent .a2ui-canvas-role {
-  color: color-mix(in oklab, var(--accent) 55%, var(--text-dim));
-}
-
 .a2ui-canvas-message.system {
   align-self: center;
   background: transparent;
@@ -2952,6 +2953,13 @@ body.ae-resizing-sidebar .a2ui-layout {
   color: var(--text-dim);
   text-align: right;
   opacity: 0.55;
+}
+.a2ui-canvas-message.agent .a2ui-canvas-role {
+  color: color-mix(in oklab, var(--accent) 42%, var(--text-dim));
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  text-transform: none;
+  opacity: 0.9;
 }
 
 .a2ui-chat-text,
@@ -3394,21 +3402,14 @@ body.ae-resizing-sidebar .a2ui-layout {
 
 .a2ui-thinking-block {
   margin: 0.3em 0;
-  padding: 5px 10px;
-  background: var(--state-info-bg, transparent);
-  border: none;
-  /* Left gutter picks up the cool secondary accent — keeps the visual
-     distinct from agent message bodies (warm primary) and gives the
-     "thinking" passages their own voice in the transcript. */
-  border-left: 2px solid
-    var(--accent-2, color-mix(in oklab, var(--text-dim) 40%, transparent));
-  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  padding: 7px 10px;
+  background: color-mix(in oklab, var(--bg-input) 72%, transparent);
+  border: 1px solid var(--border-subtle, var(--border));
+  border-radius: var(--radius-sm);
   color: var(--text-dim);
 }
 
-.a2ui-thinking-block summary {
-  cursor: pointer;
-  user-select: none;
+.a2ui-thinking-label {
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.08em;
@@ -3490,12 +3491,12 @@ body.ae-resizing-sidebar .a2ui-layout {
 }
 
 .a2ui-canvas-scroller .a2ui-msg-row {
-  padding-inline: 20px;
+  padding-inline: max(20px, calc((100% - 920px) / 2));
   zoom: var(--app-ui-scale, 1);
 }
 
 .a2ui-chat-history .a2ui-msg-row {
-  padding-inline: 12px;
+  padding-inline: max(12px, calc((100% - 860px) / 2));
   zoom: var(--app-ui-scale, 1);
 }
 
@@ -3513,6 +3514,27 @@ body.ae-resizing-sidebar .a2ui-layout {
 
 .a2ui-chat-history .a2ui-msg-row-last {
   padding-bottom: 8px;
+}
+
+.a2ui-chat-history .a2ui-msg-row-footer,
+.a2ui-canvas-scroller .a2ui-msg-row-footer {
+  padding-top: 0;
+}
+
+.a2ui-msg-row-enter {
+  animation: ae-chat-row-enter var(--motion-chat-enter, 140ms)
+    var(--ease-out-strong) both;
+}
+
+@keyframes ae-chat-row-enter {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .a2ui-chat-load-older {
@@ -3552,14 +3574,14 @@ body.ae-resizing-sidebar .a2ui-layout {
 .a2ui-chat-message.user {
   background: var(--user-bubble);
   border: 1px solid var(--border);
-  border-radius: 14px 14px 4px 14px;
+  border-radius: 12px;
   align-self: flex-end;
-  margin-left: 14%;
+  margin-left: 18%;
   margin-right: 0;
   margin-top: 10px;
 }
 .a2ui-chat-message.user.ae-msg-cont {
-  border-radius: 14px 4px 4px 14px;
+  border-radius: 12px;
   margin-top: 2px;
 }
 
@@ -3567,21 +3589,16 @@ body.ae-resizing-sidebar .a2ui-layout {
 .a2ui-chat-message.agent {
   background: transparent;
   border: 0;
-  border-top: 1px solid color-mix(in oklab, var(--border) 45%, transparent);
   align-self: stretch;
   max-width: 100%;
-  padding: 8px 12px 4px 4px;
-  margin-top: 8px;
+  padding: 8px 4px 4px;
+  margin-top: 10px;
 }
 .a2ui-chat-message.agent.ae-msg-cont {
   border-top: none;
   padding-top: 2px;
   margin-top: 1px;
 }
-.a2ui-chat-message.agent .a2ui-chat-role {
-  color: color-mix(in oklab, var(--accent) 55%, var(--text-dim));
-}
-
 /* System bubbles: faint log-line style — not part of the conversation. */
 .a2ui-chat-message.system {
   background: transparent;
@@ -3610,7 +3627,7 @@ body.ae-resizing-sidebar .a2ui-layout {
   display: block;
   font-size: 10px;
   font-weight: 700;
-  letter-spacing: 0.09em;
+  letter-spacing: 0;
   text-transform: uppercase;
   color: var(--accent);
   margin-bottom: 3px;
@@ -3621,6 +3638,13 @@ body.ae-resizing-sidebar .a2ui-layout {
   color: var(--text-dim);
   text-align: right;
   opacity: 0.55;
+}
+.a2ui-chat-message.agent .a2ui-chat-role {
+  color: color-mix(in oklab, var(--accent) 42%, var(--text-dim));
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  text-transform: none;
+  opacity: 0.9;
 }
 
 .a2ui-chat-meta {
@@ -3738,42 +3762,53 @@ body.ae-resizing-sidebar .a2ui-layout {
 /* ---- Typing indicator --------------------------------------------------- */
 
 .ae-typing-indicator {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 10px 4px 4px;
+  min-height: 22px;
+  padding: 8px 4px 6px;
   align-self: flex-start;
+  color: var(--text-dim);
+}
+
+.ae-typing-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
 }
 
 .ae-typing-dot {
-  display: inline-block;
-  width: 6px;
-  height: 6px;
-  background: var(--text-dim);
-  border-radius: 50%;
-  opacity: 0.4;
-  animation: ae-dot-pulse 1.2s ease-in-out infinite both;
-}
-.ae-typing-dot:nth-child(1) {
-  animation-delay: 0s;
-}
-.ae-typing-dot:nth-child(2) {
-  animation-delay: 0.2s;
-}
-.ae-typing-dot:nth-child(3) {
-  animation-delay: 0.4s;
+  width: 5px;
+  height: 5px;
+  border-radius: 999px;
+  background: currentColor;
+  opacity: 0.42;
+  transform: translateY(0);
 }
 
-@keyframes ae-dot-pulse {
-  0%,
-  80%,
-  100% {
-    opacity: 0.25;
-    transform: scale(0.85);
+@media (prefers-reduced-motion: no-preference) {
+  .ae-typing-dot {
+    animation: ae-typing-dot 1.1s var(--ease-out-strong) infinite;
   }
-  40% {
-    opacity: 0.9;
-    transform: scale(1.1);
+
+  .ae-typing-dot:nth-child(2) {
+    animation-delay: 140ms;
+  }
+
+  .ae-typing-dot:nth-child(3) {
+    animation-delay: 280ms;
+  }
+}
+
+@keyframes ae-typing-dot {
+  0%,
+  70%,
+  100% {
+    opacity: 0.38;
+    transform: translateY(0);
+  }
+  32% {
+    opacity: 0.86;
+    transform: translateY(-3px);
   }
 }
 
@@ -7171,6 +7206,16 @@ body.ae-resizing-terminal * {
   font-weight: 500;
 }
 
+.ae-tool-file-change-stat {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: 3px;
+  font-family: var(--font-mono);
+  font-size: var(--chrome-text-muted);
+  font-weight: 600;
+}
+
 .ae-tool-file-change-body {
   display: flex;
   flex-direction: column;
@@ -8400,6 +8445,42 @@ button.a2ui-gh-stat:hover {
   background: var(--bg-hover);
   border-color: var(--accent);
 }
+.a2ui-project-dashboard-startup-policy {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  margin-top: calc(var(--space-1) * -1);
+  color: var(--text-dim);
+  font-size: var(--chrome-text-compact);
+}
+.a2ui-project-dashboard-startup-checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--text);
+  cursor: pointer;
+  user-select: none;
+}
+.a2ui-project-dashboard-startup-checkbox input {
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+.a2ui-project-dashboard-startup-checkbox input:disabled,
+.a2ui-project-dashboard-startup-checkbox input:disabled + span {
+  cursor: not-allowed;
+  opacity: 0.56;
+}
+.a2ui-project-dashboard-startup-label {
+  font-weight: 500;
+}
+.a2ui-project-dashboard-startup-hint {
+  min-width: min(100%, 22rem);
+  color: var(--text-dim);
+}
 
 .a2ui-project-dashboard-workspaces {
   list-style: none;
@@ -9522,7 +9603,7 @@ button.ae-vcs-chip:focus-visible {
   }
 }
 
-/* ── Composer visibility pills (tri-state Thinking / Tool calls) ──────── */
+/* ── Composer visibility pills (on/off Thinking / Tool calls) ─────────── */
 .ae-composer-area {
   min-width: 0;
 }
@@ -9564,12 +9645,6 @@ button.ae-vcs-chip:focus-visible {
   background: var(--accent);
   flex: none;
 }
-.ae-vis-pill[data-mode="collapse"] .ae-vis-pill-dot,
-.ae-vis-pill[data-mode="group-turn"] .ae-vis-pill-dot,
-.ae-vis-pill[data-mode="group-run"] .ae-vis-pill-dot,
-.ae-vis-pill[data-mode="group-block"] .ae-vis-pill-dot {
-  background: color-mix(in oklab, var(--accent) 45%, transparent);
-}
 /* Per-session override marker — a small accent tag after the state text. */
 .ae-vis-pill[data-scope="session"] {
   border-color: color-mix(in oklab, var(--accent) 55%, var(--border));
@@ -9583,10 +9658,18 @@ button.ae-vcs-chip:focus-visible {
   background: color-mix(in oklab, var(--accent) 20%, transparent);
   color: var(--accent);
 }
-.ae-vis-pill[data-mode="hide"] {
+.ae-vis-pill[data-mode="hide"],
+.ae-vis-pill[data-mode="collapse"],
+.ae-vis-pill[data-mode="group-turn"],
+.ae-vis-pill[data-mode="group-run"],
+.ae-vis-pill[data-mode="group-block"] {
   color: color-mix(in oklab, var(--text-dim) 70%, transparent);
 }
-.ae-vis-pill[data-mode="hide"] .ae-vis-pill-dot {
+.ae-vis-pill[data-mode="hide"] .ae-vis-pill-dot,
+.ae-vis-pill[data-mode="collapse"] .ae-vis-pill-dot,
+.ae-vis-pill[data-mode="group-turn"] .ae-vis-pill-dot,
+.ae-vis-pill[data-mode="group-run"] .ae-vis-pill-dot,
+.ae-vis-pill[data-mode="group-block"] .ae-vis-pill-dot {
   background: transparent;
   border: 1px solid var(--border-strong);
 }
@@ -9641,7 +9724,21 @@ button.ae-vcs-chip:focus-visible {
   border-radius: 8px;
   box-shadow: 0 14px 40px rgba(0, 0, 0, 0.4);
   padding: 4px;
+  transform-origin: bottom right;
+  animation: ae-vis-menu-enter var(--motion-base) var(--ease-out-strong) both;
 }
+
+@keyframes ae-vis-menu-enter {
+  from {
+    opacity: 0;
+    transform: translateY(4px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
 .ae-vis-menu-item {
   display: block;
   width: 100%;
@@ -9654,6 +9751,9 @@ button.ae-vcs-chip:focus-visible {
   font-size: 12px;
   padding: 7px 10px;
   cursor: pointer;
+  transition:
+    background var(--motion-fast) var(--ease-out),
+    color var(--motion-fast) var(--ease-out);
 }
 .ae-vis-menu-item:hover {
   background: var(--bg-hover);
@@ -9721,113 +9821,489 @@ button.ae-vcs-chip:focus-visible {
   color: var(--text);
 }
 
-/* ── Grouped tool-call cluster (tool visibility = "group-run" / "group-turn") ── */
-.ae-tool-group {
-  border: 1px dashed var(--border);
-  border-radius: 10px;
-  width: fit-content;
-  max-width: 100%;
-}
-.ae-tool-group[data-expanded="true"] {
-  width: 100%;
-  border-style: solid;
-  background: var(--bg-elev);
-}
-.ae-tool-group-summary {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  width: 100%;
-  background: transparent;
-  border: none;
-  color: var(--text-dim);
-  font: inherit;
-  font-size: 12px;
-  padding: 5px 10px;
-  cursor: pointer;
-  text-align: left;
-}
-.ae-tool-group-summary:hover {
-  color: var(--text);
-}
-.ae-tool-group-caret {
-  font-size: 10px;
-  opacity: 0.8;
-}
-.ae-tool-group-label {
-  font-weight: 500;
-}
-.ae-tool-group-peek {
-  min-width: 0;
-  color: var(--text-dim);
-  opacity: 0.7;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.ae-tool-group-body {
+/* ── Codex-style conversation turns: prose first, activity folded ───────── */
+.ae-conversation-turn {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  padding: 0 8px 8px;
-}
-
-/* ── Folded agent turn (tool-call visibility = "group-block") ─────────── */
-.ae-turn-block {
-  border: 1px dashed var(--border);
-  border-radius: 10px;
-  width: fit-content;
+  min-width: 0;
   max-width: 100%;
 }
-.ae-turn-block[data-expanded="true"] {
-  width: 100%;
-  border-style: solid;
-  background: var(--bg-elev);
+
+.ae-turn-activity {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  max-width: 100%;
+  padding-left: 4px;
 }
-.ae-turn-block-summary {
+
+.ae-turn-activity-summary {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  width: 100%;
+  gap: 8px;
+  width: fit-content;
+  max-width: 100%;
+  padding: 3px 0;
+  border: 0;
   background: transparent;
-  border: none;
   color: var(--text-dim);
   font: inherit;
-  font-size: 12px;
-  padding: 5px 10px;
-  cursor: pointer;
+  font-size: var(--chrome-text);
   text-align: left;
+  cursor: pointer;
+  transition: color var(--motion-fast) var(--ease-out);
 }
-.ae-turn-block-summary:hover {
+
+.ae-turn-activity-summary:hover {
   color: var(--text);
 }
+
+.ae-turn-activity-body,
+.ae-turn-activity-live-tools {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  max-width: min(100%, 76ch);
+  padding-left: 18px;
+  transform-origin: top;
+}
+
+.ae-turn-activity-body[data-state="open"],
+.ae-turn-activity-live-tools[data-state="open"] {
+  animation: ae-turn-activity-open var(--motion-chat-expand, 240ms)
+    var(--ease-panel) both;
+}
+
+.ae-turn-activity-body[data-state="closing"] {
+  pointer-events: none;
+  animation: ae-turn-activity-close var(--motion-chat-expand, 240ms)
+    var(--ease-panel) both;
+}
+
+.ae-turn-branch-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: max-content;
+  max-width: 100%;
+  margin-top: 2px;
+  padding-left: 4px;
+  opacity: 0.62;
+  transition:
+    opacity var(--motion-fast) var(--ease-out),
+    color var(--motion-fast) var(--ease-out);
+  flex-wrap: nowrap;
+  white-space: nowrap;
+}
+
+.ae-conversation-turn:hover .ae-turn-branch-actions,
+.ae-turn-branch-actions:focus-within {
+  opacity: 1;
+}
+
+.ae-turn-branch-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  height: 24px;
+  background: color-mix(in oklab, var(--bg-elev) 86%, transparent);
+  border: 1px solid color-mix(in oklab, var(--border) 88%, transparent);
+  color: var(--text-dim);
+  font-size: var(--text-xs);
+  padding: 2px 8px 2px 6px;
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+  line-height: 1.4;
+  white-space: nowrap;
+  flex-shrink: 0;
+  overflow-wrap: normal;
+  transition:
+    background var(--motion-fast) var(--ease-out),
+    border-color var(--motion-fast) var(--ease-out),
+    color var(--motion-fast) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out);
+}
+
+.ae-turn-branch-btn svg {
+  display: block;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.45;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.ae-turn-branch-btn circle {
+  fill: var(--bg-elev);
+}
+
+.ae-turn-branch-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+  border-color: var(--border-strong);
+  transform: translateY(-1px);
+}
+
+.ae-turn-branch-label {
+  display: inline-block;
+  font-size: var(--text-xs);
+  line-height: 1;
+}
+
+.ae-turn-branch-confirm {
+  color: var(--danger);
+  border-color: var(--danger);
+  padding-inline: 8px;
+}
+
+@keyframes ae-turn-activity-open {
+  from {
+    opacity: 0;
+    transform: translateY(-3px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes ae-turn-activity-close {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-3px);
+  }
+}
+
+.ae-turn-progress-message.a2ui-chat-message {
+  max-width: 100%;
+  padding: 4px 0;
+  margin-top: 0;
+  color: var(--text-secondary, var(--text-dim));
+}
+
+.ae-turn-progress-message .a2ui-chat-meta {
+  display: none;
+}
+
+.ae-typing-message.a2ui-chat-message,
+.ae-typing-message.a2ui-canvas-message {
+  background: transparent;
+  border: 0;
+  margin-top: 2px;
+  padding-top: 0;
+  padding-bottom: 8px;
+}
+
+.ae-tool-activity-row {
+  display: grid;
+  grid-template-columns: 10px minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  color: var(--text-secondary, var(--text-dim));
+  font-size: var(--chrome-text);
+  animation: ae-tool-row-in var(--motion-base) var(--ease-out-strong) both;
+}
+
+@keyframes ae-tool-row-in {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.ae-tool-activity-dot {
+  width: 6px;
+  height: 6px;
+  margin-top: 8px;
+  border-radius: 999px;
+  background: var(--state-success-fg, var(--success));
+  opacity: 0.85;
+}
+
+.ae-tool-activity-row[data-status="running"] .ae-tool-activity-dot {
+  background: var(--accent);
+}
+
+.ae-tool-activity-row[data-status="failed"] .ae-tool-activity-dot,
+.ae-tool-activity-row[data-status="cancelled"] .ae-tool-activity-dot {
+  background: var(--state-error-fg, var(--danger));
+}
+
+.ae-tool-activity-main {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.ae-tool-activity-line {
+  display: flex;
+  align-items: baseline;
+  min-width: 0;
+  gap: 8px;
+}
+
+.ae-tool-activity-name {
+  flex: 0 0 auto;
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--chrome-text-compact);
+  font-weight: 600;
+}
+
+.ae-tool-activity-description {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: var(--chrome-text-compact);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ae-tool-activity-state {
+  justify-self: end;
+  color: var(--text-dim);
+  font-size: var(--chrome-text-compact);
+  white-space: nowrap;
+}
+
+.ae-file-activity-card {
+  display: flex;
+  width: min(100%, 56rem);
+  min-width: 0;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: color-mix(in oklab, var(--bg-elev) 82%, transparent);
+  box-shadow: 0 1px 0 color-mix(in oklab, var(--text) 6%, transparent);
+}
+
+.ae-file-activity-head {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.ae-file-activity-icon {
+  display: inline-flex;
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  background: color-mix(in oklab, var(--accent) 16%, transparent);
+  color: var(--accent);
+  font-size: 12px;
+}
+
+.ae-file-activity-title {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text);
+  font-size: var(--chrome-text);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ae-file-activity-head .ae-turn-block-files {
+  margin-left: auto;
+  flex: 0 0 auto;
+}
+
+.ae-file-activity-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.ae-file-activity-list .ae-tool-activity-file-item {
+  border-top: 1px solid color-mix(in oklab, var(--border) 60%, transparent);
+}
+
+.ae-file-activity-list .ae-tool-activity-file-item:first-child {
+  border-top: 0;
+}
+
+.ae-tool-activity-file-item {
+  min-width: 0;
+}
+
+.ae-tool-activity-file {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 8px;
+  padding: 8px 12px;
+}
+
+.ae-tool-activity-file-open {
+  display: inline-flex;
+  align-items: center;
+  flex: 1 1 auto;
+  min-width: 0;
+  gap: 6px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-secondary, var(--text-dim));
+  cursor: pointer;
+  font: inherit;
+  transition: color var(--motion-fast) var(--ease-out);
+}
+
+.ae-tool-activity-file-open:hover {
+  color: var(--text);
+}
+
+.ae-tool-activity-file-icon {
+  flex: 0 0 auto;
+}
+
+.ae-tool-activity-file-name {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ae-tool-activity-file-dir {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-dim);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ae-tool-activity-file-stat {
+  display: inline-flex;
+  flex: 0 0 auto;
+  gap: 5px;
+  font-family: var(--font-mono);
+  font-size: var(--chrome-text);
+  font-weight: 600;
+}
+
+.ae-tool-activity-file-source,
+.ae-tool-activity-file-preview-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  height: 30px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+  font: inherit;
+  transition: color var(--motion-fast) var(--ease-out);
+}
+
+.ae-tool-activity-file-source {
+  padding: 0 8px;
+  font-size: var(--chrome-text-compact);
+}
+
+.ae-tool-activity-file-preview-toggle {
+  width: 34px;
+  line-height: 1;
+}
+
+.ae-tool-activity-file-preview-toggle svg {
+  display: block;
+  width: 18px;
+  height: 18px;
+  stroke-width: 1.9;
+}
+
+.ae-tool-activity-file-source:hover,
+.ae-tool-activity-file-preview-toggle:hover {
+  border-color: var(--border);
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.ae-tool-activity-file-preview {
+  margin: 0;
+  max-height: 220px;
+  border-top: 1px solid color-mix(in oklab, var(--border) 55%, transparent);
+}
+
+.ae-tool-activity-file-preview-empty {
+  padding: 10px 14px;
+  border-top: 1px solid color-mix(in oklab, var(--border) 55%, transparent);
+  color: var(--text-dim);
+  font-size: var(--chrome-text-compact);
+}
+
 .ae-turn-block-caret {
+  display: inline-block;
   font-size: 10px;
   opacity: 0.8;
+  transition: transform var(--motion-fast) var(--ease-out);
+}
+.ae-turn-activity[data-expanded="true"] .ae-turn-block-caret {
+  transform: translateY(1px);
 }
 .ae-turn-block-label {
   font-weight: 500;
-  color: var(--text);
+  color: var(--text-secondary, var(--text-dim));
 }
 .ae-turn-block-meta {
   color: var(--text-dim);
   opacity: 0.85;
 }
-.ae-turn-block-peek {
+.ae-turn-block-separator {
+  color: color-mix(in oklab, var(--text-dim) 70%, transparent);
+  opacity: 0.75;
+}
+.ae-turn-block-files {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   min-width: 0;
-  color: var(--text-dim);
-  opacity: 0.7;
+  color: var(--text-secondary, var(--text-dim));
+  font-size: var(--chrome-text);
+}
+.ae-turn-block-files-label {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.ae-turn-block-body {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding: 4px 8px 10px;
+.ae-turn-block-add,
+.ae-turn-block-del {
+  font-family: var(--font-mono);
+  font-size: var(--chrome-text-muted);
+  font-weight: 600;
 }
-
+.ae-turn-block-add {
+  color: var(--state-success-fg, var(--success));
+}
+.ae-turn-block-del {
+  color: var(--state-error-fg, var(--danger));
+}
 /* --------------------------------------------------------------------------
  * Subagents config (overview editor) — project + host overview surfaces.
  * ------------------------------------------------------------------------ */
@@ -10018,64 +10494,6 @@ button.ae-vcs-chip:focus-visible {
 .ae-subagents-editor-actions {
   display: flex;
   gap: 8px;
-}
-
-/* --------------------------------------------------------------------------
- * Per-message rollback / fork hover toolbar (chat + canvas transcripts).
- * ------------------------------------------------------------------------ */
-.a2ui-canvas-message {
-  position: relative;
-}
-.ae-msg-branch-actions {
-  position: absolute;
-  top: 4px;
-  right: 8px;
-  display: flex;
-  gap: 4px;
-  opacity: 0;
-  transition: opacity var(--motion-fast) ease;
-  pointer-events: none;
-  /* Keep the action row on one line. The parent message is
-     `overflow-wrap: anywhere` + `min-width: 0`, so as an absolutely
-     positioned child this row's shrink-to-fit width can collapse during a
-     list reflow and stack the pills into a vertical column ("renders
-     vertically at times"). Pin the row to its content width and forbid
-     wrapping so the horizontal layout is invariant regardless of the
-     containing block's transient width. */
-  width: max-content;
-  max-width: none;
-  flex-wrap: nowrap;
-  white-space: nowrap;
-}
-.a2ui-chat-message:hover .ae-msg-branch-actions,
-.a2ui-canvas-message:hover .ae-msg-branch-actions,
-.ae-msg-branch-actions:focus-within {
-  opacity: 1;
-  pointer-events: auto;
-}
-.ae-msg-branch-btn {
-  background: var(--bg-elev);
-  border: 1px solid var(--border);
-  color: var(--text-dim);
-  font-size: var(--text-xs);
-  padding: 1px 7px;
-  border-radius: var(--radius-pill);
-  cursor: pointer;
-  line-height: 1.4;
-  /* Don't inherit the message body's character-level wrapping, and don't
-     let flex shrink the pill below its label width. */
-  white-space: nowrap;
-  flex-shrink: 0;
-  overflow-wrap: normal;
-}
-.ae-msg-branch-btn:hover {
-  background: var(--bg-hover);
-  color: var(--text);
-  border-color: var(--border-strong);
-}
-.ae-msg-branch-confirm {
-  color: var(--danger);
-  border-color: var(--danger);
 }
 
 /* --------------------------------------------------------------------------

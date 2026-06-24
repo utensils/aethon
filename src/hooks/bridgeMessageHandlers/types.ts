@@ -147,6 +147,7 @@ export interface BridgeMessageContext {
     messageId?: string,
     tabId?: string,
     channel?: "text" | "thinking",
+    model?: string,
   ) => void;
   setStatusFlags: (
     flags: Partial<{ waiting: boolean; status: string; connection: string }>,

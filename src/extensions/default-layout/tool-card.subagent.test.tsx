@@ -136,8 +136,8 @@ describe("ToolCard file changes", () => {
     fireEvent.click(screen.getByText("Edited 1 file"));
 
     expect(screen.getByText("App.tsx")).toBeTruthy();
-    expect(screen.getByText("+1")).toBeTruthy();
-    expect(screen.getByText("-1")).toBeTruthy();
+    expect(screen.getAllByText("+1").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("-1").length).toBeGreaterThan(0);
     expect(screen.getByText("+new")).toBeTruthy();
   });
 
@@ -172,7 +172,9 @@ describe("ToolCard file changes", () => {
       rootPath: "/repo",
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "Open diff for new.ts" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Open diff for new.ts" }),
+    );
     expect(onEvent).toHaveBeenCalledWith("tool-file-diff", {
       filePath: "src/new.ts",
       rootPath: "/repo",

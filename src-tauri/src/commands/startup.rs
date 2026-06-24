@@ -87,6 +87,7 @@ impl WorkspaceStartupState {
 #[serde(rename_all = "camelCase")]
 pub struct StartupConfig {
     pub timeout_seconds: u64,
+    pub auto_approve: bool,
     pub commands: Vec<StartupCommandConfig>,
     pub warning: Option<String>,
 }
@@ -110,6 +111,9 @@ struct RawStartupToml {
 #[derive(Default, Deserialize)]
 struct RawStartupSection {
     timeout_seconds: Option<u64>,
+    // Deprecated and intentionally ignored for approval decisions: project
+    // config is repo-controlled, while startup command trust must be user-owned.
+    auto_approve: Option<bool>,
     commands: Option<Vec<RawStartupCommand>>,
 }
 
@@ -130,6 +134,12 @@ pub(crate) fn parse_startup_config(input: &str) -> StartupConfig {
     };
     let timeout_seconds = normalize_timeout(parsed.startup.timeout_seconds);
     let mut warnings = Vec::new();
+    if parsed.startup.auto_approve == Some(true) {
+        warnings.push(
+            "Ignored [startup].auto_approve from project config; configure startup trust in Aethon"
+                .to_string(),
+        );
+    }
     let commands = parsed
         .startup
         .commands
@@ -166,6 +176,7 @@ pub(crate) fn parse_startup_config(input: &str) -> StartupConfig {
         .collect();
     StartupConfig {
         timeout_seconds,
+        auto_approve: false,
         commands,
         warning: (!warnings.is_empty()).then(|| warnings.join("; ")),
     }
@@ -222,6 +233,13 @@ pub struct StartupApproveArgs {
     pub fingerprint: String,
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StartupSetAutoApproveArgs {
+    pub root: String,
+    pub enabled: bool,
+}
+
 #[derive(Serialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct StartupTaskStatus {
@@ -238,9 +256,20 @@ pub struct StartupStatusResponse {
     pub fingerprint: String,
     pub state: String,
     pub approved: bool,
+    pub auto_approve: bool,
+    pub host_auto_approve: bool,
+    pub project_auto_approve: bool,
     pub commands: Vec<StartupTaskStatus>,
     pub warning: Option<String>,
     pub reason: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct StartupApprovalPolicy {
+    approved: bool,
+    auto_approve: bool,
+    host_auto_approve: bool,
+    project_auto_approve: bool,
 }
 
 #[derive(Serialize, Clone)]
@@ -269,7 +298,33 @@ struct StartupOutputEvent {
 
 #[derive(Default, Serialize, Deserialize)]
 struct ApprovalStore {
+    #[serde(default)]
     approvals: BTreeMap<String, String>,
+    #[serde(default)]
+    auto_approve_roots: BTreeMap<String, bool>,
+}
+
+#[derive(Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ProjectRegistry {
+    #[serde(default)]
+    projects: Vec<ProjectRegistryProject>,
+    #[serde(default)]
+    workspaces_by_project: BTreeMap<String, Vec<ProjectRegistryWorkspace>>,
+}
+
+#[derive(Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ProjectRegistryProject {
+    id: String,
+    label: String,
+    path: String,
+}
+
+#[derive(Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ProjectRegistryWorkspace {
+    path: String,
 }
 
 #[tauri::command]
@@ -281,13 +336,13 @@ pub async fn workspace_startup_status(
     let root = canonicalize_root(&PathBuf::from(args.root));
     let config = read_startup_config(&root);
     let fingerprint = startup_fingerprint(&config);
-    let approved = config.commands.is_empty() || approval_matches(&app, &root, &fingerprint)?;
+    let policy = startup_approval_policy(&app, &root, &config, &fingerprint)?;
     let record = state.record(&root);
     Ok(status_response(
         &root,
         &config,
         &fingerprint,
-        approved,
+        policy,
         record,
     ))
 }
@@ -306,6 +361,7 @@ pub async fn workspace_startup_approve(
     }
     write_approval(&app, &root, &fingerprint)?;
     state.clear_record(&root);
+    let policy = startup_approval_policy(&app, &root, &config, &fingerprint)?;
     emit_startup_event(
         &app,
         StartupEvent {
@@ -319,7 +375,7 @@ pub async fn workspace_startup_approve(
             reason: None,
         },
     );
-    Ok(status_response(&root, &config, &fingerprint, true, None))
+    Ok(status_response(&root, &config, &fingerprint, policy, None))
 }
 
 #[tauri::command]
@@ -356,14 +412,29 @@ pub async fn workspace_startup_continue(
             reason: Some("continued by user".to_string()),
         },
     );
-    let approved = config.commands.is_empty() || approval_matches(&app, &root, &fingerprint)?;
+    let policy = startup_approval_policy(&app, &root, &config, &fingerprint)?;
     Ok(status_response(
         &root,
         &config,
         &fingerprint,
-        approved,
+        policy,
         state.record(&root),
     ))
+}
+
+#[tauri::command]
+pub async fn workspace_startup_set_auto_approve(
+    app: AppHandle,
+    state: State<'_, WorkspaceStartupState>,
+    args: StartupSetAutoApproveArgs,
+) -> Result<StartupStatusResponse, String> {
+    let root = canonicalize_root(&PathBuf::from(args.root));
+    write_root_auto_approve(&app, &root, args.enabled)?;
+    state.clear_record(&root);
+    let config = read_startup_config(&root);
+    let fingerprint = startup_fingerprint(&config);
+    let policy = startup_approval_policy(&app, &root, &config, &fingerprint)?;
+    Ok(status_response(&root, &config, &fingerprint, policy, None))
 }
 
 #[tauri::command]
@@ -436,7 +507,7 @@ async fn prepare_workspace_startup_inner(
 
     let config = read_startup_config(root);
     let fingerprint = startup_fingerprint(&config);
-    let approved = config.commands.is_empty() || approval_matches(app, root, &fingerprint)?;
+    let policy = startup_approval_policy(app, root, &config, &fingerprint)?;
     if let Some(record) = startup.record(root)
         && record.fingerprint == fingerprint
         && matches!(record.state, StartupState::Ready | StartupState::Continued)
@@ -445,7 +516,7 @@ async fn prepare_workspace_startup_inner(
             root,
             &config,
             &fingerprint,
-            approved,
+            policy,
             Some(record),
         ));
     }
@@ -499,7 +570,7 @@ async fn prepare_workspace_startup_inner(
                 root,
                 &config,
                 &fingerprint,
-                approved,
+                policy,
                 Some(record),
             ));
         }
@@ -518,7 +589,7 @@ async fn prepare_workspace_startup_inner(
         },
     );
 
-    if !approved {
+    if !policy.approved {
         let record = StartupRecord {
             fingerprint: fingerprint.clone(),
             state: StartupState::ApprovalRequired,
@@ -543,7 +614,7 @@ async fn prepare_workspace_startup_inner(
             root,
             &config,
             &fingerprint,
-            false,
+            policy,
             Some(record),
         ));
     }
@@ -621,7 +692,7 @@ async fn prepare_workspace_startup_inner(
                     root,
                     &config,
                     &fingerprint,
-                    true,
+                    policy,
                     Some(record),
                 ));
             }
@@ -665,7 +736,7 @@ async fn prepare_workspace_startup_inner(
         root,
         &config,
         &fingerprint,
-        true,
+        policy,
         Some(record),
     ))
 }
@@ -854,7 +925,7 @@ fn status_response(
     root: &Path,
     config: &StartupConfig,
     fingerprint: &str,
-    approved: bool,
+    policy: StartupApprovalPolicy,
     record: Option<StartupRecord>,
 ) -> StartupStatusResponse {
     let matching_record = record
@@ -866,7 +937,7 @@ fn status_response(
         .map(|record| record.state.as_str())
         .unwrap_or(if config.commands.is_empty() {
             "disabled"
-        } else if approved {
+        } else if policy.approved {
             "idle"
         } else {
             "approval_required"
@@ -888,7 +959,10 @@ fn status_response(
         root: root.display().to_string(),
         fingerprint: fingerprint.to_string(),
         state: state.to_string(),
-        approved,
+        approved: policy.approved,
+        auto_approve: policy.auto_approve,
+        host_auto_approve: policy.host_auto_approve,
+        project_auto_approve: policy.project_auto_approve,
         commands,
         warning: config.warning.clone(),
         reason: matching_record.and_then(|record| record.reason),
@@ -946,12 +1020,164 @@ fn truncate_utf8(mut text: String, max_bytes: usize) -> String {
     text
 }
 
-fn approval_matches(app: &AppHandle, root: &Path, fingerprint: &str) -> Result<bool, String> {
+fn startup_approval_policy(
+    app: &AppHandle,
+    root: &Path,
+    config: &StartupConfig,
+    fingerprint: &str,
+) -> Result<StartupApprovalPolicy, String> {
+    let host_auto_approve = host_startup_auto_approve(app)?;
     let store = read_approval_store(app)?;
-    Ok(store
-        .approvals
-        .get(&root.display().to_string())
-        .is_some_and(|stored| stored == fingerprint))
+    let project_auto_approve = project_startup_auto_approve(app, root, &store);
+    let auto_approve = host_auto_approve || project_auto_approve;
+    let approved = config.commands.is_empty()
+        || auto_approve
+        || store
+            .approvals
+            .get(&root.display().to_string())
+            .is_some_and(|stored| stored == fingerprint);
+    Ok(StartupApprovalPolicy {
+        approved,
+        auto_approve,
+        host_auto_approve,
+        project_auto_approve,
+    })
+}
+
+fn project_startup_auto_approve(app: &AppHandle, root: &Path, store: &ApprovalStore) -> bool {
+    if store_auto_approves_path(store, root) {
+        return true;
+    }
+    let registry = read_project_registry(app);
+    let aethon_dir = app
+        .path()
+        .home_dir()
+        .ok()
+        .and_then(|home| crate::helpers::aethon_dir(Some(home)));
+    project_auto_approve_for_root(root, store, registry.as_ref(), aethon_dir.as_deref())
+}
+
+fn project_auto_approve_for_root(
+    root: &Path,
+    store: &ApprovalStore,
+    registry: Option<&ProjectRegistry>,
+    aethon_dir: Option<&Path>,
+) -> bool {
+    if store_auto_approves_path(store, root) {
+        return true;
+    }
+    let Some(registry) = registry else {
+        return false;
+    };
+    for project in &registry.projects {
+        let project_path = canonicalize_root(Path::new(&project.path));
+        if !store_auto_approves_path(store, &project_path) {
+            continue;
+        }
+        if path_contains(&project_path, root) {
+            return true;
+        }
+        if registry
+            .workspaces_by_project
+            .get(&project.id)
+            .into_iter()
+            .flatten()
+            .any(|workspace| path_contains(&canonicalize_root(Path::new(&workspace.path)), root))
+        {
+            return true;
+        }
+        if let Some(aethon_dir) = aethon_dir {
+            let label = project.label.trim();
+            if !label.is_empty() && path_contains(&aethon_dir.join(label), root) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+fn store_auto_approves_path(store: &ApprovalStore, path: &Path) -> bool {
+    let path_key = path.display().to_string();
+    store
+        .auto_approve_roots
+        .get(&path_key)
+        .copied()
+        .unwrap_or(false)
+        || store
+            .auto_approve_roots
+            .iter()
+            .any(|(key, enabled)| *enabled && canonicalize_root(Path::new(key)) == path)
+}
+
+fn path_contains(parent: &Path, child: &Path) -> bool {
+    child == parent || child.starts_with(parent)
+}
+
+fn read_project_registry(app: &AppHandle) -> Option<ProjectRegistry> {
+    let path = match crate::commands::config::aethon_state_path(app, "projects.json") {
+        Ok(path) => path,
+        Err(err) => {
+            tracing::warn!(
+                target: "aethon::startup",
+                "resolve projects.json failed: {err}; project startup auto-approve disabled"
+            );
+            return None;
+        }
+    };
+    let text = match std::fs::read_to_string(&path) {
+        Ok(text) => text,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return None,
+        Err(e) => {
+            tracing::warn!(
+                target: "aethon::startup",
+                "read {} failed: {e}; project startup auto-approve disabled",
+                path.display()
+            );
+            return None;
+        }
+    };
+    match serde_json::from_str(&text) {
+        Ok(registry) => Some(registry),
+        Err(err) => {
+            tracing::warn!(
+                target: "aethon::startup",
+                "parse {} failed: {err}; project startup auto-approve disabled",
+                path.display()
+            );
+            None
+        }
+    }
+}
+
+fn host_startup_auto_approve(app: &AppHandle) -> Result<bool, String> {
+    let path = crate::commands::config::aethon_state_path(app, "config.toml")?;
+    let text = match std::fs::read_to_string(&path) {
+        Ok(text) => truncate_utf8(text, STARTUP_CONFIG_MAX_BYTES),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
+        Err(e) => {
+            tracing::warn!(
+                target: "aethon::startup",
+                "read {} failed: {e}; host startup auto-approve disabled",
+                path.display()
+            );
+            String::new()
+        }
+    };
+    Ok(crate::helpers::parse_host_startup_auto_approve(&text))
+}
+
+fn write_root_auto_approve(app: &AppHandle, root: &Path, enabled: bool) -> Result<(), String> {
+    if !root.is_dir() {
+        return Err(format!("not a directory: {}", root.display()));
+    }
+    let mut store = read_approval_store(app)?;
+    let key = root.display().to_string();
+    if enabled {
+        store.auto_approve_roots.insert(key, true);
+    } else {
+        store.auto_approve_roots.remove(&key);
+    }
+    write_approval_store(app, &store)
 }
 
 fn write_approval(app: &AppHandle, root: &Path, fingerprint: &str) -> Result<(), String> {
@@ -959,8 +1185,12 @@ fn write_approval(app: &AppHandle, root: &Path, fingerprint: &str) -> Result<(),
     store
         .approvals
         .insert(root.display().to_string(), fingerprint.to_string());
+    write_approval_store(app, &store)
+}
+
+fn write_approval_store(app: &AppHandle, store: &ApprovalStore) -> Result<(), String> {
     let path = approvals_path(app)?;
-    let text = serde_json::to_string_pretty(&store).map_err(|e| e.to_string())?;
+    let text = serde_json::to_string_pretty(store).map_err(|e| e.to_string())?;
     std::fs::write(&path, text).map_err(|e| format!("write {}: {e}", path.display()))
 }
 
@@ -999,6 +1229,22 @@ fn emit_startup_event(app: &AppHandle, event: StartupEvent) {
 mod tests {
     use super::*;
 
+    fn policy(approved: bool) -> StartupApprovalPolicy {
+        StartupApprovalPolicy {
+            approved,
+            auto_approve: false,
+            host_auto_approve: false,
+            project_auto_approve: false,
+        }
+    }
+
+    fn approval_store_for(path: &Path) -> ApprovalStore {
+        ApprovalStore {
+            auto_approve_roots: BTreeMap::from([(path.display().to_string(), true)]),
+            ..ApprovalStore::default()
+        }
+    }
+
     #[test]
     fn parse_startup_config_defaults_commands_to_required() {
         let cfg = parse_startup_config(
@@ -1019,6 +1265,26 @@ command = "bun install"
         assert_eq!(cfg.commands[0].command, "bun install");
         assert!(cfg.commands[0].required);
         assert_eq!(cfg.commands[0].timeout_seconds, 42);
+    }
+
+    #[test]
+    fn parse_startup_config_ignores_project_auto_approve() {
+        let cfg = parse_startup_config(
+            r#"[startup]
+auto_approve = true
+
+[[startup.commands]]
+command = "bun install"
+"#,
+        );
+
+        assert!(!cfg.auto_approve);
+        assert_eq!(cfg.commands.len(), 1);
+        assert!(
+            cfg.warning
+                .as_deref()
+                .is_some_and(|warning| warning.contains("Ignored [startup].auto_approve"))
+        );
     }
 
     #[test]
@@ -1071,7 +1337,7 @@ command = "bun install"
             Path::new("/tmp/example"),
             &cfg,
             &fingerprint,
-            false,
+            policy(false),
             Some(StartupRecord {
                 fingerprint: fingerprint.clone(),
                 state: StartupState::ApprovalRequired,
@@ -1100,7 +1366,7 @@ command = "bun install"
             Path::new("/tmp/example"),
             &cfg,
             &fingerprint,
-            true,
+            policy(true),
             Some(StartupRecord {
                 fingerprint: fingerprint.clone(),
                 state: StartupState::Failed,
@@ -1122,7 +1388,7 @@ command = "bun install"
             Path::new("/tmp/example"),
             &cfg,
             &fingerprint,
-            true,
+            policy(true),
             Some(StartupRecord {
                 fingerprint: fingerprint.clone(),
                 state: StartupState::Failed,
@@ -1135,6 +1401,131 @@ command = "bun install"
         assert_eq!(response.commands.len(), 1);
         assert_eq!(response.commands[0].id, STARTUP_DEVSHELL_TASK_ID);
         assert_eq!(response.commands[0].state, "failed");
+    }
+
+    #[test]
+    fn status_response_reports_auto_approve_sources() {
+        let cfg = parse_startup_config(
+            r#"[[startup.commands]]
+command = "bun install"
+"#,
+        );
+        let fingerprint = startup_fingerprint(&cfg);
+        let response = status_response(
+            Path::new("/tmp/example"),
+            &cfg,
+            &fingerprint,
+            StartupApprovalPolicy {
+                approved: true,
+                auto_approve: true,
+                host_auto_approve: true,
+                project_auto_approve: false,
+            },
+            None,
+        );
+
+        assert!(response.approved);
+        assert!(response.auto_approve);
+        assert!(response.host_auto_approve);
+        assert!(!response.project_auto_approve);
+        assert_eq!(response.state, "idle");
+    }
+
+    #[test]
+    fn project_auto_approve_inherits_for_persisted_workspaces() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let project = temp.path().join("nyc-real-estate");
+        let workspace = temp
+            .path()
+            .join("workspaces")
+            .join("fix-issue-632-admin-tracked-urls");
+        std::fs::create_dir_all(&project).expect("project dir");
+        std::fs::create_dir_all(&workspace).expect("workspace dir");
+        let project = canonicalize_root(&project);
+        let workspace = canonicalize_root(&workspace);
+        let store = approval_store_for(&project);
+        let registry = ProjectRegistry {
+            projects: vec![ProjectRegistryProject {
+                id: "project-1".to_string(),
+                label: "nyc-real-estate".to_string(),
+                path: project.display().to_string(),
+            }],
+            workspaces_by_project: BTreeMap::from([(
+                "project-1".to_string(),
+                vec![ProjectRegistryWorkspace {
+                    path: workspace.display().to_string(),
+                }],
+            )]),
+        };
+
+        assert!(project_auto_approve_for_root(
+            &workspace,
+            &store,
+            Some(&registry),
+            None
+        ));
+    }
+
+    #[test]
+    fn project_auto_approve_inherits_for_aethon_managed_workspaces_before_persist() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let project = temp.path().join("nyc-real-estate");
+        let aethon_dir = temp.path().join(".aethon");
+        let workspace = aethon_dir
+            .join("nyc-real-estate")
+            .join("fix-issue-632-admin-tracked-urls");
+        std::fs::create_dir_all(&project).expect("project dir");
+        std::fs::create_dir_all(&workspace).expect("workspace dir");
+        let project = canonicalize_root(&project);
+        let workspace = canonicalize_root(&workspace);
+        let aethon_dir = canonicalize_root(&aethon_dir);
+        let store = approval_store_for(&project);
+        let registry = ProjectRegistry {
+            projects: vec![ProjectRegistryProject {
+                id: "project-1".to_string(),
+                label: "nyc-real-estate".to_string(),
+                path: project.display().to_string(),
+            }],
+            ..ProjectRegistry::default()
+        };
+
+        assert!(project_auto_approve_for_root(
+            &workspace,
+            &store,
+            Some(&registry),
+            Some(&aethon_dir),
+        ));
+    }
+
+    #[test]
+    fn project_auto_approve_does_not_match_similar_project_labels() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let project = temp.path().join("nyc-real-estate");
+        let aethon_dir = temp.path().join(".aethon");
+        let unrelated = aethon_dir
+            .join("nyc-real-estate-extra")
+            .join("fix-issue-632-admin-tracked-urls");
+        std::fs::create_dir_all(&project).expect("project dir");
+        std::fs::create_dir_all(&unrelated).expect("workspace dir");
+        let project = canonicalize_root(&project);
+        let unrelated = canonicalize_root(&unrelated);
+        let aethon_dir = canonicalize_root(&aethon_dir);
+        let store = approval_store_for(&project);
+        let registry = ProjectRegistry {
+            projects: vec![ProjectRegistryProject {
+                id: "project-1".to_string(),
+                label: "nyc-real-estate".to_string(),
+                path: project.display().to_string(),
+            }],
+            ..ProjectRegistry::default()
+        };
+
+        assert!(!project_auto_approve_for_root(
+            &unrelated,
+            &store,
+            Some(&registry),
+            Some(&aethon_dir),
+        ));
     }
 
     #[test]

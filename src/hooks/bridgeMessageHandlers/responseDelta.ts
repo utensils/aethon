@@ -7,6 +7,7 @@ interface PendingDelta {
   messageId?: string;
   channel: "text" | "thinking";
   content: string;
+  model?: string;
 }
 
 const pending = new Map<string, PendingDelta>();
@@ -41,6 +42,7 @@ export function flushResponseDeltas(tabId?: string): void {
       item.messageId,
       item.tabId,
       item.channel,
+      item.model,
     );
   }
   if (pending.size > 0) scheduleFlush();
@@ -52,13 +54,25 @@ export const handleResponseDelta: BridgeMessageHandler = (data, ctx) => {
   const messageId = (data.messageId as string) || undefined;
   const tabId = (data.tabId as string | undefined) ?? "default";
   const channel = data.channel === "thinking" ? "thinking" : "text";
+  const model =
+    typeof data.model === "string" && data.model.length > 0
+      ? data.model
+      : undefined;
   const key = keyFor(tabId, messageId, channel);
   const existing = pending.get(key);
   if (existing) {
     existing.content += delta;
     existing.ctx = ctx;
+    if (model) existing.model = model;
   } else {
-    pending.set(key, { ctx, tabId, messageId, channel, content: delta });
+    pending.set(key, {
+      ctx,
+      tabId,
+      messageId,
+      channel,
+      content: delta,
+      ...(model ? { model } : {}),
+    });
   }
   scheduleFlush();
 };

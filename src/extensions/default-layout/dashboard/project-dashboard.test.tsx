@@ -1,13 +1,38 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ProjectDashboard } from "./project-dashboard";
 import type { A2UIComponent } from "../../../types/a2ui";
 import { ExtensionRegistry } from "../../ExtensionRegistry";
 import { ExtensionRegistryProvider } from "../../ExtensionRegistryProvider";
 
-const { refreshRepoOverview } = vi.hoisted(() => ({
+const { invokeMock, refreshRepoOverview } = vi.hoisted(() => ({
+  invokeMock: vi.fn((command: string) => {
+    if (command === "workspace_startup_status") {
+      return Promise.resolve({
+        root: "/repo",
+        autoApprove: false,
+        hostAutoApprove: false,
+        projectAutoApprove: false,
+      });
+    }
+    if (command === "workspace_startup_set_auto_approve") {
+      return Promise.resolve({
+        root: "/repo",
+        autoApprove: true,
+        hostAutoApprove: false,
+        projectAutoApprove: true,
+      });
+    }
+    return Promise.resolve(null);
+  }),
   refreshRepoOverview: vi.fn(
     (_projectPath: string) =>
       new Promise(() => {
@@ -16,8 +41,13 @@ const { refreshRepoOverview } = vi.hoisted(() => ({
   ),
 }));
 
+vi.mock("@tauri-apps/api/core", () => ({
+  invoke: invokeMock,
+}));
+
 vi.mock("../../../ghRepoOverviewCache", () => ({
-  refreshRepoOverview: (projectPath: string) => refreshRepoOverview(projectPath),
+  refreshRepoOverview: (projectPath: string) =>
+    refreshRepoOverview(projectPath),
 }));
 
 afterEach(() => {
@@ -111,7 +141,9 @@ describe("ProjectDashboard project icon", () => {
       },
     );
 
-    expect(container.querySelector(".a2ui-project-dashboard-hero img")).toBeNull();
+    expect(
+      container.querySelector(".a2ui-project-dashboard-hero img"),
+    ).toBeNull();
 
     rerender(
       <ExtensionRegistryProvider registry={new ExtensionRegistry()}>
@@ -132,7 +164,8 @@ describe("ProjectDashboard project icon", () => {
               projects: [
                 {
                   id: "p1",
-                  iconUrl: "asset://localhost/project-icons/nyc-real-estate.png",
+                  iconUrl:
+                    "asset://localhost/project-icons/nyc-real-estate.png",
                 },
               ],
             },
@@ -150,13 +183,35 @@ describe("ProjectDashboard project icon", () => {
   });
 });
 
+describe("ProjectDashboard startup policy", () => {
+  it("writes the project startup auto-approve setting", async () => {
+    renderDashboard();
+
+    const checkbox = screen.getByRole("checkbox", {
+      name: /auto-approve startup commands/i,
+    });
+    await waitFor(() => expect(checkbox.hasAttribute("disabled")).toBe(false));
+
+    fireEvent.click(checkbox);
+
+    await waitFor(() =>
+      expect(invokeMock).toHaveBeenCalledWith(
+        "workspace_startup_set_auto_approve",
+        { args: { root: "/repo", enabled: true } },
+      ),
+    );
+    expect(checkbox).toHaveProperty("checked", true);
+  });
+});
+
 describe("ProjectDashboard workspace removal", () => {
   it("opens inline confirmation from a workspace remove icon", () => {
     const { onEvent } = renderDashboard();
     fireEvent.click(screen.getByRole("button", { name: "Remove feature-x" }));
     expect(onEvent).not.toHaveBeenCalled();
     expect(
-      screen.getByRole("button", { name: "Confirm remove feature-x" }).textContent,
+      screen.getByRole("button", { name: "Confirm remove feature-x" })
+        .textContent,
     ).toBe("Confirm");
   });
 

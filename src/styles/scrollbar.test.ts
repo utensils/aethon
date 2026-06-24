@@ -90,10 +90,14 @@ describe("chat overflow containment CSS", () => {
       chromeCss,
       ".a2ui-canvas-scroller .a2ui-msg-row",
     );
-    expect(canvasRows).toMatch(/padding-inline:\s*20px;/);
+    expect(canvasRows).toMatch(
+      /padding-inline:\s*max\(20px,\s*calc\(\(100%\s*-\s*920px\)\s*\/\s*2\)\);/,
+    );
 
     const chatRows = cssRuleBody(chromeCss, ".a2ui-chat-history .a2ui-msg-row");
-    expect(chatRows).toMatch(/padding-inline:\s*12px;/);
+    expect(chatRows).toMatch(
+      /padding-inline:\s*max\(12px,\s*calc\(\(100%\s*-\s*860px\)\s*\/\s*2\)\);/,
+    );
   });
 
   it("wraps prose while keeping code and tables constrained locally", () => {

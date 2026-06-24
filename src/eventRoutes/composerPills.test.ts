@@ -23,7 +23,7 @@ describe("handleComposerPills", () => {
     ).toBe(false);
   });
 
-  it("cycles the active tab thinking override show → collapse off the global default", () => {
+  it("cycles the active tab thinking override show → hide off the global default", () => {
     const { ctx, mocks } = buildRouteFixture({
       state: {
         activeTabId: "t1",
@@ -38,7 +38,7 @@ describe("handleComposerPills", () => {
     expect(handled).toBe(true);
     const updater = mocks.updateActiveTab.mock.calls[0][0];
     expect(updater(makeEmptyTab("t1", "T1")).visibilityOverrides).toEqual({
-      thinking: "collapse",
+      thinking: "hide",
     });
   });
 
@@ -75,7 +75,7 @@ describe("handleComposerPills", () => {
     expect(mocks.pushNotification).not.toHaveBeenCalled();
   });
 
-  it("cycles tool calls through the grouping styles from the global default", () => {
+  it("toggles tool calls from shown to off", () => {
     const { ctx, mocks } = buildRouteFixture({
       state: {
         activeTabId: "t1",
@@ -83,18 +83,17 @@ describe("handleComposerPills", () => {
         tabs: [makeEmptyTab("t1", "T1")],
       },
     });
-    // show → group-turn (first grouped style).
     handleComposerPills(pillEvent("cycle", { category: "toolCalls" }), ctx);
     const updater = mocks.updateActiveTab.mock.calls[0][0];
     expect(
       updater(makeEmptyTab("t1", "T1")).visibilityOverrides.toolCalls,
-    ).toBe("group-turn");
+    ).toBe("hide");
   });
 
-  it("cycles group-block → hide and a legacy 'collapse' override resolves into the cycle", () => {
+  it("toggles hidden and legacy grouped tool calls back to shown", () => {
     const blockTab = {
       ...makeEmptyTab("t1", "T1"),
-      visibilityOverrides: { toolCalls: "group-block" as const },
+      visibilityOverrides: { toolCalls: "hide" as const },
     };
     const fx = buildRouteFixture({
       state: { activeTabId: "t1", tabs: [blockTab] },
@@ -103,10 +102,21 @@ describe("handleComposerPills", () => {
     expect(
       fx.mocks.updateActiveTab.mock.calls[0][0](blockTab).visibilityOverrides
         .toolCalls,
-    ).toBe("hide");
+    ).toBe("show");
 
-    // A legacy "collapse" override resolves to group-turn, so cycling advances
-    // to group-run (not the removed tri-state "hide").
+    const groupedTab = {
+      ...makeEmptyTab("t3", "T3"),
+      visibilityOverrides: { toolCalls: "group-block" as const },
+    };
+    const fx3 = buildRouteFixture({
+      state: { activeTabId: "t3", tabs: [groupedTab] },
+    });
+    handleComposerPills(pillEvent("cycle", { category: "toolCalls" }), fx3.ctx);
+    expect(
+      fx3.mocks.updateActiveTab.mock.calls[0][0](groupedTab)
+        .visibilityOverrides.toolCalls,
+    ).toBe("show");
+
     const legacyTab = {
       ...makeEmptyTab("t2", "T2"),
       visibilityOverrides: { toolCalls: "collapse" },
@@ -118,7 +128,7 @@ describe("handleComposerPills", () => {
     expect(
       fx2.mocks.updateActiveTab.mock.calls[0][0](legacyTab).visibilityOverrides
         .toolCalls,
-    ).toBe("group-run");
+    ).toBe("show");
   });
 
   it("jumps straight to a grouping style on set-tool-grouping", () => {
@@ -175,7 +185,7 @@ describe("handleComposerPills", () => {
     expect(updater(tab).visibilityOverrides.thinking).toBe("show");
   });
 
-  it("promotes effective visibility to the global config on set-default", () => {
+  it("promotes simplified effective visibility to the global config on set-default", () => {
     const tab = {
       ...makeEmptyTab("t1", "T1"),
       visibilityOverrides: { thinking: "hide" as const },

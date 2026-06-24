@@ -163,6 +163,28 @@ test("chat canvas contains wide content without horizontal scrolling", async ({
   const tabId = await page.evaluate(
     () => window.__AETHON_STATE__?.().activeTabId ?? "default",
   );
+  await page.evaluate(() => {
+    (
+      window as Window & {
+        __AETHON_SET_STATE__?: (
+          update: (prev: Record<string, unknown>) => Record<string, unknown>,
+        ) => void;
+      }
+    ).__AETHON_SET_STATE__?.((prev) => {
+      const currentVisibility =
+        typeof prev.transcriptVisibility === "object" &&
+        prev.transcriptVisibility !== null
+          ? prev.transcriptVisibility
+          : {};
+      return {
+        ...prev,
+        transcriptVisibility: {
+          ...currentVisibility,
+          toolCalls: "show",
+        },
+      };
+    });
+  });
   const longToken = "0123456789abcdef".repeat(220);
   const wideMarkdown = [
     `Long URL: https://example.com/${longToken}`,
@@ -218,7 +240,9 @@ test("chat canvas contains wide content without horizontal scrolling", async ({
     { tabId, longToken, wideMarkdown },
   );
 
+  await expect(page.locator(".ae-conversation-turn")).toHaveCount(1);
   await expect(page.locator(".a2ui-canvas-message")).toHaveCount(2);
+  await expect(page.locator(".ae-tool-card")).toHaveCount(1);
 
   const scrollerMetrics = await page
     .locator(".a2ui-canvas-scroller")

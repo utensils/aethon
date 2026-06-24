@@ -33,6 +33,7 @@ export interface RouteFixture {
     dismissNotification: Mock;
     sendChat: Mock;
     stopPrompt: Mock;
+    updateTab: Mock;
     updateActiveTab: Mock;
     editQueuedMessage: Mock;
     deleteQueuedMessage: Mock;
@@ -123,6 +124,7 @@ export function buildRouteFixture(
   const dismissNotification = vi.fn();
   const sendChat = vi.fn(() => Promise.resolve());
   const stopPrompt = vi.fn(() => Promise.resolve());
+  const updateTab = vi.fn();
   const updateActiveTab = vi.fn();
   const editQueuedMessage = vi.fn();
   const deleteQueuedMessage = vi.fn();
@@ -191,6 +193,7 @@ export function buildRouteFixture(
     dismissNotification,
     sendChat,
     stopPrompt,
+    updateTab,
     updateActiveTab,
     editQueuedMessage,
     deleteQueuedMessage,
@@ -277,6 +280,7 @@ export function buildRouteFixture(
       dismissNotification,
       sendChat,
       stopPrompt,
+      updateTab,
       updateActiveTab,
       editQueuedMessage,
       deleteQueuedMessage,

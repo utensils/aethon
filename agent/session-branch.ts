@@ -16,7 +16,7 @@ import { randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import type { AethonAgentState, TabRecord } from "./state";
 import type { DispatcherDeps, InboundMessage } from "./dispatcherTypes";
-import { tabSessionDir } from "./tab-lifecycle";
+import { ensureTab, tabSessionDir } from "./tab-lifecycle";
 import {
   readSessionLabel,
   truncateLocalChatAfterEntry,
@@ -49,6 +49,38 @@ function parseEntryTimestamp(entry: {
   return undefined;
 }
 
+function mirroredTabCwd(
+  state: AethonAgentState,
+  tabId: string,
+): string | undefined {
+  const tabs = state.frontendState.get("/tabs");
+  if (!Array.isArray(tabs)) return undefined;
+  for (const item of tabs) {
+    if (!item || typeof item !== "object") continue;
+    const tab = item as { id?: unknown; kind?: unknown; cwd?: unknown };
+    if (tab.id !== tabId) continue;
+    if (tab.kind && tab.kind !== "agent") return undefined;
+    return typeof tab.cwd === "string" && tab.cwd.length > 0
+      ? tab.cwd
+      : undefined;
+  }
+  return undefined;
+}
+
+async function ensureBranchTab(
+  state: AethonAgentState,
+  deps: DispatcherDeps,
+  tabId: string,
+  cwdHint?: string,
+): Promise<TabRecord | undefined> {
+  const existing = state.tabs.get(tabId);
+  if (existing) return existing;
+  const cwd =
+    state.tabProjectCwds.get(tabId) ?? mirroredTabCwd(state, tabId) ?? cwdHint;
+  if (!cwd) return undefined;
+  return ensureTab(state, deps, tabId, { cwdOverride: cwd });
+}
+
 export async function handleRollbackSession(
   state: AethonAgentState,
   deps: DispatcherDeps,
@@ -63,7 +95,8 @@ export async function handleRollbackSession(
     });
     return;
   }
-  const tab = state.tabs.get(tabId);
+  const cwdHint = stringField(msg.cwd);
+  const tab = await ensureBranchTab(state, deps, tabId, cwdHint);
   if (!tab) {
     deps.send({
       type: "error",
@@ -135,7 +168,8 @@ export async function handleForkSession(
     });
     return;
   }
-  const tab = state.tabs.get(tabId);
+  const cwdHint = stringField(msg.cwd);
+  const tab = await ensureBranchTab(state, deps, tabId, cwdHint);
   if (!tab) {
     deps.send({ type: "error", tabId, message: "fork_session: unknown tab" });
     return;
@@ -182,7 +216,8 @@ export async function handleForkSession(
   await writeSessionLabel(newDir, label).catch(() => {
     /* best effort */
   });
-  const cwd = state.tabProjectCwds.get(tabId);
+  const cwd =
+    state.tabProjectCwds.get(tabId) ?? mirroredTabCwd(state, tabId) ?? cwdHint;
   deps.send({
     type: "session_forked",
     tabId,

@@ -6,12 +6,12 @@ import type { ShareMode } from "./utils/shareMode";
 import { SHARE_MODES } from "./utils/shareMode";
 
 /** Tri-state visibility for the model's thinking blocks:
- *  `show` (full), `collapse` (closed "Thinking" label), `hide` (removed). */
+ *  `show` (full), `collapse` (legacy closed label), `hide` (removed). */
 export type VisibilityMode = "show" | "collapse" | "hide";
 
-/** Tool-call visibility. Like thinking it can be `show`n or `hide`den, but the
- *  middle is split into three chronological *grouping* styles the composer pill
- *  cycles through:
+/** Tool-call visibility. `show` renders lightweight activity rows and `hide`
+ *  removes generic tool calls from the transcript while preserving extracted
+ *  file-change artifacts. The middle values are legacy grouping styles:
  *    - `group-turn`  — one collapsed cluster per agent turn (all of a turn's
  *                      tool calls gathered into one group);
  *    - `group-run`   — one collapsed cluster per consecutive run of tool calls;
@@ -43,11 +43,10 @@ export interface AethonConfig {
      *  this many seconds. Default 8 — sub-second turns rarely need it. */
     notifyMinDurationSeconds: number;
     /** Global default visibility for the model's thinking blocks. Per-tab
-     *  overridable via the composer pills; `show` by default. */
+     *  overridable via the composer pills; `hide` by default. */
     thinkingVisibility: VisibilityMode;
-    /** Global default visibility for tool-call cards. The grouped values
-     *  (`group-turn` / `group-run` / `group-block`) fold cards into collapsed
-     *  clusters; `show` by default. Per-tab overridable via the composer pills. */
+    /** Global default visibility for tool-call activity. New configs default
+     *  to `hide`; explicit legacy grouped values are still honored. */
     toolCallsVisibility: ToolCallsMode;
   };
   agent: {
@@ -124,6 +123,11 @@ export interface AethonConfig {
     /** Re-resolve when watched lockfile / marker file mtime changes. */
     refreshOnLockfileChange: boolean;
   };
+  startup: {
+    /** Trust workspace startup commands globally. Project-level startup
+     *  auto-approve can still be enabled per repo from the overview tab. */
+    autoApprove: boolean;
+  };
   guardrails: {
     /** Optional advisory text appended to the per-turn working-context the
      *  agent injects. Reminds the model of project rules; never enforces.
@@ -137,6 +141,8 @@ export interface AethonConfig {
 
 export const DEFAULT_AGENT_TIMEOUT_SECONDS = 300;
 export const MAX_AGENT_TIMEOUT_SECONDS = 24 * 60 * 60;
+export const DEFAULT_THINKING_VISIBILITY: VisibilityMode = "hide";
+export const DEFAULT_TOOL_CALLS_VISIBILITY: ToolCallsMode = "hide";
 
 const DEFAULTS: AethonConfig = {
   ui: {
@@ -145,8 +151,8 @@ const DEFAULTS: AethonConfig = {
     restoreTabs: false,
     notifyOnCompletion: true,
     notifyMinDurationSeconds: 8,
-    thinkingVisibility: "show",
-    toolCallsVisibility: "show",
+    thinkingVisibility: DEFAULT_THINKING_VISIBILITY,
+    toolCallsVisibility: DEFAULT_TOOL_CALLS_VISIBILITY,
   },
   agent: {
     model: null,
@@ -184,6 +190,9 @@ const DEFAULTS: AethonConfig = {
     mode: "auto",
     cacheTtlHours: 720,
     refreshOnLockfileChange: true,
+  },
+  startup: {
+    autoApprove: false,
   },
   guardrails: {
     softPromptAnchor: null,
@@ -234,9 +243,10 @@ export function getConfig(): Promise<AethonConfig> {
               ? obj.ui.notifyMinDurationSeconds
               : 8,
           thinkingVisibility: normalizeVisibility(obj?.ui?.thinkingVisibility),
-          toolCallsVisibility: normalizeToolCallsVisibility(
-            obj?.ui?.toolCallsVisibility,
-          ),
+          toolCallsVisibility:
+            obj?.ui?.toolCallsVisibility === undefined
+              ? DEFAULT_TOOL_CALLS_VISIBILITY
+              : normalizeToolCallsVisibility(obj.ui.toolCallsVisibility),
         },
         agent: {
           model: typeof obj?.agent?.model === "string" ? obj.agent.model : null,
@@ -322,6 +332,9 @@ export function getConfig(): Promise<AethonConfig> {
               ? obj.devshell.refreshOnLockfileChange
               : true,
         },
+        startup: {
+          autoApprove: obj?.startup?.autoApprove === true,
+        },
         guardrails: {
           softPromptAnchor:
             typeof obj?.guardrails?.softPromptAnchor === "string" &&
@@ -355,14 +368,16 @@ function normalizeThinkingLevel(value: unknown): string | null {
     : null;
 }
 
-/** Mirrors `normalize_visibility` in helpers.rs — unknown/missing → "show". */
+/** Mirrors `normalize_visibility` in helpers.rs — missing → the clean default,
+ *  unknown explicit values → "show" so a typo never hides content. */
 export function normalizeVisibility(value: unknown): VisibilityMode {
+  if (value === undefined) return DEFAULT_THINKING_VISIBILITY;
   return value === "collapse" || value === "hide" ? value : "show";
 }
 
 /** Mirrors `normalize_tool_visibility` in helpers.rs. Accepts the three
  *  grouping styles plus show/hide; legacy `"collapse"` → `"group-turn"`;
- *  unknown/missing → `"show"`. */
+ *  unknown → `"show"` so malformed explicit config never hides content. */
 export function normalizeToolCallsVisibility(value: unknown): ToolCallsMode {
   switch (value) {
     case "group-turn":

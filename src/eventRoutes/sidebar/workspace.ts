@@ -1,6 +1,5 @@
 import type { EventRouteHandler } from "../types";
-import { activateOverview } from "../tabStrip";
-import type { Tab } from "../../types/tab";
+import { OVERVIEW_TAB_ID, type Tab } from "../../types/tab";
 import { normalizeSessionPath } from "../../hooks/projectOps/tabBuckets";
 
 /** Workspace event family — all routed through useProjectOps actions. */
@@ -92,6 +91,7 @@ export const handleSidebarSwitchWorkspace: EventRouteHandler = (
       }
       ctx.setState((prev) => ({
         ...prev,
+        activeTabId: OVERVIEW_TAB_ID,
         landing: {
           kind: "workspace",
           projectId: project.id,
@@ -104,9 +104,6 @@ export const handleSidebarSwitchWorkspace: EventRouteHandler = (
           isMain: workspace.isMain === true,
         },
       }));
-      if (wasAlreadyActiveWorkspace && hasVisibleSession) {
-        activateOverview(ctx);
-      }
       return true;
     }
   }

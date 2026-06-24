@@ -242,6 +242,16 @@ function ToolFileChangePreview({
           ✎
         </span>
         <span className="ae-tool-file-change-label">{label}</span>
+        {(additions > 0 || deletions > 0) && (
+          <span className="ae-tool-file-change-stat" aria-label="Line changes">
+            {additions > 0 ? (
+              <span className="ae-tool-file-add">+{additions}</span>
+            ) : null}
+            {deletions > 0 ? (
+              <span className="ae-tool-file-del">-{deletions}</span>
+            ) : null}
+          </span>
+        )}
       </summary>
       <div className="ae-tool-file-change-body">
         <div className="ae-tool-file-row">
@@ -316,6 +326,7 @@ export function ToolCard({
     toolName?: StringValue;
     status?: StringValue;
     fileChange?: ToolFileChange;
+    defaultOpen?: BooleanValue;
   };
   const baseTitle = props.title ? resolveString(props.title, state) : "";
   const description = props.description
@@ -336,6 +347,10 @@ export function ToolCard({
   const status = props.status ? resolveString(props.status, state) : undefined;
   const isCancelled = status === "cancelled";
   const running = startedAt !== undefined && endedAt === undefined;
+  const defaultOpen = props.defaultOpen
+    ? resolveBoolean(props.defaultOpen, state)
+    : false;
+  const [open, setOpen] = useState(defaultOpen);
 
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -371,6 +386,8 @@ export function ToolCard({
   return (
     <details
       className="ae-tool-card"
+      open={open}
+      onToggle={(event) => setOpen(event.currentTarget.open)}
       data-running={running ? "true" : "false"}
       data-long-running={isLongRunning ? "true" : "false"}
       data-error={isError ? "true" : "false"}

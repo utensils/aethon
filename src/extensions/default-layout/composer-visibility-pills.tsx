@@ -7,12 +7,11 @@ import { readUiScale } from "./layout";
 
 /**
  * Composer-bar visibility pills (chrome composite). Two pills — Thinking and
- * Tool calls — cycle the active session's transcript visibility on click.
- * Thinking cycles show → collapse → hide; Tool calls cycle through the three
- * chronological grouping styles (by turn / by run / as block) between show and
- * hide. A "More options" caret opens a popover that explains scope (this
- * session vs. all sessions), offers direct grouping selection, a reset, and the
- * per-session project-root guardrail.
+ * Tool calls — toggle the active session's transcript visibility on click.
+ * Thinking and tool calls are both on/off; file-change artifacts remain visible
+ * with tool calls off.
+ * A "More options" caret opens a popover that explains scope (this session vs.
+ * all sessions), offers a reset, and the per-session project-root guardrail.
  *
  * Routing: events are keyed by `type:composer-visibility-pills` in
  * BUILTIN_ROUTE_TABLE (see `eventRoutes/composerPills.ts`). The pill reads
@@ -21,38 +20,32 @@ import { readUiScale } from "./layout";
  */
 
 const THINKING_LABEL: Record<VisibilityMode, string> = {
-  show: "shown",
-  collapse: "collapsed",
-  hide: "hidden",
+  show: "on",
+  collapse: "off",
+  hide: "off",
 };
 
 const THINKING_TITLE: Record<VisibilityMode, string> = {
-  show: "shown in full",
-  collapse: "collapsed to a label",
-  hide: "hidden",
+  show: "on",
+  collapse: "off",
+  hide: "off",
 };
 
 const TOOL_LABEL: Record<ToolCallsMode, string> = {
-  show: "shown",
-  "group-turn": "by turn",
-  "group-run": "by run",
-  "group-block": "as block",
-  hide: "hidden",
+  show: "on",
+  "group-turn": "off",
+  "group-run": "off",
+  "group-block": "off",
+  hide: "off",
 };
 
 const TOOL_TITLE: Record<ToolCallsMode, string> = {
-  show: "shown in full",
-  "group-turn": "grouped — one cluster per agent turn",
-  "group-run": "grouped — one cluster per consecutive run",
-  "group-block": "grouped — the whole turn folded into one block",
-  hide: "hidden",
+  show: "on",
+  "group-turn": "off",
+  "group-run": "off",
+  "group-block": "off",
+  hide: "off",
 };
-
-const GROUPING_OPTIONS: { mode: ToolCallsMode; label: string }[] = [
-  { mode: "group-turn", label: "Per turn" },
-  { mode: "group-run", label: "Per run" },
-  { mode: "group-block", label: "Whole turn" },
-];
 
 /** Effective hard-guardrail state: per-tab override wins; else the global
  *  default mirrored at `/guardrails/hardEnforceProjectRoot`; else false. */
@@ -169,10 +162,10 @@ export function ComposerVisibilityPills({
         data-scope={scoped ? "session" : "global"}
         title={`${label}: ${titleText}${
           scoped ? " — this session only (overrides the global default)" : ""
-        }. Click to cycle.`}
+        }. Click to toggle.`}
         aria-label={`${label} visibility: ${stateLabel}${
           scoped ? ", this session" : ""
-        }. Click to cycle.`}
+        }. Click to toggle.`}
         onClick={() => onEvent("cycle", { category })}
       >
         <span className="ae-vis-pill-dot" aria-hidden="true" />
@@ -226,35 +219,6 @@ export function ComposerVisibilityPills({
               style={{ bottom: coords.bottom, right: coords.right }}
             >
               <div className="ae-vis-menu-head">This session</div>
-              <div
-                className="ae-vis-menu-radios"
-                role="group"
-                aria-label="Tool-call grouping"
-              >
-                <span className="ae-vis-menu-radios-label">
-                  Tool-call grouping
-                </span>
-                <div className="ae-vis-menu-radio-row">
-                  {GROUPING_OPTIONS.map((opt) => (
-                    <button
-                      key={opt.mode}
-                      type="button"
-                      role="menuitemradio"
-                      aria-checked={visibility.toolCalls === opt.mode}
-                      data-checked={
-                        visibility.toolCalls === opt.mode ? "true" : "false"
-                      }
-                      className="ae-vis-menu-radio"
-                      onClick={() => {
-                        onEvent("set-tool-grouping", { mode: opt.mode });
-                        close();
-                      }}
-                    >
-                      {opt.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
               <button
                 type="button"
                 role="menuitem"

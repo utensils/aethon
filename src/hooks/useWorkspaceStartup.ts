@@ -23,6 +23,9 @@ export interface WorkspaceStartupEntry {
   fingerprint: string;
   state: string;
   approved: boolean;
+  autoApprove?: boolean;
+  hostAutoApprove?: boolean;
+  projectAutoApprove?: boolean;
   commands: WorkspaceStartupTask[];
   warning?: string | null;
   reason?: string | null;
@@ -45,6 +48,9 @@ interface WorkspaceStartupStatus {
   fingerprint: string;
   state: string;
   approved: boolean;
+  autoApprove?: boolean;
+  hostAutoApprove?: boolean;
+  projectAutoApprove?: boolean;
   commands: WorkspaceStartupTask[];
   warning?: string | null;
   reason?: string | null;
@@ -120,7 +126,8 @@ export function useWorkspaceStartup({
           workspaceStartup: {
             ...slice,
             activeRoot:
-              isVisibleStartupState(status.state) || slice.activeRoot === status.root
+              isVisibleStartupState(status.state) ||
+              slice.activeRoot === status.root
                 ? status.root
                 : slice.activeRoot,
             entries,
@@ -305,7 +312,11 @@ function applyStartupOutput(
   event: WorkspaceStartupOutputEvent,
   setState: Dispatch<SetStateAction<Record<string, unknown>>>,
 ): void {
-  if (!event.root || typeof event.content !== "string" || event.content.length === 0) {
+  if (
+    !event.root ||
+    typeof event.content !== "string" ||
+    event.content.length === 0
+  ) {
     return;
   }
   const prefix =
@@ -316,7 +327,9 @@ function applyStartupOutput(
   setState((prev) => {
     const slice = workspaceStartupSlice(prev);
     const outputByRoot = { ...(slice.outputByRoot ?? {}) };
-    outputByRoot[event.root!] = trimOutput((outputByRoot[event.root!] ?? "") + content);
+    outputByRoot[event.root!] = trimOutput(
+      (outputByRoot[event.root!] ?? "") + content,
+    );
     const tabs = Array.isArray(prev.tabs)
       ? (prev.tabs as Array<Record<string, unknown>>)
       : [];
@@ -369,11 +382,15 @@ function mergeTaskEvent(
   return next;
 }
 
-function workspaceStartupSlice(state: Record<string, unknown>): WorkspaceStartupSlice {
+function workspaceStartupSlice(
+  state: Record<string, unknown>,
+): WorkspaceStartupSlice {
   return (state.workspaceStartup as WorkspaceStartupSlice | undefined) ?? {};
 }
 
-function activeEntry(state: Record<string, unknown>): WorkspaceStartupEntry | null {
+function activeEntry(
+  state: Record<string, unknown>,
+): WorkspaceStartupEntry | null {
   const slice = workspaceStartupSlice(state);
   const root = slice.activeRoot;
   if (!root || !slice.entries) return null;
@@ -381,7 +398,9 @@ function activeEntry(state: Record<string, unknown>): WorkspaceStartupEntry | nu
 }
 
 function isVisibleStartupState(state: string): boolean {
-  return state === "running" || state === "approval_required" || state === "failed";
+  return (
+    state === "running" || state === "approval_required" || state === "failed"
+  );
 }
 
 function settlePendingIfReady(

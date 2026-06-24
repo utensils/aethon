@@ -22,6 +22,7 @@ import {
   repairDanglingSubagentToolResults,
   writeSessionLabel,
 } from "./session-history";
+import { __testing as restoreTesting } from "./session-history/restore";
 import { SESSION_TITLE_TOOL_NAME } from "./silent-tools";
 
 const roots: string[] = [];
@@ -83,6 +84,50 @@ describe("parseSessionHistoryLines", () => {
         role: "agent",
         text: "Hi there.",
         thinking: "hidden reasoning",
+      },
+    ]);
+  });
+
+  it("attaches model_change records to the restored assistant message", () => {
+    const lines = [
+      JSON.stringify({
+        type: "message",
+        id: "a1",
+        message: {
+          role: "assistant",
+          content: [{ type: "text", text: "Done." }],
+        },
+      }),
+      JSON.stringify({
+        type: "model_change",
+        parentId: "a1",
+        provider: "openai-codex",
+        modelId: "gpt-5.5",
+      }),
+      JSON.stringify({
+        type: "message",
+        id: "a2",
+        message: {
+          role: "assistant",
+          content: [{ type: "text", text: "Next." }],
+        },
+      }),
+    ];
+
+    expect(parseSessionHistoryLines(lines)).toEqual([
+      {
+        id: "a1",
+        entryId: "a1",
+        role: "agent",
+        text: "Done.",
+        model: "openai-codex/gpt-5.5",
+      },
+      {
+        id: "a2",
+        entryId: "a2",
+        role: "agent",
+        text: "Next.",
+        model: "openai-codex/gpt-5.5",
       },
     ]);
   });
@@ -540,6 +585,27 @@ describe("readSessionTranscript", () => {
         role: "agent",
         text: "done",
         createdAt: 3_000,
+      },
+    ]);
+  });
+
+  it("preserves Aethon-local assistant model labels", async () => {
+    const dir = await tempRoot();
+    await appendLocalChatMessage(dir, {
+      id: "agent-1",
+      role: "agent",
+      text: "streamed answer",
+      model: "openai-codex/gpt-5.5",
+      createdAt: 1,
+    });
+
+    await expect(readSessionTranscript(dir)).resolves.toEqual([
+      {
+        id: "agent-1",
+        role: "agent",
+        text: "streamed answer",
+        model: "openai-codex/gpt-5.5",
+        createdAt: 1,
       },
     ]);
   });
@@ -1240,6 +1306,124 @@ describe("readSessionTranscript", () => {
     expect(restored.map((message) => message.id)).toEqual([
       "restored-tool-call_live_1-fc_abc",
     ]);
+  });
+
+  it("merges local file-change metadata into restored pi tool cards", async () => {
+    const dir = await tempRoot();
+    await writeFile(
+      join(dir, "session.jsonl"),
+      [
+        JSON.stringify({
+          type: "message",
+          id: "assistant-tool",
+          timestamp: 3_000,
+          message: {
+            role: "assistant",
+            content: [
+              {
+                type: "toolCall",
+                id: "call_edit_1",
+                name: "edit",
+                arguments: {
+                  path: "src/App.tsx",
+                  oldString: "old",
+                  newString: "new",
+                },
+              },
+            ],
+          },
+        }),
+        JSON.stringify({
+          type: "message",
+          id: "tool-result",
+          timestamp: 3_100,
+          message: {
+            role: "toolResult",
+            toolCallId: "call_edit_1",
+            toolName: "edit",
+            content: [
+              {
+                type: "text",
+                text: "Successfully replaced 1 block(s) in src/App.tsx",
+              },
+            ],
+          },
+        }),
+      ].join("\n") + "\n",
+    );
+    await appendLocalChatMessage(dir, {
+      id: "tool-7-call_edit_1",
+      role: "agent",
+      a2ui: {
+        components: [
+          {
+            id: "tool-7-call_edit_1",
+            type: "tool-card",
+            props: {
+              toolName: "edit",
+              startedAt: 3_000,
+              endedAt: 3_100,
+              fileChange: {
+                kind: "edited",
+                path: "src/App.tsx",
+                rootPath: "/repo",
+                preview: "--- a/src/App.tsx\n+++ b/src/App.tsx\n@@\n-old\n+new",
+                additions: 1,
+                deletions: 1,
+              },
+            },
+          },
+        ],
+      },
+      createdAt: 3_100,
+    });
+
+    const restored = await readSessionTranscript(dir);
+    expect(restored.map((message) => message.id)).toEqual([
+      "restored-tool-call_edit_1",
+    ]);
+    expect(restored[0].a2ui?.components[0]).toMatchObject({
+      props: {
+        toolName: "edit",
+        fileChange: {
+          path: "src/App.tsx",
+          rootPath: "/repo",
+          preview: expect.stringContaining("--- a/src/App.tsx"),
+          additions: 1,
+          deletions: 1,
+        },
+      },
+    });
+  });
+
+  it("prefers durable unified diff snapshots over non-diff tool status text", () => {
+    const merged = restoreTesting.mergeFileChange(
+      {
+        kind: "edited",
+        path: "src/App.tsx",
+        preview: "Successfully replaced 1 block(s) in src/App.tsx",
+        additions: 9,
+        deletions: 9,
+      },
+      {
+        kind: "edited",
+        path: "src/App.tsx",
+        rootPath: "/repo",
+        preview: "--- a/src/App.tsx\n+++ b/src/App.tsx\n@@\n-old\n+new",
+        additions: 1,
+        deletions: 1,
+      },
+    );
+
+    expect(merged).toMatchObject({
+      kind: "edited",
+      path: "src/App.tsx",
+      rootPath: "/repo",
+      preview: expect.stringContaining("--- a/src/App.tsx"),
+      additions: 1,
+      deletions: 1,
+    });
+    expect(merged.preview).not.toContain("Successfully replaced");
   });
 
   it("keeps the latest local assistant snapshot for stopped turns", async () => {

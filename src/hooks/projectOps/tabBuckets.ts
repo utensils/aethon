@@ -1,5 +1,5 @@
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
-import { NO_PROJECT_KEY, type Tab } from "../../types/tab";
+import { NO_PROJECT_KEY, OVERVIEW_TAB_ID, type Tab } from "../../types/tab";
 import { recomputeModelPicker } from "../../utils/modelPicker";
 import type { ProjectsState } from "../../projects";
 import { TAB_MIRROR_KEYS } from "../useTabs";
@@ -90,7 +90,12 @@ function preferredActiveTabId(
   currentActive: string | undefined,
   existingActive: string | undefined,
 ): string | undefined {
-  if (tabs.some((t) => t.id === currentActive)) return currentActive;
+  if (
+    currentActive !== OVERVIEW_TAB_ID &&
+    tabs.some((t) => t.id === currentActive)
+  ) {
+    return currentActive;
+  }
   if (tabs.some((t) => t.id === existingActive)) return existingActive;
   return (
     tabs.find((t) => t.kind === "agent" || t.kind === "editor")?.id ??

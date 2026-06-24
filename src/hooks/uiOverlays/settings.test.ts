@@ -58,6 +58,7 @@ const baseConfig: AethonConfig = {
     cacheTtlHours: 720,
     refreshOnLockfileChange: true,
   },
+  startup: { autoApprove: false },
   guardrails: { softPromptAnchor: null, hardEnforceProjectRoot: false },
 };
 
