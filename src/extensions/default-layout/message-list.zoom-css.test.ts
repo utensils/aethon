@@ -1,13 +1,8 @@
-// @ts-expect-error frontend tsconfig intentionally does not include Node types.
-import { readFileSync } from "node:fs";
-// @ts-expect-error frontend tsconfig intentionally does not include Node types.
-import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
-const chromeCss = readFileSync(
-  fileURLToPath(new URL("../../styles/chrome.css", import.meta.url)),
-  "utf8",
-);
+import { readAggregatedChromeCss } from "../../styles/css-test-utils";
+
+const chromeCss = readAggregatedChromeCss();
 
 function cssRule(selector: string): string {
   const start = chromeCss.indexOf(`${selector} {`);

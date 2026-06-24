@@ -1,0 +1,540 @@
+/* =========================================================================
+   VCS surface — header `vcs-status` cluster + `source-control-panel`.
+   Both read the /vcs slice (useVcsStatus). Tones map to the state quads so
+   pass/fail/pending reads identically across light and dark themes.
+   ========================================================================= */
+
+/* ---- Header cluster ---------------------------------------------------- */
+
+.ae-vcs-cluster {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  margin-left: var(--space-2);
+  font-size: var(--chrome-text-compact);
+  transition: opacity var(--motion-base) var(--ease-out);
+}
+.ae-vcs-cluster[data-loading="true"] {
+  opacity: 0.6;
+}
+
+.ae-vcs-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 30ch;
+  padding: 1px 9px;
+  height: 22px;
+  border: 1px solid var(--pill-border, var(--border));
+  border-radius: var(--radius-pill);
+  background: var(--pill-bg, var(--bg-elev));
+  color: var(--pill-text, var(--text-secondary));
+  font: inherit;
+  line-height: 1;
+  white-space: nowrap;
+  box-shadow: var(--inner-highlight, none);
+}
+button.ae-vcs-chip {
+  cursor: pointer;
+  transition:
+    border-color var(--motion-fast) var(--ease-out),
+    background var(--motion-fast) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out);
+}
+button.ae-vcs-chip:hover {
+  border-color: var(--border-strong);
+  background: var(--bg-hover);
+}
+button.ae-vcs-chip:active {
+  transform: translateY(0.5px);
+}
+button.ae-vcs-chip:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.ae-vcs-glyph {
+  color: var(--accent);
+  font-size: 1.05em;
+  opacity: 0.95;
+}
+.ae-vcs-branch-name {
+  font-family: var(--font-mono);
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  /* Cap the branch so a long name truncates instead of consuming the whole
+     header row — keeps the right-side pickers visible and preserves the
+     draggable spacer between the clusters. */
+  max-width: 16ch;
+}
+.ae-vcs-aheadbehind {
+  font-family: var(--font-mono);
+  color: var(--text-dim);
+  font-size: 0.92em;
+}
+.ae-vcs-changes-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+.ae-vcs-pr-state {
+  text-transform: lowercase;
+  opacity: 0.85;
+}
+.ae-vcs-ci-icon {
+  font-weight: 700;
+}
+
+/* Tones — shared by header chips + panel rows below. */
+.ae-vcs-chip.is-success,
+.ae-vcs-chip.is-success .ae-vcs-ci-icon {
+  color: var(--state-success-fg);
+  border-color: var(--state-success-border);
+}
+.ae-vcs-chip.is-failure,
+.ae-vcs-chip.is-failure .ae-vcs-ci-icon {
+  color: var(--state-error-fg);
+  border-color: var(--state-error-border);
+}
+.ae-vcs-chip.is-pending,
+.ae-vcs-chip.is-pending .ae-vcs-ci-icon {
+  color: var(--state-warning-fg);
+  border-color: var(--state-warning-border);
+}
+.ae-vcs-chip.is-neutral {
+  color: var(--text-secondary);
+}
+.ae-vcs-chip.is-merged {
+  background: var(--state-success-bg);
+  color: var(--state-success-fg);
+  border-color: var(--state-success-border);
+}
+.ae-vcs-chip.is-muted {
+  color: var(--text-dim);
+}
+.ae-vcs-chip.is-pending .ae-vcs-ci-icon {
+  animation: ae-pill-pulse 1.6s ease-in-out infinite;
+}
+
+/* ---- Source-control panel (above the file tree) ------------------------ */
+
+.ae-scm-panel {
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 auto;
+  /* No inter-row gap: rows sit flush so the first content band lands
+     immediately below the titlebar divider — mirroring the left column,
+     where the tab strip sits flush under the project-switcher header
+     (both 38px bands, continuous dividers). A gap here pushed the first
+     row ~6px down and broke the two-column grid alignment. */
+  gap: 0;
+  /* No padding at all: the titlebar is a flush 38px header row (its bottom
+     border lands on the same y as the app header + sidebar brand), and the
+     bottom border sits flush under the last summary band so the file tree
+     below starts on the same y as the editor under the tab strip — the
+     third band of the two-column grid. Any bottom padding here pushed the
+     tree down out of alignment with the editor. */
+  padding: 0;
+  border-bottom: 1px solid var(--border);
+  background: var(--gradient-surface, var(--bg-elev));
+  box-shadow: var(--inner-highlight, none);
+  transition: opacity var(--motion-base) var(--ease-out);
+  animation: ae-scm-reveal var(--motion-panel) var(--ease-panel);
+}
+@keyframes ae-scm-reveal {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ae-scm-panel {
+    animation: none;
+  }
+}
+.ae-scm-panel[data-loading="true"] {
+  opacity: 0.7;
+}
+
+.ae-scm-titlebar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  /* 38px to match the app header + sidebar brand row; bottom border is
+     the shared top divider line across the three columns. */
+  height: 38px;
+  flex: 0 0 auto;
+  padding: 0 var(--space-3);
+  border-bottom: 1px solid var(--border);
+}
+.ae-scm-title {
+  font-size: var(--chrome-text-muted);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+.ae-scm-branch {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: var(--chrome-text-compact);
+  color: var(--accent);
+}
+.ae-scm-branch-glyph {
+  opacity: 0.9;
+}
+.ae-scm-branch-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 18ch;
+}
+.ae-scm-aheadbehind {
+  color: var(--text-dim);
+  font-size: 0.92em;
+}
+
+.ae-scm-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  padding: 5px var(--space-2);
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: var(--chrome-text-compact);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background var(--motion-fast) var(--ease-out),
+    border-color var(--motion-fast) var(--ease-out);
+}
+.ae-scm-row:hover {
+  background: var(--bg-hover);
+  border-color: var(--border);
+}
+.ae-scm-row:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+.ae-scm-row-glyph {
+  flex: 0 0 auto;
+  color: var(--accent);
+}
+.ae-scm-row-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  font-weight: 600;
+  color: var(--text);
+}
+.ae-scm-row-sub {
+  font-weight: 400;
+  font-size: var(--chrome-text-muted);
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ae-scm-badge {
+  flex: 0 0 auto;
+  padding: 1px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  font-size: var(--chrome-text-muted);
+  text-transform: lowercase;
+}
+.ae-scm-badge.is-success {
+  color: var(--state-success-fg);
+  border-color: var(--state-success-border);
+}
+.ae-scm-badge.is-failure {
+  color: var(--state-error-fg);
+  border-color: var(--state-error-border);
+}
+.ae-scm-badge.is-neutral {
+  color: var(--text-secondary);
+}
+.ae-scm-badge.is-merged {
+  background: var(--state-success-bg);
+  color: var(--state-success-fg);
+  border-color: var(--state-success-border);
+}
+.ae-scm-badge.is-muted {
+  color: var(--text-dim);
+}
+.ae-scm-ci-icon {
+  flex: 0 0 auto;
+  width: 1.2em;
+  text-align: center;
+  font-weight: 700;
+}
+.ae-scm-ci-icon.is-success {
+  color: var(--state-success-strong);
+}
+.ae-scm-ci-icon.is-failure {
+  color: var(--state-error-strong);
+}
+.ae-scm-ci-icon.is-pending {
+  color: var(--state-warning-strong);
+  animation: ae-pill-pulse 1.6s ease-in-out infinite;
+}
+.ae-scm-ci-icon.is-neutral {
+  color: var(--text-dim);
+}
+.ae-scm-ci-count {
+  flex: 0 0 auto;
+  font-family: var(--font-mono);
+  font-size: var(--chrome-text-muted);
+  color: var(--text-dim);
+}
+.ae-scm-ci-chevron {
+  flex: 0 0 auto;
+  margin-left: 2px;
+}
+/* CI summary is the first content band in the CI state — snap it to the
+   same 38px grid as the changed/clean header so every state lines up with
+   the left column. Its two-line label (name + "N failing") rides a tight
+   line-height and zero vertical padding so both lines center inside 38px. */
+.ae-scm-ci {
+  min-height: 38px;
+  padding-top: 0;
+  padding-bottom: 0;
+}
+.ae-scm-ci .ae-scm-row-label {
+  gap: 0;
+  line-height: 1.2;
+}
+
+/* Expandable CI job list — mirrors the changed-file list, indented to sit
+   under the CI row's icon column. Per-tone icon colors reuse the rollup
+   tokens so a job's red matches the summary's red. */
+.ae-scm-ci-group {
+  display: flex;
+  flex-direction: column;
+}
+.ae-scm-checks-list {
+  list-style: none;
+  margin: 0 0 2px;
+  padding: 2px 0;
+  max-height: 30vh;
+  overflow-y: auto;
+  border-top: 1px solid var(--border-subtle, var(--border));
+}
+.ae-scm-check {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 3px var(--space-2) 3px var(--space-3);
+  font-size: var(--font-size-sidebar);
+  line-height: 1.35;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.ae-scm-check[data-clickable="true"] {
+  cursor: pointer;
+}
+.ae-scm-check[data-clickable="true"]:hover {
+  background: var(--bg-hover);
+}
+.ae-scm-check-icon {
+  flex: 0 0 auto;
+  width: 1.2em;
+  text-align: center;
+  font-weight: 700;
+}
+.ae-scm-check-icon.is-success {
+  color: var(--state-success-strong);
+}
+.ae-scm-check-icon.is-failure {
+  color: var(--state-error-strong);
+}
+.ae-scm-check-icon.is-pending {
+  color: var(--state-warning-strong);
+  animation: ae-pill-pulse 1.6s ease-in-out infinite;
+}
+.ae-scm-check-icon.is-neutral {
+  color: var(--text-dim);
+}
+.ae-scm-check-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ae-scm-check-status {
+  flex: 0 0 auto;
+  font-family: var(--font-mono);
+  font-size: var(--chrome-text-muted);
+  text-align: right;
+  color: var(--text-dim);
+}
+.ae-scm-check-status.is-failure {
+  color: var(--state-error-strong);
+}
+.ae-scm-check-status.is-pending {
+  color: var(--state-warning-strong);
+}
+
+.ae-scm-changes {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.ae-scm-changes-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  width: 100%;
+  /* Snap the summary band to the 38px header grid so the first content
+     row aligns with the left column's tab-strip band (titlebar 38 +
+     summary 38 == project-switcher 38 + tab-strip 38), keeping the file
+     tree below in lockstep with the editor across clean/changed states. */
+  min-height: 38px;
+  /* Left padding + chevron width match the file-tree rows below so the
+     disclosure-chevron column and the label column line up exactly. */
+  padding: 4px var(--space-2) 4px 6px;
+  border: 0;
+  background: transparent;
+  color: var(--text-dim);
+  font: inherit;
+  font-size: var(--chrome-text-muted);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.ae-scm-changes-header:hover {
+  color: var(--text-secondary);
+}
+/* Clean-tree state reuses the header box for alignment but isn't
+   clickable — no pointer, no hover affordance. */
+.ae-scm-changes-header--static {
+  cursor: default;
+}
+.ae-scm-changes-header--static:hover {
+  color: var(--text-dim);
+}
+.ae-scm-chevron {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  flex-shrink: 0;
+  opacity: 0.7;
+}
+.ae-scm-changes-count {
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+.ae-scm-changes-breakdown {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--text-dim);
+}
+/* +adds / -dels line stat (git diff --numstat totals), pinned right. */
+.ae-scm-changes-stat {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+  text-transform: none;
+}
+.ae-scm-stat-add {
+  color: var(--success, #4ec07a);
+}
+.ae-scm-stat-del {
+  color: var(--error, #e5534b);
+}
+.ae-scm-file-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 30vh;
+  overflow-y: auto;
+}
+.ae-scm-file {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 3px var(--space-2) 3px var(--space-3);
+  cursor: pointer;
+  font-size: var(--font-size-sidebar);
+  line-height: 1.35;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.ae-scm-file:hover {
+  background: var(--bg-hover);
+}
+.ae-scm-file-icon {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+}
+.ae-scm-file-name {
+  flex: 0 0 auto;
+  color: var(--text);
+  max-width: 18ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ae-scm-file.git-status-deleted .ae-scm-file-name {
+  color: var(--text-dim);
+  text-decoration: line-through;
+}
+.ae-scm-file-path {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--text-dim);
+  font-size: var(--chrome-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  direction: rtl;
+  text-align: left;
+}
+.ae-scm-file-status {
+  flex: 0 0 auto;
+  min-width: 1.2em;
+  font-family: var(--font-mono);
+  font-size: var(--chrome-text-muted);
+  text-align: right;
+  color: var(--accent);
+}
+.ae-scm-file-status.git-status-added,
+.ae-scm-file-status.git-status-untracked,
+.ae-scm-file-status.git-status-copied {
+  color: var(--success);
+}
+.ae-scm-file-status.git-status-deleted {
+  color: var(--error);
+}
+.ae-scm-file-status.git-status-renamed {
+  color: var(--warn);
+}
+.ae-scm-file-status.git-status-conflicted {
+  color: var(--error);
+  font-weight: 700;
+}

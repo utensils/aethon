@@ -1,0 +1,45 @@
+.ae-scm-file-more,
+
+/* =========================================================================
+   Theme-switch crossfade — a one-shot transition class added to <html> by
+   useZoomAndTheme.setTheme for ~320ms so surfaces + text glide between
+   palettes instead of hard-cutting. Scoped to the big chrome surfaces so
+   we don't animate thousands of nodes; cleared after the swap so idle/hover
+   stays instant.
+   ========================================================================= */
+.ae-theme-switching .app-header,
+.ae-theme-switching .a2ui-status-bar,
+.ae-theme-switching .a2ui-sidebar,
+.ae-theme-switching .ae-sidebar-area,
+.ae-theme-switching .ae-files-sidebar-area,
+.ae-theme-switching .ae-file-tree,
+.ae-theme-switching .ae-scm-panel,
+.ae-theme-switching .a2ui-tab-strip,
+.ae-theme-switching .a2ui-main-canvas,
+.ae-theme-switching .a2ui-chat-input,
+.ae-theme-switching .a2ui-project-dashboard,
+.ae-theme-switching .a2ui-projects-dashboard,
+.ae-theme-switching body {
+  transition:
+    background-color var(--motion-slow) var(--ease-out),
+    color var(--motion-slow) var(--ease-out),
+    border-color var(--motion-slow) var(--ease-out);
+}
+@media (prefers-reduced-motion: reduce) {
+  .ae-theme-switching .app-header,
+  .ae-theme-switching .a2ui-status-bar,
+  .ae-theme-switching .a2ui-sidebar,
+  .ae-theme-switching .ae-sidebar-area,
+  .ae-theme-switching .ae-files-sidebar-area,
+  .ae-theme-switching .ae-file-tree,
+  .ae-theme-switching .ae-scm-panel,
+  .ae-theme-switching .a2ui-tab-strip,
+  .ae-theme-switching .a2ui-main-canvas,
+  .ae-theme-switching .a2ui-chat-input,
+  .ae-theme-switching .a2ui-project-dashboard,
+  .ae-theme-switching .a2ui-projects-dashboard,
+  .ae-theme-switching body {
+    transition: none;
+  }
+}
+
