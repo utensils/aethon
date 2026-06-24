@@ -8,7 +8,7 @@ use std::sync::{Arc, Mutex};
 
 use portable_pty::{CommandBuilder, PtySize, native_pty_system};
 use serde::Deserialize;
-use tauri::{AppHandle, Manager, Runtime, State};
+use tauri::{AppHandle, Runtime, State};
 
 use super::reader::spawn_reader_thread;
 use super::registry::{
@@ -16,7 +16,7 @@ use super::registry::{
 };
 use crate::commands::devshell::TauriEmitter;
 use crate::devshell::detect::DevshellKind;
-use crate::devshell::{AppEmitter, DetectMode, DevshellCache, DevshellEmitter};
+use crate::devshell::{AppEmitter, DevshellCache, DevshellEmitter};
 use crate::shell::scrollback::Scrollback;
 use crate::shell::sharemode::{ShareMode, ShareState};
 
@@ -102,7 +102,8 @@ pub async fn shell_open<R: Runtime>(
 
     if let Some(cwd) = args.cwd.as_ref() {
         let cwd_path = std::path::PathBuf::from(cwd);
-        let (enabled, configured_mode) = devshell_effective_config(&app, &cwd_path);
+        let (enabled, configured_mode) =
+            crate::devshell::effective_config(&app, &cwd_path).into_parts();
         if enabled != "never" {
             if let Some(reason) =
                 crate::commands::devshell::forced_mode_mismatch_reason(&cwd_path, configured_mode)
@@ -405,60 +406,6 @@ fn clear_inherited_devshell_identity(cmd: &mut CommandBuilder) {
     ] {
         cmd.env(key, "");
     }
-}
-
-/// Read `[devshell] enabled` + `mode` from the global config (and any
-/// per-project override), returning the normalised pair the cache
-/// expects. Duplicates `commands::devshell::effective_config` rather
-/// than calling it because that function is `pub(crate)` and lives
-/// next to the IPC types — splitting hairs to avoid a circular
-/// crate-internal dependency.
-fn devshell_effective_config<R: Runtime>(
-    app: &AppHandle<R>,
-    root: &std::path::Path,
-) -> (String, DetectMode) {
-    use std::io::Read;
-
-    use crate::helpers::config::{
-        normalize_devshell_enabled, normalize_devshell_mode, parse_config_toml,
-        parse_project_devshell_override,
-    };
-
-    let home = match app.path().home_dir() {
-        Ok(h) => h,
-        Err(_) => return ("auto".into(), DetectMode::Auto),
-    };
-    let global_path = match crate::helpers::aethon_dir(Some(home)) {
-        Some(dir) => dir.join("config.toml"),
-        None => return ("auto".into(), DetectMode::Auto),
-    };
-    let mut buf = String::new();
-    if let Ok(file) = std::fs::File::open(&global_path) {
-        let _ = file.take(64 * 1024).read_to_string(&mut buf);
-    }
-    let global = parse_config_toml(&buf);
-    let mut enabled = global["devshell"]["enabled"]
-        .as_str()
-        .unwrap_or("auto")
-        .to_string();
-    let mut mode_str = global["devshell"]["mode"]
-        .as_str()
-        .unwrap_or("auto")
-        .to_string();
-    let override_path = root.join(".aethon").join("devshell.toml");
-    if let Ok(mut text) = std::fs::read_to_string(&override_path) {
-        if text.len() > 64 * 1024 {
-            text.truncate(64 * 1024);
-        }
-        let parsed = parse_project_devshell_override(&text);
-        if let Some(e) = parsed.devshell.enabled {
-            enabled = normalize_devshell_enabled(Some(&e)).to_string();
-        }
-        if let Some(m) = parsed.devshell.mode {
-            mode_str = normalize_devshell_mode(Some(&m)).to_string();
-        }
-    }
-    (enabled, DetectMode::from_str(&mode_str))
 }
 
 /// True when `command` names an interactive shell binary whose child
