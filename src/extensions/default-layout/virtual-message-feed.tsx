@@ -1,5 +1,6 @@
 import {
   useCallback,
+  useEffect,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -22,6 +23,8 @@ import {
 import { queuedDeliveryLabels } from "./message-rendering-utils";
 import { useScrollFollowController } from "./useScrollFollowController";
 import { recordTranscriptPerfSnapshot } from "./transcript-perf";
+
+const ENTER_ROW_FALLBACK_CLEAR_MS = 1200;
 
 function ScrollToBottomPill({
   visible,
@@ -97,6 +100,19 @@ export function VirtualMessageFeed({
       return next;
     });
   }, []);
+  useEffect(() => {
+    if (enteringRowKeysRef.current.size === 0) return;
+    const prefersReducedMotion =
+      globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches ??
+      false;
+    const delay = prefersReducedMotion ? 0 : ENTER_ROW_FALLBACK_CLEAR_MS;
+    const timer = globalThis.setTimeout(() => {
+      if (enteringRowKeysRef.current.size === 0) return;
+      enteringRowKeysRef.current.clear();
+      setMotionEpoch((value) => value + 1);
+    }, delay);
+    return () => globalThis.clearTimeout(timer);
+  }, [rowKeys]);
   const terminalOpen = Boolean(
     (state.terminal as { open?: boolean } | undefined)?.open,
   );

@@ -75,7 +75,8 @@ describe("tool card metadata", () => {
       additions: 15,
     });
 
-    const props = message.a2ui!.components![0].props!;
+    const props = message.a2ui?.components?.[0]?.props;
+    if (!props) throw new Error("expected tool-card props");
     const fileChange = props.fileChange as Record<string, unknown>;
     fileChange.rootPath = "/repo/aethon";
     delete fileChange.additions;

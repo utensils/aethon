@@ -1949,6 +1949,42 @@ describe("ChatHistory turn activity feed (mocked Virtuoso renders rows)", () => 
     });
   });
 
+  it("clears stale entering-row markers when animations do not fire", () => {
+    vi.useFakeTimers();
+    vi.stubGlobal("matchMedia", () => ({
+      matches: false,
+      media: "(prefers-reduced-motion: reduce)",
+      onchange: null,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    }));
+    const { rerender } = renderGroupedHistory({
+      messages: [
+        { id: "u1", role: "user", text: "first" },
+        { id: "a1", role: "agent", text: "done" },
+      ],
+      transcriptVisibility: { toolCalls: "hide" },
+    });
+
+    rerender(
+      groupedHistoryElement({
+        messages: [
+          { id: "u1", role: "user", text: "first" },
+          { id: "a1", role: "agent", text: "done" },
+          { id: "u2", role: "user", text: "second" },
+        ],
+        transcriptVisibility: { toolCalls: "hide" },
+      }),
+    );
+
+    expect(document.querySelector(".a2ui-msg-row-enter")).toBeTruthy();
+    act(() => vi.advanceTimersByTime(1200));
+    expect(document.querySelector(".a2ui-msg-row-enter")).toBeNull();
+  });
+
   it("labels assistant turns with the message model when available", () => {
     renderGroupedHistory({
       model: "openai-codex/gpt-5.5",
@@ -2586,7 +2622,7 @@ describe("ChatHistory turn activity feed (mocked Virtuoso renders rows)", () => 
     await waitFor(() => expect(screen.queryByText("App.tsx")).toBeNull());
   });
 
-  it("does not rewrite compact edit artifact stats from the working tree", async () => {
+  it("does not rewrite compact edit artifact stats from the working tree", () => {
     invokeMock.mockImplementation((cmd: string) =>
       cmd === "git_file_diff_stat"
         ? Promise.resolve({ insertions: 5, deletions: 2 })
@@ -2632,7 +2668,7 @@ describe("ChatHistory turn activity feed (mocked Virtuoso renders rows)", () => 
     });
   });
 
-  it("keeps captured edit metadata stable when the working tree has richer stats", async () => {
+  it("keeps captured edit metadata stable when the working tree has richer stats", () => {
     invokeMock.mockImplementation(
       (cmd: string, args: Record<string, string>) => {
         if (cmd !== "git_file_diff_stat") {
@@ -2725,7 +2761,7 @@ describe("ChatHistory turn activity feed (mocked Virtuoso renders rows)", () => 
     });
   });
 
-  it("keeps captured counts for created files when git reports no tracked diff", async () => {
+  it("keeps captured counts for created files when git reports no tracked diff", () => {
     invokeMock.mockImplementation((cmd: string) =>
       cmd === "git_file_diff_stat"
         ? Promise.resolve({ insertions: 0, deletions: 0 })

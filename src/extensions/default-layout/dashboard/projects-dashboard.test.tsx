@@ -10,14 +10,15 @@ import {
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ProjectsDashboard } from "./projects-dashboard";
 import type { A2UIComponent } from "../../../types/a2ui";
+import type * as ConfigModule from "../../../config";
 import { ExtensionRegistry } from "../../ExtensionRegistry";
 import { ExtensionRegistryProvider } from "../../ExtensionRegistryProvider";
 import { TaskLauncher } from "./task-launcher";
 
 const { invokeMock } = vi.hoisted(() => ({
-  invokeMock: vi.fn(async (command: string) => {
+  invokeMock: vi.fn((command: string) => {
     if (command === "read_config") {
-      return {
+      return Promise.resolve({
         ui: {},
         agent: {},
         shell: {},
@@ -27,9 +28,9 @@ const { invokeMock } = vi.hoisted(() => ({
         devshell: {},
         startup: { autoApprove: false },
         guardrails: {},
-      };
+      });
     }
-    return null;
+    return Promise.resolve(null);
   }),
 }));
 
@@ -38,7 +39,7 @@ vi.mock("@tauri-apps/api/core", () => ({
 }));
 
 vi.mock("../../../config", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../../../config")>();
+  const actual = await importOriginal<typeof ConfigModule>();
   return {
     ...actual,
     clearConfigCache: vi.fn(),
@@ -161,8 +162,8 @@ describe("ProjectsDashboard", () => {
 
     const checkbox = screen.getByRole("checkbox", {
       name: /auto-approve startup commands on this host/i,
-    }) as HTMLInputElement;
-    await waitFor(() => expect(checkbox.disabled).toBe(false));
+    });
+    await waitFor(() => expect(checkbox.hasAttribute("disabled")).toBe(false));
 
     fireEvent.click(checkbox);
 
@@ -176,6 +177,6 @@ describe("ProjectsDashboard", () => {
         }),
       ),
     );
-    expect(checkbox.checked).toBe(true);
+    expect(checkbox).toHaveProperty("checked", true);
   });
 });

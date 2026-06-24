@@ -15,8 +15,8 @@ export interface ResolvedVisibility {
 /**
  * Resolve effective transcript visibility for a tab: a concrete per-tab
  * override wins; otherwise fall back to the global default mirrored at
- * `/transcriptVisibility` (seeded from `[ui]` config); otherwise grouped
- * completed tool-heavy turns by default.
+ * `/transcriptVisibility` (seeded from `[ui]` config); when the mirror omits
+ * tool-call visibility, use the configured default mode.
  *
  * Kept pure (state + tabId in, modes out) so it's trivially testable and the
  * renderer can memoize on `[state, tabId]`.

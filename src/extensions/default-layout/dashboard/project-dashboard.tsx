@@ -190,9 +190,9 @@ export function ProjectDashboard({
     const projectPath = project?.path;
     if (!projectPath) return;
     let cancelled = false;
-    setStartupPolicy(null);
-    setStartupPolicyError(null);
     void (async () => {
+      setStartupPolicy(null);
+      setStartupPolicyError(null);
       try {
         const status = await invoke<StartupPolicyStatus>(
           "workspace_startup_status",

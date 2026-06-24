@@ -153,14 +153,16 @@ export function ProjectsDashboard({
 
   useEffect(() => {
     if (!showHostStartupPolicy) {
-      setHostStartupAutoApprove(null);
-      setHostStartupError(null);
+      queueMicrotask(() => {
+        setHostStartupAutoApprove(null);
+        setHostStartupError(null);
+      });
       return;
     }
     let cancelled = false;
-    setHostStartupAutoApprove(null);
-    setHostStartupError(null);
     void (async () => {
+      setHostStartupAutoApprove(null);
+      setHostStartupError(null);
       try {
         const config = await invoke<HostStartupConfig>("read_config");
         if (!cancelled) {

@@ -14,24 +14,24 @@ import { ExtensionRegistry } from "../../ExtensionRegistry";
 import { ExtensionRegistryProvider } from "../../ExtensionRegistryProvider";
 
 const { invokeMock, refreshRepoOverview } = vi.hoisted(() => ({
-  invokeMock: vi.fn(async (command: string) => {
+  invokeMock: vi.fn((command: string) => {
     if (command === "workspace_startup_status") {
-      return {
+      return Promise.resolve({
         root: "/repo",
         autoApprove: false,
         hostAutoApprove: false,
         projectAutoApprove: false,
-      };
+      });
     }
     if (command === "workspace_startup_set_auto_approve") {
-      return {
+      return Promise.resolve({
         root: "/repo",
         autoApprove: true,
         hostAutoApprove: false,
         projectAutoApprove: true,
-      };
+      });
     }
-    return null;
+    return Promise.resolve(null);
   }),
   refreshRepoOverview: vi.fn(
     (_projectPath: string) =>
@@ -189,8 +189,8 @@ describe("ProjectDashboard startup policy", () => {
 
     const checkbox = screen.getByRole("checkbox", {
       name: /auto-approve startup commands/i,
-    }) as HTMLInputElement;
-    await waitFor(() => expect(checkbox.disabled).toBe(false));
+    });
+    await waitFor(() => expect(checkbox.hasAttribute("disabled")).toBe(false));
 
     fireEvent.click(checkbox);
 
@@ -200,7 +200,7 @@ describe("ProjectDashboard startup policy", () => {
         { args: { root: "/repo", enabled: true } },
       ),
     );
-    expect(checkbox.checked).toBe(true);
+    expect(checkbox).toHaveProperty("checked", true);
   });
 });
 
