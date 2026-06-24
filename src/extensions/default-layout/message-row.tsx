@@ -57,8 +57,10 @@ export function TypingIndicator() {
       aria-label="Agent is thinking"
       className="ae-typing-indicator"
     >
-      <span className="ae-typing-label" aria-hidden="true">
-        Thinking...
+      <span className="ae-typing-dots" aria-hidden="true">
+        <span className="ae-typing-dot" />
+        <span className="ae-typing-dot" />
+        <span className="ae-typing-dot" />
       </span>
     </div>
   );
