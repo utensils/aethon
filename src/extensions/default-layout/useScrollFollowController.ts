@@ -10,88 +10,33 @@ import type { VirtuosoHandle, ListRange } from "react-virtuoso";
 import type { ChatMessage } from "../../types/a2ui";
 import { isAtBottom as metricsAtBottom } from "../../utils/stickyScrollController";
 import {
-  anchorMessageIdForRow,
-  findRowIndexForMessageId,
   searchableTextForRow,
   type TranscriptRow,
 } from "../../utils/transcriptRows";
 import type { ResolvedVisibility } from "../../utils/visibilityResolver";
+import {
+  createScrollPinScheduler,
+  type ScrollPinScheduler,
+} from "./scrollPinScheduler";
+import {
+  appendedUserTurnResumesFollow,
+  visibilityReanchorIndex,
+} from "./scrollReanchorPolicies";
+import { createScrollIntentTracker } from "./scrollIntentTracker";
+import {
+  defaultTabScrollAnchorStore,
+  dropStaleRestoreAnchor,
+  initialIndexForRestoreAnchor,
+  restoreAnchorForTab,
+  updateAnchorFromRange,
+  updateAnchorFromUserScroll,
+  type TabScrollAnchorStore,
+} from "./scrollFollowStore";
 
 // Distance (px) from the bottom still treated as "at the bottom" — used by the
 // scroll handler's metricsAtBottom check (follow on/off) and the canScroll
 // overflow check that gates the scroll-to-bottom pill.
 const DEFAULT_AT_BOTTOM_THRESHOLD = 60;
-
-// tabId → the message id at the top of the viewport when the tab was left
-// scrolled-up (absent when it was left following at the bottom). The message
-// list is keyed by tab id (see ChatHistory / MainCanvas), so each tab mounts its
-// own Virtuoso instance; on the next mount we map this id back to its current
-// row index and open there via initialTopMostItemIndex. Keyed by message id, not
-// pixels, so it survives new messages arriving while the tab is backgrounded and
-// avoids react-virtuoso's fragile getState/restoreStateFrom scrollTop timing.
-// Module-level so it survives the keyed remount.
-const tabScrollCache = new Map<string, string>();
-
-// Follow state must flip only on a genuine USER scroll, never on the
-// programmatic re-pins we issue while following (those would otherwise be read
-// back as "the user scrolled"). Content reflow/growth does NOT fire a scroll
-// event, so the only scroll events to disambiguate are user gestures vs our own
-// scrollTo. We mark a user gesture (wheel / touch / scroll-key) and let the
-// resulting scroll event recompute follow; un-gestured scroll events (our
-// re-pins) are ignored. This is what makes a scroll-away win the race against an
-// in-flight streaming re-pin.
-const USER_SCROLL_INTENT_EVENTS = [
-  "wheel",
-  "touchstart",
-  "touchmove",
-  "pointerdown",
-  "keydown",
-] as const;
-const SCROLL_INTENT_KEYS = new Set([
-  "ArrowUp",
-  "ArrowDown",
-  "PageUp",
-  "PageDown",
-  "Home",
-  "End",
-  " ",
-  "Spacebar",
-]);
-
-function isInteractiveKeyboardTarget(target: EventTarget | null): boolean {
-  if (!(target instanceof HTMLElement)) return false;
-  if (target.isContentEditable) return true;
-  return Boolean(
-    target.closest(
-      "button,a,input,textarea,select,[role='button'],[role='link'],[role='textbox'],[tabindex]:not([tabindex='-1'])",
-    ),
-  );
-}
-
-function isUserScrollIntentEvent(event: Event): boolean {
-  if (!(event instanceof KeyboardEvent)) return true;
-  if (!SCROLL_INTENT_KEYS.has(event.key)) return false;
-  if (isInteractiveKeyboardTarget(event.target)) return false;
-  return true;
-}
-
-function addUserScrollIntentListeners(
-  el: HTMLElement,
-  listener: EventListener,
-): void {
-  for (const eventName of USER_SCROLL_INTENT_EVENTS) {
-    el.addEventListener(eventName, listener, { passive: true });
-  }
-}
-
-function removeUserScrollIntentListeners(
-  el: HTMLElement,
-  listener: EventListener,
-): void {
-  for (const eventName of USER_SCROLL_INTENT_EVENTS) {
-    el.removeEventListener(eventName, listener);
-  }
-}
 
 interface UseScrollFollowControllerArgs {
   messages: ChatMessage[];
@@ -102,6 +47,7 @@ interface UseScrollFollowControllerArgs {
   terminalOpen: boolean;
   layoutRows: unknown;
   virtuosoRef: RefObject<VirtuosoHandle | null>;
+  anchorStore?: TabScrollAnchorStore;
 }
 
 export interface ScrollFollowController {
@@ -118,19 +64,23 @@ export interface ScrollFollowController {
 }
 
 export function resetScrollFollowCacheForTests(): void {
-  tabScrollCache.clear();
+  defaultTabScrollAnchorStore.clear();
 }
 
 export function getScrollFollowCacheAnchorForTests(
   tabId: string,
 ): string | undefined {
-  return tabScrollCache.get(tabId);
+  return defaultTabScrollAnchorStore.get(tabId);
 }
 
-/** Owns chat transcript follow/pin behavior. Virtuoso's `followOutput` remains
- *  disabled; this hook is the single source of truth for user scroll intent,
- *  per-tab restore anchors, content-growth pinning, terminal resize repins,
- *  search jumps, and visibility-toggle re-anchoring. */
+/** React orchestration layer for chat transcript follow/pin behavior.
+ *  Ownership is split across explicit collaborators:
+ *  - scrollFollowStore owns per-tab restore anchors,
+ *  - scrollIntentTracker owns user-vs-programmatic scroll detection,
+ *  - scrollPinScheduler owns imperative bottom pin coalescing/cleanup,
+ *  - scrollReanchorPolicies owns visibility/new-turn re-anchor decisions.
+ *  Virtuoso's `followOutput` remains disabled; this hook wires the pieces to
+ *  React lifecycle, refs, and transcript state. */
 export function useScrollFollowController({
   messages,
   rows,
@@ -140,24 +90,23 @@ export function useScrollFollowController({
   terminalOpen,
   layoutRows,
   virtuosoRef,
+  anchorStore = defaultTabScrollAnchorStore,
 }: UseScrollFollowControllerArgs): ScrollFollowController {
   // `following` drives the pill (render); `followingRef` is the synchronous
   // source of truth the re-pin + filter effects read. They move together via
   // setFollowing(). This flag is the single owner of stick-to-bottom intent.
-  // A cached snapshot exists only for a tab left scrolled-up (see handleScroll),
-  // so seed follow=false when restoring one — otherwise default to following.
-  const initialFollowing = !(tabId !== undefined && tabScrollCache.has(tabId));
+  // A cached snapshot exists only for a tab left scrolled-up, so seed
+  // follow=false when restoring one — otherwise default to following.
+  const initialFollowing = !(tabId !== undefined && anchorStore.has(tabId));
   const [following, setFollowingState] = useState(initialFollowing);
   const followingRef = useRef(initialFollowing);
   const [canScroll, setCanScroll] = useState(false);
   const [scrollerEl, setScrollerEl] = useState<HTMLElement | null>(null);
   const scrollerElRef = useRef<HTMLElement | null>(null);
-  // Set by a user gesture (wheel/touch/scroll-key); the next scroll event reads
-  // and clears it. Distinguishes a real scroll-away from our own re-pins.
-  const userScrollRef = useRef(false);
-  const pinRafRef = useRef<number | null>(null);
-  const pinDeadlineRef = useRef(0);
-  const pinTimeoutsRef = useRef<number[]>([]);
+  const intentTrackerRef = useRef<ReturnType<
+    typeof createScrollIntentTracker
+  > | null>(null);
+  const pinSchedulerRef = useRef<ScrollPinScheduler | null>(null);
   const [flashIndex, setFlashIndex] = useState<number | null>(null);
   const prevScrollToMatch = useRef<string | undefined>(undefined);
   const prevLastMessageId = useRef(messages[messages.length - 1]?.id);
@@ -192,79 +141,23 @@ export function useScrollFollowController({
     );
   }, []);
 
-  const scrollToBottom = useCallback(
-    (settleMs = 150) => {
-      const startedAt =
-        typeof performance === "undefined" ? Date.now() : performance.now();
-      const now = () =>
-        typeof performance === "undefined" ? Date.now() : performance.now();
-      pinDeadlineRef.current = Math.max(
-        pinDeadlineRef.current,
-        startedAt + settleMs,
-      );
-
-      // Scroll to the true bottom of the scroller — this includes the footer's
-      // live subtree / typing indicator, which sit below the last data row.
-      const pinDomScroller = () => {
-        const el = scrollerElRef.current;
-        const bottomGap = el
-          ? el.scrollHeight - el.clientHeight - el.scrollTop
-          : Number.POSITIVE_INFINITY;
-        if (bottomGap <= 2) {
-          updateCanScroll();
-          return;
-        }
-        const lastIndex = Math.max(0, rowsRef.current.length - 1);
-        virtuosoRef.current?.scrollToIndex({ index: lastIndex, align: "end" });
-        virtuosoRef.current?.scrollTo({ top: Number.MAX_SAFE_INTEGER });
-        if (el) el.scrollTop = el.scrollHeight;
-        updateCanScroll();
-      };
-      const pinIfStillFollowing = () => {
-        if (followingRef.current) pinDomScroller();
-      };
-      pinDomScroller();
-      const frame = () => {
-        pinRafRef.current = null;
-        if (!followingRef.current) return;
-        pinDomScroller();
-        if (now() < pinDeadlineRef.current) {
-          pinRafRef.current = window.requestAnimationFrame(frame);
-        }
-      };
-      if (pinRafRef.current === null) {
-        pinRafRef.current = window.requestAnimationFrame(frame);
-      }
-      for (const timeoutId of pinTimeoutsRef.current) {
-        window.clearTimeout(timeoutId);
-      }
-      pinTimeoutsRef.current = [];
-      for (const delay of [50, 150, 300, 600, 900]) {
-        if (delay <= settleMs) {
-          pinTimeoutsRef.current.push(
-            window.setTimeout(pinIfStillFollowing, delay),
-          );
-        }
-      }
-    },
-    [updateCanScroll, virtuosoRef],
-  );
-
-  useEffect(() => {
+  useLayoutEffect(() => {
+    const scheduler = createScrollPinScheduler({
+      getScroller: () => scrollerElRef.current,
+      getRowsLength: () => rowsRef.current.length,
+      getVirtuoso: () => virtuosoRef.current,
+      isFollowing: () => followingRef.current,
+      updateCanScroll,
+    });
+    pinSchedulerRef.current = scheduler;
     return () => {
-      if (pinRafRef.current !== null) {
-        window.cancelAnimationFrame(pinRafRef.current);
-        pinRafRef.current = null;
-      }
-      for (const timeoutId of pinTimeoutsRef.current) {
-        window.clearTimeout(timeoutId);
-      }
-      pinTimeoutsRef.current = [];
+      scheduler.cancel();
+      if (pinSchedulerRef.current === scheduler) pinSchedulerRef.current = null;
     };
-  }, []);
+  }, [updateCanScroll, virtuosoRef]);
 
-  const markUserScrollIntent = useCallback((event: Event) => {
-    if (isUserScrollIntentEvent(event)) userScrollRef.current = true;
+  const scrollToBottom = useCallback((settleMs = 150) => {
+    pinSchedulerRef.current?.schedulePin(settleMs);
   }, []);
 
   // Sole follow on/off path. Only a gesture-flagged scroll recomputes follow
@@ -273,8 +166,7 @@ export function useScrollFollowController({
   // never be flipped off by streaming — only by a real user scroll-away.
   const handleScroll = useCallback(() => {
     updateCanScroll();
-    if (!userScrollRef.current) return;
-    userScrollRef.current = false;
+    if (!intentTrackerRef.current?.consumeUserIntent()) return;
     const el = scrollerElRef.current;
     if (!el) return;
     const atBottom = metricsAtBottom(
@@ -286,23 +178,25 @@ export function useScrollFollowController({
       DEFAULT_AT_BOTTOM_THRESHOLD,
     );
     setFollowing(atBottom);
-    // Per-tab scroll restore: remember the top-of-viewport message id while
-    // scrolled-up; clear it when the user returns to the bottom (so the tab
-    // reopens following at the live bottom). ONLY user-gestured scrolls touch
-    // the cache — programmatic re-pins and the restore itself are un-gestured,
-    // so a transient mount-time position (e.g. React StrictMode's dev remount)
-    // can never clobber it. rangeChanged keeps this fresh as the user scrolls.
-    if (tabId !== undefined) {
-      if (atBottom) {
-        tabScrollCache.delete(tabId);
-      } else {
-        const anchorId = anchorMessageIdForRow(
-          rowsRef.current[lastRangeRef.current?.startIndex ?? 0],
-        );
-        if (anchorId) tabScrollCache.set(tabId, anchorId);
-      }
-    }
-  }, [setFollowing, tabId, updateCanScroll]);
+    updateAnchorFromUserScroll({
+      atBottom,
+      range: lastRangeRef.current,
+      rows: rowsRef.current,
+      store: anchorStore,
+      tabId,
+    });
+  }, [anchorStore, setFollowing, tabId, updateCanScroll]);
+
+  useLayoutEffect(() => {
+    const tracker = createScrollIntentTracker(handleScroll);
+    intentTrackerRef.current = tracker;
+    const el = scrollerElRef.current;
+    if (el) tracker.attach(el);
+    return () => {
+      tracker.detach();
+      if (intentTrackerRef.current === tracker) intentTrackerRef.current = null;
+    };
+  }, [handleScroll]);
 
   // Track the topmost visible row and, while scrolled-up, keep the per-tab
   // restore anchor current as the user scrolls (so switching away restores the
@@ -310,34 +204,30 @@ export function useScrollFollowController({
   const handleRangeChanged = useCallback(
     (range: ListRange) => {
       lastRangeRef.current = range;
-      if (tabId !== undefined && !followingRef.current) {
-        const anchorId = anchorMessageIdForRow(rowsRef.current[range.startIndex]);
-        if (anchorId) tabScrollCache.set(tabId, anchorId);
-      }
+      updateAnchorFromRange({
+        following: followingRef.current,
+        range,
+        rows: rowsRef.current,
+        store: anchorStore,
+        tabId,
+      });
     },
-    [tabId],
+    [anchorStore, tabId],
   );
 
   const handleScrollerRef = useCallback(
     (ref: HTMLElement | Window | null) => {
-      const prev = scrollerElRef.current;
-      if (prev) {
-        prev.removeEventListener("scroll", handleScroll);
-        removeUserScrollIntentListeners(prev, markUserScrollIntent);
-      }
+      intentTrackerRef.current?.detach();
       const el =
         typeof HTMLElement !== "undefined" && ref instanceof HTMLElement
           ? ref
           : null;
       scrollerElRef.current = el;
       setScrollerEl(el);
-      if (el) {
-        el.addEventListener("scroll", handleScroll, { passive: true });
-        addUserScrollIntentListeners(el, markUserScrollIntent);
-      }
+      if (el) intentTrackerRef.current?.attach(el);
       updateCanScroll();
     },
-    [handleScroll, markUserScrollIntent, updateCanScroll],
+    [updateCanScroll],
   );
 
   // Content grew/shrank (append, streamed token, tool/thinking expand, late
@@ -355,15 +245,7 @@ export function useScrollFollowController({
   // user scrolls), so there is deliberately NO getState-on-unmount here — that
   // would capture a transient pre-restore scrollTop under React StrictMode's
   // dev double-mount and clobber the cached position.
-  useLayoutEffect(() => {
-    return () => {
-      const el = scrollerElRef.current;
-      if (el) {
-        el.removeEventListener("scroll", handleScroll);
-        removeUserScrollIntentListeners(el, markUserScrollIntent);
-      }
-    };
-  }, [handleScroll, markUserScrollIntent]);
+  useLayoutEffect(() => () => intentTrackerRef.current?.detach(), []);
 
   // Terminal open/resize changes the chat viewport height without changing the
   // list height, so Virtuoso's totalListHeightChanged callback never fires. If
@@ -412,15 +294,10 @@ export function useScrollFollowController({
   // index. When present, open there (aligned to the top); otherwise open pinned
   // to the bottom. These are mutually exclusive — a bottom initial index would
   // otherwise win over any restore.
-  const restoreAnchorId =
-    tabId !== undefined ? tabScrollCache.get(tabId) : undefined;
-  const restoreIndex = restoreAnchorId
-    ? findRowIndexForMessageId(rows, restoreAnchorId)
-    : -1;
-  const initialTopMostItemIndex =
-    restoreIndex >= 0
-      ? { index: restoreIndex, align: "start" as const }
-      : { index: Math.max(0, rows.length - 1), align: "end" as const };
+  const restoreAnchorId = restoreAnchorForTab(anchorStore, tabId);
+  const { restoreIndex, initialTopMostItemIndex } = initialIndexForRestoreAnchor(
+    { rows, restoreAnchorId },
+  );
 
   // A cached restore anchor that no longer exists (chat cleared via Cmd+K, or a
   // session rollback truncated it away) is stale: restoreIndex is -1 so the list
@@ -428,13 +305,16 @@ export function useScrollFollowController({
   // pill showing at the bottom with content-growth re-pins disabled. Drop the
   // stale entry and resume following at the live bottom.
   useLayoutEffect(() => {
-    if (!restoreAnchorId || restoreIndex >= 0) return;
-    if (tabId !== undefined) tabScrollCache.delete(tabId);
-    if (!followingRef.current) {
-      setFollowing(true);
-      scrollToBottom();
-    }
-  }, [restoreAnchorId, restoreIndex, scrollToBottom, setFollowing, tabId]);
+    const dropped = dropStaleRestoreAnchor({
+      restoreAnchorId,
+      restoreIndex,
+      store: anchorStore,
+      tabId,
+    });
+    if (!dropped || followingRef.current) return;
+    setFollowing(true);
+    scrollToBottom();
+  }, [anchorStore, restoreAnchorId, restoreIndex, scrollToBottom, setFollowing, tabId]);
 
   // A new user turn is an explicit request to continue the conversation, so the
   // transcript should resume following even if the user had been reading above
@@ -444,20 +324,15 @@ export function useScrollFollowController({
   // one render, so scan everything appended after the previous tail instead of
   // checking only the latest row.
   useLayoutEffect(() => {
-    const latest = messages[messages.length - 1];
     const previousId = prevLastMessageId.current;
-    prevLastMessageId.current = latest?.id;
-    if (!latest || latest.id === previousId) return;
-    const previousIndex = previousId
-      ? messages.findIndex((message) => message.id === previousId)
-      : -1;
-    const appended =
-      previousIndex >= 0 ? messages.slice(previousIndex + 1) : messages;
-    if (!appended.some((message) => message.role === "user")) return;
-    if (tabId !== undefined) tabScrollCache.delete(tabId);
+    prevLastMessageId.current = messages[messages.length - 1]?.id;
+    if (!appendedUserTurnResumesFollow({ messages, previousTailId: previousId })) {
+      return;
+    }
+    if (tabId !== undefined) anchorStore.delete(tabId);
     if (!followingRef.current) setFollowing(true);
     scrollToBottom(900);
-  }, [messages, scrollToBottom, setFollowing, tabId]);
+  }, [anchorStore, messages, scrollToBottom, setFollowing, tabId]);
 
   // Toggling a transcript filter (tool-call grouping / thinking visibility)
   // rebuilds `rows` with a different length + identity. Re-anchor exactly once
@@ -484,21 +359,12 @@ export function useScrollFollowController({
 
     // Map the topmost visible message id from the OLD rows to its index in
     // the NEW rows and pin it to the top (preserves the reading position).
-    const startIndex = lastRangeRef.current?.startIndex ?? 0;
-    const anchorId = anchorMessageIdForRow(prevRows[startIndex]);
-    let newIndex = findRowIndexForMessageId(rows, anchorId);
-    if (newIndex < 0 && anchorId) {
-      // Anchor dropped (e.g. its tool card was hidden): fall back to the nearest
-      // preceding message that still survives in the new groups.
-      const anchorMsgIdx = messages.findIndex((m) => m.id === anchorId);
-      for (let i = anchorMsgIdx - 1; i >= 0; i--) {
-        const idx = findRowIndexForMessageId(rows, messages[i].id);
-        if (idx >= 0) {
-          newIndex = idx;
-          break;
-        }
-      }
-    }
+    const newIndex = visibilityReanchorIndex({
+      messages,
+      newRows: rows,
+      oldRows: prevRows,
+      startIndex: lastRangeRef.current?.startIndex ?? 0,
+    });
     if (newIndex >= 0) {
       virtuosoRef.current?.scrollToIndex({ index: newIndex, align: "start" });
     }
