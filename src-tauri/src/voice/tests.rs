@@ -216,11 +216,9 @@ fn distil_provider_skips_backend_probe_when_disabled() {
 #[test]
 #[ignore = "requires local Distil-Whisper cache and AETHON_VOICE_SAMPLE_WAV"]
 fn ignored_real_model_probe_transcribes_fixture_wav() {
-    let cache_path = std::env::var_os("CLAUDETTE_VOICE_MODEL_CACHE")
+    let cache_path = std::env::var_os("AETHON_VOICE_MODEL_CACHE")
         .map(PathBuf::from)
-        .unwrap_or_else(|| {
-            PathBuf::from("/Users/jamesbrink/.aethon/models/voice/distil-whisper-large-v3")
-        });
+        .unwrap_or_else(|| VoiceProviderRegistry::default_model_root().join(DISTIL_CACHE_DIR));
     let sample_path = std::env::var_os("AETHON_VOICE_SAMPLE_WAV")
         .map(PathBuf::from)
         .expect("set AETHON_VOICE_SAMPLE_WAV to a short speech WAV");
