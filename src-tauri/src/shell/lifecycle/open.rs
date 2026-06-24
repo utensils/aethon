@@ -14,9 +14,8 @@ use super::reader::spawn_reader_thread;
 use super::registry::{
     ChildHandle, SCROLLBACK_BYTES, ScrollbackHandle, ShareHandle, ShellRegistry, ShellSlot,
 };
-use crate::commands::devshell::TauriEmitter;
+use crate::devshell::DevshellCache;
 use crate::devshell::detect::DevshellKind;
-use crate::devshell::{AppEmitter, DevshellCache, DevshellEmitter};
 use crate::shell::scrollback::Scrollback;
 use crate::shell::sharemode::{ShareMode, ShareState};
 
@@ -102,82 +101,57 @@ pub async fn shell_open<R: Runtime>(
 
     if let Some(cwd) = args.cwd.as_ref() {
         let cwd_path = std::path::PathBuf::from(cwd);
-        let (enabled, configured_mode) =
-            crate::devshell::effective_config(&app, &cwd_path).into_parts();
-        if enabled != "never" {
-            if let Some(reason) =
-                crate::commands::devshell::forced_mode_mismatch_reason(&cwd_path, configured_mode)
-            {
+        let emitter = crate::devshell::prepare_policy::emitter_for(&app);
+        let decision =
+            crate::devshell::prepare_env_for_root(&app, &devshell, &cwd_path, Some(&emitter)).await;
+        match decision {
+            crate::devshell::PrepareDecision::Disabled
+            | crate::devshell::PrepareDecision::MissingOptional { .. } => {}
+            crate::devshell::PrepareDecision::Prepared { kind, prepared } => {
+                detected_launch_kind = Some(kind);
+                tracing::debug!(
+                    target: "aethon::devshell",
+                    "shell_open: prepared {} devshell vars for tab {}",
+                    prepared.env.len(),
+                    args.tab_id
+                );
+                match kind {
+                    DevshellKind::Flake | DevshellKind::Direnv => {
+                        launch_kind = Some(kind);
+                    }
+                    DevshellKind::Shell => {
+                        prepared_env = Some((prepared.kind, prepared.env));
+                    }
+                }
+            }
+            crate::devshell::PrepareDecision::DirenvAllowFailedOptional { kind, reason } => {
+                detected_launch_kind = Some(kind);
+                tracing::warn!(
+                    target: "aethon::devshell",
+                    "shell_open: direnv allow failed for {}: {reason}; opening host shell",
+                    cwd_path.display()
+                );
+            }
+            crate::devshell::PrepareDecision::CachePrepareFailedOptional { kind, reason } => {
+                detected_launch_kind = Some(kind);
+                tracing::warn!(
+                    target: "aethon::devshell",
+                    "shell_open: devshell prepare failed for {}: {reason}; opening host shell",
+                    cwd_path.display()
+                );
+            }
+            crate::devshell::PrepareDecision::MissingRequired { reason } => {
+                return Err(format!(
+                    "devshell prepare: {} and [devshell] enabled = \"always\"",
+                    reason
+                ));
+            }
+            crate::devshell::PrepareDecision::ForcedModeMismatch { reason }
+            | crate::devshell::PrepareDecision::CachePrepareFailedRequired { reason } => {
                 return Err(format!("devshell prepare: {reason}"));
             }
-            let detected_kind = crate::devshell::detect_mode(&cwd_path, configured_mode);
-            match detected_kind {
-                Some(kind) => {
-                    detected_launch_kind = Some(kind);
-                    let mut can_prepare = true;
-                    if kind.as_str() == "direnv"
-                        && let Err(reason) =
-                            crate::commands::devshell::direnv_allow(&cwd_path).await
-                    {
-                        if crate::commands::devshell::devshell_prepare_is_required(&enabled) {
-                            return Err(reason);
-                        }
-                        tracing::warn!(
-                            target: "aethon::devshell",
-                            "shell_open: direnv allow failed for {}: {reason}; opening host shell",
-                            cwd_path.display()
-                        );
-                        can_prepare = false;
-                    }
-                    if can_prepare {
-                        let emitter: AppEmitter =
-                            AppEmitter::new(Arc::new(TauriEmitter::new(app.clone()))
-                                as Arc<dyn DevshellEmitter>);
-                        let prepared = match devshell
-                            .prepare_for(Some(&emitter), &cwd_path, configured_mode)
-                            .await
-                        {
-                            Ok(prepared) => Some(prepared),
-                            Err(reason) => {
-                                if crate::commands::devshell::devshell_prepare_is_required(&enabled)
-                                {
-                                    return Err(format!("devshell prepare: {reason}"));
-                                }
-                                tracing::warn!(
-                                    target: "aethon::devshell",
-                                    "shell_open: devshell prepare failed for {}: {reason}; opening host shell",
-                                    cwd_path.display()
-                                );
-                                None
-                            }
-                        };
-                        if let Some(prepared) = prepared {
-                            tracing::debug!(
-                                target: "aethon::devshell",
-                                "shell_open: prepared {} devshell vars for tab {}",
-                                prepared.env.len(),
-                                args.tab_id
-                            );
-                            match kind {
-                                DevshellKind::Flake | DevshellKind::Direnv => {
-                                    launch_kind = Some(kind);
-                                }
-                                DevshellKind::Shell => {
-                                    prepared_env = Some((prepared.kind, prepared.env));
-                                }
-                            }
-                        }
-                    }
-                }
-                None if enabled == "always" => {
-                    let reason = format!("no devshell detected at {}", cwd_path.display());
-                    if let Some(error) =
-                        crate::commands::devshell::required_devshell_missing_error(&enabled, reason)
-                    {
-                        return Err(format!("devshell prepare: {error}"));
-                    }
-                }
-                None => {}
+            crate::devshell::PrepareDecision::DirenvAllowFailedRequired { reason } => {
+                return Err(reason);
             }
         }
     }
@@ -545,6 +519,21 @@ mod shell_classification_tests {
                 "-il"
             ]
         );
+        assert_eq!(cmd.get_cwd(), Some(&OsString::from("/repo/worktree")));
+    }
+
+    #[test]
+    fn shell_devshell_launches_command_directly_for_env_injection() {
+        let cmd = devshell_launch_command_with_resolver(
+            Some(DevshellKind::Shell),
+            Some("/repo/worktree"),
+            "/bin/zsh",
+            &["-il".to_string()],
+            fake_resolver,
+        )
+        .unwrap();
+
+        assert_eq!(argv(&cmd), ["/bin/zsh", "-il"]);
         assert_eq!(cmd.get_cwd(), Some(&OsString::from("/repo/worktree")));
     }
 

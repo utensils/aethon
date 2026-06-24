@@ -746,55 +746,39 @@ async fn prepare_devshell_env(
     cache: &Arc<DevshellCache>,
     root: &Path,
 ) -> Result<BTreeMap<String, String>, String> {
-    let (enabled, configured_mode) = crate::devshell::effective_config(app, root).into_parts();
-    if enabled == "never" {
-        return Ok(BTreeMap::new());
-    }
-    if let Some(reason) =
-        crate::commands::devshell::forced_mode_mismatch_reason(root, configured_mode)
-    {
-        return Err(format!("devshell prepare: {reason}"));
-    }
-    let Some(kind) = crate::devshell::detect_mode(root, configured_mode) else {
-        let reason = format!("no devshell detected at {}", root.display());
-        if let Some(error) =
-            crate::commands::devshell::required_devshell_missing_error(&enabled, reason)
-        {
-            return Err(format!("devshell prepare: {error}"));
+    let emitter = crate::devshell::prepare_policy::emitter_for(app);
+    let decision = crate::devshell::prepare_env_for_root(app, cache, root, Some(&emitter)).await;
+    match decision {
+        crate::devshell::PrepareDecision::Disabled
+        | crate::devshell::PrepareDecision::MissingOptional { .. } => Ok(BTreeMap::new()),
+        crate::devshell::PrepareDecision::Prepared { prepared, .. } => Ok(prepared.env),
+        crate::devshell::PrepareDecision::DirenvAllowFailedOptional { reason, .. } => {
+            tracing::warn!(
+                target: "aethon::startup",
+                "startup devshell direnv allow failed for {}: {reason}; continuing with host env",
+                root.display()
+            );
+            Ok(BTreeMap::new())
         }
-        return Ok(BTreeMap::new());
-    };
-    if kind.as_str() == "direnv"
-        && let Err(reason) = crate::commands::devshell::direnv_allow(root).await
-    {
-        if crate::commands::devshell::devshell_prepare_is_required(&enabled) {
-            return Err(reason);
+        crate::devshell::PrepareDecision::CachePrepareFailedOptional { reason, .. } => {
+            tracing::warn!(
+                target: "aethon::startup",
+                "startup devshell prepare failed for {}: {reason}; continuing with host env",
+                root.display()
+            );
+            Ok(BTreeMap::new())
         }
-        tracing::warn!(
-            target: "aethon::startup",
-            "startup devshell direnv allow failed for {}: {reason}; continuing with host env",
-            root.display()
-        );
-        return Ok(BTreeMap::new());
-    }
-    let emitter = crate::commands::devshell::emitter_for(app);
-    match cache
-        .prepare_for(Some(&emitter), root, configured_mode)
-        .await
-    {
-        Ok(prepared) => Ok(prepared.env),
-        Err(reason) => {
-            if crate::commands::devshell::devshell_prepare_is_required(&enabled) {
-                Err(format!("devshell prepare: {reason}"))
-            } else {
-                tracing::warn!(
-                    target: "aethon::startup",
-                    "startup devshell prepare failed for {}: {reason}; continuing with host env",
-                    root.display()
-                );
-                Ok(BTreeMap::new())
-            }
+        crate::devshell::PrepareDecision::MissingRequired { reason } => {
+            let error =
+                crate::devshell::prepare_policy::required_devshell_missing_error("always", reason)
+                    .unwrap_or_else(|| "missing required devshell".to_string());
+            Err(format!("devshell prepare: {error}"))
         }
+        crate::devshell::PrepareDecision::ForcedModeMismatch { reason }
+        | crate::devshell::PrepareDecision::CachePrepareFailedRequired { reason } => {
+            Err(format!("devshell prepare: {reason}"))
+        }
+        crate::devshell::PrepareDecision::DirenvAllowFailedRequired { reason } => Err(reason),
     }
 }
 
