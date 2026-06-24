@@ -160,6 +160,9 @@ describe("useSettingsOverlay", () => {
     expect(invoke).toHaveBeenCalledWith("agent_broadcast_command", {
       payload: expect.stringContaining("runtime_config_changed"),
     });
+    expect(vi.mocked(clearConfigCache).mock.invocationCallOrder[0]).toBeLessThan(
+      vi.mocked(getConfig).mock.invocationCallOrder[0],
+    );
   });
 
   it("reapplies fresh config after autosave without closing settings", async () => {
@@ -180,7 +183,7 @@ describe("useSettingsOverlay", () => {
     });
     await vi.advanceTimersByTimeAsync(SETTINGS_AUTOSAVE_DELAY_MS);
 
-    expect(clearConfigCache).toHaveBeenCalledTimes(1);
+    expect(clearConfigCache).toHaveBeenCalledTimes(2);
     expect(ctx.reapplyConfig).toHaveBeenCalledWith(fresh);
     expect(stateRef.current.settings).toEqual({
       open: true,

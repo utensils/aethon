@@ -157,6 +157,10 @@ export function useSettingsOverlay(ctx: SettingsOverlayContext) {
     const saveGeneration = ++saveGenerationRef.current;
     let live: AethonConfig | null = null;
     try {
+      // Build destructive write_config payloads from the current file, not
+      // the read-once cache. Users may have edited config.toml externally
+      // after the Settings panel first loaded.
+      clearConfigCache();
       live = await getConfig();
     } catch (err) {
       console.warn("settings save: getConfig failed:", err);
