@@ -102,6 +102,49 @@ describe("sessionUiSnapshot", () => {
     });
   });
 
+  it("round-trips GitHub issue source metadata across save + restore", () => {
+    const sourceIssue = {
+      kind: "github-issue" as const,
+      projectId: "project-1",
+      number: 85,
+      url: "https://github.com/utensils/aethon/issues/85",
+      title: "Cannot rename session tab while agent is running",
+      branch: "fix/issue-85-existing",
+      workspaceId: "wt-85",
+      workspacePath: "/repo/aethon-issue-85",
+      createdAt: 1,
+    };
+    saveSessionUiSnapshot({
+      tabs: [
+        {
+          ...makeEmptyTab("issue-active", "Issue Active", "project-1"),
+          sourceIssue,
+        },
+      ],
+      activeTabId: "issue-active",
+      persistedTabBuckets: {
+        "project-1::workspace::wt-85": {
+          tabs: [
+            {
+              ...makeEmptyTab("issue-hidden", "Issue Hidden", "project-1"),
+              sourceIssue,
+            },
+          ],
+          activeTabId: "issue-hidden",
+        },
+      },
+    });
+
+    expect(loadSessionUiSnapshot()).toMatchObject({
+      tabs: [{ id: "issue-active", sourceIssue }],
+      buckets: {
+        "project-1::workspace::wt-85": {
+          tabs: [{ id: "issue-hidden", sourceIssue }],
+        },
+      },
+    });
+  });
+
   it("persists buckets-only when the active workspace has no sessions", () => {
     // User sitting on a project overview while agents run in its workspaces:
     // state.tabs is empty but a backgrounded bucket has a session.

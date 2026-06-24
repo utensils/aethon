@@ -62,6 +62,10 @@ import { useRootChromeActions } from "./hooks/useRootChromeActions";
 import { useActivateTabAnywhere } from "./hooks/useActivateTabAnywhere";
 import { useUpdaterConfigBridge } from "./hooks/useUpdaterConfigBridge";
 import { closeAllWorkspaceSessions } from "./hooks/tabOps/closeWorkspaceSessions";
+import {
+  clearClosedIssueLinks,
+  clearClosedIssueLinksInBuckets,
+} from "./extensions/default-layout/dashboard/issue-sessions";
 import type { NativeCanvasWindowRecord } from "./nativeWindows";
 import { writeState } from "./persist";
 import { useAppState } from "./state/appStore";
@@ -654,6 +658,20 @@ export default function App() {
     activateWorkspace,
   });
 
+  const clearClosedIssueLinksForProject = useCallback(
+    (projectId: string, openIssueNumbers: ReadonlySet<number>) => {
+      clearClosedIssueLinksInBuckets(
+        tabBucketsRef.current,
+        projectId,
+        openIssueNumbers,
+      );
+      setState((prev) =>
+        clearClosedIssueLinks(prev, projectId, openIssueNumbers),
+      );
+    },
+    [setState, tabBucketsRef],
+  );
+
   // Updater (Cmd menu / tray "Check for Updates" + agent-driven path).
   // The hook reads the persisted channel + auto-check toggle from
   // `config.toml` during its own boot lifecycle, so we don't have to
@@ -980,6 +998,7 @@ export default function App() {
     activateWorkspace,
     createWorkspaceForProject,
     startTaskInProject,
+    clearClosedIssueLinksForProject,
     removeWorkspaceById,
     dismissPendingWorkspace,
     retryPendingWorkspace,

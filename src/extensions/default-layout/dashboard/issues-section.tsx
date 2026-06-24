@@ -43,6 +43,7 @@ import {
   matchingIssueTemplates,
   type IssueTemplate,
 } from "./issue-templates";
+import { firstIssueSessionTab } from "./issue-sessions";
 
 interface ProjectInfo {
   id: string;
@@ -77,6 +78,12 @@ interface ContextMenuState {
   issue: GhIssue;
   x: number;
   y: number;
+}
+
+interface IssueSessionStatus {
+  tabId: string;
+  stateLabel: "Working" | "Ready" | "Session";
+  detail: string;
 }
 
 function projectWorkspaceBranches(
@@ -123,6 +130,66 @@ function currentProjectWorkspaceId(
     project?.workspaces?.find((w) => w.id && w.id === activeWorkspaceId) ??
     project?.workspaces?.find((w) => w.id && w.active === true);
   return workspace?.id;
+}
+
+function workspaceLabelForIssueSession(
+  state: Record<string, unknown>,
+  projectId: string,
+  workspaceId?: string,
+  workspacePath?: string,
+  branch?: string,
+): string {
+  if (branch) return branch;
+  const sidebar =
+    (state.sidebar as
+      | {
+          projects?: {
+            id: string;
+            workspaces?: {
+              id?: string;
+              label?: string;
+              branch?: string | null;
+              path?: string;
+            }[];
+          }[];
+        }
+      | undefined) ?? {};
+  const project = sidebar.projects?.find((p) => p.id === projectId);
+  const workspace =
+    project?.workspaces?.find((w) => w.id && w.id === workspaceId) ??
+    project?.workspaces?.find((w) => w.path && w.path === workspacePath);
+  return (
+    workspace?.label ??
+    workspace?.branch ??
+    workspacePath?.split(/[/\\]/).filter(Boolean).at(-1) ??
+    "project root"
+  );
+}
+
+function issueSessionStatus(
+  state: Record<string, unknown>,
+  projectId: string,
+  issue: GhIssue,
+): IssueSessionStatus | null {
+  const tab = firstIssueSessionTab(state, projectId, issue.number);
+  if (!tab?.sourceIssue) return null;
+  const running = Boolean(
+    (state.agentRunningTabs as Record<string, unknown> | undefined)?.[tab.id],
+  );
+  const attention = Boolean(
+    (state.agentAttentionTabs as Record<string, unknown> | undefined)?.[tab.id],
+  );
+  return {
+    tabId: tab.id,
+    stateLabel: running ? "Working" : attention ? "Ready" : "Session",
+    detail: workspaceLabelForIssueSession(
+      state,
+      projectId,
+      tab.sourceIssue.workspaceId,
+      tab.sourceIssue.workspacePath ?? tab.cwd,
+      tab.sourceIssue.branch,
+    ),
+  };
 }
 
 export function IssuesSection({
@@ -184,6 +251,14 @@ export function IssuesSection({
       ]);
       if (cancelled) return;
       setIssues(fetched);
+      onEvent(
+        "issues-refreshed",
+        {
+          projectId: project.id,
+          openIssueNumbers: fetched.map((issue) => issue.number),
+        },
+        "issues-section",
+      );
       setIssueTemplates(templateConfig.templates);
       setTemplateWarning(templateConfig.warning);
       if (templateConfig.warning) {
@@ -194,7 +269,7 @@ export function IssuesSection({
     return () => {
       cancelled = true;
     };
-  }, [visible, project, limit, loadedFor]);
+  }, [visible, project, limit, loadedFor, onEvent]);
 
   // Close the menu on outside-click / Esc / scroll. Capture phase so a
   // click on a sibling card row doesn't leak into the row's click
@@ -233,6 +308,15 @@ export function IssuesSection({
       } = {},
     ) => {
       if (!project) return;
+      const existing = firstIssueSessionTab(state, project.id, issue.number);
+      if (existing) {
+        onEvent(
+          "open-issue-session",
+          { tabId: existing.id, issueNumber: issue.number },
+          `issue-${issue.number}`,
+        );
+        return;
+      }
       setSending(issue.number);
       try {
         const detail = await getIssueDetail(project.path, issue.number);
@@ -260,13 +344,12 @@ export function IssuesSection({
             newWorkspace: task.newWorkspace,
             branch: task.branch,
             workspaceId,
-            // Tag the payload so tests (and future telemetry) can spot
-            // an issue-originated launch. The start-task route handler
-            // forwards only its known keys, so these extra fields are
-            // observational and intentionally not consumed there yet.
+            // Tag the payload so the route can associate this issue
+            // with the launched session and guard future duplicate clicks.
             source: "github-issue",
             issueNumber: issue.number,
             issueUrl: issue.url,
+            issueTitle: issue.title,
             issueTemplateId: task.templateId,
             issueTemplateLabel: task.templateLabel,
           },
@@ -333,6 +416,14 @@ export function IssuesSection({
                   loadIssueTemplates(project.path),
                 ]);
                 setIssues(fresh);
+                onEvent(
+                  "issues-refreshed",
+                  {
+                    projectId: project.id,
+                    openIssueNumbers: fresh.map((issue) => issue.number),
+                  },
+                  "issues-section",
+                );
                 setIssueTemplates(templateConfig.templates);
                 setTemplateWarning(templateConfig.warning);
                 if (templateConfig.warning) {
@@ -370,10 +461,14 @@ export function IssuesSection({
         <ul className="a2ui-dashboard-issues-list">
           {issues.map((issue) => {
             const isSending = sending === issue.number;
+            const session = issueSessionStatus(state, project.id, issue);
             return (
               <li
                 key={issue.number}
-                className="a2ui-dashboard-issue-row"
+                className={
+                  "a2ui-dashboard-issue-row" +
+                  (session ? " is-linked-session" : "")
+                }
                 title="Left-click: open on GitHub · Right-click: more actions"
                 onClick={() => openIssueInBrowser(issue.url)}
                 onContextMenu={(e) => onRowContextMenu(e, issue)}
@@ -398,6 +493,31 @@ export function IssuesSection({
                       updated {formatRelativeTime(Date.parse(issue.updatedAt))}
                     </span>
                   )}
+                  {session ? (
+                    <button
+                      type="button"
+                      className="a2ui-dashboard-issue-session"
+                      data-state={session.stateLabel.toLowerCase()}
+                      title={`Open ${session.detail}`}
+                      aria-label={`Open session for issue #${issue.number}`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onEvent(
+                          "open-issue-session",
+                          { tabId: session.tabId, issueNumber: issue.number },
+                          `issue-${issue.number}`,
+                        );
+                      }}
+                    >
+                      <span
+                        className="a2ui-dashboard-issue-session-dot"
+                        aria-hidden="true"
+                      />
+                      <span className="a2ui-dashboard-issue-session-text">
+                        {session.stateLabel} · {session.detail}
+                      </span>
+                    </button>
+                  ) : null}
                   {issue.comments > 0 && (
                     <span className="a2ui-dashboard-issue-comments">
                       💬 {issue.comments}
@@ -427,15 +547,31 @@ export function IssuesSection({
                 <button
                   type="button"
                   className="a2ui-dashboard-issue-send"
-                  aria-label={`Send issue #${issue.number} to agent`}
-                  title="Send to agent in new workspace"
+                  aria-label={
+                    session
+                      ? `Open existing session for issue #${issue.number}`
+                      : `Send issue #${issue.number} to agent`
+                  }
+                  title={
+                    session
+                      ? "Open existing session"
+                      : "Send to agent in new workspace"
+                  }
                   disabled={isSending}
                   onClick={(e) => {
                     e.stopPropagation();
-                    void sendIssueToNewWorkspace(issue);
+                    if (session) {
+                      onEvent(
+                        "open-issue-session",
+                        { tabId: session.tabId, issueNumber: issue.number },
+                        `issue-${issue.number}`,
+                      );
+                    } else {
+                      void sendIssueToNewWorkspace(issue);
+                    }
                   }}
                 >
-                  {isSending ? "…" : "→ Agent"}
+                  {isSending ? "…" : session ? "Open" : "→ Agent"}
                 </button>
               </li>
             );

@@ -1,6 +1,6 @@
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { makeEmptyTab, type Tab } from "../../types/tab";
+import { makeEmptyTab, type GitHubIssueSource, type Tab } from "../../types/tab";
 import type { ProjectsState } from "../../projects";
 import { recomputeModelPicker } from "../../utils/modelPicker";
 import { TAB_MIRROR_KEYS } from "./constants";
@@ -52,6 +52,7 @@ export function useNewTab(deps: NewTabDeps) {
       /** Per-launch model override (task-launcher model chip). Wins over
        *  the global default + per-project memory in modelForNewProjectTab. */
       model?: string;
+      sourceIssue?: GitHubIssueSource;
     },
   ): void {
     // restoreId lets the caller open a tab with a specific tabId so the
@@ -129,6 +130,7 @@ export function useNewTab(deps: NewTabDeps) {
           ? { thinkingLevel: inheritedThinkingLevel }
           : {}),
         ...(inheritedCwd ? { cwd: inheritedCwd } : {}),
+        ...(options?.sourceIssue ? { sourceIssue: options.sourceIssue } : {}),
       };
       tabs.push(tab);
       const result: Record<string, unknown> = {

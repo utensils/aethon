@@ -108,6 +108,18 @@ export interface ContextUsageState {
 
 export type TabKind = "agent" | "shell" | "editor";
 
+export interface GitHubIssueSource {
+  kind: "github-issue";
+  projectId: string;
+  number: number;
+  url: string;
+  title: string;
+  branch?: string;
+  workspaceId?: string;
+  workspacePath?: string;
+  createdAt: number;
+}
+
 /**
  * A user message held on the client-side queue while a turn is in flight.
  * The popover above the composer renders the list, and the user can edit /
@@ -188,6 +200,10 @@ export interface Tab {
    *  absent → follow the global default. Rides each chat message to the
    *  agent's source guard. Persisted with the tab. */
   hardEnforceProjectRoot?: boolean;
+  /** Origin marker for dashboard-launched sessions. Used to avoid launching
+   *  duplicate agents for the same open GitHub issue and to render issue-row
+   *  status in project dashboards. */
+  sourceIssue?: GitHubIssueSource;
   /** Present iff kind === "shell". */
   shell?: ShellMeta;
   /** Present iff kind === "editor". */

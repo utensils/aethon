@@ -1,5 +1,10 @@
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
-import type { EditorDiffSnapshot, EditorMeta, Tab } from "../types/tab";
+import type {
+  EditorDiffSnapshot,
+  EditorMeta,
+  GitHubIssueSource,
+  Tab,
+} from "../types/tab";
 import type { ChatAttachment } from "../types/a2ui";
 import type { ShareMode } from "../utils/shareMode";
 import type {
@@ -92,6 +97,7 @@ export interface EventRouteContext {
       restoredSession?: boolean;
       cwd?: string;
       scrollToMatch?: string;
+      sourceIssue?: GitHubIssueSource;
     },
   ) => void;
   newShellTab: () => void;
@@ -187,7 +193,12 @@ export interface EventRouteContext {
     bridgePrompt?: string;
     activate?: boolean;
     label?: string;
+    sourceIssue?: GitHubIssueSource;
   }) => Promise<unknown>;
+  clearClosedIssueLinksForProject: (
+    projectId: string,
+    openIssueNumbers: ReadonlySet<number>,
+  ) => void;
   removeWorkspaceById: (
     workspaceId: string,
     opts?: { confirmed?: boolean },

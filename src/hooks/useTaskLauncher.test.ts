@@ -117,6 +117,65 @@ describe("useTaskLauncher", () => {
     expect(sendChat).toHaveBeenCalledWith("implement this", { tabId });
   });
 
+  it("attaches GitHub issue source metadata to active task tabs", async () => {
+    const projects = makeProjects();
+    projects.workspacesByProject.p1 = [
+      {
+        id: "wt-85",
+        projectId: "p1",
+        path: "/repo/aethon-issue-85",
+        branch: "fix/issue-85-existing",
+        isMain: false,
+      },
+    ];
+    const projectsRef = ref(projects);
+    const newTab = vi.fn();
+    const sendChat = vi.fn(() => Promise.resolve());
+    const { result } = renderHook(() =>
+      useTaskLauncher({
+        projectsRef,
+        pushNotificationRef: ref((_: NotificationInput) => {}),
+        setActiveProjectById: vi.fn(() => true),
+        createWorkspaceWithParams: vi.fn(() =>
+          Promise.resolve("/repo/aethon-issue-85"),
+        ),
+        activateWorkspace: vi.fn(),
+        newTab,
+        pendingTabOpens: ref(new Map()),
+        sendChat,
+      }),
+    );
+
+    await act(async () => {
+      await result.current({
+        projectId: "p1",
+        prompt: "fix issue",
+        newWorkspace: true,
+        branch: "fix/issue-85-existing",
+        sourceIssue: {
+          kind: "github-issue",
+          projectId: "p1",
+          number: 85,
+          url: "https://github.com/utensils/aethon/issues/85",
+          title: "Cannot rename session tab while agent is running",
+          createdAt: 1,
+        },
+      });
+    });
+
+    const tabId = newTab.mock.calls[0]?.[0];
+    expect(newTab).toHaveBeenCalledWith(tabId, undefined, {
+      cwd: "/repo/aethon-issue-85",
+      sourceIssue: expect.objectContaining({
+        kind: "github-issue",
+        number: 85,
+        branch: "fix/issue-85-existing",
+        workspaceId: "wt-85",
+        workspacePath: "/repo/aethon-issue-85",
+      }),
+    });
+  });
+
   it("threads the per-launch model through to the new tab", async () => {
     const projectsRef = ref(makeProjects());
     const newTab = vi.fn();
@@ -454,6 +513,14 @@ describe("useTaskLauncher", () => {
         prompt: "background workspace task",
         activate: false,
         label: "GLM task",
+        sourceIssue: {
+          kind: "github-issue",
+          projectId: "p2",
+          number: 52,
+          url: "https://github.com/example/other/issues/52",
+          title: "Background issue",
+          createdAt: 1,
+        },
       });
     });
 
@@ -466,6 +533,14 @@ describe("useTaskLauncher", () => {
       label: "GLM task",
       projectId: "p2",
       cwd: "/repo/other-work",
+      sourceIssue: {
+        kind: "github-issue",
+        projectId: "p2",
+        number: 52,
+        workspaceId: "wt-2",
+        workspacePath: "/repo/other-work",
+        branch: "feat/other",
+      },
     });
     expect(
       (stateRef.current.persistedTabBuckets as Record<string, TabBucket>)[

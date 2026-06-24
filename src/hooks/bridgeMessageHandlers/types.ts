@@ -1,6 +1,10 @@
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 import type { A2UIPayload, ChatMessage } from "../../types/a2ui";
-import type { EditorDiffSnapshot, Tab } from "../../types/tab";
+import type {
+  EditorDiffSnapshot,
+  GitHubIssueSource,
+  Tab,
+} from "../../types/tab";
 import type { ExtensionRegistry } from "../../extensions/ExtensionRegistry";
 import type {
   DisabledExtensionRecord,
@@ -199,6 +203,7 @@ export interface BridgeMessageContext {
     bridgePrompt?: string;
     activate?: boolean;
     label?: string;
+    sourceIssue?: GitHubIssueSource;
   }) => Promise<StartTaskResult | void>;
 
   // ─── Hook-owned ────────────────────────────────────────────────────

@@ -6,6 +6,7 @@ import {
   handleTaskLauncher,
 } from "./dashboard";
 import { buildRouteFixture } from "./testFixtures";
+import { makeEmptyTab } from "../types/tab";
 
 describe("handleProjectsDashboard", () => {
   it("new-tab calls ctx.newTab", async () => {
@@ -305,6 +306,81 @@ describe("handleProjectDashboard", () => {
     );
   });
 
+  it("forwards issue-section existing-session clicks emitted through the project dashboard", async () => {
+    const { ctx, mocks } = buildRouteFixture();
+    const handled = await handleProjectDashboard(
+      {
+        component: { id: "project-dashboard", type: "project-dashboard" },
+        eventType: "open-issue-session",
+        data: { tabId: "issue-tab", issueNumber: 927 },
+      },
+      ctx,
+    );
+
+    expect(handled).toBe(true);
+    expect(mocks.activateTabAnywhere).toHaveBeenCalledWith("issue-tab");
+  });
+
+  it("forwards issue-section refresh cleanup emitted through the project dashboard", async () => {
+    const { ctx, mocks } = buildRouteFixture();
+    const handled = await handleProjectDashboard(
+      {
+        component: { id: "project-dashboard", type: "project-dashboard" },
+        eventType: "issues-refreshed",
+        data: {
+          projectId: "p1",
+          openIssueNumbers: [84, "86", 84.5, "87.5", 0, -1, "bad"],
+        },
+      },
+      ctx,
+    );
+
+    expect(handled).toBe(true);
+    expect(mocks.clearClosedIssueLinksForProject).toHaveBeenCalledWith(
+      "p1",
+      new Set([84, 86]),
+    );
+  });
+
+  it("opens an existing issue session instead of launching a duplicate", async () => {
+    const linked = {
+      ...makeEmptyTab("issue-tab", "Issue 927", "p1"),
+      sourceIssue: {
+        kind: "github-issue" as const,
+        projectId: "p1",
+        number: 927,
+        url: "https://github.com/utensils/aethon/issues/927",
+        title: "Crash on boot",
+        branch: "fix/issue-927-crash-on-boot",
+        workspaceId: "wt-927",
+        workspacePath: "/repo/aethon-fix-927",
+        createdAt: 1,
+      },
+    };
+    const { ctx, mocks } = buildRouteFixture({ state: { tabs: [linked] } });
+    const handled = await handleProjectDashboard(
+      {
+        component: { id: "project-dashboard", type: "project-dashboard" },
+        eventType: "start-task",
+        data: {
+          projectId: "p1",
+          prompt: "Please work on issue #927",
+          newWorkspace: true,
+          branch: "fix/issue-927-crash-on-boot",
+          source: "github-issue",
+          issueNumber: 927,
+          issueUrl: "https://github.com/utensils/aethon/issues/927",
+          issueTitle: "Crash on boot",
+        },
+      },
+      ctx,
+    );
+
+    expect(handled).toBe(true);
+    expect(mocks.activateTabAnywhere).toHaveBeenCalledWith("issue-tab");
+    expect(ctx.startTaskInProject).not.toHaveBeenCalled();
+  });
+
   it("forwards task-launcher paste failures emitted through the project dashboard", async () => {
     const { ctx } = buildRouteFixture();
     const handled = await handleProjectDashboard(
@@ -352,6 +428,61 @@ describe("handleTaskLauncher", () => {
       baseBranch: "main",
       workspaceId: undefined,
     });
+  });
+
+  it("start-task forwards GitHub issue origin metadata", async () => {
+    const { ctx } = buildRouteFixture();
+    await handleTaskLauncher(
+      {
+        component: { id: "x", type: "task-launcher" },
+        eventType: "start-task",
+        data: {
+          projectId: "p1",
+          prompt: "fix issue",
+          newWorkspace: true,
+          branch: "fix/issue-85-cannot-rename-session-tab",
+          source: "github-issue",
+          issueNumber: 85,
+          issueUrl: "https://github.com/utensils/aethon/issues/85",
+          issueTitle: "Cannot rename session tab while agent is running",
+        },
+      },
+      ctx,
+    );
+
+    expect(ctx.startTaskInProject).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sourceIssue: expect.objectContaining({
+          kind: "github-issue",
+          projectId: "p1",
+          number: 85,
+          url: "https://github.com/utensils/aethon/issues/85",
+          title: "Cannot rename session tab while agent is running",
+          branch: "fix/issue-85-cannot-rename-session-tab",
+        }),
+      }),
+    );
+  });
+
+  it("issues-refreshed clears issue links that are no longer open", async () => {
+    const { ctx, mocks } = buildRouteFixture();
+    const handled = await handleTaskLauncher(
+      {
+        component: { id: "x", type: "issues-section" },
+        eventType: "issues-refreshed",
+        data: {
+          projectId: "p1",
+          openIssueNumbers: [84, "86", 84.5, "87.5", 0, -1, "bad"],
+        },
+      },
+      ctx,
+    );
+
+    expect(handled).toBe(true);
+    expect(mocks.clearClosedIssueLinksForProject).toHaveBeenCalledWith(
+      "p1",
+      new Set([84, 86]),
+    );
   });
 
   it("start-task forwards workspaceId for existing-workspace submits", async () => {
