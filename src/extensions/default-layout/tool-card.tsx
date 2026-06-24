@@ -13,6 +13,7 @@ import type {
   SubagentProgressEntry,
 } from "../../hooks/bridgeMessageHandlers/subagentProgress";
 import { Chevron } from "./sidebar/chevron";
+import { truncateDiffSnapshotContent } from "../../utils/editorDiffSnapshot";
 
 const TOOL_LONG_RUN_THRESHOLD_MS = 30 * 1000;
 
@@ -239,7 +240,7 @@ function ToolFileChangePreview({
       ? {
           diffSnapshot: {
             format: "unified",
-            content: capturedDiff,
+            content: truncateDiffSnapshotContent(capturedDiff),
             ...(additions > 0 ? { additions } : {}),
             ...(deletions > 0 ? { deletions } : {}),
             source: "tool-card",

@@ -15,6 +15,7 @@ import {
 import type { ConversationTurn } from "../../utils/transcriptRows";
 import type { ToolCallsMode, VisibilityMode } from "../../config";
 import { ChatMessageRow, tabIsRunning, TypingIndicator } from "./message-row";
+import { truncateDiffSnapshotContent } from "../../utils/editorDiffSnapshot";
 
 const ACTIVITY_DISCLOSURE_EXIT_MS = 240;
 
@@ -384,7 +385,7 @@ function ToolFileChangeRow({
       ? {
           diffSnapshot: {
             format: "unified",
-            content: capturedDiff,
+            content: truncateDiffSnapshotContent(capturedDiff),
             ...(additions > 0 ? { additions } : {}),
             ...(deletions > 0 ? { deletions } : {}),
             source: "tool-card",

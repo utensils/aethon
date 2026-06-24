@@ -5,8 +5,19 @@ export interface DiffSnapshotModels {
   modified: string;
 }
 
-function isFiniteNumber(value: unknown): value is number {
-  return typeof value === "number" && Number.isFinite(value);
+export const MAX_EDITOR_DIFF_SNAPSHOT_CHARS = 64 * 1024;
+
+function isNonNegativeInteger(value: unknown): value is number {
+  return (
+    typeof value === "number" &&
+    Number.isInteger(value) &&
+    value >= 0
+  );
+}
+
+export function truncateDiffSnapshotContent(content: string): string {
+  if (content.length <= MAX_EDITOR_DIFF_SNAPSHOT_CHARS) return content;
+  return `${content.slice(0, MAX_EDITOR_DIFF_SNAPSHOT_CHARS - 1)}…`;
 }
 
 export function isEditorDiffSnapshot(
@@ -19,8 +30,10 @@ export function isEditorDiffSnapshot(
     typeof snapshot.content === "string" &&
     snapshot.content.length > 0 &&
     snapshot.source === "tool-card" &&
-    (snapshot.additions === undefined || isFiniteNumber(snapshot.additions)) &&
-    (snapshot.deletions === undefined || isFiniteNumber(snapshot.deletions))
+    (snapshot.additions === undefined ||
+      isNonNegativeInteger(snapshot.additions)) &&
+    (snapshot.deletions === undefined ||
+      isNonNegativeInteger(snapshot.deletions))
   );
 }
 

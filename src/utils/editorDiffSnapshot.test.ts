@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   diffSnapshotKey,
   isEditorDiffSnapshot,
+  MAX_EDITOR_DIFF_SNAPSHOT_CHARS,
   parseUnifiedDiffSnapshot,
+  truncateDiffSnapshotContent,
 } from "./editorDiffSnapshot";
 
 describe("parseUnifiedDiffSnapshot", () => {
@@ -39,5 +41,16 @@ describe("isEditorDiffSnapshot", () => {
     expect(isEditorDiffSnapshot(snapshot)).toBe(true);
     expect(diffSnapshotKey(snapshot)).toContain(snapshot.content);
     expect(isEditorDiffSnapshot({ ...snapshot, source: "git" })).toBe(false);
+    expect(isEditorDiffSnapshot({ ...snapshot, additions: -1 })).toBe(false);
+    expect(isEditorDiffSnapshot({ ...snapshot, deletions: 1.5 })).toBe(false);
+  });
+});
+
+describe("truncateDiffSnapshotContent", () => {
+  it("caps stored snapshot content to a bounded size", () => {
+    const content = "x".repeat(MAX_EDITOR_DIFF_SNAPSHOT_CHARS + 10);
+    const truncated = truncateDiffSnapshotContent(content);
+    expect(truncated).toHaveLength(MAX_EDITOR_DIFF_SNAPSHOT_CHARS);
+    expect(truncated.endsWith("…")).toBe(true);
   });
 });
