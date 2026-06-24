@@ -1,6 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
 import { ExtensionRegistry } from "./extensions/ExtensionRegistry";
 import { defaultLayoutExtension } from "./extensions/default-layout";
 import { AppRoot } from "./app/AppRoot";
@@ -8,7 +7,6 @@ import { BOOT_LAYOUT, hangWarnNotifId } from "./app/bootConstants";
 import { useAppForwardRefs } from "./app/useAppForwardRefs";
 import type { A2UIPayload } from "./types/a2ui";
 import type { Tab } from "./types/tab";
-import type { ShareMode } from "./utils/shareMode";
 import { useZoomAndTheme } from "./hooks/useZoomAndTheme";
 import { useSpeakReplies } from "./hooks/useSpeakReplies";
 import { useShellConsent } from "./hooks/useShellConsent";
@@ -38,12 +36,7 @@ import { useUiOverlays } from "./hooks/useUiOverlays";
 import { useUpdater } from "./hooks/useUpdater";
 import { useWorkspaceStartup } from "./hooks/useWorkspaceStartup";
 import { UpdateBanner } from "./components/UpdateBanner";
-import type { AethonConfig } from "./config";
-import {
-  useProjectOps,
-  projectIdFromBucketKey,
-  workspaceIdFromBucketKey,
-} from "./hooks/useProjectOps";
+import { useProjectOps } from "./hooks/useProjectOps";
 import type { TabBucket } from "./hooks/projectOps/types";
 import { useOsEdges } from "./hooks/useOsEdges";
 import {
@@ -64,12 +57,12 @@ import { useProjectSyncEffects } from "./hooks/useProjectSyncEffects";
 import { useAppSlashCommandContext } from "./hooks/useAppSlashCommandContext";
 import { useAppBridgeMessages } from "./hooks/useAppBridgeMessages";
 import { useScheduledTasks } from "./hooks/useScheduledTasks";
+import { useNativeWindowSync } from "./hooks/useNativeWindowSync";
+import { useRootChromeActions } from "./hooks/useRootChromeActions";
+import { useActivateTabAnywhere } from "./hooks/useActivateTabAnywhere";
+import { useUpdaterConfigBridge } from "./hooks/useUpdaterConfigBridge";
 import { closeAllWorkspaceSessions } from "./hooks/tabOps/closeWorkspaceSessions";
-import {
-  syncNativeWindowsToState as syncNativeWindowsToStateSlice,
-  terminalShellTabIds,
-  type NativeCanvasWindowRecord,
-} from "./nativeWindows";
+import type { NativeCanvasWindowRecord } from "./nativeWindows";
 import { writeState } from "./persist";
 import { useAppState } from "./state/appStore";
 import { activeWorkspaceCwd } from "./utils/activeWorkspaceRoot";
@@ -129,10 +122,6 @@ export default function App() {
   // window.aethon.registerExtension(extension) and switch to its layout.
   const [layout, setLayout] = useState<A2UIPayload>(BOOT_LAYOUT);
   const [startupChromeReady, setStartupChromeReady] = useState(false);
-  const syncNativeWindowsToState = useCallback(() => {
-    syncNativeWindowsToStateSlice(setState, nativeWindowsRef);
-  }, [setState]);
-
   const {
     stateRef,
     projectsRef,
@@ -145,6 +134,11 @@ export default function App() {
     chatActionsRef,
   } = useAppStateRefs(appStore);
 
+  const { syncNativeWindowsToState } = useNativeWindowSync({
+    setState,
+    nativeWindowsRef,
+  });
+
   const {
     view: workspaceStartupView,
     prepareWorkspaceStartup,
@@ -155,83 +149,6 @@ export default function App() {
 
   useSessionPersistence({ appStore, hasSyncSessionSnapshot });
   useAgentActivityHydration(setState);
-
-  useEffect(() => {
-    let disposed = false;
-    invoke<NativeCanvasWindowRecord[]>("native_window_list")
-      .then((records) => {
-        if (disposed || !Array.isArray(records)) return;
-        nativeWindowsRef.current = new Map(
-          records.map((record) => [record.id, record]),
-        );
-        syncNativeWindowsToState();
-      })
-      .catch(() => {
-        /* native-window state is best-effort mirror data */
-      });
-    const unlistenRecord = listen<NativeCanvasWindowRecord>(
-      "native-window-record",
-      (event) => {
-        const record = event.payload;
-        if (!record || typeof record.id !== "string") return;
-        nativeWindowsRef.current.set(record.id, record);
-        syncNativeWindowsToState();
-      },
-    );
-    const unlistenShareMode = listen<{
-      tabId?: string;
-      shareMode?: ShareMode;
-    }>("native-terminal-share-mode", (event) => {
-      const { tabId, shareMode } = event.payload ?? {};
-      if (typeof tabId !== "string" || typeof shareMode !== "string") return;
-      setState((prev) => ({
-        ...prev,
-        tabs: ((prev.tabs as Tab[] | undefined) ?? []).map((tab) =>
-          tab.id === tabId && tab.kind === "shell" && tab.shell
-            ? { ...tab, shell: { ...tab.shell, shareMode } }
-            : tab,
-        ),
-      }));
-    });
-    const unlistenClosed = listen<{ id?: string }>(
-      "native-window-closed",
-      (event) => {
-        const id = event.payload?.id;
-        if (typeof id !== "string") return;
-        const record = nativeWindowsRef.current.get(id);
-        const ownedShellIds = terminalShellTabIds(record);
-        nativeWindowsRef.current.delete(id);
-        if (ownedShellIds.length > 0) {
-          for (const shellId of ownedShellIds) {
-            invoke("shell_close", { tabId: shellId }).catch(() => {
-              /* best-effort terminal-window cleanup */
-            });
-          }
-          setState((prev) => {
-            const tabs = (prev.tabs as Tab[] | undefined) ?? [];
-            const owned = new Set(ownedShellIds);
-            const panel =
-              (prev.terminalPanel as { activeSubId?: string } | undefined) ??
-              {};
-            return {
-              ...prev,
-              tabs: tabs.filter((tab) => !owned.has(tab.id)),
-              ...(panel.activeSubId && owned.has(panel.activeSubId)
-                ? { terminalPanel: { ...panel, activeSubId: "agent-bash" } }
-                : {}),
-            };
-          });
-        }
-        syncNativeWindowsToState();
-      },
-    );
-    return () => {
-      disposed = true;
-      unlistenRecord.then((fn) => fn());
-      unlistenShareMode.then((fn) => fn());
-      unlistenClosed.then((fn) => fn());
-    };
-  }, [setState, syncNativeWindowsToState]);
 
   const recordProjectModel = useProjectModelRecorder(setState);
 
@@ -585,25 +502,17 @@ export default function App() {
     newShellTabOnOverviewOpen: () => newShellTab(),
   });
 
-  const openScheduledTasks = useCallback(() => {
-    setState((prev) => ({
-      ...prev,
-      scheduledTasks: {
-        ...((prev.scheduledTasks ?? {}) as Record<string, unknown>),
-        open: true,
-      },
-    }));
-  }, [setState]);
-
-  const closeScheduledTasks = useCallback(() => {
-    setState((prev) => ({
-      ...prev,
-      scheduledTasks: {
-        ...((prev.scheduledTasks ?? {}) as Record<string, unknown>),
-        open: false,
-      },
-    }));
-  }, [setState]);
+  const {
+    openScheduledTasks,
+    closeScheduledTasks,
+    togglePlanMode,
+    toggleAccounts,
+  } = useRootChromeActions({
+    setState,
+    stateRef,
+    updateActiveTab,
+    pushNotification,
+  });
 
   const { slashContext, persistLocalChatMessage } = useAppSlashCommandContext({
     bootLayout: BOOT_LAYOUT,
@@ -736,6 +645,15 @@ export default function App() {
     prepareWorkspaceStartup,
   });
 
+  const activateTabAnywhere = useActivateTabAnywhere({
+    stateRef,
+    tabBucketsRef,
+    setActiveTab,
+    setActiveProjectById,
+    clearActiveProject,
+    activateWorkspace,
+  });
+
   // Updater (Cmd menu / tray "Check for Updates" + agent-driven path).
   // The hook reads the persisted channel + auto-check toggle from
   // `config.toml` during its own boot lifecycle, so we don't have to
@@ -754,14 +672,11 @@ export default function App() {
       setDisableAutoCheck: setUpdateDisableAutoCheck,
     },
   } = useUpdater({ appendSystem });
-  const reapplyConfigWithUpdater = useMemo(
-    () => (fresh: AethonConfig) => {
-      reapplyConfig(fresh);
-      setUpdateChannel(fresh.updates.channel);
-      setUpdateDisableAutoCheck(fresh.updates.disableAutoCheck);
-    },
-    [reapplyConfig, setUpdateChannel, setUpdateDisableAutoCheck],
-  );
+  const reapplyConfigWithUpdater = useUpdaterConfigBridge({
+    reapplyConfig,
+    setUpdateChannel,
+    setUpdateDisableAutoCheck,
+  });
 
   // ---------------------------------------------------------------------
   // Settings panel + session search + command palette. Three modal
@@ -808,36 +723,6 @@ export default function App() {
     slashCommandsRef,
     slashContext: () => slashContext(),
   });
-
-  const togglePlanMode = useCallback(() => {
-    const activeId = stateRef.current.activeTabId as string | undefined;
-    const tabs = (stateRef.current.tabs as Tab[] | undefined) ?? [];
-    const activeTab = tabs.find((tab) => tab.id === activeId);
-    if (!activeTab || activeTab.kind !== "agent") return;
-    const enabled = activeTab.planMode !== true;
-    updateActiveTab((tab) =>
-      tab.kind === "agent" ? { ...tab, planMode: enabled } : tab,
-    );
-    pushNotification({
-      title: enabled ? "Plan mode on" : "Implementation mode on",
-      message: enabled
-        ? "New prompts will ask for a plan before code changes."
-        : "New prompts may make code changes.",
-      kind: "success",
-      durationMs: 1600,
-    });
-  }, [pushNotification, stateRef, updateActiveTab]);
-
-  const toggleAccounts = useCallback(() => {
-    setState((prev) => {
-      const auth = (prev.authProfiles ?? {}) as Record<string, unknown>;
-      const modal = (auth.modal ?? {}) as Record<string, unknown>;
-      return {
-        ...prev,
-        authProfiles: { ...auth, modal: { ...modal, open: !modal.open } },
-      };
-    });
-  }, [setState]);
 
   // Bridge IPC: spawns the agent on mount, runs the boot handshake
   // (start_agent → boot_layout → report), and routes every
@@ -1062,32 +947,7 @@ export default function App() {
         closeTab,
       }),
     setActiveTab,
-    activateTabAnywhere: (tabId: string) => {
-      const tabs = (stateRef.current.tabs as Tab[] | undefined) ?? [];
-      if (tabs.some((t) => t.id === tabId)) {
-        setActiveTab(tabId);
-        return;
-      }
-      // Not in the active workspace — find the bucket that owns it, switch
-      // into that project/workspace, then select. setState is synchronous so
-      // the bucket load lands before setActiveTab reads state.tabs.
-      for (const [key, bucket] of tabBucketsRef.current.entries()) {
-        if (!bucket.tabs.some((t) => t.id === tabId)) continue;
-        const projectId = projectIdFromBucketKey(key);
-        const currentProjectId =
-          (stateRef.current.activeProjectId as string | null | undefined) ??
-          null;
-        if (projectId !== currentProjectId) {
-          if (projectId) setActiveProjectById(projectId);
-          else clearActiveProject();
-        }
-        activateWorkspace(workspaceIdFromBucketKey(key));
-        setActiveTab(tabId);
-        return;
-      }
-      // Unknown tab — best effort (no-op if it's truly gone).
-      setActiveTab(tabId);
-    },
+    activateTabAnywhere,
     setActiveSubTab,
     applyShareModeToTab,
     closeSettings,
