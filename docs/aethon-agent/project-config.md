@@ -34,6 +34,15 @@ Fields:
 - `required` — failure blocks startup unless `false`; defaults to `true`.
 - `timeout_seconds` — per-command timeout.
 
+Users can also trust startup commands globally from `~/.aethon/config.toml`:
+
+```toml
+[startup]
+auto_approve = true
+```
+
+Project-level trust is available from the project overview tab, but it is stored in Aethon's user-owned startup approval store. Project-local `.aethon/startup.toml` is repo-controlled and cannot approve its own commands to run.
+
 ## Issue-to-agent templates
 
 The project dashboard's **Open issues** section reads optional templates from `<project>/.aethon/issues.toml`.

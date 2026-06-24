@@ -26,7 +26,7 @@ pub use config::{
     normalize_default_share_mode, normalize_devshell_enabled, normalize_devshell_mode,
     normalize_new_tab_kind, normalize_optional_timeout_seconds, normalize_thinking_level,
     normalize_timeout_seconds, normalize_tool_visibility, normalize_update_channel,
-    normalize_visibility, parse_config_toml,
+    normalize_visibility, parse_config_toml, parse_host_startup_auto_approve,
 };
 pub use names::{sanitize_filename_segment, validate_state_name};
 pub use paths::{aethon_dir, resolve_inside_root};

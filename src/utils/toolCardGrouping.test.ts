@@ -59,6 +59,35 @@ describe("tool card metadata", () => {
       deletions: 0,
     });
   });
+
+  it("refreshes cached metadata when restored file-change fields arrive later", () => {
+    const message = tool("edit", {
+      fileChange: {
+        kind: "edited",
+        path: "src/App.tsx",
+        additions: 15,
+      },
+    });
+
+    expect(toolCardFileChange(message)).toEqual({
+      kind: "edited",
+      path: "src/App.tsx",
+      additions: 15,
+    });
+
+    const props = message.a2ui!.components![0].props!;
+    const fileChange = props.fileChange as Record<string, unknown>;
+    fileChange.rootPath = "/repo/aethon";
+    delete fileChange.additions;
+    fileChange.deletions = 2;
+
+    expect(toolCardFileChange(message)).toEqual({
+      kind: "edited",
+      path: "src/App.tsx",
+      rootPath: "/repo/aethon",
+      deletions: 2,
+    });
+  });
 });
 
 describe("summarizeToolMessages", () => {

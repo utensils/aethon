@@ -315,7 +315,9 @@ function statsFromGit(value: GitDiffStatResult | null | undefined) {
   return { additions, deletions };
 }
 
-function hasStats(stat: LineChangeStats | undefined): stat is LineChangeStats {
+function hasLineStats(
+  stat: LineChangeStats | undefined,
+): stat is LineChangeStats {
   return Boolean(stat && (stat.additions > 0 || stat.deletions > 0));
 }
 
@@ -324,12 +326,15 @@ function effectiveStats(
   fetched: LineChangeStats | undefined,
 ): LineChangeStats {
   const captured = statsFromChange(change);
-  return hasStats(captured) ? captured : (fetched ?? captured);
+  if (!fetched) return captured;
+  return hasLineStats(fetched) || !hasLineStats(captured) ? fetched : captured;
 }
 
 function summaryWithFileEntries(
   summary: ToolMessageSummary,
   entries: readonly ToolFileChangeEntry[],
+  fetchedStats: Record<string, LineChangeStats> = {},
+  aggregateStats?: LineChangeStats,
 ): ToolMessageSummary {
   if (entries.length === 0) return summary;
   let created = 0;
@@ -339,7 +344,10 @@ function summaryWithFileEntries(
   for (const { change } of entries) {
     if (change.kind === "created") created += 1;
     else edited += 1;
-    const stats = statsFromChange(change);
+    const stats = effectiveStats(
+      change,
+      fetchedStats[statsKey(change.rootPath, change.path ?? "")],
+    );
     additions += stats.additions;
     deletions += stats.deletions;
   }
@@ -349,10 +357,140 @@ function summaryWithFileEntries(
       total: entries.length,
       created,
       edited,
-      additions,
-      deletions,
+      additions: aggregateStats?.additions ?? additions,
+      deletions: aggregateStats?.deletions ?? deletions,
     },
   };
+}
+
+function stringSet(values: readonly string[]): Set<string> {
+  return new Set(values.map((value) => value.replace(/[/\\]+$/, "")));
+}
+
+function workingTreeStatsForEntries(
+  state: Record<string, unknown>,
+  entries: readonly ToolFileChangeEntry[],
+): LineChangeStats | undefined {
+  if (entries.length === 0) return undefined;
+  const vcs = state.vcs as
+    | {
+        root?: unknown;
+        changes?: {
+          insertions?: unknown;
+          deletions?: unknown;
+          files?: Array<{ path?: unknown; status?: unknown }>;
+        };
+      }
+    | undefined;
+  const root = typeof vcs?.root === "string" ? vcs.root : "";
+  const changes = vcs?.changes;
+  const files = Array.isArray(changes?.files) ? changes.files : [];
+  const insertions = changes?.insertions;
+  const deletions = changes?.deletions;
+  if (
+    !root ||
+    typeof insertions !== "number" ||
+    !Number.isFinite(insertions) ||
+    typeof deletions !== "number" ||
+    !Number.isFinite(deletions) ||
+    files.length !== entries.length
+  ) {
+    return undefined;
+  }
+  const entryRoots = stringSet(
+    entries.map(({ change }) => change.rootPath ?? "").filter(Boolean),
+  );
+  if (entryRoots.size !== 1 || !entryRoots.has(root.replace(/[/\\]+$/, ""))) {
+    return undefined;
+  }
+  const entryPaths = stringSet(
+    entries.map(({ change }) => change.path ?? "").filter(Boolean),
+  );
+  const vcsPaths = stringSet(
+    files.map((file) => (typeof file.path === "string" ? file.path : "")),
+  );
+  if (
+    entryPaths.size !== entries.length ||
+    vcsPaths.size !== files.length ||
+    !Array.from(entryPaths).every((path) => vcsPaths.has(path))
+  ) {
+    return undefined;
+  }
+  const capturedStats = entries.reduce(
+    (total, { change }) => {
+      const stats = statsFromChange(change);
+      return {
+        additions: total.additions + stats.additions,
+        deletions: total.deletions + stats.deletions,
+      };
+    },
+    { additions: 0, deletions: 0 },
+  );
+  if (
+    files.some((file) => file.status === "untracked") ||
+    (!hasLineStats({ additions: insertions, deletions }) &&
+      hasLineStats(capturedStats))
+  ) {
+    return undefined;
+  }
+  return { additions: insertions, deletions };
+}
+
+function useGitFileStats(
+  entries: readonly ToolFileChangeEntry[],
+): Record<string, LineChangeStats> {
+  const [fetchedStats, setFetchedStats] = useState<
+    Record<string, LineChangeStats>
+  >({});
+  const statTargetsSignature = entries
+    .filter(({ change }) => Boolean(change.rootPath && change.path))
+    .map(({ change }) => statsKey(change.rootPath, change.path ?? ""))
+    .join("\n");
+  const lastStatsSignatureRef = useRef<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    if (lastStatsSignatureRef.current === statTargetsSignature) return;
+    lastStatsSignatureRef.current = statTargetsSignature;
+    const statTargets = statTargetsSignature
+      .split("\n")
+      .filter(Boolean)
+      .map((target) => {
+        const [rootPath = "", path = ""] = target.split("\0");
+        return { rootPath, path };
+      });
+    if (statTargets.length === 0) {
+      setFetchedStats({});
+      return;
+    }
+    void Promise.all(
+      statTargets.map(async ({ rootPath, path }) => {
+        try {
+          const stat = await invoke<GitDiffStatResult | null>(
+            "git_file_diff_stat",
+            {
+              root: rootPath,
+              path,
+            },
+          );
+          return [statsKey(rootPath, path), statsFromGit(stat)] as const;
+        } catch {
+          return [statsKey(rootPath, path), null] as const;
+        }
+      }),
+    ).then((results) => {
+      if (cancelled) return;
+      const next: Record<string, LineChangeStats> = {};
+      for (const [key, stat] of results) {
+        if (stat) next[key] = stat;
+      }
+      setFetchedStats(next);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [statTargetsSignature]);
+
+  return fetchedStats;
 }
 
 function lineTone(line: string): "add" | "del" | "hunk" | "meta" | "ctx" {
@@ -521,78 +659,24 @@ function ToolFileChangeRow({
 function ToolFileChangesCard({
   entries,
   summary,
+  diffStats,
+  aggregateStats,
   onEvent,
 }: {
   entries: ToolFileChangeEntry[];
   summary: ToolMessageSummary;
+  diffStats: Record<string, LineChangeStats>;
+  aggregateStats?: LineChangeStats;
   onEvent?: BuiltinComponentProps["onEvent"];
 }) {
-  const [fetchedStats, setFetchedStats] = useState<
-    Record<string, LineChangeStats>
-  >({});
   const label = fileChangeLabel(summary);
-  const statTargetsSignature = entries
-    .filter(({ change }) => Boolean(change.rootPath && change.path))
-    .map(({ change }) => statsKey(change.rootPath, change.path ?? ""))
-    .join("\n");
-  const lastStatsSignatureRef = useRef<string | null>(null);
-  useEffect(() => {
-    let cancelled = false;
-    if (lastStatsSignatureRef.current === statTargetsSignature) return;
-    lastStatsSignatureRef.current = statTargetsSignature;
-    const statTargets = statTargetsSignature
-      .split("\n")
-      .filter(Boolean)
-      .map((target) => {
-        const [rootPath = "", path = ""] = target.split("\0");
-        return { rootPath, path };
-      });
-    if (statTargets.length === 0) return;
-    void Promise.all(
-      statTargets.map(async ({ rootPath, path }) => {
-        try {
-          const stat = await invoke<GitDiffStatResult | null>(
-            "git_file_diff_stat",
-            {
-              root: rootPath,
-              path,
-            },
-          );
-          return [statsKey(rootPath, path), statsFromGit(stat)] as const;
-        } catch {
-          return [statsKey(rootPath, path), null] as const;
-        }
-      }),
-    ).then((results) => {
-      if (cancelled) return;
-      const next: Record<string, LineChangeStats> = {};
-      for (const [key, stat] of results) {
-        if (stat) next[key] = stat;
-      }
-      setFetchedStats(next);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [statTargetsSignature]);
   if (entries.length === 0) return null;
-  const displaySummary: ToolMessageSummary = {
-    ...summary,
-    fileChanges: {
-      ...summary.fileChanges,
-      total: entries.length,
-      created: entries.filter(({ change }) => change.kind === "created").length,
-      edited: entries.filter(({ change }) => change.kind !== "created").length,
-      additions: entries.reduce((total, { change }) => {
-        const key = statsKey(change.rootPath, change.path ?? "");
-        return total + effectiveStats(change, fetchedStats[key]).additions;
-      }, 0),
-      deletions: entries.reduce((total, { change }) => {
-        const key = statsKey(change.rootPath, change.path ?? "");
-        return total + effectiveStats(change, fetchedStats[key]).deletions;
-      }, 0),
-    },
-  };
+  const displaySummary = summaryWithFileEntries(
+    summary,
+    entries,
+    diffStats,
+    aggregateStats,
+  );
   const statLabel = fileChangeStatsLabel(displaySummary);
   return (
     <div className="ae-file-activity-card" role="group" aria-label={statLabel}>
@@ -612,7 +696,7 @@ function ToolFileChangesCard({
             componentId={componentId}
             diffStat={
               change.path
-                ? (fetchedStats[statsKey(change.rootPath, change.path)] ??
+                ? (diffStats[statsKey(change.rootPath, change.path)] ??
                   undefined)
                 : undefined
             }
@@ -725,9 +809,16 @@ function TurnActivity({
     ? allToolMessages
     : allToolMessages.filter(hasFileChange);
   const allFileChangeEntries = collectFileChangeEntries(summarizedToolMessages);
+  const fetchedFileStats = useGitFileStats(allFileChangeEntries);
+  const workingTreeStats = workingTreeStatsForEntries(
+    state,
+    allFileChangeEntries,
+  );
   const summary = summaryWithFileEntries(
     summarizeToolMessages(summarizedToolMessages),
     allFileChangeEntries,
+    fetchedFileStats,
+    workingTreeStats,
   );
   const runningTools = showGenericTools
     ? allToolMessages.filter(isRunningToolCard)
@@ -761,17 +852,16 @@ function TurnActivity({
   const fileChangeEntries =
     detailsBodyVisible && !showOriginalToolCards
       ? collectFileChangeEntries(
-          detailTools.filter(
-            (message) => !originalToolCardIds.has(message.id),
-          ),
+          detailTools.filter((message) => !originalToolCardIds.has(message.id)),
         )
       : [];
-  const detailToolRows = showOriginalToolCards || !showGenericTools
-    ? []
-    : detailTools.filter(
-        (message) =>
-          !hasFileChange(message) && !originalToolCardIds.has(message.id),
-      );
+  const detailToolRows =
+    showOriginalToolCards || !showGenericTools
+      ? []
+      : detailTools.filter(
+          (message) =>
+            !hasFileChange(message) && !originalToolCardIds.has(message.id),
+        );
   const hasActivity =
     progressMessages.length > 0 ||
     summary.fileChanges.total > 0 ||
@@ -894,6 +984,8 @@ function TurnActivity({
           <ToolFileChangesCard
             entries={fileChangeEntries}
             summary={summary}
+            diffStats={fetchedFileStats}
+            aggregateStats={workingTreeStats}
             onEvent={onEvent}
           />
           {detailToolRows.map((message) => (

@@ -13,6 +13,7 @@
  * registered component type via `aethon.registerComponent`).
  */
 import { useEffect, useMemo, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import type { BuiltinComponentProps } from "../../../components/A2UIRenderer";
 import { resolvePointer } from "../../../utils/jsonPointer";
 import { GhStatsStrip } from "./gh-stats-strip";
@@ -53,6 +54,13 @@ interface DashboardWidget {
   type: string;
   title?: string;
   props?: Record<string, unknown>;
+}
+
+interface StartupPolicyStatus {
+  root: string;
+  autoApprove: boolean;
+  hostAutoApprove: boolean;
+  projectAutoApprove: boolean;
 }
 
 function isRef(v: unknown): v is { $ref: string } {
@@ -100,6 +108,12 @@ export function ProjectDashboard({
   const [confirmingWorkspaceId, setConfirmingWorkspaceId] = useState<
     string | null
   >(null);
+  const [startupPolicy, setStartupPolicy] =
+    useState<StartupPolicyStatus | null>(null);
+  const [startupPolicySaving, setStartupPolicySaving] = useState(false);
+  const [startupPolicyError, setStartupPolicyError] = useState<string | null>(
+    null,
+  );
   const props = component.props as
     | {
         project?: unknown;
@@ -172,9 +186,60 @@ export function ProjectDashboard({
   }, [project?.path]);
   const overviewData = overview?.path === project?.path ? overview?.data : null;
 
+  useEffect(() => {
+    const projectPath = project?.path;
+    if (!projectPath) return;
+    let cancelled = false;
+    setStartupPolicy(null);
+    setStartupPolicyError(null);
+    void (async () => {
+      try {
+        const status = await invoke<StartupPolicyStatus>(
+          "workspace_startup_status",
+          { args: { root: projectPath } },
+        );
+        if (!cancelled) setStartupPolicy(status);
+      } catch (err) {
+        if (!cancelled) {
+          setStartupPolicyError(String(err));
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [project?.path]);
+
   if (!project) return null;
   const iconUrl =
     projectIconUrlFromSidebar(state, project.id) ?? project.iconUrl;
+  const startupInherited = startupPolicy?.hostAutoApprove === true;
+  const startupChecked =
+    startupPolicy?.hostAutoApprove === true ||
+    startupPolicy?.projectAutoApprove === true;
+  const startupDisabled =
+    startupPolicySaving || startupInherited || startupPolicy === null;
+  const startupHint = startupInherited
+    ? "Enabled by host config"
+    : startupPolicy?.projectAutoApprove
+      ? "Trusted for this project in Aethon"
+      : "Startup commands will still ask before running";
+  const setProjectStartupAutoApprove = async (enabled: boolean) => {
+    if (!project?.path) return;
+    setStartupPolicySaving(true);
+    setStartupPolicyError(null);
+    try {
+      const status = await invoke<StartupPolicyStatus>(
+        "workspace_startup_set_auto_approve",
+        { args: { root: project.path, enabled } },
+      );
+      setStartupPolicy(status);
+    } catch (err) {
+      setStartupPolicyError(String(err));
+    } finally {
+      setStartupPolicySaving(false);
+    }
+  };
 
   return (
     <div className="a2ui-project-dashboard">
@@ -228,6 +293,25 @@ export function ProjectDashboard({
             state={state}
             onEvent={onEvent}
           />
+        </section>
+
+        <section className="a2ui-project-dashboard-section a2ui-project-dashboard-startup-policy">
+          <label className="a2ui-project-dashboard-startup-checkbox">
+            <input
+              type="checkbox"
+              checked={startupChecked}
+              disabled={startupDisabled}
+              onChange={(event) =>
+                void setProjectStartupAutoApprove(event.currentTarget.checked)
+              }
+            />
+            <span className="a2ui-project-dashboard-startup-label">
+              Auto-approve startup commands
+            </span>
+          </label>
+          <span className="a2ui-project-dashboard-startup-hint">
+            {startupPolicyError ?? startupHint}
+          </span>
         </section>
 
         <section className="a2ui-project-dashboard-section a2ui-project-dashboard-issues-wrap">

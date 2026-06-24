@@ -2536,9 +2536,9 @@ describe("ChatHistory turn activity feed (mocked Virtuoso renders rows)", () => 
 
     expect(screen.queryByText("GPT-5.5")).toBeNull();
     expect(screen.queryByText("private reasoning only")).toBeNull();
-    expect(
-      container.querySelectorAll(".ae-turn-progress-message").length,
-    ).toBe(0);
+    expect(container.querySelectorAll(".ae-turn-progress-message").length).toBe(
+      0,
+    );
     expect(container.querySelectorAll(".ae-file-activity-card").length).toBe(1);
   });
 
@@ -2627,6 +2627,159 @@ describe("ChatHistory turn activity feed (mocked Virtuoso renders rows)", () => 
     );
     await screen.findAllByText("+5");
     expect(screen.getAllByText("-2").length).toBeGreaterThan(0);
+  });
+
+  it("prefers working-tree stats over captured edit metadata", async () => {
+    invokeMock.mockImplementation(
+      (cmd: string, args: Record<string, string>) => {
+        if (cmd !== "git_file_diff_stat") {
+          return Promise.reject(new Error(`invoke not mocked: ${cmd}`));
+        }
+        const stats: Record<string, { insertions: number; deletions: number }> =
+          {
+            "app/javascript/controllers/bulk_actions_controller.js": {
+              insertions: 30,
+              deletions: 2,
+            },
+            "app/views/admin/tracked_urls/index.html.erb": {
+              insertions: 20,
+              deletions: 3,
+            },
+            "spec/requests/admin/tracked_urls_spec.rb": {
+              insertions: 32,
+              deletions: 6,
+            },
+            "spec/javascript/controllers/bulk_actions_controller_spec.rb": {
+              insertions: 15,
+              deletions: 0,
+            },
+          };
+        return Promise.resolve(
+          stats[args.path] ?? { insertions: 0, deletions: 0 },
+        );
+      },
+    );
+
+    renderGroupedHistory({
+      messages: [
+        { id: "u1", role: "user", text: "change files" },
+        ...[
+          "app/javascript/controllers/bulk_actions_controller.js",
+          "app/views/admin/tracked_urls/index.html.erb",
+          "spec/requests/admin/tracked_urls_spec.rb",
+          "spec/javascript/controllers/bulk_actions_controller_spec.rb",
+        ].map((path, index) => ({
+          id: `t${index + 1}`,
+          role: "agent" as const,
+          a2ui: {
+            components: [
+              {
+                id: `tool-edit-${index + 1}`,
+                type: "tool-card",
+                props: {
+                  title: "edit",
+                  startedAt: index + 1,
+                  endedAt: index + 2,
+                  fileChange: {
+                    kind: "edited",
+                    path,
+                    rootPath: "/repo/nyc-real-estate",
+                    ...(index === 3 ? { additions: 15 } : {}),
+                  },
+                },
+              },
+            ],
+          },
+        })),
+      ],
+      vcs: {
+        root: "/repo/nyc-real-estate",
+        changes: {
+          insertions: 97,
+          deletions: 11,
+          files: [
+            { path: "app/javascript/controllers/bulk_actions_controller.js" },
+            { path: "app/views/admin/tracked_urls/index.html.erb" },
+            { path: "spec/requests/admin/tracked_urls_spec.rb" },
+            {
+              path: "spec/javascript/controllers/bulk_actions_controller_spec.rb",
+            },
+          ],
+        },
+      },
+      transcriptVisibility: { toolCalls: "hide" },
+    });
+
+    await waitFor(() =>
+      expect(invokeMock).toHaveBeenCalledWith("git_file_diff_stat", {
+        root: "/repo/nyc-real-estate",
+        path: "app/javascript/controllers/bulk_actions_controller.js",
+      }),
+    );
+    await waitFor(() => {
+      const summary = screen.getByRole("button", {
+        name: /Edited 4 files/,
+      });
+      expect(summary.textContent).toContain("Edited 4 files · +97 -11");
+    });
+    expect(screen.getAllByText("+97").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("-11").length).toBeGreaterThan(0);
+  });
+
+  it("keeps captured counts for created files when git reports no tracked diff", async () => {
+    invokeMock.mockImplementation((cmd: string) =>
+      cmd === "git_file_diff_stat"
+        ? Promise.resolve({ insertions: 0, deletions: 0 })
+        : Promise.reject(new Error(`invoke not mocked: ${cmd}`)),
+    );
+
+    renderGroupedHistory({
+      messages: [
+        { id: "u1", role: "user", text: "create file" },
+        {
+          id: "t1",
+          role: "agent",
+          a2ui: {
+            components: [
+              {
+                id: "tool-write",
+                type: "tool-card",
+                props: {
+                  title: "write",
+                  startedAt: 1,
+                  endedAt: 2,
+                  fileChange: {
+                    kind: "created",
+                    path: "src/new-file.ts",
+                    rootPath: "/repo/aethon",
+                    additions: 12,
+                  },
+                },
+              },
+            ],
+          },
+        },
+      ],
+      vcs: {
+        root: "/repo/aethon",
+        changes: {
+          insertions: 0,
+          deletions: 0,
+          files: [{ path: "src/new-file.ts", status: "untracked" }],
+        },
+      },
+      transcriptVisibility: { toolCalls: "hide" },
+    });
+
+    await waitFor(() =>
+      expect(invokeMock).toHaveBeenCalledWith("git_file_diff_stat", {
+        root: "/repo/aethon",
+        path: "src/new-file.ts",
+      }),
+    );
+    const summary = screen.getByRole("button", { name: /Created 1 file/ });
+    expect(summary.textContent).toContain("Created 1 file · +12");
+    expect(screen.getAllByText("+12").length).toBeGreaterThan(0);
   });
 
   it("fetches a real inline diff instead of showing non-diff edit status text", async () => {

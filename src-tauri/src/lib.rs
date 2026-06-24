@@ -302,6 +302,7 @@ pub fn run() {
             commands::startup::workspace_startup_prepare_for_path,
             commands::startup::workspace_startup_retry,
             commands::startup::workspace_startup_continue,
+            commands::startup::workspace_startup_set_auto_approve,
             shell::shell_open,
             shell::shell_input,
             shell::shell_resize,

@@ -43,6 +43,16 @@ Each `[[startup.commands]]` entry supports:
 - `required` — when `false`, failure is visible but non-blocking. Defaults to `true`.
 - `timeout_seconds` — per-command timeout. Defaults to `[startup].timeout_seconds`.
 
+Host-level config can enable the same behavior for every project:
+
+```toml
+# ~/.aethon/config.toml
+[startup]
+auto_approve = true
+```
+
+Project-level auto-approval is also available from the project overview tab, but that trust flag is stored in Aethon's user-owned startup approval store, not in `.aethon/startup.toml`. Repo-controlled project config can request commands, but it cannot approve its own commands to run. Host-level auto-approval is inherited and disables the project checkbox because the trust decision already applies globally.
+
 ## Issue-to-agent templates
 
 The project dashboard's **Open issues** section reads optional templates from:

@@ -123,6 +123,11 @@ export interface AethonConfig {
     /** Re-resolve when watched lockfile / marker file mtime changes. */
     refreshOnLockfileChange: boolean;
   };
+  startup: {
+    /** Trust workspace startup commands globally. Project-level startup
+     *  auto-approve can still be enabled per repo from the overview tab. */
+    autoApprove: boolean;
+  };
   guardrails: {
     /** Optional advisory text appended to the per-turn working-context the
      *  agent injects. Reminds the model of project rules; never enforces.
@@ -185,6 +190,9 @@ const DEFAULTS: AethonConfig = {
     mode: "auto",
     cacheTtlHours: 720,
     refreshOnLockfileChange: true,
+  },
+  startup: {
+    autoApprove: false,
   },
   guardrails: {
     softPromptAnchor: null,
@@ -323,6 +331,9 @@ export function getConfig(): Promise<AethonConfig> {
             typeof obj?.devshell?.refreshOnLockfileChange === "boolean"
               ? obj.devshell.refreshOnLockfileChange
               : true,
+        },
+        startup: {
+          autoApprove: obj?.startup?.autoApprove === true,
         },
         guardrails: {
           softPromptAnchor:

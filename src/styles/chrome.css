@@ -8445,6 +8445,42 @@ button.a2ui-gh-stat:hover {
   background: var(--bg-hover);
   border-color: var(--accent);
 }
+.a2ui-project-dashboard-startup-policy {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  margin-top: calc(var(--space-1) * -1);
+  color: var(--text-dim);
+  font-size: var(--chrome-text-compact);
+}
+.a2ui-project-dashboard-startup-checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--text);
+  cursor: pointer;
+  user-select: none;
+}
+.a2ui-project-dashboard-startup-checkbox input {
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+.a2ui-project-dashboard-startup-checkbox input:disabled,
+.a2ui-project-dashboard-startup-checkbox input:disabled + span {
+  cursor: not-allowed;
+  opacity: 0.56;
+}
+.a2ui-project-dashboard-startup-label {
+  font-weight: 500;
+}
+.a2ui-project-dashboard-startup-hint {
+  min-width: min(100%, 22rem);
+  color: var(--text-dim);
+}
 
 .a2ui-project-dashboard-workspaces {
   list-style: none;

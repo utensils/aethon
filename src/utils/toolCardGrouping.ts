@@ -13,7 +13,12 @@ interface ToolCardMeta {
   componentId?: string;
 }
 
-const toolCardMetaCache = new WeakMap<ChatMessage, ToolCardMeta>();
+interface ToolCardMetaCacheEntry {
+  signature: string;
+  meta: ToolCardMeta;
+}
+
+const toolCardMetaCache = new WeakMap<ChatMessage, ToolCardMetaCacheEntry>();
 
 export interface ToolCardFileChange {
   kind?: "edited" | "created";
@@ -83,11 +88,37 @@ function readFileChange(value: unknown): ToolCardFileChange | undefined {
   };
 }
 
+function toolCardMetaSignature(
+  componentId: string | undefined,
+  props: Record<string, unknown> | undefined,
+): string {
+  const fileChange =
+    props?.fileChange && typeof props.fileChange === "object"
+      ? (props.fileChange as Record<string, unknown>)
+      : undefined;
+  return JSON.stringify([
+    componentId ?? "",
+    props?.title,
+    props?.description,
+    props?.status,
+    props?.startedAt,
+    props?.endedAt,
+    props?.isError,
+    fileChange?.kind,
+    fileChange?.path,
+    fileChange?.rootPath,
+    fileChange?.preview,
+    fileChange?.additions,
+    fileChange?.deletions,
+  ]);
+}
+
 function readToolCardMeta(m: ChatMessage): ToolCardMeta {
-  const cached = toolCardMetaCache.get(m);
-  if (cached) return cached;
   const comp = m.a2ui?.components?.find((c) => c?.type === "tool-card");
   const props = comp?.props;
+  const signature = toolCardMetaSignature(comp?.id, props);
+  const cached = toolCardMetaCache.get(m);
+  if (cached?.signature === signature) return cached.meta;
   const title = stringValue(props?.title);
   const description = stringValue(props?.description);
   const status = stringValue(props?.status);
@@ -107,7 +138,7 @@ function readToolCardMeta(m: ChatMessage): ToolCardMeta {
     ...(endedAt !== undefined ? { endedAt } : {}),
     ...(fileChange ? { fileChange } : {}),
   };
-  toolCardMetaCache.set(m, meta);
+  toolCardMetaCache.set(m, { signature, meta });
   return meta;
 }
 

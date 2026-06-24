@@ -139,6 +139,14 @@ pub struct ServerConfig {
 }
 
 #[derive(Default, Deserialize)]
+pub struct StartupHostConfig {
+    /// Trust configured workspace startup commands globally. Default false:
+    /// project startup commands are an execution boundary and should stay
+    /// visible until the user explicitly opts in.
+    pub auto_approve: Option<bool>,
+}
+
+#[derive(Default, Deserialize)]
 pub struct DevshellConfig {
     /// Whether to detect + apply a Nix devshell on shell + agent
     /// spawn. Accepted values: `"auto"` (default — detect via marker
@@ -213,6 +221,8 @@ pub struct AethonConfig {
     pub devshell: DevshellConfig,
     #[serde(default)]
     pub server: ServerConfig,
+    #[serde(default)]
+    pub startup: StartupHostConfig,
     #[serde(default)]
     pub guardrails: GuardrailsConfig,
 }
@@ -367,6 +377,16 @@ pub fn normalize_thinking_level(value: Option<&str>) -> Option<&str> {
     }
 }
 
+pub fn parse_host_startup_auto_approve(input: &str) -> bool {
+    if input.is_empty() {
+        return false;
+    }
+    toml::from_str::<AethonConfig>(input)
+        .ok()
+        .and_then(|cfg| cfg.startup.auto_approve)
+        .unwrap_or(false)
+}
+
 /// Parse a TOML config string into the canonical JSON shape the frontend
 /// consumes. Falls back to defaults on parse error so a malformed user
 /// file never blocks app boot. Returns the same shape regardless of what
@@ -474,6 +494,9 @@ pub fn parse_config_toml(input: &str) -> serde_json::Value {
         },
         "server": {
             "enabled": cfg.server.enabled.unwrap_or(true),
+        },
+        "startup": {
+            "autoApprove": cfg.startup.auto_approve.unwrap_or(false),
         },
         "guardrails": {
             "softPromptAnchor": soft_prompt_anchor,
@@ -621,6 +644,22 @@ mod tests {
             parse_config_toml("[server]\nenabled = false\n")["server"]["enabled"],
             false
         );
+    }
+
+    #[test]
+    fn startup_auto_approve_defaults_false_and_honors_override() {
+        assert_eq!(parse_config_toml("")["startup"]["autoApprove"], false);
+        assert_eq!(
+            parse_config_toml("[startup]\nauto_approve = true\n")["startup"]["autoApprove"],
+            true
+        );
+        assert!(parse_host_startup_auto_approve(
+            "[startup]\nauto_approve = true\n"
+        ));
+        assert!(!parse_host_startup_auto_approve(
+            "[startup]\nauto_approve = false\n"
+        ));
+        assert!(!parse_host_startup_auto_approve("broken = toml = nope"));
     }
 
     #[test]
@@ -798,6 +837,7 @@ prompt_before_close = false
             assert!(v["ui"].is_object());
             assert!(v["agent"].is_object());
             assert!(v["extensions"].is_object());
+            assert!(v["startup"].is_object());
             assert!(v["ui"].as_object().unwrap().contains_key("theme"));
             assert!(v["ui"].as_object().unwrap().contains_key("fontSize"));
             assert!(v["ui"].as_object().unwrap().contains_key("restoreTabs"));
@@ -837,6 +877,12 @@ prompt_before_close = false
                     .as_object()
                     .unwrap()
                     .contains_key("stateHardKb")
+            );
+            assert!(
+                v["startup"]
+                    .as_object()
+                    .unwrap()
+                    .contains_key("autoApprove")
             );
         }
     }
