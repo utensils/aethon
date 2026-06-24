@@ -1,10 +1,12 @@
 use std::path::Path;
+use std::process::Stdio;
 use std::sync::Arc;
+use std::time::Duration;
 
-use tauri::{AppHandle, Runtime};
+use tauri::{AppHandle, Emitter, Runtime};
 
 use super::cache::{AppEmitter, DevshellCache, DevshellEmitter, PreparedEnv};
-use super::detect::DevshellKind;
+use super::detect::{DetectMode, DevshellKind};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PrepareDecision {
@@ -42,6 +44,42 @@ pub(crate) fn prepare_is_required(enabled: &str) -> bool {
     enabled == "always"
 }
 
+pub(crate) fn required_devshell_missing_error(enabled: &str, reason: String) -> Option<String> {
+    prepare_is_required(enabled).then(|| format!("{reason} and [devshell] enabled = \"always\""))
+}
+
+pub(crate) fn mode_str(mode: DetectMode) -> &'static str {
+    match mode {
+        DetectMode::Auto => "auto",
+        DetectMode::Direnv => "direnv",
+        DetectMode::Nix => "nix",
+        DetectMode::NixShell => "nix-shell",
+    }
+}
+
+fn expected_marker(mode: DetectMode) -> &'static str {
+    match mode {
+        DetectMode::Auto => "devshell",
+        DetectMode::Direnv => ".envrc with use flake/use nix",
+        DetectMode::Nix => "flake.nix",
+        DetectMode::NixShell => "flake.nix or shell.nix",
+    }
+}
+
+pub(crate) fn forced_mode_mismatch_reason(
+    root: &Path,
+    configured_mode: DetectMode,
+) -> Option<String> {
+    let natural = crate::devshell::forced_mode_mismatch(root, configured_mode)?;
+    Some(format!(
+        "configured [devshell].mode = \"{}\", but {} is detected as a {} devshell. Aethon will not fall back to a different resolver; change Resolver mode or add the expected {} marker.",
+        mode_str(configured_mode),
+        root.display(),
+        natural.as_str(),
+        expected_marker(configured_mode)
+    ))
+}
+
 pub fn decide_prepare_policy(
     enabled: &str,
     forced_mismatch: Option<String>,
@@ -73,9 +111,14 @@ pub fn decide_prepare_policy(
     }
     match cache_prepare {
         Ok(Some(prepared)) => PrepareDecision::Prepared { kind, prepared },
-        Ok(None) => PrepareDecision::MissingOptional {
-            reason: format!("no devshell detected at {root_display}"),
-        },
+        Ok(None) => {
+            let reason = format!("no devshell detected at {root_display}");
+            if prepare_is_required(enabled) {
+                PrepareDecision::MissingRequired { reason }
+            } else {
+                PrepareDecision::MissingOptional { reason }
+            }
+        }
         Err(reason) => {
             if prepare_is_required(enabled) {
                 PrepareDecision::CachePrepareFailedRequired { reason }
@@ -104,7 +147,7 @@ pub async fn prepare_env_for_root<R: Runtime>(
         );
     }
 
-    let mismatch = crate::commands::devshell::forced_mode_mismatch_reason(root, configured_mode);
+    let mismatch = forced_mode_mismatch_reason(root, configured_mode);
     if mismatch.is_some() {
         return decide_prepare_policy(
             &enabled,
@@ -119,7 +162,7 @@ pub async fn prepare_env_for_root<R: Runtime>(
     let detected_kind = crate::devshell::detect_mode(root, configured_mode);
     let mut direnv_error = None;
     if matches!(detected_kind, Some(DevshellKind::Direnv)) {
-        direnv_error = crate::commands::devshell::direnv_allow(root).await.err();
+        direnv_error = direnv_allow(root).await.err();
     }
     if direnv_error.is_some() || detected_kind.is_none() {
         return decide_prepare_policy(
@@ -146,11 +189,66 @@ pub async fn prepare_env_for_root<R: Runtime>(
     )
 }
 
+/// Adapter so the devshell cache can emit Tauri events without taking
+/// a direct dependency on `tauri::AppHandle`. The cache calls
+/// [`DevshellEmitter::emit`]; we forward to the real Tauri emitter here.
+struct TauriEmitter<R: Runtime> {
+    app: AppHandle<R>,
+}
+
+impl<R: Runtime> TauriEmitter<R> {
+    fn new(app: AppHandle<R>) -> Self {
+        Self { app }
+    }
+}
+
+impl<R: Runtime> DevshellEmitter for TauriEmitter<R> {
+    fn emit(&self, event: &str, payload: serde_json::Value) {
+        if let Err(e) = self.app.emit(event, payload) {
+            tracing::warn!(
+                target: "aethon::devshell",
+                "emit {event} failed: {e}"
+            );
+        }
+    }
+}
+
 pub fn emitter_for<R: Runtime>(app: &AppHandle<R>) -> AppEmitter {
-    AppEmitter::new(
-        Arc::new(crate::commands::devshell::TauriEmitter::new(app.clone()))
-            as Arc<dyn DevshellEmitter>,
-    )
+    AppEmitter::new(Arc::new(TauriEmitter::new(app.clone())) as Arc<dyn DevshellEmitter>)
+}
+
+pub(crate) async fn direnv_allow(root: &Path) -> Result<(), String> {
+    let Some(bin) = crate::env::resolve_program("direnv") else {
+        return Err("direnv binary not found on Aethon tool PATH".to_string());
+    };
+    let mut command = tokio::process::Command::new(bin);
+    command
+        .arg("allow")
+        .arg(root)
+        .current_dir(root)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    let output = tokio::time::timeout(Duration::from_secs(30), command.output())
+        .await
+        .map_err(|_| format!("direnv allow {} timed out after 30s", root.display()))?
+        .map_err(|e| format!("direnv allow {} failed to start: {e}", root.display()))?;
+    if output.status.success() {
+        return Ok(());
+    }
+    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let detail = if !stderr.is_empty() { stderr } else { stdout };
+    Err(format!(
+        "direnv allow {} exited with {}{}",
+        root.display(),
+        output.status,
+        if detail.is_empty() {
+            String::new()
+        } else {
+            format!(": {detail}")
+        }
+    ))
 }
 
 #[cfg(test)]
@@ -197,6 +295,23 @@ mod tests {
     fn decision_always_missing_devshell_is_required() {
         assert_eq!(
             decide_prepare_policy("always", None, None, "/repo", None, Ok(None)),
+            PrepareDecision::MissingRequired {
+                reason: "no devshell detected at /repo".to_string()
+            }
+        );
+    }
+
+    #[test]
+    fn decision_always_cache_none_is_required() {
+        assert_eq!(
+            decide_prepare_policy(
+                "always",
+                None,
+                Some(DevshellKind::Flake),
+                "/repo",
+                None,
+                Ok(None),
+            ),
             PrepareDecision::MissingRequired {
                 reason: "no devshell detected at /repo".to_string()
             }

@@ -26,9 +26,7 @@ pub mod detect;
 pub mod prepare_policy;
 pub mod resolve;
 
-pub use cache::{
-    AppEmitter, DevshellCache, DevshellEmitter, EnvForPath, StatusSnapshot, evict_stale_snapshots,
-};
+pub use cache::{DevshellCache, EnvForPath, StatusSnapshot, evict_stale_snapshots};
 pub use config::effective_config;
 pub use detect::{DetectMode, detect_mode, forced_mode_mismatch};
 pub use prepare_policy::{PrepareDecision, prepare_env_for_root};

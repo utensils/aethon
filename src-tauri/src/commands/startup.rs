@@ -768,8 +768,13 @@ async fn prepare_devshell_env(
             );
             Ok(BTreeMap::new())
         }
-        crate::devshell::PrepareDecision::MissingRequired { reason }
-        | crate::devshell::PrepareDecision::ForcedModeMismatch { reason }
+        crate::devshell::PrepareDecision::MissingRequired { reason } => {
+            let error =
+                crate::devshell::prepare_policy::required_devshell_missing_error("always", reason)
+                    .unwrap_or_else(|| "missing required devshell".to_string());
+            Err(format!("devshell prepare: {error}"))
+        }
+        crate::devshell::PrepareDecision::ForcedModeMismatch { reason }
         | crate::devshell::PrepareDecision::CachePrepareFailedRequired { reason } => {
             Err(format!("devshell prepare: {reason}"))
         }

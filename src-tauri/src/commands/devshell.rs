@@ -17,60 +17,17 @@
 //! don't apply the env".
 
 use std::collections::BTreeMap;
-use std::path::{Path, PathBuf};
-use std::process::Stdio;
+use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Emitter, Manager, Runtime, State};
+use tauri::{AppHandle, Manager, Runtime, State};
 
-use crate::devshell::{
-    AppEmitter, DetectMode, DevshellCache, DevshellEmitter, EnvForPath, StatusSnapshot,
+use crate::devshell::prepare_policy::{
+    emitter_for, forced_mode_mismatch_reason, mode_str, prepare_is_required,
+    required_devshell_missing_error,
 };
-
-/// Adapter so the devshell cache can emit Tauri events without taking
-/// a direct dependency on `tauri::AppHandle`. The cache calls
-/// [`DevshellEmitter::emit`]; we forward to the real Tauri emitter
-/// here.
-pub struct TauriEmitter<R: Runtime> {
-    app: AppHandle<R>,
-}
-
-impl<R: Runtime> TauriEmitter<R> {
-    pub fn new(app: AppHandle<R>) -> Self {
-        Self { app }
-    }
-}
-
-impl<R: Runtime> DevshellEmitter for TauriEmitter<R> {
-    fn emit(&self, event: &str, payload: serde_json::Value) {
-        if let Err(e) = self.app.emit(event, payload) {
-            tracing::warn!(
-                target: "aethon::devshell",
-                "emit {event} failed: {e}"
-            );
-        }
-    }
-}
-
-pub(crate) fn emitter_for<R: Runtime>(app: &AppHandle<R>) -> AppEmitter {
-    AppEmitter::new(Arc::new(TauriEmitter::new(app.clone())) as Arc<dyn DevshellEmitter>)
-}
-
-pub(crate) fn forced_mode_mismatch_reason(
-    root: &Path,
-    configured_mode: DetectMode,
-) -> Option<String> {
-    let natural = crate::devshell::forced_mode_mismatch(root, configured_mode)?;
-    Some(format!(
-        "configured [devshell].mode = \"{}\", but {} is detected as a {} devshell. Aethon will not fall back to a different resolver; change Resolver mode or add the expected {} marker.",
-        mode_str(configured_mode),
-        root.display(),
-        natural.as_str(),
-        expected_marker(configured_mode)
-    ))
-}
+use crate::devshell::{DevshellCache, EnvForPath, StatusSnapshot};
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -146,31 +103,8 @@ pub async fn devshell_status<R: Runtime>(
     })
 }
 
-fn mode_str(mode: DetectMode) -> &'static str {
-    match mode {
-        DetectMode::Auto => "auto",
-        DetectMode::Direnv => "direnv",
-        DetectMode::Nix => "nix",
-        DetectMode::NixShell => "nix-shell",
-    }
-}
-
-fn expected_marker(mode: DetectMode) -> &'static str {
-    match mode {
-        DetectMode::Auto => "devshell",
-        DetectMode::Direnv => ".envrc with use flake/use nix",
-        DetectMode::Nix => "flake.nix",
-        DetectMode::NixShell => "flake.nix or shell.nix",
-    }
-}
-
-pub(crate) fn devshell_prepare_is_required(enabled: &str) -> bool {
-    enabled == "always"
-}
-
-pub(crate) fn required_devshell_missing_error(enabled: &str, reason: String) -> Option<String> {
-    devshell_prepare_is_required(enabled)
-        .then(|| format!("{reason} and [devshell] enabled = \"always\""))
+fn devshell_prepare_is_required(enabled: &str) -> bool {
+    prepare_is_required(enabled)
 }
 
 #[derive(Deserialize)]
@@ -296,7 +230,8 @@ pub async fn devshell_prepare_for_path<R: Runtime>(
         }
         crate::devshell::PrepareDecision::ForcedModeMismatch { reason } => {
             if devshell_prepare_is_required(&enabled) {
-                Err(reason)
+                Err(required_devshell_missing_error(&enabled, reason)
+                    .unwrap_or_else(|| "required devshell mode mismatch".to_string()))
             } else {
                 Ok(PrepareForPathResponse {
                     enabled,
@@ -315,40 +250,6 @@ pub async fn devshell_prepare_for_path<R: Runtime>(
         crate::devshell::PrepareDecision::DirenvAllowFailedRequired { reason }
         | crate::devshell::PrepareDecision::CachePrepareFailedRequired { reason } => Err(reason),
     }
-}
-
-pub(crate) async fn direnv_allow(root: &Path) -> Result<(), String> {
-    let Some(bin) = crate::env::resolve_program("direnv") else {
-        return Err("direnv binary not found on Aethon tool PATH".to_string());
-    };
-    let mut command = tokio::process::Command::new(bin);
-    command
-        .arg("allow")
-        .arg(root)
-        .current_dir(root)
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-    let output = tokio::time::timeout(Duration::from_secs(30), command.output())
-        .await
-        .map_err(|_| format!("direnv allow {} timed out after 30s", root.display()))?
-        .map_err(|e| format!("direnv allow {} failed to start: {e}", root.display()))?;
-    if output.status.success() {
-        return Ok(());
-    }
-    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    let detail = if !stderr.is_empty() { stderr } else { stdout };
-    Err(format!(
-        "direnv allow {} exited with {}{}",
-        root.display(),
-        output.status,
-        if detail.is_empty() {
-            String::new()
-        } else {
-            format!(": {detail}")
-        }
-    ))
 }
 
 /// Non-blocking env lookup. Returns immediately even if a resolver is
