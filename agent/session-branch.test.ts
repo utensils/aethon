@@ -240,7 +240,35 @@ describe("handleForkSession", () => {
       cwdOverride: "/proj",
     });
     expect(sm.createBranchedSession).toHaveBeenCalledWith("e2");
-    expect(sent.some((m) => m.type === "session_forked")).toBe(true);
+    const forked = sent.find((m) => m.type === "session_forked");
+    expect(forked?.cwd).toBe("/proj");
+    expect(sent.some((m) => m.type === "error")).toBe(false);
+  });
+
+  it("uses an explicit cwd hint to open a restored tab before forking", async () => {
+    const { state, sm } = makeState();
+    const rec = state.tabs.get("t1");
+    if (!rec) throw new Error("missing test tab");
+    state.tabs.delete("t1");
+    state.tabProjectCwds.delete("t1");
+    ensureTabMock.mockImplementation(() => {
+      state.tabs.set("t1", rec);
+      return rec;
+    });
+    const { deps, sent } = makeDeps();
+
+    await handleForkSession(
+      state,
+      deps,
+      msg({ tabId: "t1", entryId: "e2", cwd: "/repo/from-message" }),
+    );
+
+    expect(ensureTabMock).toHaveBeenCalledWith(state, deps, "t1", {
+      cwdOverride: "/repo/from-message",
+    });
+    expect(sm.createBranchedSession).toHaveBeenCalledWith("e2");
+    const forked = sent.find((m) => m.type === "session_forked");
+    expect(forked?.cwd).toBe("/repo/from-message");
     expect(sent.some((m) => m.type === "error")).toBe(false);
   });
 });

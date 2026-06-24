@@ -172,16 +172,35 @@ function mergeFileChange(
   ) {
     return piFileChange;
   }
+  const piPreview =
+    typeof piFileChange.preview === "string" ? piFileChange.preview : undefined;
+  const localPreview =
+    typeof localFileChange.preview === "string"
+      ? localFileChange.preview
+      : undefined;
+  const preview =
+    localPreview && looksLikeUnifiedDiff(localPreview)
+      ? localPreview
+      : (piPreview ?? localPreview);
+  const preferLocalSnapshot = preview === localPreview;
   return {
     ...localFileChange,
     ...piFileChange,
     rootPath: piFileChange.rootPath ?? localFileChange.rootPath,
-    preview: piFileChange.preview ?? localFileChange.preview,
-    additions: piFileChange.additions ?? localFileChange.additions,
-    deletions: piFileChange.deletions ?? localFileChange.deletions,
+    preview,
+    additions: preferLocalSnapshot
+      ? (localFileChange.additions ?? piFileChange.additions)
+      : (piFileChange.additions ?? localFileChange.additions),
+    deletions: preferLocalSnapshot
+      ? (localFileChange.deletions ?? piFileChange.deletions)
+      : (piFileChange.deletions ?? localFileChange.deletions),
     kind: piFileChange.kind ?? localFileChange.kind,
     path: piFileChange.path ?? localFileChange.path,
   };
+}
+
+function looksLikeUnifiedDiff(value: string): boolean {
+  return /(^|\n)---\s/.test(value) && /(^|\n)\+\+\+\s/.test(value);
 }
 
 function mergeLocalFileChangesIntoPiMessages(
@@ -498,3 +517,7 @@ export async function readSessionTranscript(
     localOnly,
   ).slice(-MAX_RESTORED_MESSAGES);
 }
+
+export const __testing = {
+  mergeFileChange,
+};

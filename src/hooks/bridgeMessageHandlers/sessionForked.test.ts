@@ -39,6 +39,13 @@ describe("handleSessionForked", () => {
         cwd: "/proj",
       }),
     );
+    expect(mocks.dismissNotification).toHaveBeenCalledWith("session-fork-t1");
+    expect(mocks.pushNotification).toHaveBeenCalledWith({
+      title: "Forked session",
+      message: "Opened Fork of foo.",
+      kind: "success",
+      durationMs: 3000,
+    });
   });
 
   it("does not open a tab when the copy fails", async () => {
@@ -55,6 +62,14 @@ describe("handleSessionForked", () => {
       ctx,
     );
     await vi.waitFor(() => expect(mocks.pushNotification).toHaveBeenCalled());
+    expect(mocks.dismissNotification).toHaveBeenCalledWith("session-fork-t1");
+    expect(mocks.pushNotification).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: "Fork failed",
+        message: "Couldn't copy the forked session: boom",
+        kind: "error",
+      }),
+    );
     expect(mocks.newTab).not.toHaveBeenCalled();
   });
 

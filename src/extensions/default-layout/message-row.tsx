@@ -120,7 +120,10 @@ function sidebarModelsRef(state: Record<string, unknown>): unknown {
     : undefined;
 }
 
-function tabIsRunning(state: Record<string, unknown>, tabId?: string): boolean {
+export function tabIsRunning(
+  state: Record<string, unknown>,
+  tabId?: string,
+): boolean {
   if (state.waiting === true) return true;
   if (!tabId) return false;
   const runningTabs = state.agentRunningTabs;
@@ -247,18 +250,7 @@ export const ChatMessageRow = memo(
     isLatest?: boolean;
     thinkingVisibility?: VisibilityMode;
   }) {
-    const [confirmingRollback, setConfirmingRollback] = useState(false);
     const displayMessage = normalizeAgentMessageForDisplay(message);
-    // Rollback / fork are offered on real user/assistant turns that carry a pi
-    // entry id (tool-card and system rows are not branch targets). Thinking-only
-    // turns count too — they're valid branch points.
-    const sessionWaiting = tabIsRunning(state, tabId);
-    const canBranch =
-      Boolean(message.entryId) &&
-      !sessionWaiting &&
-      (message.role === "user" || message.role === "agent") &&
-      (Boolean(displayMessage.text) || Boolean(displayMessage.thinking)) &&
-      Boolean(onEvent);
     const isCanvas = className === "a2ui-canvas-message";
     const roleClass = isCanvas ? "a2ui-canvas-role" : "a2ui-chat-role";
     const textClass = isCanvas
@@ -332,81 +324,6 @@ export const ChatMessageRow = memo(
             onEvent={forwardNestedA2UIEvent(onEvent)}
             tabId={tabId}
           />
-        )}
-        {canBranch && (
-          <div
-            className="ae-msg-branch-actions"
-            onMouseLeave={() => setConfirmingRollback(false)}
-          >
-            {confirmingRollback ? (
-              <>
-                <button
-                  type="button"
-                  className="ae-msg-branch-btn ae-msg-branch-confirm"
-                  onClick={() => {
-                    setConfirmingRollback(false);
-                    onEvent?.("rollback-to-here", {
-                      entryId: message.entryId,
-                      tabId,
-                    });
-                  }}
-                >
-                  Confirm rollback
-                </button>
-                <button
-                  type="button"
-                  className="ae-msg-branch-btn"
-                  onClick={() => setConfirmingRollback(false)}
-                >
-                  Cancel
-                </button>
-              </>
-            ) : (
-              <>
-                <button
-                  type="button"
-                  className="ae-msg-branch-btn ae-msg-branch-icon-btn"
-                  aria-label="Rollback to this message"
-                  title="Rewind the conversation to this message"
-                  onClick={() => setConfirmingRollback(true)}
-                >
-                  <svg
-                    viewBox="0 0 16 16"
-                    width="14"
-                    height="14"
-                    aria-hidden="true"
-                    focusable="false"
-                  >
-                    <path d="M5.2 5.1H10a4 4 0 1 1-3.1 6.55" />
-                    <path d="M5.2 5.1 7.55 2.8" />
-                    <path d="M5.2 5.1 7.55 7.45" />
-                  </svg>
-                </button>
-                <button
-                  type="button"
-                  className="ae-msg-branch-btn ae-msg-branch-icon-btn"
-                  aria-label="Fork from this message"
-                  title="Fork the conversation into a new tab from here"
-                  onClick={() =>
-                    onEvent?.("fork-to-tab", { entryId: message.entryId, tabId })
-                  }
-                >
-                  <svg
-                    viewBox="0 0 16 16"
-                    width="14"
-                    height="14"
-                    aria-hidden="true"
-                    focusable="false"
-                  >
-                    <path d="M5 3.25v4.15c0 2.4 1.55 4.1 4.2 4.1H11" />
-                    <path d="M8.75 9.2 11 11.5l-2.25 2.3" />
-                    <circle cx="5" cy="3.25" r="1.6" />
-                    <circle cx="5" cy="12.75" r="1.6" />
-                  </svg>
-                </button>
-              </>
-            )}
-          </div>
         )}
       </div>
     );

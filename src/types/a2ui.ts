@@ -322,5 +322,8 @@ export interface ChatMessage {
   thinking?: string;
   a2ui?: A2UIPayload;
   createdAt?: number;
+  /** Working directory for restored/local transcript rows. Used as a restore
+   *  hint for session actions when the bridge has not reopened the tab yet. */
+  cwd?: string;
   delivery?: "sent" | "queued" | "steered" | "failed";
 }

@@ -246,6 +246,7 @@ function renderInput(
           props: { value: "", placeholder: "Message", ...props },
         }}
         state={state}
+        tabId="tab-1"
         onEvent={onEvent}
       />
     </ExtensionRegistryProvider>,
@@ -1809,6 +1810,7 @@ describe("ChatHistory render isolation", () => {
             props: { messages: { $ref: "/messages" } },
           }}
           state={state}
+          tabId="tab-1"
           onEvent={onEvent}
         />
       </ExtensionRegistryProvider>
@@ -1905,6 +1907,7 @@ describe("ChatHistory turn activity feed (mocked Virtuoso renders rows)", () => 
             props: { messages: { $ref: "/messages" } },
           }}
           state={state}
+          tabId="tab-1"
           onEvent={onEvent}
         />
       </ExtensionRegistryProvider>
@@ -2583,7 +2586,7 @@ describe("ChatHistory turn activity feed (mocked Virtuoso renders rows)", () => 
     await waitFor(() => expect(screen.queryByText("App.tsx")).toBeNull());
   });
 
-  it("backfills compact edit artifact stats from the working tree", async () => {
+  it("does not rewrite compact edit artifact stats from the working tree", async () => {
     invokeMock.mockImplementation((cmd: string) =>
       cmd === "git_file_diff_stat"
         ? Promise.resolve({ insertions: 5, deletions: 2 })
@@ -2619,17 +2622,17 @@ describe("ChatHistory turn activity feed (mocked Virtuoso renders rows)", () => 
       transcriptVisibility: { toolCalls: "hide" },
     });
 
-    await waitFor(() =>
-      expect(invokeMock).toHaveBeenCalledWith("git_file_diff_stat", {
-        root: "/repo/aethon",
-        path: "src/App.tsx",
-      }),
-    );
-    await screen.findAllByText("+5");
-    expect(screen.getAllByText("-2").length).toBeGreaterThan(0);
+    const summary = screen.getByRole("button", { name: /Edited 1 file/ });
+    expect(summary.textContent).toContain("Edited 1 file");
+    expect(summary.textContent).not.toContain("+5");
+    expect(summary.textContent).not.toContain("-2");
+    expect(invokeMock).not.toHaveBeenCalledWith("git_file_diff_stat", {
+      root: "/repo/aethon",
+      path: "src/App.tsx",
+    });
   });
 
-  it("prefers working-tree stats over captured edit metadata", async () => {
+  it("keeps captured edit metadata stable when the working tree has richer stats", async () => {
     invokeMock.mockImplementation(
       (cmd: string, args: Record<string, string>) => {
         if (cmd !== "git_file_diff_stat") {
@@ -2710,20 +2713,16 @@ describe("ChatHistory turn activity feed (mocked Virtuoso renders rows)", () => 
       transcriptVisibility: { toolCalls: "hide" },
     });
 
-    await waitFor(() =>
-      expect(invokeMock).toHaveBeenCalledWith("git_file_diff_stat", {
-        root: "/repo/nyc-real-estate",
-        path: "app/javascript/controllers/bulk_actions_controller.js",
-      }),
-    );
-    await waitFor(() => {
-      const summary = screen.getByRole("button", {
-        name: /Edited 4 files/,
-      });
-      expect(summary.textContent).toContain("Edited 4 files · +97 -11");
+    const summary = screen.getByRole("button", {
+      name: /Edited 4 files/,
     });
-    expect(screen.getAllByText("+97").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("-11").length).toBeGreaterThan(0);
+    expect(summary.textContent).toContain("Edited 4 files · +15");
+    expect(summary.textContent).not.toContain("+97");
+    expect(summary.textContent).not.toContain("-11");
+    expect(invokeMock).not.toHaveBeenCalledWith("git_file_diff_stat", {
+      root: "/repo/nyc-real-estate",
+      path: "app/javascript/controllers/bulk_actions_controller.js",
+    });
   });
 
   it("keeps captured counts for created files when git reports no tracked diff", async () => {
@@ -2771,15 +2770,13 @@ describe("ChatHistory turn activity feed (mocked Virtuoso renders rows)", () => 
       transcriptVisibility: { toolCalls: "hide" },
     });
 
-    await waitFor(() =>
-      expect(invokeMock).toHaveBeenCalledWith("git_file_diff_stat", {
-        root: "/repo/aethon",
-        path: "src/new-file.ts",
-      }),
-    );
     const summary = screen.getByRole("button", { name: /Created 1 file/ });
     expect(summary.textContent).toContain("Created 1 file · +12");
     expect(screen.getAllByText("+12").length).toBeGreaterThan(0);
+    expect(invokeMock).not.toHaveBeenCalledWith("git_file_diff_stat", {
+      root: "/repo/aethon",
+      path: "src/new-file.ts",
+    });
   });
 
   it("fetches a real inline diff instead of showing non-diff edit status text", async () => {
@@ -2835,6 +2832,44 @@ describe("ChatHistory turn activity feed (mocked Virtuoso renders rows)", () => 
     expect(invokeMock).toHaveBeenCalledWith("git_file_diff", {
       root: "/repo/aethon",
       path: "src/App.tsx",
+    });
+    expect(invokeMock).toHaveBeenCalledWith("agent_command", {
+      payload: expect.stringContaining("file-diff-snapshot-tool-edit"),
+    });
+    const persistedCall = invokeMock.mock.calls.find(
+      ([cmd, payload]) =>
+        cmd === "agent_command" &&
+        typeof (payload as { payload?: unknown })?.payload === "string" &&
+        (payload as { payload: string }).payload.includes(
+          "file-diff-snapshot-tool-edit",
+        ),
+    );
+    expect(persistedCall).toBeTruthy();
+    const persistedPayload = JSON.parse(
+      (persistedCall?.[1] as { payload: string }).payload,
+    );
+    expect(persistedPayload).toMatchObject({
+      type: "local_chat_message",
+      tabId: "tab-1",
+      payload: {
+        role: "agent",
+        a2ui: {
+          components: [
+            {
+              id: "tool-edit",
+              type: "tool-card",
+              props: {
+                fileChange: {
+                  path: "src/App.tsx",
+                  preview: expect.stringContaining("+new title"),
+                  additions: 1,
+                  deletions: 1,
+                },
+              },
+            },
+          ],
+        },
+      },
     });
   });
 

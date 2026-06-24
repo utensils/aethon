@@ -16,6 +16,7 @@ export const handleSessionForked: BridgeMessageHandler = (data, ctx) => {
   const sourcePath = typeof data.sourcePath === "string" ? data.sourcePath : "";
   const label = typeof data.label === "string" ? data.label : "Fork";
   const cwd = typeof data.cwd === "string" ? data.cwd : undefined;
+  const sourceTabId = typeof data.tabId === "string" ? data.tabId : "";
   if (!newTabId || !sourcePath) return;
 
   void (async () => {
@@ -23,6 +24,7 @@ export const handleSessionForked: BridgeMessageHandler = (data, ctx) => {
       await invoke("copy_session_file", { sourcePath, destTabId: newTabId });
     } catch (err) {
       // Don't open a tab pointing at a session file that never landed.
+      if (sourceTabId) ctx.dismissNotification(`session-fork-${sourceTabId}`);
       ctx.pushNotification({
         title: "Fork failed",
         message: `Couldn't copy the forked session: ${errMessage(err)}`,
@@ -33,6 +35,13 @@ export const handleSessionForked: BridgeMessageHandler = (data, ctx) => {
     ctx.newTab(newTabId, label, {
       restoredSession: true,
       ...(cwd ? { cwd } : {}),
+    });
+    if (sourceTabId) ctx.dismissNotification(`session-fork-${sourceTabId}`);
+    ctx.pushNotification({
+      title: "Forked session",
+      message: `Opened ${label}.`,
+      kind: "success",
+      durationMs: 3000,
     });
   })();
 };

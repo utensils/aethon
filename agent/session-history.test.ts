@@ -22,6 +22,7 @@ import {
   repairDanglingSubagentToolResults,
   writeSessionLabel,
 } from "./session-history";
+import { __testing as restoreTesting } from "./session-history/restore";
 import { SESSION_TITLE_TOOL_NAME } from "./silent-tools";
 
 const roots: string[] = [];
@@ -1393,6 +1394,36 @@ describe("readSessionTranscript", () => {
         },
       },
     });
+  });
+
+  it("prefers durable unified diff snapshots over non-diff tool status text", () => {
+    const merged = restoreTesting.mergeFileChange(
+      {
+        kind: "edited",
+        path: "src/App.tsx",
+        preview: "Successfully replaced 1 block(s) in src/App.tsx",
+        additions: 9,
+        deletions: 9,
+      },
+      {
+        kind: "edited",
+        path: "src/App.tsx",
+        rootPath: "/repo",
+        preview: "--- a/src/App.tsx\n+++ b/src/App.tsx\n@@\n-old\n+new",
+        additions: 1,
+        deletions: 1,
+      },
+    );
+
+    expect(merged).toMatchObject({
+      kind: "edited",
+      path: "src/App.tsx",
+      rootPath: "/repo",
+      preview: expect.stringContaining("--- a/src/App.tsx"),
+      additions: 1,
+      deletions: 1,
+    });
+    expect(merged.preview).not.toContain("Successfully replaced");
   });
 
   it("keeps the latest local assistant snapshot for stopped turns", async () => {

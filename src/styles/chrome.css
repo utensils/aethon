@@ -9883,6 +9883,83 @@ button.ae-vcs-chip:focus-visible {
     var(--ease-panel) both;
 }
 
+.ae-turn-branch-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: max-content;
+  max-width: 100%;
+  margin-top: 2px;
+  padding-left: 4px;
+  opacity: 0.62;
+  transition:
+    opacity var(--motion-fast) var(--ease-out),
+    color var(--motion-fast) var(--ease-out);
+  flex-wrap: nowrap;
+  white-space: nowrap;
+}
+
+.ae-conversation-turn:hover .ae-turn-branch-actions,
+.ae-turn-branch-actions:focus-within {
+  opacity: 1;
+}
+
+.ae-turn-branch-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  height: 24px;
+  background: color-mix(in oklab, var(--bg-elev) 86%, transparent);
+  border: 1px solid color-mix(in oklab, var(--border) 88%, transparent);
+  color: var(--text-dim);
+  font-size: var(--text-xs);
+  padding: 2px 8px 2px 6px;
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+  line-height: 1.4;
+  white-space: nowrap;
+  flex-shrink: 0;
+  overflow-wrap: normal;
+  transition:
+    background var(--motion-fast) var(--ease-out),
+    border-color var(--motion-fast) var(--ease-out),
+    color var(--motion-fast) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out);
+}
+
+.ae-turn-branch-btn svg {
+  display: block;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.45;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.ae-turn-branch-btn circle {
+  fill: var(--bg-elev);
+}
+
+.ae-turn-branch-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+  border-color: var(--border-strong);
+  transform: translateY(-1px);
+}
+
+.ae-turn-branch-label {
+  display: inline-block;
+  font-size: var(--text-xs);
+  line-height: 1;
+}
+
+.ae-turn-branch-confirm {
+  color: var(--danger);
+  border-color: var(--danger);
+  padding-inline: 8px;
+}
+
 @keyframes ae-turn-activity-open {
   from {
     opacity: 0;
@@ -10417,96 +10494,6 @@ button.ae-vcs-chip:focus-visible {
 .ae-subagents-editor-actions {
   display: flex;
   gap: 8px;
-}
-
-/* --------------------------------------------------------------------------
- * Per-message rollback / fork hover toolbar (chat + canvas transcripts).
- * ------------------------------------------------------------------------ */
-.ae-msg-branch-actions {
-  position: absolute;
-  z-index: 2;
-  justify-content: flex-start;
-  align-items: center;
-  display: flex;
-  gap: 4px;
-  min-height: 0;
-  margin-top: 0;
-  opacity: 0;
-  transform: translateY(0);
-  transition:
-    opacity var(--motion-fast) var(--ease-out),
-    color var(--motion-fast) var(--ease-out);
-  pointer-events: none;
-  flex-wrap: nowrap;
-  white-space: nowrap;
-}
-.a2ui-chat-message.user .ae-msg-branch-actions,
-.a2ui-canvas-message.user .ae-msg-branch-actions {
-  right: calc(100% + 8px);
-  bottom: 8px;
-  justify-content: flex-end;
-}
-.a2ui-chat-message.agent .ae-msg-branch-actions,
-.a2ui-canvas-message.agent .ae-msg-branch-actions {
-  left: 4px;
-  top: calc(100% + 4px);
-}
-.a2ui-chat-message:hover .ae-msg-branch-actions,
-.a2ui-canvas-message:hover .ae-msg-branch-actions,
-.ae-msg-branch-actions:focus-within {
-  opacity: 1;
-  pointer-events: auto;
-}
-.ae-msg-branch-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: color-mix(in oklab, var(--bg-elev) 86%, transparent);
-  border: 1px solid color-mix(in oklab, var(--border) 88%, transparent);
-  color: var(--text-dim);
-  font-size: var(--text-xs);
-  padding: 1px 7px;
-  border-radius: var(--radius-pill);
-  cursor: pointer;
-  line-height: 1.4;
-  /* Don't inherit the message body's character-level wrapping, and don't
-     let flex shrink the pill below its label width. */
-  white-space: nowrap;
-  flex-shrink: 0;
-  overflow-wrap: normal;
-  transition:
-    background var(--motion-fast) var(--ease-out),
-    border-color var(--motion-fast) var(--ease-out),
-    color var(--motion-fast) var(--ease-out),
-    transform var(--motion-fast) var(--ease-out);
-}
-.ae-msg-branch-icon-btn svg {
-  display: block;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.45;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-.ae-msg-branch-icon-btn circle {
-  fill: var(--bg-elev);
-}
-.ae-msg-branch-btn:hover {
-  background: var(--bg-hover);
-  color: var(--text);
-  border-color: var(--border-strong);
-  transform: translateY(-1px);
-}
-.ae-msg-branch-icon-btn {
-  width: 24px;
-  height: 24px;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-}
-.ae-msg-branch-confirm {
-  color: var(--danger);
-  border-color: var(--danger);
 }
 
 /* --------------------------------------------------------------------------

@@ -3,142 +3,208 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ChatMessageRow } from "./message-list";
+import { ConversationTurnRow } from "./message-groups";
 import type { ChatMessage } from "../../types/a2ui";
+import { buildTranscriptRows } from "../../utils/transcriptRows";
 
 afterEach(cleanup);
 
-function row(
-  message: ChatMessage,
-  onEvent = vi.fn(),
-  tabId = "tab-1",
-  state: Record<string, unknown> = {},
-) {
+function row(message: ChatMessage, onEvent = vi.fn()) {
   render(
     <ChatMessageRow
       message={message}
-      state={state}
-      tabId={tabId}
+      state={{}}
+      tabId="tab-1"
       onEvent={onEvent}
     />,
   );
   return onEvent;
 }
 
-describe("ChatMessageRow rollback/fork affordance", () => {
-  it("shows quiet rollback + fork icon actions on a user/agent row that has an entry id", () => {
+function turn(
+  messages: ChatMessage[],
+  onEvent = vi.fn(),
+  tabId = "tab-1",
+  state: Record<string, unknown> = {},
+) {
+  const first = buildTranscriptRows(messages, "hide", new Set()).rows[0]?.turn;
+  if (!first) throw new Error("expected a transcript turn");
+  render(
+    <ConversationTurnRow
+      turn={first}
+      state={state}
+      tabId={tabId}
+      rowClassName="a2ui-chat-message"
+      onEvent={onEvent}
+      thinkingVisibility="show"
+      toolCallsVisibility="hide"
+      expanded={false}
+      onToggle={vi.fn()}
+      isLatest={false}
+    />,
+  );
+  return onEvent;
+}
+
+describe("conversation turn rollback/fork affordance", () => {
+  it("keeps rollback + fork outside individual chat bubbles", () => {
     row({ id: "1", entryId: "e1", role: "agent", text: "hello" });
     expect(
-      screen.getByRole("button", { name: "Rollback to this message" }),
-    ).toBeTruthy();
-    expect(
-      screen.getByRole("button", { name: "Fork from this message" }),
-    ).toBeTruthy();
-    expect(screen.queryByText("↶ Rollback")).toBeNull();
-    expect(screen.queryByText("⑂ Fork")).toBeNull();
+      screen.queryByRole("button", { name: "Rollback this turn" }),
+    ).toBeNull();
+    expect(screen.queryByRole("button", { name: "Fork this turn" })).toBeNull();
   });
 
-  it("hides the affordance when there is no entry id", () => {
-    row({ id: "1", role: "agent", text: "hello" });
+  it("shows one discoverable rollback + fork action set per completed turn", () => {
+    turn([
+      { id: "u1", entryId: "eu1", role: "user", text: "continue" },
+      { id: "a1", entryId: "ea1", role: "agent", text: "first update" },
+      { id: "a2", entryId: "ea2", role: "agent", text: "final answer" },
+    ]);
+
     expect(
-      screen.queryByRole("button", { name: "Rollback to this message" }),
-    ).toBeNull();
+      screen.getAllByRole("button", { name: "Rollback this turn" }),
+    ).toHaveLength(1);
     expect(
-      screen.queryByRole("button", { name: "Fork from this message" }),
+      screen.getAllByRole("button", { name: "Fork this turn" }),
+    ).toHaveLength(1);
+    expect(screen.getByText("Rollback")).toBeTruthy();
+    expect(screen.getByText("Fork")).toBeTruthy();
+    expect(
+      screen
+        .getByRole("button", { name: "Fork this turn" })
+        .closest(".a2ui-chat-message"),
     ).toBeNull();
   });
 
-  it("hides the affordance on text-less rows (e.g. tool cards)", () => {
-    // Tool-card rows carry an a2ui payload but no text; the gate keys off
-    // text, so the affordance never appears on them.
-    row({ id: "tc", entryId: "e1", role: "agent" });
-    expect(
-      screen.queryByRole("button", { name: "Rollback to this message" }),
-    ).toBeNull();
+  it("targets the latest visible branchable message in the turn", () => {
+    const onEvent = turn([
+      { id: "u1", entryId: "eu1", role: "user", text: "continue" },
+      { id: "a1", entryId: "ea1", role: "agent", text: "first update" },
+      {
+        id: "a2",
+        entryId: "ea2",
+        role: "agent",
+        text: "final answer",
+        cwd: "/repo/aethon",
+      },
+    ]);
+
+    fireEvent.click(screen.getByRole("button", { name: "Fork this turn" }));
+    expect(onEvent).toHaveBeenCalledWith("fork-to-tab", {
+      entryId: "ea2",
+      tabId: "tab-1",
+      cwd: "/repo/aethon",
+    });
   });
 
-  it("hides the affordance on system rows", () => {
-    row({ id: "s", entryId: "e1", role: "system", text: "Context compacted" });
+  it("uses the owning tab cwd when restored messages do not carry cwd", () => {
+    const onEvent = turn(
+      [
+        { id: "u1", entryId: "eu1", role: "user", text: "continue" },
+        { id: "a1", entryId: "ea1", role: "agent", text: "final answer" },
+      ],
+      vi.fn(),
+      "tab-1",
+      {
+        tabs: [{ id: "tab-1", cwd: "/repo/restored" }],
+      },
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Fork this turn" }));
+    expect(onEvent).toHaveBeenCalledWith("fork-to-tab", {
+      entryId: "ea1",
+      tabId: "tab-1",
+      cwd: "/repo/restored",
+    });
+  });
+
+  it("falls back to the user message for a user-only completed turn", () => {
+    const onEvent = turn([
+      { id: "u1", entryId: "eu1", role: "user", text: "continue" },
+    ]);
+
+    fireEvent.click(screen.getByRole("button", { name: "Fork this turn" }));
+    expect(onEvent).toHaveBeenCalledWith("fork-to-tab", {
+      entryId: "eu1",
+      tabId: "tab-1",
+    });
+  });
+
+  it("hides the affordance when the turn has no branchable entry", () => {
+    turn([{ id: "1", role: "agent", text: "hello" }]);
     expect(
-      screen.queryByRole("button", { name: "Rollback to this message" }),
+      screen.queryByRole("button", { name: "Rollback this turn" }),
+    ).toBeNull();
+    expect(screen.queryByRole("button", { name: "Fork this turn" })).toBeNull();
+  });
+
+  it("hides the affordance on text-less rows such as tool-card-only turns", () => {
+    turn([{ id: "tc", entryId: "e1", role: "agent" }]);
+    expect(
+      screen.queryByRole("button", { name: "Rollback this turn" }),
     ).toBeNull();
   });
 
   it("shows the affordance on a thinking-only turn", () => {
-    row({ id: "1", entryId: "e1", role: "agent", thinking: "let me reason" });
+    turn([
+      { id: "1", entryId: "e1", role: "agent", thinking: "let me reason" },
+    ]);
     expect(
-      screen.getByRole("button", { name: "Rollback to this message" }),
+      screen.getByRole("button", { name: "Rollback this turn" }),
     ).toBeTruthy();
-    expect(
-      screen.getByRole("button", { name: "Fork from this message" }),
-    ).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Fork this turn" })).toBeTruthy();
   });
 
   it("hides the affordance while the session is still running", () => {
-    row(
-      { id: "1", entryId: "e1", role: "agent", text: "working" },
+    turn(
+      [{ id: "1", entryId: "e1", role: "agent", text: "working" }],
       vi.fn(),
       "tab-1",
       { waiting: true },
     );
     expect(
-      screen.queryByRole("button", { name: "Rollback to this message" }),
+      screen.queryByRole("button", { name: "Rollback this turn" }),
     ).toBeNull();
-    expect(
-      screen.queryByRole("button", { name: "Fork from this message" }),
-    ).toBeNull();
+    expect(screen.queryByRole("button", { name: "Fork this turn" })).toBeNull();
   });
 
   it("hides the affordance while the owning tab is still running", () => {
-    row(
-      { id: "1", entryId: "e1", role: "agent", text: "working" },
+    turn(
+      [{ id: "1", entryId: "e1", role: "agent", text: "working" }],
       vi.fn(),
       "tab-1",
       { waiting: false, agentRunningTabs: { "tab-1": true } },
     );
     expect(
-      screen.queryByRole("button", { name: "Rollback to this message" }),
+      screen.queryByRole("button", { name: "Rollback this turn" }),
     ).toBeNull();
-    expect(
-      screen.queryByRole("button", { name: "Fork from this message" }),
-    ).toBeNull();
+    expect(screen.queryByRole("button", { name: "Fork this turn" })).toBeNull();
   });
 
   it("keeps affordances available when another tab is running", () => {
-    row(
-      { id: "1", entryId: "e1", role: "agent", text: "done" },
+    turn(
+      [{ id: "1", entryId: "e1", role: "agent", text: "done" }],
       vi.fn(),
       "tab-1",
       { waiting: false, agentRunningTabs: { "tab-2": true } },
     );
     expect(
-      screen.getByRole("button", { name: "Rollback to this message" }),
+      screen.getByRole("button", { name: "Rollback this turn" }),
     ).toBeTruthy();
-    expect(
-      screen.getByRole("button", { name: "Fork from this message" }),
-    ).toBeTruthy();
-  });
-
-  it("fork fires fork-to-tab immediately", () => {
-    const onEvent = row({ id: "1", entryId: "e1", role: "user", text: "hi" });
-    fireEvent.click(
-      screen.getByRole("button", { name: "Fork from this message" }),
-    );
-    expect(onEvent).toHaveBeenCalledWith("fork-to-tab", {
-      entryId: "e1",
-      tabId: "tab-1",
-    });
+    expect(screen.getByRole("button", { name: "Fork this turn" })).toBeTruthy();
   });
 
   it("rollback requires a second confirm click", () => {
-    const onEvent = row({ id: "1", entryId: "e1", role: "user", text: "hi" });
-    fireEvent.click(
-      screen.getByRole("button", { name: "Rollback to this message" }),
-    );
-    // First click only arms the confirm — no event yet.
+    const onEvent = turn([
+      { id: "u1", entryId: "eu1", role: "user", text: "continue" },
+      { id: "a1", entryId: "ea1", role: "agent", text: "final answer" },
+    ]);
+    fireEvent.click(screen.getByRole("button", { name: "Rollback this turn" }));
     expect(onEvent).not.toHaveBeenCalled();
     fireEvent.click(screen.getByText("Confirm rollback"));
     expect(onEvent).toHaveBeenCalledWith("rollback-to-here", {
-      entryId: "e1",
+      entryId: "ea1",
       tabId: "tab-1",
     });
   });

@@ -15,7 +15,7 @@ import {
 } from "../../utils/toolCardGrouping";
 import type { ConversationTurn } from "../../utils/transcriptRows";
 import type { ToolCallsMode, VisibilityMode } from "../../config";
-import { ChatMessageRow, TypingIndicator } from "./message-row";
+import { ChatMessageRow, tabIsRunning, TypingIndicator } from "./message-row";
 
 const ACTIVITY_DISCLOSURE_EXIT_MS = 240;
 
@@ -176,9 +176,70 @@ interface LineChangeStats {
   deletions: number;
 }
 
-interface GitDiffStatResult {
-  insertions?: number;
-  deletions?: number;
+function diffStatsFromPreview(preview: string): LineChangeStats {
+  let additions = 0;
+  let deletions = 0;
+  for (const line of preview.split(/\r?\n/)) {
+    if (line.startsWith("+++") || line.startsWith("---")) continue;
+    if (line.startsWith("+")) additions += 1;
+    else if (line.startsWith("-")) deletions += 1;
+  }
+  return { additions, deletions };
+}
+
+async function persistFileChangeDiffSnapshot({
+  tabId,
+  componentId,
+  change,
+  preview,
+}: {
+  tabId?: string;
+  componentId?: string;
+  change: ToolCardFileChange;
+  preview: string;
+}): Promise<void> {
+  if (
+    !tabId ||
+    !componentId ||
+    !change.path ||
+    !looksLikeUnifiedDiff(preview)
+  ) {
+    return;
+  }
+  const stats = diffStatsFromPreview(preview);
+  const fileChange: ToolCardFileChange = {
+    ...change,
+    preview,
+    ...(stats.additions > 0 ? { additions: stats.additions } : {}),
+    ...(stats.deletions > 0 ? { deletions: stats.deletions } : {}),
+  };
+  const createdAt = Date.now();
+  await invoke("agent_command", {
+    payload: JSON.stringify({
+      type: "local_chat_message",
+      tabId,
+      payload: {
+        id: `file-diff-snapshot-${componentId}`,
+        role: "agent",
+        a2ui: {
+          components: [
+            {
+              id: componentId,
+              type: "tool-card",
+              props: {
+                fileChange,
+                startedAt: createdAt,
+                endedAt: createdAt,
+              },
+            },
+          ],
+        },
+        createdAt,
+      },
+    }),
+  }).catch(() => {
+    /* best effort: the visible fetched diff still works for this render */
+  });
 }
 
 function collectFileChangeEntries(
@@ -302,39 +363,14 @@ function statsFromChange(change: ToolCardFileChange): LineChangeStats {
   };
 }
 
-function statsFromGit(value: GitDiffStatResult | null | undefined) {
-  if (!value) return null;
-  const additions =
-    typeof value.insertions === "number" && Number.isFinite(value.insertions)
-      ? value.insertions
-      : 0;
-  const deletions =
-    typeof value.deletions === "number" && Number.isFinite(value.deletions)
-      ? value.deletions
-      : 0;
-  return { additions, deletions };
-}
-
-function hasLineStats(
-  stat: LineChangeStats | undefined,
-): stat is LineChangeStats {
-  return Boolean(stat && (stat.additions > 0 || stat.deletions > 0));
-}
-
-function effectiveStats(
-  change: ToolCardFileChange,
-  fetched: LineChangeStats | undefined,
-): LineChangeStats {
+function effectiveStats(change: ToolCardFileChange): LineChangeStats {
   const captured = statsFromChange(change);
-  if (!fetched) return captured;
-  return hasLineStats(fetched) || !hasLineStats(captured) ? fetched : captured;
+  return captured;
 }
 
 function summaryWithFileEntries(
   summary: ToolMessageSummary,
   entries: readonly ToolFileChangeEntry[],
-  fetchedStats: Record<string, LineChangeStats> = {},
-  aggregateStats?: LineChangeStats,
 ): ToolMessageSummary {
   if (entries.length === 0) return summary;
   let created = 0;
@@ -344,10 +380,7 @@ function summaryWithFileEntries(
   for (const { change } of entries) {
     if (change.kind === "created") created += 1;
     else edited += 1;
-    const stats = effectiveStats(
-      change,
-      fetchedStats[statsKey(change.rootPath, change.path ?? "")],
-    );
+    const stats = effectiveStats(change);
     additions += stats.additions;
     deletions += stats.deletions;
   }
@@ -357,140 +390,10 @@ function summaryWithFileEntries(
       total: entries.length,
       created,
       edited,
-      additions: aggregateStats?.additions ?? additions,
-      deletions: aggregateStats?.deletions ?? deletions,
+      additions,
+      deletions,
     },
   };
-}
-
-function stringSet(values: readonly string[]): Set<string> {
-  return new Set(values.map((value) => value.replace(/[/\\]+$/, "")));
-}
-
-function workingTreeStatsForEntries(
-  state: Record<string, unknown>,
-  entries: readonly ToolFileChangeEntry[],
-): LineChangeStats | undefined {
-  if (entries.length === 0) return undefined;
-  const vcs = state.vcs as
-    | {
-        root?: unknown;
-        changes?: {
-          insertions?: unknown;
-          deletions?: unknown;
-          files?: Array<{ path?: unknown; status?: unknown }>;
-        };
-      }
-    | undefined;
-  const root = typeof vcs?.root === "string" ? vcs.root : "";
-  const changes = vcs?.changes;
-  const files = Array.isArray(changes?.files) ? changes.files : [];
-  const insertions = changes?.insertions;
-  const deletions = changes?.deletions;
-  if (
-    !root ||
-    typeof insertions !== "number" ||
-    !Number.isFinite(insertions) ||
-    typeof deletions !== "number" ||
-    !Number.isFinite(deletions) ||
-    files.length !== entries.length
-  ) {
-    return undefined;
-  }
-  const entryRoots = stringSet(
-    entries.map(({ change }) => change.rootPath ?? "").filter(Boolean),
-  );
-  if (entryRoots.size !== 1 || !entryRoots.has(root.replace(/[/\\]+$/, ""))) {
-    return undefined;
-  }
-  const entryPaths = stringSet(
-    entries.map(({ change }) => change.path ?? "").filter(Boolean),
-  );
-  const vcsPaths = stringSet(
-    files.map((file) => (typeof file.path === "string" ? file.path : "")),
-  );
-  if (
-    entryPaths.size !== entries.length ||
-    vcsPaths.size !== files.length ||
-    !Array.from(entryPaths).every((path) => vcsPaths.has(path))
-  ) {
-    return undefined;
-  }
-  const capturedStats = entries.reduce(
-    (total, { change }) => {
-      const stats = statsFromChange(change);
-      return {
-        additions: total.additions + stats.additions,
-        deletions: total.deletions + stats.deletions,
-      };
-    },
-    { additions: 0, deletions: 0 },
-  );
-  if (
-    files.some((file) => file.status === "untracked") ||
-    (!hasLineStats({ additions: insertions, deletions }) &&
-      hasLineStats(capturedStats))
-  ) {
-    return undefined;
-  }
-  return { additions: insertions, deletions };
-}
-
-function useGitFileStats(
-  entries: readonly ToolFileChangeEntry[],
-): Record<string, LineChangeStats> {
-  const [fetchedStats, setFetchedStats] = useState<
-    Record<string, LineChangeStats>
-  >({});
-  const statTargetsSignature = entries
-    .filter(({ change }) => Boolean(change.rootPath && change.path))
-    .map(({ change }) => statsKey(change.rootPath, change.path ?? ""))
-    .join("\n");
-  const lastStatsSignatureRef = useRef<string | null>(null);
-  useEffect(() => {
-    let cancelled = false;
-    if (lastStatsSignatureRef.current === statTargetsSignature) return;
-    lastStatsSignatureRef.current = statTargetsSignature;
-    const statTargets = statTargetsSignature
-      .split("\n")
-      .filter(Boolean)
-      .map((target) => {
-        const [rootPath = "", path = ""] = target.split("\0");
-        return { rootPath, path };
-      });
-    if (statTargets.length === 0) {
-      setFetchedStats({});
-      return;
-    }
-    void Promise.all(
-      statTargets.map(async ({ rootPath, path }) => {
-        try {
-          const stat = await invoke<GitDiffStatResult | null>(
-            "git_file_diff_stat",
-            {
-              root: rootPath,
-              path,
-            },
-          );
-          return [statsKey(rootPath, path), statsFromGit(stat)] as const;
-        } catch {
-          return [statsKey(rootPath, path), null] as const;
-        }
-      }),
-    ).then((results) => {
-      if (cancelled) return;
-      const next: Record<string, LineChangeStats> = {};
-      for (const [key, stat] of results) {
-        if (stat) next[key] = stat;
-      }
-      setFetchedStats(next);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [statTargetsSignature]);
-
-  return fetchedStats;
 }
 
 function lineTone(line: string): "add" | "del" | "hunk" | "meta" | "ctx" {
@@ -528,12 +431,12 @@ function ToolFileChangeRow({
   change,
   onEvent,
   componentId,
-  diffStat,
+  tabId,
 }: {
   change: ToolCardFileChange;
   onEvent?: BuiltinComponentProps["onEvent"];
   componentId?: string;
-  diffStat?: LineChangeStats;
+  tabId?: string;
 }) {
   const [previewOpen, setPreviewOpen] = useState(false);
   const [fetchedDiff, setFetchedDiff] = useState<string | null>(null);
@@ -545,7 +448,7 @@ function ToolFileChangeRow({
     filePath,
     ...(change.rootPath ? { rootPath: change.rootPath } : {}),
   };
-  const { additions, deletions } = effectiveStats(change, diffStat);
+  const { additions, deletions } = effectiveStats(change);
   const dir = parentPath(filePath);
   const capturedDiff = looksLikeUnifiedDiff(change.preview)
     ? change.preview
@@ -561,7 +464,18 @@ function ToolFileChangeRow({
         root: change.rootPath,
         path: filePath,
       });
-      setFetchedDiff(looksLikeUnifiedDiff(diff ?? "") ? diff : "");
+      const durableDiff = diff ?? "";
+      if (looksLikeUnifiedDiff(durableDiff)) {
+        setFetchedDiff(durableDiff);
+        void persistFileChangeDiffSnapshot({
+          tabId,
+          componentId,
+          change,
+          preview: durableDiff,
+        });
+      } else {
+        setFetchedDiff("");
+      }
     } catch (error) {
       setDiffError(error instanceof Error ? error.message : String(error));
     } finally {
@@ -659,24 +573,17 @@ function ToolFileChangeRow({
 function ToolFileChangesCard({
   entries,
   summary,
-  diffStats,
-  aggregateStats,
   onEvent,
+  tabId,
 }: {
   entries: ToolFileChangeEntry[];
   summary: ToolMessageSummary;
-  diffStats: Record<string, LineChangeStats>;
-  aggregateStats?: LineChangeStats;
   onEvent?: BuiltinComponentProps["onEvent"];
+  tabId?: string;
 }) {
   const label = fileChangeLabel(summary);
   if (entries.length === 0) return null;
-  const displaySummary = summaryWithFileEntries(
-    summary,
-    entries,
-    diffStats,
-    aggregateStats,
-  );
+  const displaySummary = summaryWithFileEntries(summary, entries);
   const statLabel = fileChangeStatsLabel(displaySummary);
   return (
     <div className="ae-file-activity-card" role="group" aria-label={statLabel}>
@@ -694,12 +601,7 @@ function ToolFileChangesCard({
             change={change}
             onEvent={onEvent}
             componentId={componentId}
-            diffStat={
-              change.path
-                ? (diffStats[statsKey(change.rootPath, change.path)] ??
-                  undefined)
-                : undefined
-            }
+            tabId={tabId}
           />
         ))}
       </div>
@@ -710,9 +612,11 @@ function ToolFileChangesCard({
 function ToolActivityRow({
   message,
   onEvent,
+  tabId,
 }: {
   message: ChatMessage;
   onEvent?: BuiltinComponentProps["onEvent"];
+  tabId?: string;
 }) {
   const details = toolCardDetails(message);
   if (!details.isToolCard) return null;
@@ -755,6 +659,7 @@ function ToolActivityRow({
             change={details.fileChange}
             onEvent={onEvent}
             componentId={details.componentId}
+            tabId={tabId}
           />
         ) : null}
       </div>
@@ -809,16 +714,9 @@ function TurnActivity({
     ? allToolMessages
     : allToolMessages.filter(hasFileChange);
   const allFileChangeEntries = collectFileChangeEntries(summarizedToolMessages);
-  const fetchedFileStats = useGitFileStats(allFileChangeEntries);
-  const workingTreeStats = workingTreeStatsForEntries(
-    state,
-    allFileChangeEntries,
-  );
   const summary = summaryWithFileEntries(
     summarizeToolMessages(summarizedToolMessages),
     allFileChangeEntries,
-    fetchedFileStats,
-    workingTreeStats,
   );
   const runningTools = showGenericTools
     ? allToolMessages.filter(isRunningToolCard)
@@ -984,15 +882,15 @@ function TurnActivity({
           <ToolFileChangesCard
             entries={fileChangeEntries}
             summary={summary}
-            diffStats={fetchedFileStats}
-            aggregateStats={workingTreeStats}
             onEvent={onEvent}
+            tabId={tabId}
           />
           {detailToolRows.map((message) => (
             <ToolActivityRow
               key={message.id}
               message={message}
               onEvent={onEvent}
+              tabId={tabId}
             />
           ))}
         </div>
@@ -1004,6 +902,7 @@ function TurnActivity({
               key={message.id}
               message={message}
               onEvent={onEvent}
+              tabId={tabId}
             />
           ))}
         </div>
@@ -1037,6 +936,146 @@ function hasHiddenThinkingTail(
     !hasDisplayableAgentContent(tail, thinkingVisibility) &&
     typeof tail.thinking === "string" &&
     tail.thinking.trim().length > 0
+  );
+}
+
+function isBranchableTurnMessage(message: ChatMessage): boolean {
+  return (
+    Boolean(message.entryId) &&
+    (message.role === "user" || message.role === "agent") &&
+    (Boolean(message.text) || Boolean(message.thinking))
+  );
+}
+
+function branchTargetForTurn(
+  turn: ConversationTurn,
+  visibleAgentMessages: ChatMessage[],
+): ChatMessage | undefined {
+  return [turn.userMessage, ...visibleAgentMessages]
+    .filter((message): message is ChatMessage => Boolean(message))
+    .filter(isBranchableTurnMessage)
+    .at(-1);
+}
+
+function tabCwdFromState(
+  state: Record<string, unknown>,
+  tabId: string | undefined,
+): string | undefined {
+  if (!tabId || !Array.isArray(state.tabs)) return undefined;
+  const tab = state.tabs.find(
+    (candidate): candidate is { id: string; cwd?: string } =>
+      Boolean(
+        candidate &&
+          typeof candidate === "object" &&
+          "id" in candidate &&
+          candidate.id === tabId,
+      ),
+  );
+  return typeof tab?.cwd === "string" ? tab.cwd : undefined;
+}
+
+function branchEventPayload(
+  target: ChatMessage,
+  tabId: string | undefined,
+  state: Record<string, unknown>,
+) {
+  const cwd = target.cwd ?? tabCwdFromState(state, tabId);
+  return {
+    entryId: target.entryId,
+    tabId,
+    ...(cwd ? { cwd } : {}),
+  };
+}
+
+function TurnBranchActions({
+  target,
+  state,
+  tabId,
+  onEvent,
+}: {
+  target?: ChatMessage;
+  state: Record<string, unknown>;
+  tabId?: string;
+  onEvent?: BuiltinComponentProps["onEvent"];
+}) {
+  const [confirmingRollback, setConfirmingRollback] = useState(false);
+  if (!target?.entryId || !onEvent || tabIsRunning(state, tabId)) return null;
+  return (
+    <div
+      className="ae-turn-branch-actions"
+      onMouseLeave={() => setConfirmingRollback(false)}
+    >
+      {confirmingRollback ? (
+        <>
+          <button
+            type="button"
+            className="ae-turn-branch-btn ae-turn-branch-confirm"
+            onClick={() => {
+              setConfirmingRollback(false);
+              onEvent(
+                "rollback-to-here",
+                branchEventPayload(target, tabId, state),
+              );
+            }}
+          >
+            Confirm rollback
+          </button>
+          <button
+            type="button"
+            className="ae-turn-branch-btn"
+            onClick={() => setConfirmingRollback(false)}
+          >
+            Cancel
+          </button>
+        </>
+      ) : (
+        <>
+          <button
+            type="button"
+            className="ae-turn-branch-btn"
+            aria-label="Rollback this turn"
+            title="Rewind the conversation to this turn"
+            onClick={() => setConfirmingRollback(true)}
+          >
+            <svg
+              viewBox="0 0 16 16"
+              width="13"
+              height="13"
+              aria-hidden="true"
+              focusable="false"
+            >
+              <path d="M5.2 5.1H10a4 4 0 1 1-3.1 6.55" />
+              <path d="M5.2 5.1 7.55 2.8" />
+              <path d="M5.2 5.1 7.55 7.45" />
+            </svg>
+            <span className="ae-turn-branch-label">Rollback</span>
+          </button>
+          <button
+            type="button"
+            className="ae-turn-branch-btn"
+            aria-label="Fork this turn"
+            title="Fork the conversation into a new tab from this turn"
+            onClick={() =>
+              onEvent("fork-to-tab", branchEventPayload(target, tabId, state))
+            }
+          >
+            <svg
+              viewBox="0 0 16 16"
+              width="13"
+              height="13"
+              aria-hidden="true"
+              focusable="false"
+            >
+              <path d="M5 3.25v4.15c0 2.4 1.55 4.1 4.2 4.1H11" />
+              <path d="M8.75 9.2 11 11.5l-2.25 2.3" />
+              <circle cx="5" cy="3.25" r="1.6" />
+              <circle cx="5" cy="12.75" r="1.6" />
+            </svg>
+            <span className="ae-turn-branch-label">Fork</span>
+          </button>
+        </>
+      )}
+    </div>
   );
 }
 
@@ -1093,6 +1132,7 @@ export function ConversationTurnRow({
     visibleAgentMessages.length > 0
       ? new Set(visibleAgentMessages.map((message) => message.id))
       : undefined;
+  const branchTarget = branchTargetForTurn(turn, visibleAgentMessages);
   return (
     <div className="ae-conversation-turn">
       {turn.systemMessages.map((message) => (
@@ -1145,6 +1185,12 @@ export function ConversationTurnRow({
           stopped || (interruptedTail && visibleAgentMessages.length === 0)
         }
         visibleAgentMessageIds={visibleAgentMessageIds}
+      />
+      <TurnBranchActions
+        target={branchTarget}
+        state={state}
+        tabId={tabId}
+        onEvent={onEvent}
       />
     </div>
   );

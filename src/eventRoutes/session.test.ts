@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { handleSessionBranch } from "./session";
+import { clearPendingForksForTab, handleSessionBranch } from "./session";
 import { buildRouteFixture } from "./testFixtures";
 import type { Tab } from "../types/tab";
 import type { ChatMessage } from "../types/a2ui";
@@ -48,6 +48,13 @@ describe("handleSessionBranch", () => {
       ctx,
     );
     expect(handled).toBe(true);
+    expect(mocks.pushNotification).toHaveBeenCalledWith({
+      id: "session-fork-t1",
+      title: "Forking session",
+      message: "Creating a new tab from this turn...",
+      kind: "info",
+      durationMs: null,
+    });
     expect(mocks.invoke).toHaveBeenCalledWith("agent_command", {
       payload: JSON.stringify({
         type: "fork_session",
@@ -55,6 +62,37 @@ describe("handleSessionBranch", () => {
         entryId: "e2",
       }),
     });
+  });
+
+  it("fork-to-tab ignores duplicate activations while a fork is pending", async () => {
+    const { ctx, mocks } = buildRouteFixture({ state: { activeTabId: "t-dupe" } });
+    const payload = event("fork-to-tab", { entryId: "e-dupe" });
+    expect(await handleSessionBranch(payload, ctx)).toBe(true);
+    expect(await handleSessionBranch(payload, ctx)).toBe(true);
+
+    expect(mocks.pushNotification).toHaveBeenCalledTimes(1);
+    expect(mocks.invoke).toHaveBeenCalledTimes(1);
+    expect(mocks.invoke).toHaveBeenCalledWith("agent_command", {
+      payload: JSON.stringify({
+        type: "fork_session",
+        tabId: "t-dupe",
+        entryId: "e-dupe",
+      }),
+    });
+  });
+
+  it("allows retry after a bridge-level fork failure clears the pending fork", async () => {
+    const { ctx, mocks } = buildRouteFixture({
+      state: { activeTabId: "t-error-retry" },
+    });
+    const payload = event("fork-to-tab", { entryId: "e-error-retry" });
+
+    expect(await handleSessionBranch(payload, ctx)).toBe(true);
+    expect(await handleSessionBranch(payload, ctx)).toBe(true);
+    clearPendingForksForTab("t-error-retry");
+    expect(await handleSessionBranch(payload, ctx)).toBe(true);
+
+    expect(mocks.invoke).toHaveBeenCalledTimes(2);
   });
 
   it("fork-to-tab uses the clicked row tab id when activeTabId is stale", async () => {
@@ -71,6 +109,29 @@ describe("handleSessionBranch", () => {
         type: "fork_session",
         tabId: "visible-tab",
         entryId: "e2",
+      }),
+    });
+  });
+
+  it("fork-to-tab forwards a cwd hint for restored sessions", async () => {
+    const { ctx, mocks } = buildRouteFixture({
+      state: { activeTabId: "wrong-tab" },
+    });
+    const handled = await handleSessionBranch(
+      event("fork-to-tab", {
+        entryId: "e-cwd",
+        tabId: "visible-tab",
+        cwd: "/repo/aethon",
+      }),
+      ctx,
+    );
+    expect(handled).toBe(true);
+    expect(mocks.invoke).toHaveBeenCalledWith("agent_command", {
+      payload: JSON.stringify({
+        type: "fork_session",
+        tabId: "visible-tab",
+        entryId: "e-cwd",
+        cwd: "/repo/aethon",
       }),
     });
   });

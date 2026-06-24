@@ -304,6 +304,29 @@ struct ApprovalStore {
     auto_approve_roots: BTreeMap<String, bool>,
 }
 
+#[derive(Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ProjectRegistry {
+    #[serde(default)]
+    projects: Vec<ProjectRegistryProject>,
+    #[serde(default)]
+    workspaces_by_project: BTreeMap<String, Vec<ProjectRegistryWorkspace>>,
+}
+
+#[derive(Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ProjectRegistryProject {
+    id: String,
+    label: String,
+    path: String,
+}
+
+#[derive(Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ProjectRegistryWorkspace {
+    path: String,
+}
+
 #[tauri::command]
 pub async fn workspace_startup_status(
     app: AppHandle,
@@ -1005,11 +1028,7 @@ fn startup_approval_policy(
 ) -> Result<StartupApprovalPolicy, String> {
     let host_auto_approve = host_startup_auto_approve(app)?;
     let store = read_approval_store(app)?;
-    let project_auto_approve = store
-        .auto_approve_roots
-        .get(&root.display().to_string())
-        .copied()
-        .unwrap_or(false);
+    let project_auto_approve = project_startup_auto_approve(app, root, &store);
     let auto_approve = host_auto_approve || project_auto_approve;
     let approved = config.commands.is_empty()
         || auto_approve
@@ -1023,6 +1042,111 @@ fn startup_approval_policy(
         host_auto_approve,
         project_auto_approve,
     })
+}
+
+fn project_startup_auto_approve(app: &AppHandle, root: &Path, store: &ApprovalStore) -> bool {
+    if store_auto_approves_path(store, root) {
+        return true;
+    }
+    let registry = read_project_registry(app);
+    let aethon_dir = app
+        .path()
+        .home_dir()
+        .ok()
+        .and_then(|home| crate::helpers::aethon_dir(Some(home)));
+    project_auto_approve_for_root(root, store, registry.as_ref(), aethon_dir.as_deref())
+}
+
+fn project_auto_approve_for_root(
+    root: &Path,
+    store: &ApprovalStore,
+    registry: Option<&ProjectRegistry>,
+    aethon_dir: Option<&Path>,
+) -> bool {
+    if store_auto_approves_path(store, root) {
+        return true;
+    }
+    let Some(registry) = registry else {
+        return false;
+    };
+    for project in &registry.projects {
+        let project_path = canonicalize_root(Path::new(&project.path));
+        if !store_auto_approves_path(store, &project_path) {
+            continue;
+        }
+        if path_contains(&project_path, root) {
+            return true;
+        }
+        if registry
+            .workspaces_by_project
+            .get(&project.id)
+            .into_iter()
+            .flatten()
+            .any(|workspace| path_contains(&canonicalize_root(Path::new(&workspace.path)), root))
+        {
+            return true;
+        }
+        if let Some(aethon_dir) = aethon_dir {
+            let label = project.label.trim();
+            if !label.is_empty() && path_contains(&aethon_dir.join(label), root) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+fn store_auto_approves_path(store: &ApprovalStore, path: &Path) -> bool {
+    let path_key = path.display().to_string();
+    store
+        .auto_approve_roots
+        .get(&path_key)
+        .copied()
+        .unwrap_or(false)
+        || store
+            .auto_approve_roots
+            .iter()
+            .any(|(key, enabled)| *enabled && canonicalize_root(Path::new(key)) == path)
+}
+
+fn path_contains(parent: &Path, child: &Path) -> bool {
+    child == parent || child.starts_with(parent)
+}
+
+fn read_project_registry(app: &AppHandle) -> Option<ProjectRegistry> {
+    let path = match crate::commands::config::aethon_state_path(app, "projects.json") {
+        Ok(path) => path,
+        Err(err) => {
+            tracing::warn!(
+                target: "aethon::startup",
+                "resolve projects.json failed: {err}; project startup auto-approve disabled"
+            );
+            return None;
+        }
+    };
+    let text = match std::fs::read_to_string(&path) {
+        Ok(text) => text,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return None,
+        Err(e) => {
+            tracing::warn!(
+                target: "aethon::startup",
+                "read {} failed: {e}; project startup auto-approve disabled",
+                path.display()
+            );
+            return None;
+        }
+    };
+    match serde_json::from_str(&text) {
+        Ok(registry) => Some(registry),
+        Err(err) => {
+            tracing::warn!(
+                target: "aethon::startup",
+                "parse {} failed: {err}; project startup auto-approve disabled",
+                path.display()
+            );
+            None
+        }
+    }
 }
 
 fn host_startup_auto_approve(app: &AppHandle) -> Result<bool, String> {
@@ -1114,6 +1238,13 @@ mod tests {
         }
     }
 
+    fn approval_store_for(path: &Path) -> ApprovalStore {
+        ApprovalStore {
+            auto_approve_roots: BTreeMap::from([(path.display().to_string(), true)]),
+            ..ApprovalStore::default()
+        }
+    }
+
     #[test]
     fn parse_startup_config_defaults_commands_to_required() {
         let cfg = parse_startup_config(
@@ -1149,10 +1280,11 @@ command = "bun install"
 
         assert!(!cfg.auto_approve);
         assert_eq!(cfg.commands.len(), 1);
-        assert!(cfg
-            .warning
-            .as_deref()
-            .is_some_and(|warning| warning.contains("Ignored [startup].auto_approve")));
+        assert!(
+            cfg.warning
+                .as_deref()
+                .is_some_and(|warning| warning.contains("Ignored [startup].auto_approve"))
+        );
     }
 
     #[test]
@@ -1297,6 +1429,103 @@ command = "bun install"
         assert!(response.host_auto_approve);
         assert!(!response.project_auto_approve);
         assert_eq!(response.state, "idle");
+    }
+
+    #[test]
+    fn project_auto_approve_inherits_for_persisted_workspaces() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let project = temp.path().join("nyc-real-estate");
+        let workspace = temp
+            .path()
+            .join("workspaces")
+            .join("fix-issue-632-admin-tracked-urls");
+        std::fs::create_dir_all(&project).expect("project dir");
+        std::fs::create_dir_all(&workspace).expect("workspace dir");
+        let project = canonicalize_root(&project);
+        let workspace = canonicalize_root(&workspace);
+        let store = approval_store_for(&project);
+        let registry = ProjectRegistry {
+            projects: vec![ProjectRegistryProject {
+                id: "project-1".to_string(),
+                label: "nyc-real-estate".to_string(),
+                path: project.display().to_string(),
+            }],
+            workspaces_by_project: BTreeMap::from([(
+                "project-1".to_string(),
+                vec![ProjectRegistryWorkspace {
+                    path: workspace.display().to_string(),
+                }],
+            )]),
+        };
+
+        assert!(project_auto_approve_for_root(
+            &workspace,
+            &store,
+            Some(&registry),
+            None
+        ));
+    }
+
+    #[test]
+    fn project_auto_approve_inherits_for_aethon_managed_workspaces_before_persist() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let project = temp.path().join("nyc-real-estate");
+        let aethon_dir = temp.path().join(".aethon");
+        let workspace = aethon_dir
+            .join("nyc-real-estate")
+            .join("fix-issue-632-admin-tracked-urls");
+        std::fs::create_dir_all(&project).expect("project dir");
+        std::fs::create_dir_all(&workspace).expect("workspace dir");
+        let project = canonicalize_root(&project);
+        let workspace = canonicalize_root(&workspace);
+        let aethon_dir = canonicalize_root(&aethon_dir);
+        let store = approval_store_for(&project);
+        let registry = ProjectRegistry {
+            projects: vec![ProjectRegistryProject {
+                id: "project-1".to_string(),
+                label: "nyc-real-estate".to_string(),
+                path: project.display().to_string(),
+            }],
+            ..ProjectRegistry::default()
+        };
+
+        assert!(project_auto_approve_for_root(
+            &workspace,
+            &store,
+            Some(&registry),
+            Some(&aethon_dir),
+        ));
+    }
+
+    #[test]
+    fn project_auto_approve_does_not_match_similar_project_labels() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let project = temp.path().join("nyc-real-estate");
+        let aethon_dir = temp.path().join(".aethon");
+        let unrelated = aethon_dir
+            .join("nyc-real-estate-extra")
+            .join("fix-issue-632-admin-tracked-urls");
+        std::fs::create_dir_all(&project).expect("project dir");
+        std::fs::create_dir_all(&unrelated).expect("workspace dir");
+        let project = canonicalize_root(&project);
+        let unrelated = canonicalize_root(&unrelated);
+        let aethon_dir = canonicalize_root(&aethon_dir);
+        let store = approval_store_for(&project);
+        let registry = ProjectRegistry {
+            projects: vec![ProjectRegistryProject {
+                id: "project-1".to_string(),
+                label: "nyc-real-estate".to_string(),
+                path: project.display().to_string(),
+            }],
+            ..ProjectRegistry::default()
+        };
+
+        assert!(!project_auto_approve_for_root(
+            &unrelated,
+            &store,
+            Some(&registry),
+            Some(&aethon_dir),
+        ));
     }
 
     #[test]
