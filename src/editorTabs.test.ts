@@ -44,6 +44,30 @@ describe("editorTabsFromTabs", () => {
     const tabs = [editorTab("e2", "/r/x.ts", { diff: true })];
     expect(editorTabsFromTabs(tabs, "e2").activeFilePath).toBeUndefined();
   });
+
+  it("keeps distinct snapshot-backed diff tabs for the same file", () => {
+    const firstSnapshot = {
+      format: "unified" as const,
+      content: "--- a/x.ts\n+++ b/x.ts\n@@\n-a\n+b",
+      source: "tool-card" as const,
+    };
+    const secondSnapshot = {
+      format: "unified" as const,
+      content: "--- a/x.ts\n+++ b/x.ts\n@@\n-c\n+d",
+      source: "tool-card" as const,
+    };
+    const tabs = [
+      editorTab("e1", "/r/x.ts", { diff: true, diffSnapshot: firstSnapshot }),
+      editorTab("e2", "/r/x.ts", { diff: true, diffSnapshot: secondSnapshot }),
+      editorTab("e3", "/r/x.ts", { diff: true, diffSnapshot: firstSnapshot }),
+    ];
+    const result = editorTabsFromTabs(tabs, "e1");
+    expect(result.tabs).toHaveLength(2);
+    expect(result.tabs.map((tab) => tab.diffSnapshot?.content)).toEqual([
+      firstSnapshot.content,
+      secondSnapshot.content,
+    ]);
+  });
 });
 
 describe("hydration gate (no clobber before restore)", () => {
@@ -79,13 +103,29 @@ describe("parseEditorTabsStore", () => {
   });
 
   it("keeps well-formed entries and drops malformed tabs", () => {
+    const diffSnapshot = {
+      format: "unified",
+      content: "--- a/r.ts\n+++ b/r.ts\n@@\n-old\n+new",
+      source: "tool-card",
+    };
     const raw = JSON.stringify({
       byProject: {
         p1: {
           activeFilePath: "/r/a.ts",
           tabs: [
             { filePath: "/r/a.ts", language: "typescript" },
+            {
+              filePath: "/r/diff.ts",
+              language: "typescript",
+              diff: true,
+              diffSnapshot,
+            },
             { filePath: 123, language: "x" }, // bad path → dropped
+            {
+              filePath: "/r/bad.ts",
+              language: "typescript",
+              diffSnapshot: { format: "unified", content: "x" },
+            },
             { language: "x" }, // no path → dropped
           ],
         },
@@ -97,7 +137,15 @@ describe("parseEditorTabsStore", () => {
       byProject: {
         p1: {
           activeFilePath: "/r/a.ts",
-          tabs: [{ filePath: "/r/a.ts", language: "typescript" }],
+          tabs: [
+            { filePath: "/r/a.ts", language: "typescript" },
+            {
+              filePath: "/r/diff.ts",
+              language: "typescript",
+              diff: true,
+              diffSnapshot,
+            },
+          ],
         },
       },
     });

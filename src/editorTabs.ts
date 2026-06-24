@@ -9,7 +9,11 @@
 // `useProjectOps`.
 
 import { readState, writeState } from "./persist";
-import type { Tab } from "./types/tab";
+import type { EditorDiffSnapshot, Tab } from "./types/tab";
+import {
+  diffSnapshotKey,
+  isEditorDiffSnapshot,
+} from "./utils/editorDiffSnapshot";
 
 const FILE = "editor-tabs.json";
 /** Bucket key for tabs opened with no active project. */
@@ -20,6 +24,7 @@ export interface PersistedEditorTab {
   rootPath?: string;
   language: string;
   diff?: boolean;
+  diffSnapshot?: EditorDiffSnapshot;
   cursorLine?: number;
   cursorColumn?: number;
 }
@@ -50,6 +55,7 @@ export function toPersistedEditorTab(tab: Tab): PersistedEditorTab | null {
     ...(e.rootPath ? { rootPath: e.rootPath } : {}),
     language: e.language,
     ...(e.diff ? { diff: true } : {}),
+    ...(e.diffSnapshot ? { diffSnapshot: e.diffSnapshot } : {}),
     ...(typeof e.cursorLine === "number" ? { cursorLine: e.cursorLine } : {}),
     ...(typeof e.cursorColumn === "number"
       ? { cursorColumn: e.cursorColumn }
@@ -69,7 +75,11 @@ export function editorTabsFromTabs(
   for (const t of tabs) {
     const p = toPersistedEditorTab(t);
     if (!p) continue;
-    const key = `${p.filePath}::${p.diff ? "d" : "e"}`;
+    const key = [
+      p.filePath,
+      p.diff ? "d" : "e",
+      diffSnapshotKey(p.diffSnapshot),
+    ].join("::");
     if (seen.has(key)) continue;
     seen.add(key);
     out.push(p);
@@ -79,11 +89,13 @@ export function editorTabsFromTabs(
 }
 
 function isPersistedTab(v: unknown): v is PersistedEditorTab {
+  if (!v || typeof v !== "object") return false;
+  const tab = v as PersistedEditorTab;
   return (
-    !!v &&
-    typeof v === "object" &&
-    typeof (v as PersistedEditorTab).filePath === "string" &&
-    typeof (v as PersistedEditorTab).language === "string"
+    typeof tab.filePath === "string" &&
+    typeof tab.language === "string" &&
+    (tab.diffSnapshot === undefined ||
+      isEditorDiffSnapshot(tab.diffSnapshot))
   );
 }
 

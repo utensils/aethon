@@ -665,6 +665,41 @@ describe("sessionUiSnapshot", () => {
     });
   });
 
+  it("preserves snapshot-backed editor diff metadata", () => {
+    const diffSnapshot = {
+      format: "unified" as const,
+      content: "--- a/src/App.tsx\n+++ b/src/App.tsx\n@@\n-old\n+new",
+      additions: 1,
+      deletions: 1,
+      source: "tool-card" as const,
+    };
+    const tab = {
+      ...makeEmptyTab("editor", "App.tsx (diff)", null, "editor"),
+      editor: {
+        filePath: "/repo/src/App.tsx",
+        rootPath: "/repo",
+        language: "typescript",
+        isDirty: true,
+        diff: true,
+        diffSnapshot,
+      },
+    };
+
+    saveSessionUiSnapshot({
+      tabs: [tab],
+      activeTabId: "editor",
+    });
+
+    expect(loadSessionUiSnapshot()?.tabs[0]?.editor).toMatchObject({
+      filePath: "/repo/src/App.tsx",
+      rootPath: "/repo",
+      language: "typescript",
+      isDirty: false,
+      diff: true,
+      diffSnapshot,
+    });
+  });
+
   it("persists blank empty new tabs and keeps them active", () => {
     saveSessionUiSnapshot({
       tabs: [

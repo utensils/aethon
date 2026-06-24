@@ -1,9 +1,15 @@
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
-import { makeEmptyTab, type EditorMeta, type Tab } from "../../types/tab";
+import {
+  makeEmptyTab,
+  type EditorDiffSnapshot,
+  type EditorMeta,
+  type Tab,
+} from "../../types/tab";
 import type { ProjectsState } from "../../projects";
 import { languageFromPath } from "../../monaco/language-detection";
 import { TAB_MIRROR_KEYS } from "./constants";
 import { editorLabelForPath } from "./helpers";
+import { diffSnapshotKey } from "../../utils/editorDiffSnapshot";
 
 export interface EditorTabDeps {
   setState: Dispatch<SetStateAction<Record<string, unknown>>>;
@@ -20,7 +26,11 @@ export interface EditorTabDeps {
 export interface EditorTabActions {
   newEditorTab: (
     filePath: string,
-    opts?: { rootPath?: string; diff?: boolean },
+    opts?: {
+      rootPath?: string;
+      diff?: boolean;
+      diffSnapshot?: EditorDiffSnapshot;
+    },
   ) => void;
   updateEditorMeta: (tabId: string, patch: Partial<EditorMeta>) => void;
   toggleEditorPreview: () => void;
@@ -38,11 +48,17 @@ export function useEditorTabActions(deps: EditorTabDeps): EditorTabActions {
    *  switch to it instead of creating a duplicate. */
   function newEditorTab(
     filePath: string,
-    opts: { rootPath?: string; diff?: boolean } = {},
+    opts: {
+      rootPath?: string;
+      diff?: boolean;
+      diffSnapshot?: EditorDiffSnapshot;
+    } = {},
   ): void {
     if (!filePath) return;
     const rootPath = opts.rootPath;
     const diff = opts.diff === true;
+    const diffSnapshot = diff ? opts.diffSnapshot : undefined;
+    const snapshotKey = diffSnapshotKey(diffSnapshot);
     const tabs = (stateRef.current.tabs as Tab[] | undefined) ?? [];
     // A diff tab and an editable tab for the same path coexist — match on
     // the diff flag too so "open changes" doesn't just focus the editor.
@@ -51,7 +67,8 @@ export function useEditorTabActions(deps: EditorTabDeps): EditorTabActions {
         t.kind === "editor" &&
         t.editor?.filePath === filePath &&
         (t.editor.rootPath ?? "") === (rootPath ?? "") &&
-        !!t.editor.diff === diff,
+        !!t.editor.diff === diff &&
+        diffSnapshotKey(t.editor.diffSnapshot) === snapshotKey,
     );
     if (existing) {
       setActiveTab(existing.id);
@@ -74,6 +91,7 @@ export function useEditorTabActions(deps: EditorTabDeps): EditorTabActions {
         language,
         isDirty: false,
         ...(diff ? { diff: true } : {}),
+        ...(diffSnapshot ? { diffSnapshot } : {}),
       },
     };
     setState((prev) => {
@@ -113,6 +131,10 @@ export function useEditorTabActions(deps: EditorTabDeps): EditorTabActions {
       const samePreview = merged.previewMode === t.editor.previewMode;
       const sameRefresh =
         merged.previewRefreshKey === t.editor.previewRefreshKey;
+      const sameDiff = merged.diff === t.editor.diff;
+      const sameSnapshot =
+        diffSnapshotKey(merged.diffSnapshot) ===
+        diffSnapshotKey(t.editor.diffSnapshot);
       if (
         samePath &&
         sameLang &&
@@ -120,7 +142,9 @@ export function useEditorTabActions(deps: EditorTabDeps): EditorTabActions {
         sameLine &&
         sameCol &&
         samePreview &&
-        sameRefresh
+        sameRefresh &&
+        sameDiff &&
+        sameSnapshot
       )
         return t;
       return { ...t, editor: merged };

@@ -28,6 +28,7 @@ import {
   joinRoot,
 } from "../hooks/bridgeMessageHandlers/editorQuery";
 import { WORKSTATION_AREAS } from "../hooks/useFocus";
+import { isEditorDiffSnapshot } from "../utils/editorDiffSnapshot";
 
 function asRecord(data: unknown): Record<string, unknown> {
   return data && typeof data === "object"
@@ -114,7 +115,7 @@ export const handleEditorCanvas: EventRouteHandler = async (
     case "editor-diff-to-edit": {
       // "Edit file" affordance in the diff view: drop the diff flag so
       // this tab becomes the editable Monaco editor for the same path.
-      ctx.updateEditorMeta(tabId, { diff: false });
+      ctx.updateEditorMeta(tabId, { diff: false, diffSnapshot: undefined });
       return true;
     }
     case "markdown-link-open": {
@@ -183,9 +184,29 @@ export const handleToolCardFile: EventRouteHandler = (
   }
   const target = resolveToolFileTarget(event.data, ctx);
   if (!target) return true;
+  const payload = asRecord(event.data);
+  if (event.eventType === "tool-file-diff") {
+    const diffSnapshot = isEditorDiffSnapshot(payload.diffSnapshot)
+      ? payload.diffSnapshot
+      : undefined;
+    if (!diffSnapshot) {
+      ctx.pushNotification({
+        title: "Diff snapshot unavailable",
+        message: "This older tool record did not save a diff snapshot.",
+        kind: "warning",
+        durationMs: 4000,
+      });
+      return true;
+    }
+    ctx.newEditorTab(target.filePath, {
+      ...(target.rootPath ? { rootPath: target.rootPath } : {}),
+      diff: true,
+      diffSnapshot,
+    });
+    return true;
+  }
   ctx.newEditorTab(target.filePath, {
     ...(target.rootPath ? { rootPath: target.rootPath } : {}),
-    ...(event.eventType === "tool-file-diff" ? { diff: true } : {}),
   });
   return true;
 };

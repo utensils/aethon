@@ -1,5 +1,10 @@
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
-import type { EditorMeta, ShellMeta, Tab } from "../../types/tab";
+import type {
+  EditorDiffSnapshot,
+  EditorMeta,
+  ShellMeta,
+  Tab,
+} from "../../types/tab";
 import type { ProjectsState } from "../../projects";
 import type { TabBucket } from "../projectOps/types";
 
@@ -102,7 +107,14 @@ export interface UseTabsActions {
   /** Open (or focus, if already open) an editor tab for `filePath`.
    *  `filePath` must be inside the active project; the EditorCanvas
    *  composite handles the actual fs_read_file call on mount. */
-  newEditorTab: (filePath: string, opts?: { rootPath?: string }) => void;
+  newEditorTab: (
+    filePath: string,
+    opts?: {
+      rootPath?: string;
+      diff?: boolean;
+      diffSnapshot?: EditorDiffSnapshot;
+    },
+  ) => void;
   /** Set the dirty flag + cursor on the active editor tab. Used by
    *  EditorCanvas to mirror Monaco's model state back to the layout. */
   updateEditorMeta: (tabId: string, patch: Partial<EditorMeta>) => void;

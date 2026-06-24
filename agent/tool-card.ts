@@ -95,6 +95,14 @@ function stringArg(args: unknown, key: string): string {
   return typeof value === "string" ? value.trim() : "";
 }
 
+function stringValue(record: Record<string, unknown>, keys: string[]): string {
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === "string") return value.trim();
+  }
+  return "";
+}
+
 function countDiffStats(text: string): { additions: number; deletions: number } {
   let additions = 0;
   let deletions = 0;
@@ -116,23 +124,61 @@ function lineCount(value: string): number {
   return value.replace(/\r?\n$/, "").split(/\r?\n/).length;
 }
 
+function editPairsFromArgs(
+  args: unknown,
+): Array<{ oldText: string; newText: string }> {
+  if (!args || typeof args !== "object") return [];
+  const raw = args as Record<string, unknown>;
+  if (Array.isArray(raw.edits)) {
+    return raw.edits
+      .map((edit) => {
+        if (!edit || typeof edit !== "object") return undefined;
+        const record = edit as Record<string, unknown>;
+        const oldText = stringValue(record, [
+          "oldText",
+          "old_text",
+          "oldString",
+          "old_string",
+          "old_str",
+          "old",
+        ]);
+        const newText = stringValue(record, [
+          "newText",
+          "new_text",
+          "newString",
+          "new_string",
+          "new_str",
+          "new",
+        ]);
+        return oldText || newText ? { oldText, newText } : undefined;
+      })
+      .filter((pair): pair is { oldText: string; newText: string } =>
+        Boolean(pair),
+      );
+  }
+  const oldText = stringValue(raw, [
+    "oldString",
+    "old_string",
+    "old_str",
+    "old",
+  ]);
+  const newText = stringValue(raw, [
+    "newString",
+    "new_string",
+    "new_str",
+    "new",
+  ]);
+  return oldText || newText ? [{ oldText, newText }] : [];
+}
+
 function editStatsFromArgs(args: unknown): { additions: number; deletions: number } | undefined {
   if (!args || typeof args !== "object") return undefined;
   const raw = args as Record<string, unknown>;
-  const oldText =
-    stringArg(raw, "oldString") ||
-    stringArg(raw, "old_string") ||
-    stringArg(raw, "old_str") ||
-    stringArg(raw, "old");
-  const newText =
-    stringArg(raw, "newString") ||
-    stringArg(raw, "new_string") ||
-    stringArg(raw, "new_str") ||
-    stringArg(raw, "new");
-  if (oldText || newText) {
+  const pairs = editPairsFromArgs(raw);
+  if (pairs.length > 0) {
     return {
-      additions: lineCount(newText),
-      deletions: lineCount(oldText),
+      additions: pairs.reduce((sum, pair) => sum + lineCount(pair.newText), 0),
+      deletions: pairs.reduce((sum, pair) => sum + lineCount(pair.oldText), 0),
     };
   }
   const content =
@@ -155,26 +201,19 @@ function prefixedLines(prefix: string, value: string): string {
 function syntheticDiffFromArgs(path: string, args: unknown): string | undefined {
   if (!args || typeof args !== "object") return undefined;
   const raw = args as Record<string, unknown>;
-  const oldText =
-    stringArg(raw, "oldString") ||
-    stringArg(raw, "old_string") ||
-    stringArg(raw, "old_str") ||
-    stringArg(raw, "old");
-  const newText =
-    stringArg(raw, "newString") ||
-    stringArg(raw, "new_string") ||
-    stringArg(raw, "new_str") ||
-    stringArg(raw, "new");
-  if (oldText || newText) {
-    return [
-      `--- a/${path}`,
-      `+++ b/${path}`,
-      "@@ replacement @@",
-      prefixedLines("-", oldText),
-      prefixedLines("+", newText),
-    ]
-      .filter(Boolean)
-      .join("\n");
+  const pairs = editPairsFromArgs(raw);
+  if (pairs.length > 0) {
+    const lines = [`--- a/${path}`, `+++ b/${path}`];
+    pairs.forEach((pair, index) => {
+      lines.push(
+        pairs.length === 1 ? "@@ replacement @@" : `@@ edit ${index + 1} @@`,
+      );
+      const oldLines = prefixedLines("-", pair.oldText);
+      const newLines = prefixedLines("+", pair.newText);
+      if (oldLines) lines.push(oldLines);
+      if (newLines) lines.push(newLines);
+    });
+    return lines.join("\n");
   }
   const content =
     stringArg(raw, "content") || stringArg(raw, "text") || stringArg(raw, "body");
@@ -188,6 +227,29 @@ function syntheticDiffFromArgs(path: string, args: unknown): string | undefined 
     ].join("\n");
   }
   return undefined;
+}
+
+function diffFromResultDetails(
+  path: string,
+  result: unknown,
+): string | undefined {
+  if (!result || typeof result !== "object") return undefined;
+  const details = (result as Record<string, unknown>).details;
+  const diff =
+    typeof details === "string"
+      ? details
+      : details && typeof details === "object"
+        ? (details as Record<string, unknown>).diff
+        : undefined;
+  if (typeof diff !== "string" || !diff.trim()) return undefined;
+  const trimmed = truncate(diff.trim(), 4000);
+  if (looksLikeUnifiedDiff(trimmed)) return trimmed;
+  return [
+    `--- a/${path}`,
+    `+++ b/${path}`,
+    "@@ tool result diff @@",
+    trimmed,
+  ].join("\n");
 }
 
 function writeLooksCreated(text: string): boolean {
@@ -208,7 +270,8 @@ function fileChangeForTool(opts: {
   const resultText = extracted?.text ? truncate(extracted.text, 4000) : undefined;
   const preview = looksLikeUnifiedDiff(resultText)
     ? resultText
-    : syntheticDiffFromArgs(path, opts.args);
+    : (diffFromResultDetails(path, opts.result) ??
+      syntheticDiffFromArgs(path, opts.args));
   const stats = preview
     ? countDiffStats(preview)
     : (editStatsFromArgs(opts.args) ??

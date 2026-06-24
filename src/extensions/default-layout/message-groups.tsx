@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import type { A2UIComponent, ChatMessage } from "../../types/a2ui";
 import A2UIRenderer, {
   type BuiltinComponentProps,
@@ -174,72 +173,6 @@ interface ToolFileChangeEntry {
 interface LineChangeStats {
   additions: number;
   deletions: number;
-}
-
-function diffStatsFromPreview(preview: string): LineChangeStats {
-  let additions = 0;
-  let deletions = 0;
-  for (const line of preview.split(/\r?\n/)) {
-    if (line.startsWith("+++") || line.startsWith("---")) continue;
-    if (line.startsWith("+")) additions += 1;
-    else if (line.startsWith("-")) deletions += 1;
-  }
-  return { additions, deletions };
-}
-
-async function persistFileChangeDiffSnapshot({
-  tabId,
-  componentId,
-  change,
-  preview,
-}: {
-  tabId?: string;
-  componentId?: string;
-  change: ToolCardFileChange;
-  preview: string;
-}): Promise<void> {
-  if (
-    !tabId ||
-    !componentId ||
-    !change.path ||
-    !looksLikeUnifiedDiff(preview)
-  ) {
-    return;
-  }
-  const stats = diffStatsFromPreview(preview);
-  const fileChange: ToolCardFileChange = {
-    ...change,
-    preview,
-    ...(stats.additions > 0 ? { additions: stats.additions } : {}),
-    ...(stats.deletions > 0 ? { deletions: stats.deletions } : {}),
-  };
-  const createdAt = Date.now();
-  await invoke("agent_command", {
-    payload: JSON.stringify({
-      type: "local_chat_message",
-      tabId,
-      payload: {
-        id: `file-diff-snapshot-${componentId}`,
-        role: "agent",
-        a2ui: {
-          components: [
-            {
-              id: componentId,
-              type: "tool-card",
-              props: {
-                fileChange,
-                startedAt: createdAt,
-                endedAt: createdAt,
-              },
-            },
-          ],
-        },
-        createdAt,
-      },
-    }),
-  }).catch(() => {
-    /* best effort: the visible fetched diff still works for this render */
-  });
 }
 
 function collectFileChangeEntries(
@@ -431,61 +364,36 @@ function ToolFileChangeRow({
   change,
   onEvent,
   componentId,
-  tabId,
 }: {
   change: ToolCardFileChange;
   onEvent?: BuiltinComponentProps["onEvent"];
   componentId?: string;
-  tabId?: string;
 }) {
   const [previewOpen, setPreviewOpen] = useState(false);
-  const [fetchedDiff, setFetchedDiff] = useState<string | null>(null);
-  const [diffLoading, setDiffLoading] = useState(false);
-  const [diffError, setDiffError] = useState<string | null>(null);
   const filePath = change.path ?? "";
   if (!filePath) return null;
-  const eventPayload = {
-    filePath,
-    ...(change.rootPath ? { rootPath: change.rootPath } : {}),
-  };
   const { additions, deletions } = effectiveStats(change);
   const dir = parentPath(filePath);
   const capturedDiff = looksLikeUnifiedDiff(change.preview)
     ? change.preview
     : "";
-  const previewText = capturedDiff || fetchedDiff || "";
-  const hasPreview = Boolean(capturedDiff || change.rootPath);
-  const fetchDiff = async () => {
-    if (capturedDiff || fetchedDiff || !change.rootPath || diffLoading) return;
-    setDiffLoading(true);
-    setDiffError(null);
-    try {
-      const diff = await invoke<string | null>("git_file_diff", {
-        root: change.rootPath,
-        path: filePath,
-      });
-      const durableDiff = diff ?? "";
-      if (looksLikeUnifiedDiff(durableDiff)) {
-        setFetchedDiff(durableDiff);
-        void persistFileChangeDiffSnapshot({
-          tabId,
-          componentId,
-          change,
-          preview: durableDiff,
-        });
-      } else {
-        setFetchedDiff("");
-      }
-    } catch (error) {
-      setDiffError(error instanceof Error ? error.message : String(error));
-    } finally {
-      setDiffLoading(false);
-    }
+  const eventPayload = {
+    filePath,
+    ...(change.rootPath ? { rootPath: change.rootPath } : {}),
+    ...(capturedDiff
+      ? {
+          diffSnapshot: {
+            format: "unified",
+            content: capturedDiff,
+            ...(additions > 0 ? { additions } : {}),
+            ...(deletions > 0 ? { deletions } : {}),
+            source: "tool-card",
+          },
+        }
+      : {}),
   };
   const togglePreview = () => {
-    const nextOpen = !previewOpen;
-    setPreviewOpen(nextOpen);
-    if (nextOpen) void fetchDiff();
+    setPreviewOpen((open) => !open);
   };
   return (
     <div className="ae-tool-activity-file-item">
@@ -530,7 +438,7 @@ function ToolFileChangeRow({
         >
           Open
         </button>
-        {hasPreview ? (
+        {capturedDiff ? (
           <button
             type="button"
             className="ae-tool-activity-file-preview-toggle"
@@ -543,10 +451,10 @@ function ToolFileChangeRow({
           </button>
         ) : null}
       </div>
-      {previewOpen && previewText ? (
+      {previewOpen && capturedDiff ? (
         <pre className="ae-tool-file-diff-preview ae-tool-activity-file-preview">
           <code>
-            {previewLines(previewText).map((line, index) => (
+            {previewLines(capturedDiff).map((line, index) => (
               <span
                 key={`${index}-${line}`}
                 className={`ae-tool-file-diff-line is-${lineTone(line)}`}
@@ -559,11 +467,7 @@ function ToolFileChangeRow({
         </pre>
       ) : previewOpen ? (
         <div className="ae-tool-activity-file-preview-empty">
-          {diffLoading
-            ? "Loading diff..."
-            : diffError
-              ? "Diff unavailable. Open Monaco diff to review this file."
-              : "No working-tree diff available for this file."}
+          No stored diff snapshot is available for this tool record.
         </div>
       ) : null}
     </div>
@@ -574,12 +478,10 @@ function ToolFileChangesCard({
   entries,
   summary,
   onEvent,
-  tabId,
 }: {
   entries: ToolFileChangeEntry[];
   summary: ToolMessageSummary;
   onEvent?: BuiltinComponentProps["onEvent"];
-  tabId?: string;
 }) {
   const label = fileChangeLabel(summary);
   if (entries.length === 0) return null;
@@ -601,7 +503,6 @@ function ToolFileChangesCard({
             change={change}
             onEvent={onEvent}
             componentId={componentId}
-            tabId={tabId}
           />
         ))}
       </div>
@@ -612,11 +513,9 @@ function ToolFileChangesCard({
 function ToolActivityRow({
   message,
   onEvent,
-  tabId,
 }: {
   message: ChatMessage;
   onEvent?: BuiltinComponentProps["onEvent"];
-  tabId?: string;
 }) {
   const details = toolCardDetails(message);
   if (!details.isToolCard) return null;
@@ -659,7 +558,6 @@ function ToolActivityRow({
             change={details.fileChange}
             onEvent={onEvent}
             componentId={details.componentId}
-            tabId={tabId}
           />
         ) : null}
       </div>
@@ -883,14 +781,12 @@ function TurnActivity({
             entries={fileChangeEntries}
             summary={summary}
             onEvent={onEvent}
-            tabId={tabId}
           />
           {detailToolRows.map((message) => (
             <ToolActivityRow
               key={message.id}
               message={message}
               onEvent={onEvent}
-              tabId={tabId}
             />
           ))}
         </div>
@@ -902,7 +798,6 @@ function TurnActivity({
               key={message.id}
               message={message}
               onEvent={onEvent}
-              tabId={tabId}
             />
           ))}
         </div>

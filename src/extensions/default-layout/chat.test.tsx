@@ -2815,98 +2815,83 @@ describe("ChatHistory turn activity feed (mocked Virtuoso renders rows)", () => 
     });
   });
 
-  it("fetches a real inline diff instead of showing non-diff edit status text", async () => {
+  it("renders captured inline diffs without fetching or persisting live git snapshots", () => {
     invokeMock.mockImplementation((cmd: string) =>
-      cmd === "git_file_diff_stat"
-        ? Promise.resolve({ insertions: 1, deletions: 1 })
-        : cmd === "git_file_diff"
-          ? Promise.resolve(
-              "diff --git a/src/App.tsx b/src/App.tsx\n@@ -1 +1 @@\n-old title\n+new title\n",
-            )
-          : Promise.reject(new Error(`invoke not mocked: ${cmd}`)),
+      Promise.reject(new Error(`invoke not mocked: ${cmd}`)),
     );
+    const onEvent = vi.fn();
 
-    renderGroupedHistory({
-      messages: [
-        { id: "u1", role: "user", text: "change files" },
+    render(
+      groupedHistoryElement(
         {
-          id: "t1",
-          role: "agent",
-          a2ui: {
-            components: [
-              {
-                id: "tool-edit",
-                type: "tool-card",
-                props: {
-                  title: "edit",
-                  startedAt: 1,
-                  endedAt: 2,
-                  fileChange: {
-                    kind: "edited",
-                    path: "src/App.tsx",
-                    rootPath: "/repo/aethon",
-                    preview: "Successfully replaced 1 block(s)",
+          messages: [
+            { id: "u1", role: "user", text: "change files" },
+            {
+              id: "t1",
+              role: "agent",
+              a2ui: {
+                components: [
+                  {
+                    id: "tool-edit",
+                    type: "tool-card",
+                    props: {
+                      title: "edit",
+                      startedAt: 1,
+                      endedAt: 2,
+                      fileChange: {
+                        kind: "edited",
+                        path: "src/App.tsx",
+                        rootPath: "/repo/aethon",
+                        preview:
+                          "diff --git a/src/App.tsx b/src/App.tsx\n@@ -1 +1 @@\n-old title\n+new title\n",
+                        additions: 1,
+                        deletions: 1,
+                      },
+                    },
                   },
-                },
+                ],
               },
-            ],
-          },
+            },
+          ],
+          transcriptVisibility: { toolCalls: "hide" },
         },
-      ],
-      transcriptVisibility: { toolCalls: "hide" },
-    });
-
-    expect(screen.queryByText("Successfully replaced 1 block(s)")).toBeNull();
+        new ExtensionRegistry(),
+        onEvent,
+      ),
+    );
 
     fireEvent.click(
       screen.getByRole("button", { name: "Show inline diff for App.tsx" }),
     );
 
-    expect(await screen.findByText("+new title")).toBeTruthy();
+    expect(screen.getByText("+new title")).toBeTruthy();
     expect(screen.getByText("-old title")).toBeTruthy();
-    expect(screen.queryByText("Successfully replaced 1 block(s)")).toBeNull();
-    expect(invokeMock).toHaveBeenCalledWith("git_file_diff", {
-      root: "/repo/aethon",
-      path: "src/App.tsx",
-    });
-    expect(invokeMock).toHaveBeenCalledWith("agent_command", {
-      payload: expect.stringContaining("file-diff-snapshot-tool-edit"),
-    });
-    const persistedCall = invokeMock.mock.calls.find(
-      ([cmd, payload]) =>
-        cmd === "agent_command" &&
-        typeof (payload as { payload?: unknown })?.payload === "string" &&
-        (payload as { payload: string }).payload.includes(
-          "file-diff-snapshot-tool-edit",
-        ),
+    expect(invokeMock).not.toHaveBeenCalledWith(
+      "git_file_diff",
+      expect.anything(),
     );
-    expect(persistedCall).toBeTruthy();
-    const persistedPayload = JSON.parse(
-      (persistedCall?.[1] as { payload: string }).payload,
+    expect(invokeMock).not.toHaveBeenCalledWith(
+      "agent_command",
+      expect.anything(),
     );
-    expect(persistedPayload).toMatchObject({
-      type: "local_chat_message",
-      tabId: "tab-1",
-      payload: {
-        role: "agent",
-        a2ui: {
-          components: [
-            {
-              id: "tool-edit",
-              type: "tool-card",
-              props: {
-                fileChange: {
-                  path: "src/App.tsx",
-                  preview: expect.stringContaining("+new title"),
-                  additions: 1,
-                  deletions: 1,
-                },
-              },
-            },
-          ],
+
+    fireEvent.click(screen.getByTitle("Open diff for src/App.tsx"));
+    expect(onEvent).toHaveBeenCalledWith(
+      "tool-file-diff",
+      {
+        filePath: "src/App.tsx",
+        rootPath: "/repo/aethon",
+        diffSnapshot: {
+          format: "unified",
+          content:
+            "diff --git a/src/App.tsx b/src/App.tsx\n@@ -1 +1 @@\n-old title\n+new title\n",
+          additions: 1,
+          deletions: 1,
+          source: "tool-card",
         },
       },
-    });
+      "tool-edit",
+    );
   });
 
   it("keeps stopped generic tool output hidden when tool calls are off", () => {

@@ -75,3 +75,34 @@ describe("toggleEditorPreview", () => {
     expect(tabOf("t2").editor?.previewMode).toBeUndefined();
   });
 });
+
+describe("updateEditorMeta", () => {
+  it("clears diff metadata when converting a snapshot diff tab to edit mode", () => {
+    const diffSnapshot = {
+      format: "unified" as const,
+      content: "--- a/src/App.tsx\n+++ b/src/App.tsx\n@@\n-old\n+new",
+      source: "tool-card" as const,
+    };
+    const tab = {
+      id: "diff",
+      kind: "editor",
+      label: "App.tsx (diff)",
+      editor: {
+        filePath: "/r/src/App.tsx",
+        language: "typescript",
+        isDirty: false,
+        diff: true,
+        diffSnapshot,
+      },
+    } as unknown as Tab;
+    const { actions, tabOf } = makeActions([tab], "diff");
+
+    actions.updateEditorMeta("diff", {
+      diff: false,
+      diffSnapshot: undefined,
+    });
+
+    expect(tabOf("diff").editor?.diff).toBe(false);
+    expect(tabOf("diff").editor?.diffSnapshot).toBeUndefined();
+  });
+});

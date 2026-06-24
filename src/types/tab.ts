@@ -31,6 +31,14 @@ export interface ShellMeta {
   restartOnMount?: boolean;
 }
 
+export interface EditorDiffSnapshot {
+  format: "unified";
+  content: string;
+  additions?: number;
+  deletions?: number;
+  source: "tool-card";
+}
+
 /**
  * Editor-tab metadata. Present iff Tab.kind === "editor".
  *
@@ -64,6 +72,9 @@ export interface EditorMeta {
    *  (HEAD vs working tree) instead of the editable Monaco editor.
    *  Set by the Source Control / CI panel's "open changes" flow. */
   diff?: boolean;
+  /** Captured diff payload for tool-card diff views. When present the
+   *  diff canvas renders this immutable snapshot instead of consulting git. */
+  diffSnapshot?: EditorDiffSnapshot;
 }
 
 export interface ContextUsageState {
@@ -204,6 +215,9 @@ export interface ClosedTabEntry {
   /** Editor tabs only — passed back to newEditorTab so reopen lands on
    *  the same file. */
   filePath?: string;
+  rootPath?: string;
+  diff?: boolean;
+  diffSnapshot?: EditorDiffSnapshot;
 }
 
 // Sentinel key for the "no project" bucket. Project ids are UUIDs so a

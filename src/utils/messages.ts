@@ -118,6 +118,7 @@ function summarizedA2uiComponent(component: unknown): unknown {
       "isError",
       "startedAt",
       "endedAt",
+      "fileChange",
     ].flatMap((key) => (key in props ? [[key, props[key]]] : [])),
   );
   return {

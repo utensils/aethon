@@ -36,6 +36,7 @@ import type {
   UseProjectOpsActions,
   UseProjectOpsContext,
 } from "./projectOps/types";
+import { diffSnapshotKey } from "../utils/editorDiffSnapshot";
 
 export type {
   DiscoveredSession,
@@ -402,6 +403,7 @@ export function useProjectOps(ctx: UseProjectOpsContext): UseProjectOpsActions {
           language: p.language,
           isDirty: false,
           ...(p.diff ? { diff: true } : {}),
+          ...(p.diffSnapshot ? { diffSnapshot: p.diffSnapshot } : {}),
           ...(typeof p.cursorLine === "number"
             ? { cursorLine: p.cursorLine }
             : {}),
@@ -413,7 +415,11 @@ export function useProjectOps(ctx: UseProjectOpsContext): UseProjectOpsActions {
     });
     if (restored.length === 0) return;
     const dedupeKey = (t: Tab) =>
-      `${t.editor?.filePath}::${t.editor?.diff ? "d" : "e"}`;
+      [
+        t.editor?.filePath,
+        t.editor?.diff ? "d" : "e",
+        diffSnapshotKey(t.editor?.diffSnapshot),
+      ].join("::");
     const activeRestored = persisted.activeFilePath
       ? restored.find(
           (t) =>

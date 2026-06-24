@@ -170,6 +170,13 @@ describe("trimMessage", () => {
               toolName: "bash",
               description: "nix flake check",
               startedAt: 1,
+              fileChange: {
+                kind: "edited",
+                path: "src/App.tsx",
+                preview: "--- a/src/App.tsx\n+++ b/src/App.tsx\n@@\n-old\n+new",
+                additions: 1,
+                deletions: 1,
+              },
             },
             children: Array.from({ length: 16 }, (_, index) => ({
               id: `tool-1-call-1-result-${index}`,
@@ -190,6 +197,10 @@ describe("trimMessage", () => {
         toolName: "bash",
         description: "nix flake check",
         startedAt: 1,
+        fileChange: {
+          path: "src/App.tsx",
+          preview: expect.stringContaining("+new"),
+        },
       },
       children: [],
     });
