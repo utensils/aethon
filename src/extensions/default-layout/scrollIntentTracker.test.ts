@@ -28,12 +28,12 @@ describe("scrollIntentTracker", () => {
     const input = document.createElement("input");
     scroller.append(input);
 
-    expect(isUserScrollIntentEvent(new KeyboardEvent("keydown", { key: "PageUp" }))).toBe(
-      true,
-    );
-    expect(isUserScrollIntentEvent(new KeyboardEvent("keydown", { key: "Enter" }))).toBe(
-      false,
-    );
+    expect(
+      isUserScrollIntentEvent(new KeyboardEvent("keydown", { key: "PageUp" })),
+    ).toBe(true);
+    expect(
+      isUserScrollIntentEvent(new KeyboardEvent("keydown", { key: "Enter" })),
+    ).toBe(false);
     input.dispatchEvent(new KeyboardEvent("keydown", { key: "PageDown" }));
     const event = new KeyboardEvent("keydown", { key: "PageDown" });
     Object.defineProperty(event, "target", { value: input });
@@ -45,6 +45,7 @@ describe("scrollIntentTracker", () => {
     const scroller = document.createElement("div");
     const tracker = createScrollIntentTracker(onScroll);
     tracker.attach(scroller);
+    scroller.dispatchEvent(new WheelEvent("wheel"));
     tracker.detach();
 
     scroller.dispatchEvent(new WheelEvent("wheel"));

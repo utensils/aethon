@@ -101,6 +101,38 @@ describe("scrollPinScheduler", () => {
     expect(scrollTo).toHaveBeenCalledTimes(1);
   });
 
+  it("resets the settle deadline on cancel before future schedules", () => {
+    const callbacks: FrameRequestCallback[] = [];
+    requestAnimationFrameSpy.mockImplementation(
+      (callback: FrameRequestCallback) => {
+        callbacks.push(callback);
+        return callbacks.length;
+      },
+    );
+    const scroller = document.createElement("div");
+    setScrollerMetrics(scroller, {
+      scrollHeight: 1200,
+      clientHeight: 500,
+      scrollTop: 0,
+    });
+    const { virtuoso } = createVirtuosoMock();
+    const scheduler = createScrollPinScheduler({
+      getScroller: () => scroller,
+      getRowsLength: () => 2,
+      getVirtuoso: () => virtuoso,
+      isFollowing: () => true,
+      updateCanScroll: vi.fn(),
+    });
+
+    scheduler.schedulePin(900);
+    scheduler.cancel();
+    scheduler.schedulePin(50);
+    vi.advanceTimersByTime(60);
+    callbacks[1]?.(60);
+
+    expect(requestAnimationFrameSpy).toHaveBeenCalledTimes(2);
+  });
+
   it("does not run delayed pins after follow is disabled", () => {
     const scroller = document.createElement("div");
     setScrollerMetrics(scroller, {

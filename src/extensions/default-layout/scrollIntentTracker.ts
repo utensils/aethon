@@ -52,6 +52,7 @@ export function createScrollIntentTracker(
   };
 
   const detach = () => {
+    userIntent = false;
     if (!el) return;
     el.removeEventListener("scroll", onScroll);
     for (const eventName of USER_SCROLL_INTENT_EVENTS) {

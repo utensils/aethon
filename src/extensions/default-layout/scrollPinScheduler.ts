@@ -37,6 +37,7 @@ export function createScrollPinScheduler({
     for (const timeoutId of pinTimeouts) {
       window.clearTimeout(timeoutId);
     }
+    pinDeadline = 0;
     pinTimeouts = [];
   };
 
