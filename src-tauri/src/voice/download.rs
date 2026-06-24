@@ -1,4 +1,10 @@
-use super::*;
+use std::path::Path;
+
+use futures_util::StreamExt;
+use tauri::{AppHandle, Emitter};
+use tokio::io::AsyncWriteExt;
+
+use super::{DISTIL_MODEL_FILES, LFM2_HF_REPO, LFM2_MODEL_FILES, VoiceDownloadProgress};
 
 pub(super) async fn download_distil_model(
     app: &AppHandle,

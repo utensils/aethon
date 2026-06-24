@@ -1,4 +1,4 @@
-use super::*;
+use super::{TARGET_SAMPLE_RATE, whisper};
 
 pub(super) fn build_mel_filters(num_mel_bins: usize) -> Vec<f32> {
     let freq_bins = whisper::N_FFT / 2 + 1;
