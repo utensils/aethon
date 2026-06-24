@@ -2,8 +2,10 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import {
   bridgeDispatchDecision,
   createBridgePayloadPump,
+  processBridgePayload,
 } from "./useBridgeMessages";
 import { bridgeMessageRefreshesHangWarn } from "./bridgeMessageHandlers/hangWarn";
+import { buildHandlerFixture } from "./bridgeMessageHandlers/testFixtures";
 
 const activeTabs = () => new Set(["tab-active", "tab-two"]);
 
@@ -116,6 +118,78 @@ describe("createBridgePayloadPump", () => {
     vi.runOnlyPendingTimers();
 
     expect(processed).toEqual([]);
+  });
+});
+
+describe("processBridgePayload", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  test("ignores non-JSON bridge lines without acking", () => {
+    const { ctx } = buildHandlerFixture();
+    const ack = vi.fn();
+
+    processBridgePayload(
+      "not json",
+      {
+        ctx,
+        bootLayout: { components: [] },
+        onBootError: vi.fn(),
+      },
+      ack,
+    );
+
+    expect(ack).not.toHaveBeenCalled();
+  });
+
+  test("acks handler exceptions as failed mutations", () => {
+    const { ctx, mocks } = buildHandlerFixture();
+    const ack = vi.fn();
+    mocks.hydrateFrontendModules.mockImplementation(() => {
+      throw new Error("hydrate exploded");
+    });
+    vi.spyOn(console, "error").mockImplementation(() => {});
+
+    processBridgePayload(
+      JSON.stringify({
+        type: "extension_frontend_modules",
+        mutationId: "m-handler",
+        modules: [],
+      }),
+      {
+        ctx,
+        bootLayout: { components: [] },
+        onBootError: vi.fn(),
+      },
+      ack,
+    );
+
+    expect(ack).toHaveBeenCalledWith("m-handler", false, "hydrate exploded");
+  });
+
+  test("does not ack handler exceptions without a mutation id", () => {
+    const { ctx, mocks } = buildHandlerFixture();
+    const ack = vi.fn();
+    mocks.hydrateFrontendModules.mockImplementation(() => {
+      throw new Error("hydrate exploded");
+    });
+    vi.spyOn(console, "error").mockImplementation(() => {});
+
+    processBridgePayload(
+      JSON.stringify({
+        type: "extension_frontend_modules",
+        modules: [],
+      }),
+      {
+        ctx,
+        bootLayout: { components: [] },
+        onBootError: vi.fn(),
+      },
+      ack,
+    );
+
+    expect(ack).not.toHaveBeenCalled();
   });
 });
 
