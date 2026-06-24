@@ -19,7 +19,6 @@
 import {
   useCallback,
   useEffect,
-  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -29,17 +28,11 @@ import type { ChatAttachment } from "../../../types/a2ui";
 import { resolvePointer } from "../../../utils/jsonPointer";
 import { DEFAULT_WORKSPACE_BASE_BRANCH } from "../../../projects";
 import { saveClipboardImageAttachment } from "../../../utils/imageAttachments";
-import { useVoiceHotkey } from "../../../hooks/useVoiceHotkey";
-import { useVoiceInput } from "../../../hooks/useVoiceInput";
-import {
-  insertTranscriptAtSelection,
-  shouldOpenVoiceSettingsForError,
-} from "../../../utils/voice";
 import { ImageAttachmentImage } from "../image-attachment-image";
 import { ImageLightbox } from "../image-lightbox";
 import { AtPicker } from "../at-picker";
-import { formatAtMentionInsertion, type AtMentionMatch } from "../at-mention";
-import { useAtMention } from "../use-at-mention";
+import { useAtMentionTextarea } from "../use-at-mention-textarea";
+import { useTextareaVoiceInput } from "../use-textarea-voice-input";
 import { VoiceInputButton, VoiceStatus } from "../voice-controls";
 
 interface ProjectLite {
@@ -286,44 +279,25 @@ export function TaskLauncher({
   // workspace, else the project root (a "+ New workspace" forks from the
   // project, so its files are the right suggestions too).
   const launcherRef = useRef<HTMLDivElement | null>(null);
-  const [cursor, setCursor] = useState(0);
   const atRoot =
     workspaceChoice.kind === "existing"
       ? workspaceChoice.path
       : (selectedProject?.path ?? null);
   const {
     atMatch,
-    highlightIdx: atHighlightIdx,
-    setHighlightIdx: setAtHighlightIdx,
-    dismissPicker: dismissAtPicker,
-  } = useAtMention({
+    atHighlightIdx,
+    setAtHighlightIdx,
+    setCursor,
+    insertAtMention,
+    handleAtMentionKeyDown,
+  } = useAtMentionTextarea({
     value: promptText,
-    cursor,
+    setValue: setPromptText,
+    onValueCommit: () => setTouched(true),
+    textareaRef,
     root: atRoot,
     enabled: !submitting,
   });
-
-  const insertAtMention = useCallback(
-    (m: AtMentionMatch) => {
-      if (!atMatch) return;
-      const insertion = formatAtMentionInsertion(m);
-      const next =
-        promptText.slice(0, atMatch.start) +
-        insertion +
-        promptText.slice(atMatch.end);
-      const nextCursor = atMatch.start + insertion.length;
-      setPromptText(next);
-      setTouched(true);
-      setCursor(nextCursor);
-      requestAnimationFrame(() => {
-        const el = textareaRef.current;
-        if (!el) return;
-        el.focus();
-        el.selectionStart = el.selectionEnd = nextCursor;
-      });
-    },
-    [atMatch, promptText],
-  );
 
   const submitPrompt = useCallback((rawPrompt: string) => {
     if (submitting) return;
@@ -375,50 +349,13 @@ export function TaskLauncher({
     submitPrompt(promptText);
   }, [promptText, submitPrompt]);
 
-  const handleTranscript = useCallback(
-    (transcript: string, options?: { autoSend?: boolean }) => {
-      const textarea = textareaRef.current;
-      const start = textarea?.selectionStart ?? promptText.length;
-      const end = textarea?.selectionEnd ?? promptText.length;
-      const next = insertTranscriptAtSelection(
-        textarea?.value ?? promptText,
-        transcript,
-        start,
-        end,
-      );
-      setPromptText(next.text);
-      setTouched(true);
-      setCursor(next.cursor);
-      if (options?.autoSend && next.text.trim().length > 0) {
-        submitPrompt(next.text);
-        return;
-      }
-      requestAnimationFrame(() => {
-        const el = textareaRef.current;
-        if (!el) return;
-        el.focus();
-        el.selectionStart = el.selectionEnd = next.cursor;
-      });
-    },
-    [promptText, submitPrompt],
-  );
   // The dashboard task-launcher and the composer both mount at once — the
   // layout grid hides cells with display:none rather than unmounting — so each
   // registers the same global voice hotkey against one shared mic. Track
   // whether this dashboard actually owns the canvas (mirrors the
   // project-dashboard's `visible: /emptyAndProject` binding) so it neither
-  // starts while hidden nor keeps holding the slot after being hidden;
-  // otherwise both hotkeys fire and the loser reports "already active".
+  // starts while hidden nor keeps holding the slot after being hidden.
   const voiceSurfaceVisible = !!state.emptyAndProject;
-  const voice = useVoiceInput(
-    handleTranscript,
-    (providerId) => {
-      onEvent("voice:setup", { providerId });
-    },
-    { surfaceActive: voiceSurfaceVisible },
-  );
-  const voiceState = voice.state;
-  const cancelVoice = voice.cancel;
   const voiceConfig = (state.voice as
     | {
         toggleHotkey?: string | null;
@@ -428,93 +365,27 @@ export function TaskLauncher({
   const settings = state.settings as { open?: boolean } | undefined;
   const palette = state.commandPalette as { open?: boolean } | undefined;
   const search = state.search as { open?: boolean } | undefined;
-  const voiceInputBlocked =
-    submitting ||
-    !voiceSurfaceVisible ||
-    !!settings?.open ||
-    !!palette?.open ||
-    !!search?.open;
-  const voiceInputBlockedRef = useRef(voiceInputBlocked);
-  useLayoutEffect(() => {
-    voiceInputBlockedRef.current = voiceInputBlocked;
-  }, [voiceInputBlocked]);
-  const isVoiceInputBlocked = useCallback(
-    () => voiceInputBlockedRef.current,
-    [],
-  );
-  useVoiceHotkey(
-    voice,
-    voiceConfig.toggleHotkey ?? "mod+shift+m",
-    voiceConfig.holdHotkey ?? null,
-    isVoiceInputBlocked,
-  );
-  useEffect(() => {
-    if (voiceState !== "recording") return;
-    const onKeyDown = (event: globalThis.KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      event.preventDefault();
-      event.stopPropagation();
-      cancelVoice();
-    };
-    window.addEventListener("keydown", onKeyDown, true);
-    return () => window.removeEventListener("keydown", onKeyDown, true);
-  }, [voiceState, cancelVoice]);
-  const [reducedMotion, setReducedMotion] = useState(() => {
-    if (typeof window === "undefined" || !window.matchMedia) return false;
-    return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  });
-  useEffect(() => {
-    if (typeof window === "undefined" || !window.matchMedia) return;
-    const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
-    const onChange = (event: MediaQueryListEvent) =>
-      setReducedMotion(event.matches);
-    mq.addEventListener?.("change", onChange);
-    return () => mq.removeEventListener?.("change", onChange);
-  }, []);
-  const useDynamicMeter =
-    !reducedMotion && voice.activeProvider?.recordingMode === "native";
-  const voiceErrorOpensSettings = shouldOpenVoiceSettingsForError(
-    voice.activeProvider,
-  );
+  const { voice, useDynamicMeter, voiceErrorOpensSettings } =
+    useTextareaVoiceInput({
+      value: promptText,
+      setValue: setPromptText,
+      onValueCommit: () => setTouched(true),
+      setCursor,
+      textareaRef,
+      surfaceActive: voiceSurfaceVisible,
+      disabled: submitting,
+      overlays: {
+        settingsOpen: settings?.open,
+        paletteOpen: palette?.open,
+        searchOpen: search?.open,
+      },
+      voiceConfig,
+      onNeedsSetup: (providerId) => onEvent("voice:setup", { providerId }),
+      onAutoSend: submitPrompt,
+    });
 
   const onKey = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (atMatch) {
-      const list = atMatch.matches;
-      if (e.key === "ArrowDown") {
-        e.preventDefault();
-        setAtHighlightIdx((i) => (i + 1) % list.length);
-        return;
-      }
-      if (e.key === "ArrowUp") {
-        e.preventDefault();
-        setAtHighlightIdx((i) => (i - 1 + list.length) % list.length);
-        return;
-      }
-      if (e.key === "Tab") {
-        e.preventDefault();
-        const match = list[atHighlightIdx] ?? list[0];
-        if (match) insertAtMention(match);
-        return;
-      }
-      if (e.key === "Enter" && !e.shiftKey) {
-        const match = list[atHighlightIdx] ?? list[0];
-        // A hand-typed exact file reference submits; partial tokens and agent
-        // mentions complete first.
-        const exactFile = list.some(
-          (m) => m.kind === "file" && m.rel === atMatch.query,
-        );
-        if (match?.kind === "agent" || !exactFile) {
-          e.preventDefault();
-          if (match) insertAtMention(match);
-          return;
-        }
-      }
-      if (e.key === "Escape") {
-        e.preventDefault();
-        dismissAtPicker();
-        return;
-      }
-    }
+    if (handleAtMentionKeyDown(e)) return;
     // Plain Enter submits; Shift+Enter adds a newline. Matches the main
     // chat composer. Cmd/Ctrl+Enter also submits for users who hold
     // modifiers out of habit.
