@@ -1,0 +1,691 @@
+/* ---- Terminal ----------------------------------------------------------- */
+
+/* The terminal cell is auto-rowed in the grid, so it sizes to its content.
+   We give the terminal a fixed default height when shown — users can resize
+   later via a drag handle (M2/M3). */
+.a2ui-terminal {
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  border-top: 1px solid var(--border);
+  height: min(240px, max(120px, calc(var(--app-viewport-height) - 120px)));
+  width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  animation: a2ui-terminal-rise 160ms ease-out;
+}
+
+@keyframes a2ui-terminal-rise {
+  from {
+    transform: translateY(8px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.a2ui-terminal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 10px;
+  background: var(--bg-elev);
+  border-bottom: 1px solid var(--border);
+  font-size: var(--chrome-text-muted);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.a2ui-terminal-mount {
+  flex: 1;
+  min-height: 0;
+  padding: 6px;
+  width: 100%;
+  overflow: hidden;
+}
+
+.ae-terminal-panel .a2ui-terminal {
+  height: 100%;
+  min-height: 0;
+  border-top: 0;
+  animation: none;
+}
+
+.ae-terminal-panel .xterm .xterm-viewport {
+  background-color: var(--terminal-bg, var(--bg)) !important;
+  scrollbar-color: var(--scrollbar-thumb) transparent !important;
+  scrollbar-width: thin !important;
+}
+
+.ae-terminal-panel .xterm .xterm-viewport::-webkit-scrollbar {
+  width: var(--scrollbar-size) !important;
+  height: var(--scrollbar-size) !important;
+}
+
+.ae-terminal-panel .xterm .xterm-viewport::-webkit-scrollbar-track {
+  background: transparent !important;
+}
+
+.ae-terminal-panel .xterm .xterm-viewport::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb) !important;
+  border-radius: var(--radius-sm) !important;
+}
+
+.ae-terminal-panel .xterm .xterm-viewport::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover) !important;
+}
+
+.ae-terminal-panel .xterm .xterm-scrollable-element > .scrollbar.vertical {
+  left: auto !important;
+  right: 0 !important;
+  width: var(--scrollbar-size) !important;
+}
+
+.ae-terminal-panel .xterm .xterm-scrollable-element > .scrollbar.horizontal {
+  bottom: 0 !important;
+  height: var(--scrollbar-size) !important;
+}
+
+.ae-terminal-panel .xterm .xterm-scrollable-element > .scrollbar > .slider {
+  background: var(--scrollbar-thumb) !important;
+  border-radius: var(--radius-sm) !important;
+}
+
+.ae-terminal-panel
+  .xterm
+  .xterm-scrollable-element
+  > .scrollbar.vertical
+  > .slider {
+  left: 0 !important;
+  right: 0 !important;
+  width: var(--scrollbar-size) !important;
+}
+
+.ae-terminal-panel
+  .xterm
+  .xterm-scrollable-element
+  > .scrollbar.horizontal
+  > .slider {
+  bottom: 0 !important;
+  height: var(--scrollbar-size) !important;
+}
+
+.ae-terminal-panel
+  .xterm
+  .xterm-scrollable-element
+  > .scrollbar
+  > .slider:hover,
+.ae-terminal-panel
+  .xterm
+  .xterm-scrollable-element
+  > .scrollbar
+  > .slider.active {
+  background: var(--scrollbar-thumb-hover) !important;
+}
+
+.ae-agent-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 9px;
+  border-radius: 6px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: var(--chrome-text-compact);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-weight: 600;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 18ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ae-agent-pill-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 99px;
+  background: var(--accent);
+  animation: ae-pill-pulse 1.6s ease-in-out infinite;
+}
+
+/* ---------------------------------------------------------------------------
+ * Command palette — modal opened by ⌘P / ⌘⇧P. Renders at App root so
+ * it overlays every layout. Backdrop dims the workspace; panel is
+ * centered, fixed-width, key/screen-reader navigable.
+ * ------------------------------------------------------------------------ */
+
+.ae-palette-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: var(--app-viewport-width);
+  height: var(--app-viewport-height);
+  z-index: var(--z-overlay);
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding-top: 12vh;
+  background: color-mix(
+    in srgb,
+    var(--bg) calc(var(--opacity-overlay-scrim) * 100%),
+    transparent
+  );
+  backdrop-filter: blur(6px);
+  animation: ae-palette-fade var(--motion-fast) var(--ease-out);
+}
+@keyframes ae-palette-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.ae-palette-panel {
+  width: min(640px, calc(var(--app-viewport-width) - 24px));
+  max-height: min(70vh, calc(var(--app-viewport-height) - 24px));
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow:
+    var(--shadow-overlay),
+    0 0 0 1px var(--accent-soft);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  animation: ae-palette-pop var(--motion-base) var(--ease-out-strong);
+}
+@keyframes ae-palette-pop {
+  from {
+    transform: translateY(-6px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.ae-palette-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+  min-width: 0;
+}
+.ae-palette-icon {
+  font-family: var(--font-mono);
+  font-size: var(--text-md);
+  color: var(--accent);
+}
+.ae-palette-input {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--text);
+  font-size: var(--text-md);
+  font-family: inherit;
+  padding: 2px 0;
+}
+.ae-palette-input::placeholder {
+  color: var(--text-dim);
+}
+.ae-palette-mode {
+  font-size: var(--chrome-text-muted);
+  font-family: var(--font-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 2px 6px;
+  flex-shrink: 0;
+}
+
+.ae-palette-list {
+  flex: 1;
+  overflow-y: auto;
+  overscroll-behavior: none;
+  padding: 4px 0;
+}
+
+.ae-palette-empty {
+  padding: 18px 14px;
+  color: var(--text-dim);
+  font-size: var(--text-sm);
+  text-align: center;
+}
+
+.ae-palette-section + .ae-palette-section {
+  border-top: 1px solid var(--border);
+  margin-top: 4px;
+  padding-top: 4px;
+}
+.ae-palette-section-title {
+  padding: 6px 14px 2px;
+  font-size: var(--chrome-text-muted);
+  font-family: var(--font-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-dim);
+}
+
+.ae-palette-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  cursor: pointer;
+  font-size: var(--text-sm);
+  line-height: 1.3;
+  min-width: 0;
+  /* Reserve space for the active-row accent rail so non-active rows
+     don't shift on highlight transitions. */
+  border-left: 3px solid transparent;
+}
+.ae-palette-row-active {
+  background: var(--accent-soft);
+  border-left-color: var(--accent);
+}
+.ae-palette-row-active .ae-palette-row-label {
+  color: var(--accent);
+  font-weight: 500;
+}
+.ae-palette-row-label {
+  color: var(--text);
+  flex: 0 1 auto;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ae-palette-row-hint {
+  color: var(--text-dim);
+  font-size: var(--chrome-text-compact);
+  flex: 1 1 auto;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ae-palette-row-shortcut {
+  margin-left: auto;
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: var(--chrome-text-muted);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 6px;
+  flex-shrink: 0;
+}
+
+.ae-palette-footer {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  padding: 8px 14px;
+  border-top: 1px solid var(--border);
+  font-size: var(--chrome-text-muted);
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  min-width: 0;
+  flex-wrap: wrap;
+}
+.ae-palette-footer kbd {
+  font-family: inherit;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 0 5px;
+  margin-right: 2px;
+}
+.ae-palette-footer-tip {
+  margin-left: auto;
+  min-width: 0;
+}
+
+/* ---------------------------------------------------------------------------
+ * Notification stack — fixed top-right toast pile. Auto-dismissing by
+ * default; sticky toasts (with actions) remain until user input.
+ * ------------------------------------------------------------------------ */
+
+.ae-notification-stack {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  z-index: 900;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: min(360px, calc(var(--app-viewport-width) - 32px));
+  pointer-events: none; /* let clicks fall through gaps; toasts re-enable */
+}
+.ae-notification {
+  pointer-events: auto;
+  display: flex;
+  gap: 10px;
+  padding: 10px 12px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-left-width: 3px;
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  font-size: var(--text-sm);
+  color: var(--text);
+  animation: ae-notification-slide 180ms ease-out;
+  align-items: flex-start;
+  min-width: 0;
+}
+@keyframes ae-notification-slide {
+  from {
+    transform: translateX(8px);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+.ae-notification-info {
+  border-left-color: var(--accent);
+}
+.ae-notification-success {
+  border-left-color: color-mix(in oklab, var(--accent) 30%, #34c759 70%);
+}
+.ae-notification-warning {
+  border-left-color: color-mix(in oklab, var(--accent) 60%, #f5a623 40%);
+}
+.ae-notification-error {
+  border-left-color: color-mix(in oklab, var(--accent) 50%, #ef3b3b 50%);
+}
+
+.ae-notification-glyph {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  margin-top: 1px;
+  color: var(--accent);
+}
+.ae-notification-success .ae-notification-glyph {
+  color: color-mix(in oklab, var(--accent) 30%, #34c759 70%);
+}
+.ae-notification-warning .ae-notification-glyph {
+  color: color-mix(in oklab, var(--accent) 60%, #f5a623 40%);
+}
+.ae-notification-error .ae-notification-glyph {
+  color: color-mix(in oklab, var(--accent) 50%, #ef3b3b 50%);
+}
+
+.ae-notification-body {
+  flex: 1;
+  min-width: 0;
+}
+.ae-notification-title {
+  font-weight: 600;
+  line-height: 1.3;
+  word-break: break-word;
+}
+.ae-notification-message {
+  margin-top: 3px;
+  color: var(--text-dim);
+  font-size: var(--chrome-text-compact);
+  line-height: 1.4;
+  word-break: break-word;
+}
+.ae-notification-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+.ae-notification-action {
+  padding: 3px 9px;
+  border-radius: 5px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text);
+  font-size: var(--chrome-text-compact);
+  font-family: inherit;
+  cursor: pointer;
+}
+.ae-notification-action:hover {
+  background: var(--accent-hover-tint);
+  border-color: var(--accent);
+}
+
+.ae-notification-close {
+  background: transparent;
+  border: none;
+  color: var(--text-dim);
+  font-size: 1.05rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 4px;
+  margin-left: 2px;
+}
+.ae-notification-close:hover {
+  color: var(--text);
+}
+
+/* =============================================================================
+   Terminal panel — tabbed bottom-of-screen surface (M6 restructure).
+   Hosts the read-only Agent bash sub-tab plus every user shell as a
+   separate sub-tab pill. The active sub-tab fills the body below.
+   ============================================================================= */
+
+.ae-terminal-panel {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-elev);
+  border-top: 1px solid var(--border);
+  min-height: 0;
+  height: 100%;
+  opacity: 1;
+  transition: opacity var(--motion-panel) var(--ease-panel);
+}
+.ae-terminal-panel.is-closed {
+  opacity: 0;
+  pointer-events: none;
+}
+.ae-terminal-panel-resize-handle {
+  position: absolute;
+  top: -4px;
+  left: 0;
+  right: 0;
+  height: 8px;
+  cursor: ns-resize;
+  z-index: 2;
+}
+.ae-terminal-panel-resize-handle::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 3px;
+  height: 1px;
+  background: transparent;
+}
+.ae-terminal-panel-resize-handle:hover::before,
+body.ae-resizing-terminal .ae-terminal-panel-resize-handle::before {
+  background: var(--accent);
+}
+body.ae-resizing-terminal,
+body.ae-resizing-terminal * {
+  cursor: ns-resize !important;
+  user-select: none !important;
+}
+.ae-terminal-panel-tabs {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+  padding: 0 8px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.ae-terminal-panel-tabs-dragging,
+.ae-terminal-panel-tabs-dragging .ae-sub-tab {
+  cursor: grabbing;
+}
+
+.ae-sub-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  font-size: var(--chrome-text-compact);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--text-dim);
+  border: 1px solid transparent;
+  border-bottom: none;
+  border-radius: 6px 6px 0 0;
+  cursor: grab;
+  white-space: nowrap;
+  user-select: none;
+  margin-top: 2px;
+  position: relative;
+  transition:
+    color var(--motion-fast) var(--ease-out),
+    background var(--motion-fast) var(--ease-out),
+    border-color var(--motion-fast) var(--ease-out),
+    opacity var(--motion-fast) var(--ease-out),
+    box-shadow var(--motion-fast) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out);
+}
+.ae-sub-tab:hover {
+  background: color-mix(in oklab, var(--accent) 8%, transparent);
+}
+.ae-sub-tab:active {
+  cursor: grabbing;
+}
+.ae-sub-tab:not([data-sub-tab-id]) {
+  cursor: pointer;
+}
+.ae-sub-tab-dragging {
+  z-index: var(--z-elevated);
+  color: var(--text);
+  background: var(--bg-active);
+  border-color: var(--border-hover);
+  opacity: 0.95;
+  transform: translate3d(var(--ae-tab-drag-x, 0px), -2px, 0);
+  box-shadow:
+    0 0 0 1px var(--border-hover),
+    var(--shadow-2);
+  transition:
+    color var(--motion-fast) var(--ease-out),
+    background var(--motion-fast) var(--ease-out),
+    border-color var(--motion-fast) var(--ease-out),
+    opacity var(--motion-fast) var(--ease-out),
+    box-shadow var(--motion-fast) var(--ease-out),
+    transform 0ms linear;
+}
+.ae-sub-tab-drop-before,
+.ae-sub-tab-drop-after {
+  background: var(--accent-hover-tint);
+}
+.ae-sub-tab-drop-before::before,
+.ae-sub-tab-drop-after::before {
+  content: "";
+  position: absolute;
+  top: 5px;
+  bottom: 5px;
+  width: 3px;
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+  pointer-events: none;
+  z-index: 1;
+}
+.ae-sub-tab-drop-before::before {
+  left: -2px;
+}
+.ae-sub-tab-drop-after::before {
+  right: -2px;
+}
+.ae-sub-tab-active {
+  background: var(--bg-elev);
+  border-color: var(--border);
+  color: var(--text);
+}
+.ae-sub-tab-label {
+  flex: 0 0 auto;
+}
+.ae-sub-tab-hint {
+  font-size: var(--chrome-text-muted);
+  color: var(--text-dim);
+  font-style: italic;
+}
+.ae-sub-tab-close {
+  background: transparent;
+  border: 0;
+  color: var(--text-dim);
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 2px;
+  margin-left: 2px;
+}
+.ae-sub-tab-close:hover {
+  color: var(--text);
+}
+.ae-terminal-panel-new {
+  background: transparent;
+  border: 0;
+  color: var(--text-dim);
+  font-size: 1rem;
+  cursor: pointer;
+  padding: 0 10px;
+  align-self: stretch;
+}
+.ae-terminal-panel-new:hover {
+  color: var(--accent);
+  background: color-mix(in oklab, var(--accent) 8%, transparent);
+}
+.ae-terminal-panel-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.ae-terminal-panel-body > * {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* Empty placeholder when the panel is open on the overview but no shell
+   sessions exist yet — the body needs *some* content so the panel still
+   renders its frame. */
+.ae-terminal-panel-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  color: var(--text-dim);
+  font-size: var(--chrome-text);
+  text-align: center;
+  gap: 6px;
+}
+.ae-terminal-panel-empty kbd {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  margin: 0 2px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: var(--bg-elev);
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+  color: var(--text);
+}
+

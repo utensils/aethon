@@ -1,0 +1,1628 @@
+/* ---- Sidebar ------------------------------------------------------------ */
+
+.a2ui-sidebar {
+  display: flex;
+  flex-direction: column;
+  /* Transparent so the sidebar inherits .ae-sidebar-area's gradient
+     wash; falls back to --bg if nested outside the wrapper. */
+  background: transparent;
+  border-right: 1px solid var(--border);
+  height: 100%;
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  overscroll-behavior: none;
+  position: relative;
+  /* Shared gutter geometry for the project → workspace hierarchy. The
+     stacked project row lays out as [chevron][icon][stacked text]; these
+     drive where the workspace indent + guide line land so a workspace
+     label sits under its project name and the guide descends through the
+     project's icon column. Change here, both follow. */
+  --ae-sb-chevron: 16px;
+  --ae-sb-icon: 18px;
+  --ae-sb-row-pad-x: 10px;
+  --ae-sb-row-gap: 8px;
+  /* label start (within the li padding box) = pad + chevron + gap + icon + gap */
+  --ae-sb-indent: calc(
+    var(--ae-sb-row-pad-x) + var(--ae-sb-chevron) + var(--ae-sb-row-gap) +
+      var(--ae-sb-icon) + var(--ae-sb-row-gap)
+  );
+  /* guide line at the icon column centre */
+  --ae-sb-guide: calc(
+    var(--ae-sb-row-pad-x) + var(--ae-sb-chevron) + var(--ae-sb-row-gap) +
+      (var(--ae-sb-icon) / 2)
+  );
+}
+
+/* Files sidebar (right column) — quiet, seamless. No top/bottom dividers
+   inside the panel; the grid column itself is the only visual seam. */
+.ae-files-sidebar-area {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background: var(--bg);
+  border-left: 1px solid var(--border);
+  overflow: hidden;
+}
+
+/* ---- File tree (sibling of .a2ui-sidebar inside .ae-sidebar-area) ------ */
+
+.ae-file-tree,
+.ae-file-tree *:not([data-selectable]) {
+  /* Cover every descendant — single rows, the titlebar, the resize
+     handle. Opt-out via `data-selectable` for path-like strings the
+     user might want to copy (project label, file row label, branch). */
+  user-select: none;
+  -webkit-user-select: none;
+}
+.ae-file-tree {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--text-dim);
+  min-height: 0;
+}
+.ae-file-tree.is-collapsed {
+  flex: 0 0 auto;
+}
+.ae-file-tree-empty {
+  padding-bottom: 6px;
+}
+.ae-file-tree-error {
+  padding: 6px 12px;
+  color: var(--text-error, #d6655a);
+  font-size: var(--chrome-text-muted);
+}
+.ae-file-tree-titlebar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0 var(--space-3);
+  min-height: 38px;
+  height: 38px;
+  flex: 0 0 auto;
+  background: transparent;
+  /* Matches the app-header / sidebar-title divider so the y=38 rule is
+     continuous across all three columns. When the source-control panel
+     is present it sits above this row (with its own 38px titlebar), so
+     this border then reads as the files section header — still aligned. */
+  border-bottom: 1px solid var(--border);
+}
+.ae-file-tree-toggle {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  background: transparent;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  text-align: left;
+  font: inherit;
+  color: var(--text);
+  cursor: pointer;
+  overflow: hidden;
+}
+.ae-file-tree-toggle:hover .ae-file-tree-title {
+  color: var(--accent);
+}
+.ae-file-tree-chevron {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  flex-shrink: 0;
+  color: var(--text-secondary, var(--text-dim));
+  opacity: 0.85;
+  transition: opacity var(--motion-fast) var(--ease-out);
+}
+.ae-file-tree-toggle:hover .ae-file-tree-chevron {
+  opacity: 1;
+  color: var(--text);
+}
+.ae-file-tree-title {
+  font-size: var(--chrome-text);
+  font-weight: 500;
+  letter-spacing: 0;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 0 1 auto;
+  transition: color var(--motion-fast) var(--ease-out);
+}
+.ae-file-tree-branch {
+  flex: 0 1 auto;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: var(--chrome-text-muted);
+  color: var(--accent);
+  opacity: 0.85;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-left: var(--space-1);
+}
+.ae-file-tree-hide {
+  background: transparent;
+  border: 0;
+  padding: 0 4px;
+  margin: 0;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 1.05em;
+  line-height: 1;
+}
+.ae-file-tree-hide:hover {
+  color: var(--text);
+}
+/* Header toolbar — VS Code Explorer-style actions, revealed on hover/focus. */
+.ae-file-tree-actions {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  flex: 0 0 auto;
+  margin-left: auto;
+  opacity: 0;
+  transition: opacity var(--motion-fast) var(--ease-out);
+}
+.ae-file-tree-titlebar:hover .ae-file-tree-actions,
+.ae-file-tree-titlebar:focus-within .ae-file-tree-actions {
+  opacity: 1;
+}
+.ae-file-tree-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+  border-radius: var(--radius-sm, 4px);
+  transition:
+    color var(--motion-fast) var(--ease-out),
+    background var(--motion-fast) var(--ease-out);
+}
+.ae-file-tree-action:hover {
+  color: var(--text);
+  background: var(--bg-hover);
+}
+.ae-file-tree-action:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+.ae-file-tree-action:disabled:hover {
+  color: var(--text-dim);
+  background: transparent;
+}
+.ae-file-tree-resize-handle {
+  position: absolute;
+  top: -3px;
+  left: 0;
+  right: 0;
+  height: 6px;
+  cursor: ns-resize;
+  z-index: 10;
+  background: transparent;
+  transition: background 120ms ease;
+}
+.ae-file-tree-resize-handle:hover,
+body.ae-resizing-sidebar .ae-file-tree-resize-handle {
+  background: linear-gradient(
+    to bottom,
+    transparent 0,
+    transparent 2px,
+    var(--accent, #ff6a18) 2px,
+    var(--accent, #ff6a18) 4px,
+    transparent 4px
+  );
+}
+.ae-file-tree-sidebar-resize-handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -3px;
+  width: 6px;
+  cursor: ew-resize;
+  z-index: 12;
+  background: transparent;
+  transition: background 120ms ease;
+}
+.ae-file-tree-sidebar-resize-handle:hover,
+body.ae-resizing-sidebar .ae-file-tree-sidebar-resize-handle {
+  background: linear-gradient(
+    to right,
+    transparent 0,
+    transparent 2px,
+    var(--accent, #ff6a18) 2px,
+    var(--accent, #ff6a18) 4px,
+    transparent 4px
+  );
+}
+.ae-file-tree-list {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 8px 0;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: none;
+}
+.ae-file-tree-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 5px 8px 5px 6px;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: var(--font-size-sidebar);
+  line-height: 1.4;
+}
+.ae-file-tree-row:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+/* The file open in the focused editor tab — accent wash + left bar. */
+.ae-file-tree-row.is-active {
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+.ae-file-tree-row.is-active .ae-file-tree-label {
+  color: var(--text);
+}
+/* Transient highlight after "Reveal in Files Panel" — a brief accent
+   flash that fades so it draws the eye without sticking. */
+.ae-file-tree-row.is-revealed {
+  animation: ae-file-tree-reveal-flash 1.5s ease-out;
+}
+@keyframes ae-file-tree-reveal-flash {
+  0%,
+  35% {
+    background: color-mix(in srgb, var(--accent) 32%, transparent);
+  }
+  100% {
+    background: transparent;
+  }
+}
+/* Indent guides: one faint vertical line per ancestor level. */
+.ae-file-tree-guide {
+  flex: 0 0 12px;
+  align-self: stretch;
+  border-left: 1px solid var(--border);
+  opacity: 0.45;
+}
+.ae-file-tree-row:hover .ae-file-tree-guide {
+  opacity: 0.85;
+}
+.ae-file-tree-chevron-row {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  flex-shrink: 0;
+  color: var(--text-secondary, var(--text-dim));
+  opacity: 0.8;
+  transition: opacity var(--motion-fast) var(--ease-out);
+}
+.ae-file-tree-row:hover .ae-file-tree-chevron-row,
+.ae-file-tree-row.is-dir[aria-expanded="true"] .ae-file-tree-chevron-row {
+  opacity: 1;
+  color: var(--text);
+}
+.ae-file-tree-chevron-spacer {
+  visibility: hidden;
+}
+.ae-file-icon,
+.ae-file-tree-icon {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  display: inline-block;
+  user-select: none;
+  pointer-events: none;
+}
+.ae-file-tree-row.is-dir .ae-file-tree-label {
+  color: var(--text);
+}
+.ae-file-tree-row.is-renaming {
+  cursor: text;
+}
+.ae-file-tree-label {
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ae-file-tree-rename-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 22px;
+  padding: 1px 5px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm);
+  outline: none;
+  background: var(--bg-elevated);
+  color: var(--text);
+  font: inherit;
+  line-height: 1.2;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+.ae-file-tree-rename-input::selection {
+  background: color-mix(in srgb, var(--accent) 35%, transparent);
+}
+/* Color the whole name by git status (VS Code style). Keyed on the row's
+   git-status class regardless of source, so folders carrying a propagated
+   status tint just like the leaf files underneath them — follow the colored
+   trail down to the change. */
+.ae-file-tree-row.git-status-modified .ae-file-tree-label,
+.ae-file-tree-row.git-status-renamed .ae-file-tree-label {
+  color: var(--warn);
+}
+.ae-file-tree-row.git-status-added .ae-file-tree-label,
+.ae-file-tree-row.git-status-untracked .ae-file-tree-label,
+.ae-file-tree-row.git-status-copied .ae-file-tree-label {
+  color: var(--success, #3fb950);
+}
+.ae-file-tree-row.git-status-conflicted .ae-file-tree-label {
+  color: var(--error);
+  font-weight: 600;
+}
+.ae-file-tree-row.git-status-deleted .ae-file-tree-label {
+  color: var(--error);
+  text-decoration: line-through;
+}
+.ae-file-tree-git-decoration {
+  flex: 0 0 auto;
+  min-width: 1.2em;
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: var(--chrome-text-muted);
+  line-height: 1;
+  text-align: right;
+  color: var(--accent);
+  opacity: 0.95;
+}
+/* Folder rollup letters read as secondary to leaf changes. */
+.ae-file-tree-row.git-status-descendant .ae-file-tree-git-decoration {
+  opacity: 0.75;
+}
+.ae-file-tree-row.git-status-modified .ae-file-tree-git-decoration,
+.ae-file-tree-row.git-status-renamed .ae-file-tree-git-decoration {
+  color: var(--warn);
+}
+.ae-file-tree-row.git-status-added .ae-file-tree-git-decoration,
+.ae-file-tree-row.git-status-untracked .ae-file-tree-git-decoration,
+.ae-file-tree-row.git-status-copied .ae-file-tree-git-decoration {
+  color: var(--success, #3fb950);
+}
+.ae-file-tree-row.git-status-deleted .ae-file-tree-git-decoration {
+  color: var(--error);
+}
+.ae-file-tree-row.git-status-conflicted .ae-file-tree-git-decoration {
+  color: var(--error);
+  font-weight: 700;
+}
+/* Ignored paths (node_modules, build dirs, .env…) — dimmed but still
+   expandable so they read as background, not noise. */
+.ae-file-tree-row.is-ignored .ae-file-tree-label,
+.ae-file-tree-row.is-ignored .ae-file-tree-icon,
+.ae-file-tree-row.is-ignored .ae-file-tree-chevron-row {
+  opacity: var(--opacity-muted);
+}
+.ae-file-tree-row.is-ignored .ae-file-tree-label {
+  color: var(--text-dim);
+}
+.ae-file-tree-loading {
+  opacity: var(--opacity-muted);
+}
+
+/* Resize handle — 6px-wide hit target hugging the sidebar's right edge.
+   Visible accent line shows on hover/active so it's discoverable
+   without crowding the chrome when idle. */
+.a2ui-sidebar-resize-handle {
+  position: absolute;
+  top: 0;
+  right: -3px;
+  bottom: 0;
+  width: 6px;
+  cursor: ew-resize;
+  z-index: 10;
+  user-select: none;
+  background: transparent;
+  transition: background 120ms ease;
+}
+.a2ui-sidebar-resize-left {
+  border-right: 0;
+  border-left: 1px solid var(--border);
+}
+
+.a2ui-sidebar-resize-left .a2ui-sidebar-resize-handle {
+  right: auto;
+  left: 0;
+  width: 8px;
+}
+
+.a2ui-sidebar-resize-handle:hover,
+body.ae-resizing-sidebar .a2ui-sidebar-resize-handle {
+  background: linear-gradient(
+    to right,
+    transparent 0,
+    transparent 2px,
+    var(--accent, #ff6a18) 2px,
+    var(--accent, #ff6a18) 4px,
+    transparent 4px
+  );
+}
+
+.a2ui-sidebar-resize-left .a2ui-sidebar-resize-handle:hover,
+body.ae-resizing-sidebar .a2ui-sidebar-resize-left .a2ui-sidebar-resize-handle {
+  background: linear-gradient(
+    to right,
+    transparent 0,
+    transparent 3px,
+    var(--accent, #ff6a18) 3px,
+    var(--accent, #ff6a18) 5px,
+    transparent 5px
+  );
+}
+body.ae-resizing-sidebar {
+  cursor: ew-resize !important;
+  user-select: none;
+}
+body.ae-resizing-sidebar * {
+  cursor: ew-resize !important;
+  user-select: none !important;
+}
+
+body.ae-resizing-sidebar .a2ui-layout {
+  transition: none !important;
+}
+
+.a2ui-sidebar-title {
+  /* Brand row — flush with the header height. Shares the app-header's
+     bottom divider so the y=38 rule runs continuously across all three
+     columns (sidebar / canvas header / file-tree titlebar). */
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 38px;
+  height: 38px;
+  flex-shrink: 0;
+  padding: 0 var(--space-3);
+  font-size: var(--chrome-text);
+  font-weight: 600;
+  letter-spacing: 0;
+  min-width: 0;
+  border-bottom: 1px solid var(--border);
+  position: relative;
+}
+
+.a2ui-sidebar-title .ae-mark {
+  flex-shrink: 0;
+}
+
+/* macOS overlay titlebar: the brand strip is the window drag region, so
+   reserve the top-left for the floating traffic lights — with extra gap
+   so the Æthon wordmark clears the green control. Only on mac. */
+[data-platform="mac"] .a2ui-sidebar-title {
+  padding-left: var(--ae-mac-titlebar-clearance);
+}
+
+[data-platform="mac"] .a2ui-sidebar-title .ae-wordmark {
+  position: absolute;
+  left: var(--ae-mac-titlebar-clearance);
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.a2ui-sidebar-title-version {
+  margin-left: auto;
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-dim);
+  font-size: var(--chrome-text-compact);
+  font-family: var(--font-mono);
+  letter-spacing: 0.02em;
+}
+
+[data-platform="mac"] .a2ui-sidebar-title-version {
+  position: absolute;
+  right: var(--space-3);
+  top: 50%;
+  max-width: max(0px, calc(100% - var(--ae-mac-titlebar-clearance) - 96px));
+  transform: translateY(-50%);
+}
+
+/* ---- Host group (top tier of host → project → workspace) --------------- */
+
+.ae-host-group {
+  display: flex;
+  flex-direction: column;
+}
+.ae-host-group + .ae-host-group {
+  margin-top: var(--space-1);
+}
+
+/* Host header — the root node. Machine glyph + name + this-mac/remote
+   badge. Reads heavier than a project row so the tiers are legible. */
+.ae-host-group-header {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--ae-sb-row-gap);
+  padding: 7px var(--ae-sb-row-pad-x);
+  margin: 0 var(--space-2);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  color: var(--text);
+  transition: background var(--motion-fast) var(--ease-out);
+}
+.ae-host-group-header:hover {
+  background: var(--bg-hover);
+}
+.ae-host-group-header--selected,
+.ae-host-group-header--selected:hover {
+  background: var(--bg-selected);
+  color: var(--text);
+}
+.ae-host-group-header--selected::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 6px;
+  bottom: 6px;
+  width: 2px;
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+}
+.ae-host-glyph-wrap {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: var(--ae-sb-icon);
+  height: var(--ae-sb-icon);
+  color: var(--accent);
+}
+.ae-host-glyph {
+  display: block;
+}
+.ae-host-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--chrome-text);
+  font-weight: 600;
+  letter-spacing: 0;
+}
+.ae-host-group--active .ae-host-name {
+  color: var(--text);
+}
+.ae-host-group--selected .ae-host-glyph-wrap {
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-radius: var(--radius-xs);
+  box-shadow: inset 0 0 0 1px var(--accent-soft);
+}
+.ae-host-group--selected .ae-host-name {
+  color: var(--accent);
+  font-weight: 700;
+}
+.ae-host-badge {
+  flex-shrink: 0;
+  padding: 1px 7px;
+  border-radius: var(--radius-pill);
+  font-size: var(--chrome-text-muted);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: lowercase;
+  color: var(--text-dim);
+  background: var(--bg-active);
+}
+.ae-host-badge--local {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+/* The host's projects, nested one tier in. A left rail makes the
+   grouping unmistakable and scales to multiple stacked hosts — each
+   host owns its own rail. The rail sits under the host glyph column. */
+.ae-host-group-body {
+  position: relative;
+  /* Small step only — the rail carries the grouping, so projects don't
+     need a deep indent on top of their own chevron/icon gutter. Keeps
+     names + workspaces from over-truncating in a narrow column. */
+  padding-left: var(--space-3);
+}
+.ae-host-group-body::before {
+  content: "";
+  position: absolute;
+  /* Rail sits under the host header's chevron column. */
+  left: calc(var(--space-2) + (var(--ae-sb-chevron) / 2));
+  top: 2px;
+  bottom: 6px;
+  width: 1px;
+  background: var(--border);
+  border-radius: var(--radius-pill);
+  pointer-events: none;
+}
+.ae-host-group--active .ae-host-group-body::before {
+  background: color-mix(in oklab, var(--accent) 35%, var(--border));
+}
+/* The nested projects section drops its own vertical padding and its
+   "PROJECTS" sub-label — the host header already names the group, so a
+   second label just adds noise. The "Open project…" action stays. */
+.ae-host-group-body .a2ui-sidebar-section {
+  padding-top: 0;
+}
+.ae-host-group-body .a2ui-sidebar-section-title {
+  display: none;
+}
+
+.a2ui-sidebar-sections {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  gap: var(--space-1);
+  padding: var(--space-2) 0;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: none;
+}
+
+.a2ui-sidebar-section {
+  padding: var(--space-1) 0;
+}
+.a2ui-sidebar-section-no-title {
+  padding-top: 0;
+}
+
+.a2ui-sidebar-section-title {
+  padding: var(--space-3) var(--space-4) var(--space-2);
+  font-size: var(--chrome-text-compact);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--text-dim);
+  opacity: 0.85;
+  font-family: var(--font-ui);
+}
+
+.a2ui-sidebar-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+/* Searchable section affordances — filter input + provider groups.
+   The input is intentionally borderless to read as a continuation of
+   the sidebar, with a focus ring driven by the accent token. */
+.a2ui-sidebar-search {
+  display: block;
+  width: calc(100% - 20px);
+  margin: 4px 10px 6px;
+  padding: 4px 8px;
+  font-family: var(--font-mono);
+  font-size: var(--chrome-text-compact);
+  background: var(--bg-input);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  outline: none;
+}
+.a2ui-sidebar-search::placeholder {
+  color: var(--text-dim);
+  opacity: 0.7;
+}
+.a2ui-sidebar-search:focus {
+  border-color: var(--accent-soft);
+  box-shadow: var(--focus-ring);
+}
+
+.a2ui-sidebar-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.a2ui-sidebar-group-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 4px 14px;
+  background: transparent;
+  border: 0;
+  font-family: var(--font-mono);
+  font-size: var(--chrome-text-compact);
+  letter-spacing: 0.04em;
+  text-transform: lowercase;
+  color: var(--text-dim);
+  cursor: pointer;
+  text-align: left;
+}
+.a2ui-sidebar-group-title:hover {
+  color: var(--text);
+}
+.a2ui-sidebar-group-caret {
+  display: inline-block;
+  width: 10px;
+  font-size: var(--chrome-text-compact);
+  opacity: 0.7;
+}
+.a2ui-sidebar-group-name {
+  flex: 0 0 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.a2ui-sidebar-group-count {
+  margin-left: auto;
+  font-size: var(--chrome-text-muted);
+  color: var(--text-dim);
+  opacity: 0.65;
+}
+
+.a2ui-sidebar-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  /* Bumped from 4×12 to 7×14 so each row reads as a real UI
+     component, not a text line. Combined with the larger 13px font
+     the projects sidebar finally feels like a column of clickable
+     items instead of a list of strings. */
+  padding: 7px var(--space-4);
+  font-size: var(--font-size-sidebar);
+  line-height: 1.25;
+  cursor: pointer;
+  color: var(--text);
+  transition:
+    background var(--motion-fast) var(--ease-out),
+    color var(--motion-fast) var(--ease-out);
+  user-select: none;
+  min-width: 0;
+  border-radius: var(--radius-sm);
+  margin: 0 var(--space-2);
+  position: relative;
+}
+
+.a2ui-sidebar-item:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+/* Active selection — 2px accent bar hugging the row's left edge. Skips
+   workspace rows (their guide line already carries the accent) and rows
+   inside the searchable group lists, which read as a flat menu. */
+.a2ui-sidebar-item-active:not(.ae-workspace-row)::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 6px;
+  bottom: 6px;
+  width: 2px;
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+}
+
+.a2ui-sidebar-item:active {
+  background: var(--bg-active);
+}
+
+/* Right-aligned hint chip — `⌘\``, `⌘K`, `2h`, `yest`. Mono, dim, 10px. */
+.a2ui-sidebar-item-hint {
+  margin-left: auto;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 40%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-dim);
+  font-size: var(--chrome-text-compact);
+  font-family: var(--font-mono);
+  letter-spacing: 0.02em;
+}
+
+/* Mono-item variant — model ids, layout names, theme keys.
+   Set via the section's `monoItems: true` flag. */
+.a2ui-sidebar-item-mono {
+  font-family: var(--font-mono);
+  font-size: var(--chrome-text-compact);
+  letter-spacing: -0.005em;
+}
+
+/* Active selection — soft tinted background, no border stripe. */
+.a2ui-sidebar-item-active {
+  color: var(--text);
+  background: var(--bg-selected);
+}
+.a2ui-sidebar-item-active .a2ui-sidebar-item-label {
+  color: var(--accent);
+  font-weight: 500;
+}
+
+.a2ui-sidebar-item-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: 1.25;
+}
+/* Tiny icon (favicon-sized) rendered before the label for both host
+   and project rows. Falls back gracefully when iconUrl is absent. */
+.a2ui-sidebar-item-icon {
+  width: 16px;
+  height: 16px;
+  border-radius: 3px;
+  flex-shrink: 0;
+  object-fit: cover;
+  margin-right: var(--space-1);
+}
+
+/* Tiny accent dot before the label — used for project rows whose
+   working tree has uncommitted changes. Sits in the same flex row as
+   the label so it tracks the row's vertical center. */
+.a2ui-sidebar-item-git-dot {
+  flex-shrink: 0;
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+
+/* Invisible placeholders mirroring the disclosure chevron + git dirty
+   dot. Rendered for project rows that have neither, so the label text
+   starts at the same x-coordinate across every row in the section
+   regardless of whether the row has workspaces or uncommitted changes.
+   Dimensions must stay in lockstep with `.a2ui-sidebar-item-discl`
+   and `.a2ui-sidebar-item-git-dot`. */
+.a2ui-sidebar-item-discl-spacer {
+  flex-shrink: 0;
+  display: inline-block;
+  width: 20px;
+  height: 20px;
+  margin-left: -4px;
+}
+.a2ui-sidebar-item-git-dot-spacer {
+  flex-shrink: 0;
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+}
+
+/* Name row inside a stacked project card — holds the leading agent-activity
+   dot (optional) and the label on one line so the dot tracks the label's
+   vertical center and the label still ellipsizes. With no dot the gap
+   collapses (single child), so dot-less rows don't shift. */
+.a2ui-sidebar-item-name-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+/* Agent-activity dot — leading status indicator on project / workspace rows.
+   Deliberately the theme SUCCESS tone, not --accent: the trailing git dirty
+   dot already owns --accent, so "an agent is here" must never read as
+   "uncommitted changes". A filled, softly-haloed dot pulses while a turn is
+   in flight; a hollow ring marks an idle session waiting on the user. */
+.ae-sb-agent-dot {
+  flex-shrink: 0;
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+}
+.ae-sb-agent-dot--running {
+  background: var(--state-success-fg, var(--success));
+  box-shadow: 0 0 0 2px var(--state-success-border, transparent);
+  animation: ae-tab-busy-pulse 1.6s ease-in-out infinite;
+}
+.ae-sb-agent-dot--attention {
+  background: var(--state-warning-fg, var(--warning));
+  box-shadow:
+    0 0 0 2px
+      color-mix(
+        in srgb,
+        var(--state-warning-fg, var(--warning)) 24%,
+        transparent
+      ),
+    0 0 8px
+      color-mix(
+        in srgb,
+        var(--state-warning-fg, var(--warning)) 34%,
+        transparent
+      );
+}
+.ae-sb-agent-dot--idle {
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px var(--state-success-border, var(--text-dim));
+}
+.ae-sb-agent-dot--dormant {
+  background: transparent;
+  opacity: 0.62;
+  box-shadow: inset 0 0 0 1.5px var(--border-hover);
+}
+@media (prefers-reduced-motion: reduce) {
+  .ae-sb-agent-dot--running {
+    animation: none;
+  }
+}
+
+/* Branch label — quiet mono text on the right of a project row.
+   No border / no chip — the row's own type weight differentiates. */
+.a2ui-sidebar-item-git-branch {
+  flex: 0 1 auto;
+  min-width: 0;
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: var(--chrome-text);
+  color: var(--text-secondary);
+  letter-spacing: 0;
+  max-width: 60%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---- Stacked (two-line) project rows ----------------------------------
+   Project rows render as a small card: name on line 1, a git meta line
+   (branch · dirty · ahead/behind) on line 2. This keeps the project name
+   full-width — the branch no longer competes for the same line and the
+   one-character truncation ("C…", "m") is gone. */
+.a2ui-sidebar-item-stacked {
+  align-items: center;
+  gap: var(--ae-sb-row-gap);
+  padding: 6px var(--ae-sb-row-pad-x);
+}
+/* Clean fixed gutter — override the single-line chevron's negative margin
+   so the icon column lands exactly where --ae-sb-indent / --ae-sb-guide
+   expect it (workspace alignment depends on this). */
+.a2ui-sidebar-item-stacked > .a2ui-sidebar-item-discl,
+.a2ui-sidebar-item-stacked > .a2ui-sidebar-item-discl-spacer {
+  width: var(--ae-sb-chevron);
+  height: var(--ae-sb-chevron);
+  margin-left: 0;
+}
+.a2ui-sidebar-item-stacked > .a2ui-sidebar-item-icon {
+  width: var(--ae-sb-icon);
+  height: var(--ae-sb-icon);
+  margin-right: 0;
+  align-self: center;
+}
+/* Fallback glyph when a project has no cached favicon — keeps the icon
+   column (and therefore the workspace guide) aligned across all rows. */
+.a2ui-sidebar-item-icon--fallback {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-dim);
+  background: var(--bg-active);
+  border-radius: 4px;
+}
+.a2ui-sidebar-item-stack {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.a2ui-sidebar-item-stacked .a2ui-sidebar-item-label {
+  font-weight: 500;
+  line-height: 1.2;
+}
+.a2ui-sidebar-item-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  line-height: 1.2;
+}
+/* In the meta line the branch sits at the start (not pushed right) and
+   shares the line with the dirty dot + sync counts. */
+.a2ui-sidebar-item-meta .a2ui-sidebar-item-git-branch {
+  margin-left: 0;
+  max-width: 100%;
+  font-size: var(--chrome-text-compact);
+  color: var(--text-secondary);
+}
+.a2ui-sidebar-item-git-sync {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: var(--chrome-text-muted);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+}
+.ae-git-ahead {
+  color: var(--success, #3fb950);
+}
+.ae-git-behind {
+  color: var(--warn);
+}
+/* Active project: carry the accent into the name + chevron so the whole
+   card reads as one selected unit. */
+.a2ui-sidebar-item-stacked.a2ui-sidebar-item-active .a2ui-sidebar-item-label {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* Disclosure triangle inside a project row. Sits before the label,
+   hover-able + clickable independent of the row's select target.
+   Big enough to be a real click target (18×18) and uses chrome-text
+   font size so the glyph reads at a glance. */
+.a2ui-sidebar-item-discl {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  margin-left: -4px;
+  border: 0;
+  background: transparent;
+  /* Token mid-tone for resting state. SVG fills via `currentColor` so
+     this color drives the chevron stroke; hover + active-row push it
+     toward --accent. */
+  color: var(--text);
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-xs);
+  transition:
+    color var(--motion-fast) var(--ease-out),
+    background var(--motion-fast) var(--ease-out);
+}
+.a2ui-sidebar-item-discl svg {
+  display: block;
+}
+.a2ui-sidebar-item-discl:hover,
+.a2ui-sidebar-item-discl:focus-visible {
+  outline: none;
+  color: var(--accent);
+  background: var(--accent-hover-tint);
+}
+/* Active project row carries the accent into its chevron + glyphs so
+   the whole row reads as one selected unit instead of an accent label
+   floating next to a dim caret. */
+.a2ui-sidebar-item-active .a2ui-sidebar-item-discl {
+  color: var(--accent);
+}
+
+/* Workspace row — nested under a project row when workspaces are present
+   and the parent is expanded. The whole group reads as one branch via
+   a continuous left guide line drawn by `::before` (one segment per
+   row, stacked tight so they fuse). Labels align under the parent
+   project's icon column. */
+.ae-workspace-row {
+  position: relative;
+  /* Align the label under the parent project's NAME column. Both the
+     indent and the guide line derive from the shared --ae-sb-* gutter
+     vars on .a2ui-sidebar, so project (stacked) rows and workspace rows
+     stay locked together if the gutter changes. */
+  padding-left: var(--ae-sb-indent);
+  /* Tighter than full project rows — these are subordinate. */
+  padding-top: 4px;
+  padding-bottom: 4px;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+/* Continuous vertical guide. Sits in the icon column (just left of
+   where the project icon would render) so it visually descends from
+   the project row's icon. Top/bottom flush across siblings so the
+   line fuses into one unbroken stroke. */
+.ae-workspace-row::before {
+  content: "";
+  position: absolute;
+  left: var(--ae-sb-guide);
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--border);
+  transition: background var(--motion-fast) var(--ease-out);
+  pointer-events: none;
+}
+/* First child rounds the top of the line so it doesn't jut into the
+   project row's pill; last child does the same for the bottom. */
+.ae-workspace-row:first-of-type::before {
+  top: 2px;
+  border-top-left-radius: 1px;
+}
+.ae-workspace-row:last-of-type::before {
+  bottom: 2px;
+  border-bottom-left-radius: 1px;
+}
+.ae-workspace-row:hover {
+  color: var(--text);
+}
+.ae-workspace-row--dragging {
+  z-index: var(--z-elevated);
+  color: var(--text);
+  background: var(--bg-active);
+  opacity: 0.94;
+  transform: translate3d(0, var(--ae-workspace-drag-y, 0px), 0);
+  box-shadow:
+    0 0 0 1px var(--border-hover),
+    var(--shadow-2);
+  transition:
+    color var(--motion-fast) var(--ease-out),
+    background var(--motion-fast) var(--ease-out),
+    opacity var(--motion-fast) var(--ease-out),
+    box-shadow var(--motion-fast) var(--ease-out),
+    transform 0ms linear;
+}
+.ae-workspace-row-drop-before,
+.ae-workspace-row-drop-after {
+  background: var(--accent-hover-tint);
+}
+.ae-workspace-row-drop-before::after,
+.ae-workspace-row-drop-after::after {
+  content: "";
+  position: absolute;
+  left: calc(var(--ae-sb-indent) - 2px);
+  right: var(--space-3);
+  height: 2px;
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+  pointer-events: none;
+  z-index: 1;
+}
+.ae-workspace-row-drop-before::after {
+  top: -1px;
+}
+.ae-workspace-row-drop-after::after {
+  bottom: -1px;
+}
+.ae-workspace-row:hover::before,
+.ae-workspace-row.a2ui-sidebar-item-active::before {
+  background: var(--accent);
+}
+.ae-workspace-row.a2ui-sidebar-item-active {
+  color: var(--accent);
+}
+/* Main workspace (rarely rendered as a child — kept for layouts that
+   surface it explicitly). Small accent dot sits at the row's content
+   start; the guide line still runs left of it. */
+.ae-workspace-glyph {
+  flex-shrink: 0;
+  width: 10px;
+  height: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: calc(-1 * var(--space-3));
+}
+.ae-workspace-glyph svg {
+  display: block;
+}
+.ae-workspace-glyph--main {
+  color: var(--accent);
+}
+.ae-workspace-branch {
+  margin-left: auto;
+}
+.ae-workspace-pr-slot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex: 0 0 86px;
+  min-width: 86px;
+  margin-left: var(--space-1);
+}
+.ae-workspace-pr-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  max-width: 86px;
+  min-width: 0;
+  height: 18px;
+  padding: 0 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: var(--bg-elev);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: var(--chrome-text-muted);
+  line-height: 1;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.ae-workspace-pr-chip:hover {
+  color: var(--text);
+  border-color: var(--border-hover);
+  background: var(--bg-hover);
+}
+.ae-workspace-pr-chip--open {
+  border-color: var(--state-info-border, var(--border-hover));
+  color: var(--state-info-fg, var(--text));
+}
+.ae-workspace-pr-chip--draft,
+.ae-workspace-pr-chip--closed {
+  color: var(--text-dim);
+}
+.ae-workspace-pr-chip--merged {
+  border-color: var(--state-success-border, var(--border-hover));
+  color: var(--state-success-fg, var(--success));
+}
+.ae-workspace-pr-chip--stale {
+  border-color: color-mix(in oklab, var(--warn) 42%, var(--border));
+  color: var(--warn);
+}
+.ae-workspace-pr-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ae-workspace-pr-ci {
+  flex: 0 0 auto;
+  width: 5px;
+  height: 5px;
+  border-radius: 999px;
+}
+.ae-workspace-pr-ci--success {
+  background: var(--state-success-fg, var(--success));
+}
+.ae-workspace-pr-ci--failure {
+  background: var(--error);
+}
+.ae-workspace-pr-ci--pending {
+  background: var(--warn);
+  animation: ae-tab-busy-pulse 1.6s ease-in-out infinite;
+}
+.ae-workspace-pr-ci--neutral {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--text-dim);
+}
+@media (prefers-reduced-motion: reduce) {
+  .ae-workspace-pr-ci--pending {
+    animation: none;
+  }
+}
+.ae-workspace-rename-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 24px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm);
+  padding: 0 var(--space-2);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  line-height: 1;
+}
+.ae-workspace-rename-input:focus {
+  outline: none;
+}
+.ae-workspace-rename-input:focus-visible {
+  box-shadow: var(--focus-ring);
+}
+.ae-workspace-remove-slot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex: 0 0 auto;
+  min-width: 28px;
+  margin-left: var(--space-1);
+}
+.ae-workspace-row--pending {
+  opacity: 0.8;
+}
+.ae-workspace-row--failed {
+  background: color-mix(in srgb, var(--error) 8%, transparent);
+}
+.ae-workspace-pending-status {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: var(--chrome-text-muted);
+  color: var(--text-dim);
+}
+.ae-workspace-pending-failed {
+  color: var(--error);
+}
+.ae-workspace-action {
+  border: 0;
+  padding: 0 var(--space-1);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: var(--chrome-text-muted);
+  cursor: pointer;
+  border-radius: var(--radius-xs);
+}
+.ae-workspace-action:hover,
+.ae-workspace-action:focus-visible {
+  outline: none;
+  background: var(--accent-hover-tint);
+  color: var(--accent);
+}
+.ae-workspace-remove {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  color: var(--text-dim);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  opacity: 0;
+  transform: scale(0.96);
+  transition:
+    opacity var(--motion-fast) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out),
+    color var(--motion-fast) var(--ease-out),
+    background var(--motion-fast) var(--ease-out),
+    border-color var(--motion-fast) var(--ease-out);
+}
+.ae-workspace-row:hover .ae-workspace-remove,
+.ae-workspace-remove:focus-visible {
+  opacity: 1;
+  transform: scale(1);
+}
+.ae-workspace-remove:hover {
+  color: var(--error);
+  background: color-mix(in oklab, var(--error) 10%, transparent);
+  border-color: color-mix(in oklab, var(--error) 28%, transparent);
+}
+.ae-workspace-remove:focus-visible,
+.ae-workspace-confirm-remove:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+.ae-workspace-confirm-remove {
+  height: 26px;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-sm);
+  font-size: var(--chrome-text-compact);
+  border: 1px solid color-mix(in oklab, var(--error) 28%, var(--border));
+  background: color-mix(in oklab, var(--error) 10%, transparent);
+  color: var(--error);
+  cursor: pointer;
+}
+.ae-workspace-confirm-remove:hover {
+  background: color-mix(in oklab, var(--error) 16%, transparent);
+  border-color: color-mix(in oklab, var(--error) 52%, var(--border));
+}
+.ae-workspace-lock {
+  flex-shrink: 0;
+  font-size: var(--chrome-text-muted);
+  color: var(--warn);
+  margin-left: var(--space-1);
+}
+
+.a2ui-sidebar-empty {
+  padding: 6px 16px;
+  font-size: var(--chrome-text-compact);
+  color: var(--text-dim);
+  font-style: italic;
+  font-family: var(--font-mono);
+}
+
+/* Sidebar actions — small ghost-styled rows below a section's items.
+   Used by the projects section's "Open project…" entry; visually
+   distinct from regular items so the user recognizes it as an action
+   rather than a selectable record. */
+.a2ui-sidebar-actions {
+  list-style: none;
+  margin: 4px 10px 2px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.a2ui-sidebar-action {
+  padding: 4px var(--space-3);
+  font-size: var(--chrome-text-compact);
+  color: var(--text-dim);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  text-align: left;
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  transition: color var(--motion-fast) var(--ease-out);
+}
+
+.a2ui-sidebar-action::before {
+  content: "+";
+  font-size: 14px;
+  line-height: 1;
+  color: var(--text-dim);
+  opacity: 0.6;
+  margin-right: var(--space-1);
+}
+
+.a2ui-sidebar-action:hover {
+  color: var(--accent);
+}
+.a2ui-sidebar-action:hover::before {
+  color: var(--accent);
+  opacity: 1;
+}
+
+.a2ui-sidebar-action:focus-visible {
+  outline: none;
+  color: var(--accent);
+  background: var(--bg-hover);
+  border-radius: var(--radius-sm);
+}
+
+/* Canonical context-menu primitive (src/components/primitives/context-menu.tsx).
+   `.a2ui-sidebar-context-menu` and `.ae-file-tree-context-menu` selectors
+   stay aliased here so any extension that styled the old class names
+   still works. New code should target `.a2ui-context-menu*` only. */
+.a2ui-context-menu,
+.a2ui-sidebar-context-menu {
+  position: fixed;
+  z-index: var(--z-popover);
+  min-width: 200px;
+  padding: var(--space-1);
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-3);
+  color: var(--text);
+  font-family: var(--font-ui);
+  outline: none;
+}
+
+.a2ui-context-menu-item,
+.a2ui-sidebar-context-menu-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  border: 0;
+  border-radius: var(--radius-sm);
+  padding: var(--space-2) var(--space-2);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--chrome-text);
+  text-align: left;
+  cursor: pointer;
+  user-select: none;
+}
+
+.a2ui-context-menu-item:hover,
+.a2ui-context-menu-item:focus-visible,
+.a2ui-context-menu-item.is-focused,
+.a2ui-sidebar-context-menu-item:hover,
+.a2ui-sidebar-context-menu-item:focus-visible {
+  outline: none;
+  background: var(--accent-hover-tint);
+  color: var(--accent);
+}
+
+.a2ui-context-menu-item.is-danger {
+  color: var(--error);
+}
+.a2ui-context-menu-item.is-danger:hover,
+.a2ui-context-menu-item.is-danger:focus-visible,
+.a2ui-context-menu-item.is-danger.is-focused {
+  background: color-mix(in srgb, var(--error) 12%, transparent);
+  color: var(--error);
+}
+
+.a2ui-context-menu-item[aria-disabled="true"] {
+  cursor: default;
+  opacity: var(--opacity-disabled);
+}
+.a2ui-context-menu-item[aria-disabled="true"]:hover,
+.a2ui-context-menu-item[aria-disabled="true"].is-focused {
+  background: transparent;
+  color: var(--text);
+}
+
+.a2ui-context-menu-item-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.a2ui-context-menu-item-hint {
+  flex: 0 0 auto;
+  font-family: var(--font-mono);
+  font-size: var(--chrome-text-muted);
+  color: var(--text-dim);
+  opacity: var(--opacity-muted);
+}
+
+.a2ui-context-menu-header {
+  padding: var(--space-2) var(--space-2) var(--space-1);
+  color: var(--text-dim);
+  font-size: var(--chrome-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.a2ui-context-menu-note,
+.a2ui-sidebar-context-menu-note {
+  padding: var(--space-1) var(--space-2) var(--space-1);
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: var(--chrome-text-muted);
+}
+
+.a2ui-context-menu-sep,
+.a2ui-sidebar-context-menu-sep {
+  height: 1px;
+  margin: var(--space-1) 0;
+  background: var(--border);
+  opacity: 0.6;
+}
+
+.a2ui-context-menu-input {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  min-width: 300px;
+}
+.a2ui-context-menu-input label {
+  display: grid;
+  gap: var(--space-1);
+  color: var(--text-dim);
+  font-size: var(--chrome-text-muted);
+}
+.a2ui-context-menu-input input {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: var(--space-2);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--chrome-text);
+}
+.a2ui-context-menu-input input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.a2ui-context-menu-input button {
+  justify-self: end;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm);
+  padding: var(--space-1) var(--space-2);
+  background: var(--accent);
+  color: var(--accent-contrast);
+  font: inherit;
+  font-size: var(--chrome-text);
+  cursor: pointer;
+}
+
+/* File-tree context menu uses a wider min-width to fit the longest
+   label ("Copy Relative Path") without truncation. */
+.ae-file-tree-context-menu {
+  min-width: 220px;
+}
+

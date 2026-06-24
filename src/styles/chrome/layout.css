@@ -1,0 +1,68 @@
+/* ---- Layout (CSS grid container with template-areas) -------------------- */
+
+.a2ui-layout {
+  height: 100%;
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  /* Animate stable panel tracks so sidebar/console toggles glide like
+     Codex. Resize drags suppress the transition so live drag stays direct. */
+  will-change: grid-template-columns, grid-template-rows;
+  transition:
+    grid-template-columns var(--motion-panel) var(--ease-panel),
+    grid-template-rows var(--motion-panel) var(--ease-panel);
+}
+body.ae-resizing-sidebar .a2ui-layout,
+body.ae-resizing-terminal .a2ui-layout,
+body.ae-resizing-composer .a2ui-layout {
+  transition: none;
+}
+
+.a2ui-layout-cell {
+  overflow: hidden;
+  min-width: 0;
+  min-height: 0;
+  opacity: 1;
+  pointer-events: auto;
+  transition: opacity var(--motion-panel) var(--ease-panel);
+}
+.a2ui-layout-cell[data-visible="false"] {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.a2ui-layout-cell > .a2ui-renderer,
+.a2ui-layout-cell > * {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* ---- Sidebar area (wraps the sidebar + file tree) ----------------------- */
+
+.ae-sidebar-area {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
+  /* Vertical wash gives the sidebar a top-edge sheen so it reads as a
+     lit surface against the canvas. Falls back cleanly when the theme
+     doesn't set --gradient-surface. */
+  background: var(--gradient-surface, var(--bg-elev));
+  border-right: 1px solid var(--border);
+}
+.ae-sidebar-area > .a2ui-sidebar {
+  flex: 1 1 auto;
+  border-right: 0;
+  min-height: 0;
+}
+.ae-sidebar-area > .ae-file-tree {
+  /* Height controlled by the React component's inline flex-basis so the
+     user-driven resize handle works. Border separates from the sidebar
+     above; the handle sits over the top edge. */
+  border-top: 1px solid var(--border);
+}
+

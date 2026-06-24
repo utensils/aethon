@@ -1,13 +1,8 @@
-// @ts-expect-error - app tsconfig omits Node types; Vitest runs this file in Node.
-import { readFileSync } from "node:fs";
-// @ts-expect-error - app tsconfig omits Node types; Vitest runs this file in Node.
-import { fileURLToPath } from "node:url";
-// @ts-expect-error - app tsconfig omits Node types; Vitest runs this file in Node.
-import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
 
-const here = dirname(fileURLToPath(import.meta.url));
-const chromeCss = readFileSync(join(here, "chrome.css"), "utf8");
+import { readAggregatedChromeCss } from "./css-test-utils";
+
+const chromeCss = readAggregatedChromeCss();
 
 function cssRuleBody(selector: string): string {
   const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");

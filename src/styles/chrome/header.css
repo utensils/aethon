@@ -1,0 +1,332 @@
+/* ---- Header (Container with className=app-header) ----------------------- */
+
+.app-header {
+  border-bottom: 1px solid var(--border);
+  /* Vertical gradient gives the header a subtle top-edge sheen so it
+     reads as a lit surface against the canvas. --gradient-surface
+     falls back to --bg-elev when a theme leaves it unset. */
+  background: var(--gradient-surface, var(--bg-elev));
+  box-shadow: var(--inner-highlight, none);
+  padding: 0 14px !important;
+  height: 38px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+/* macOS overlay titlebar: when the sidebar is collapsed, the header becomes
+   the leftmost drag row and must inherit the traffic-light clearance that the
+   sidebar brand strip normally owns. */
+[data-platform="mac"][data-sidebar-collapsed="true"] .app-header {
+  padding-left: var(--ae-mac-titlebar-clearance) !important;
+}
+
+.app-header-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.app-header-logo {
+  width: 22px;
+  height: 22px;
+  display: block;
+  border-radius: 5px;
+  /* The mark already has its own dark tile background, so the radius
+     just clips the outer rounded corners cleanly against the header. */
+}
+
+/* "agent live" / "agent thinking" pill rendered as a tiny dot + label on
+   the right side of the header. Mirrors the design's monospace pill. */
+.app-header-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  max-width: 18ch;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: var(--chrome-text-compact);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: 0.04em;
+  color: var(--text-dim);
+}
+.app-header-pill::before {
+  content: "";
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 99px;
+  background: #19c332;
+}
+.app-header-pill[data-state="thinking"] {
+  color: var(--accent);
+}
+.app-header-pill[data-state="thinking"]::before {
+  background: var(--accent);
+  animation: ae-pill-pulse 1.6s ease-in-out infinite;
+}
+@keyframes ae-pill-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+/* Header spacer — flex grow filler so chrome controls (model picker,
+   appearance menu) right-align even when the rest of the row is short.
+   Basis MUST be 0 (not auto): with `auto`, WebKit resolves the empty
+   div's basis from container free space, swallowing ~1000px before the
+   grow phase even runs and squeezing the sibling tab-strip down to its
+   shrink minimum. With basis 0, strip + spacer split free space cleanly
+   by their grow factors, which is the original intent. */
+.ae-header-spacer {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+/* ---- Dropdown picker (model-picker / appearance-menu) ------------------ */
+
+.a2ui-dropdown {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  min-width: 0;
+  max-width: 100%;
+}
+.a2ui-dropdown-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 10px;
+  font-size: var(--chrome-text-compact);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: 0.02em;
+  color: var(--pill-text, var(--text));
+  /* Pill background tinted by the theme's accent so the model/theme
+     pickers and host pill in the header read as one family of chips. */
+  background: var(--pill-bg, var(--bg-elev, rgba(255, 255, 255, 0.03)));
+  border: 1px solid var(--pill-border, var(--border, rgba(255, 255, 255, 0.08)));
+  border-radius: 6px;
+  cursor: pointer;
+  transition:
+    border-color var(--motion-fast) var(--ease-out),
+    background var(--motion-fast) var(--ease-out),
+    color var(--motion-fast) var(--ease-out);
+  width: max-content;
+  max-width: min(34ch, calc(var(--app-viewport-width) - 32px));
+  min-width: 0;
+  overflow: hidden;
+}
+.a2ui-dropdown-trigger:hover {
+  border-color: var(--accent, #ff6a18);
+  color: var(--text);
+}
+.a2ui-dropdown-trigger:focus-visible {
+  outline: 2px solid var(--accent, #ff6a18);
+  outline-offset: 1px;
+}
+.a2ui-dropdown[data-open="true"] .a2ui-dropdown-trigger {
+  border-color: var(--accent, #ff6a18);
+  background: var(--bg-elev-2, rgba(255, 255, 255, 0.05));
+}
+.a2ui-dropdown-trigger-label {
+  flex: 0 1 auto;
+  min-width: 0;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  overflow: hidden;
+}
+.a2ui-dropdown-trigger-chevron {
+  flex-shrink: 0;
+  font-size: var(--chrome-text-muted);
+  color: var(--text-dim);
+  transition: transform 120ms ease;
+}
+
+.a2ui-model-picker-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.a2ui-model-picker .a2ui-dropdown-trigger {
+  max-width: min(44ch, calc(var(--app-viewport-width) - 32px));
+}
+
+.a2ui-model-picker-reasoning {
+  height: 26px;
+  padding: 0 6px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  color: var(--text-muted);
+  background: var(--pill-bg, var(--bg-elev, rgba(255, 255, 255, 0.03)));
+  font-size: var(--chrome-text-compact);
+}
+
+.a2ui-model-picker-fast {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 26px;
+  padding: 0 8px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  color: var(--text-muted);
+  background: var(--pill-bg, var(--bg-elev, rgba(255, 255, 255, 0.03)));
+  font-size: var(--chrome-text-compact);
+  white-space: nowrap;
+}
+
+/* Custom-id input mode: styled to match the dropdown trigger pill so the
+   header doesn't jump when "Custom id…" swaps the button for an input. */
+.a2ui-model-picker-custom {
+  display: inline-flex;
+}
+.a2ui-model-picker-custom-input {
+  height: 26px;
+  padding: 0 10px;
+  font-size: var(--chrome-text-compact);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: 0.02em;
+  color: var(--text);
+  background: var(--pill-bg, var(--bg-elev, rgba(255, 255, 255, 0.03)));
+  border: 1px solid var(--accent, #ff6a18);
+  border-radius: 6px;
+  outline: none;
+  width: min(34ch, calc(var(--app-viewport-width) - 32px));
+}
+.a2ui-model-picker-custom-input::placeholder {
+  color: var(--text-dim);
+}
+
+.a2ui-appearance-menu .a2ui-dropdown-trigger {
+  max-width: min(46ch, calc(var(--app-viewport-width) - 32px));
+}
+.a2ui-account-selector .a2ui-dropdown-trigger {
+  max-width: min(30ch, calc(var(--app-viewport-width) - 32px));
+}
+
+.app-header .a2ui-dropdown {
+  flex-shrink: 0;
+}
+.a2ui-dropdown[data-open="true"] .a2ui-dropdown-trigger-chevron {
+  transform: rotate(180deg);
+  color: var(--accent, #ff6a18);
+}
+.a2ui-dropdown-panel {
+  /* Fixed positioning so the panel escapes .a2ui-layout-cell's
+     overflow:hidden clip. Coordinates come from the trigger's
+     getBoundingClientRect (set inline by DropdownPickerCore on open),
+     so this base rule only carries appearance + sizing. */
+  position: fixed;
+  z-index: 999;
+  min-width: min(240px, calc(var(--app-viewport-width) - 16px));
+  max-width: calc(var(--app-viewport-width) - 16px);
+  max-height: min(70vh, calc(var(--app-viewport-height) - 16px));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 6px;
+  background: var(--popover-bg, var(--bg-elev, #1f1f23));
+  border: 1px solid
+    var(--popover-border, var(--border, rgba(255, 255, 255, 0.08)));
+  border-radius: 8px;
+  box-shadow:
+    var(--popover-shadow, 0 14px 40px rgba(0, 0, 0, 0.4)),
+    var(--inner-highlight, none);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: var(--chrome-text-compact);
+}
+.a2ui-dropdown-section + .a2ui-dropdown-section {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border, rgba(255, 255, 255, 0.06));
+}
+.a2ui-dropdown-section-title {
+  padding: 4px 8px;
+  font-size: var(--chrome-text-muted);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+.a2ui-dropdown-search {
+  width: 100%;
+  margin: 4px 0;
+  padding: 6px 8px;
+  font-size: var(--chrome-text-compact);
+  font-family: inherit;
+  color: var(--text);
+  background: var(--bg, rgba(0, 0, 0, 0.2));
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.08));
+  border-radius: 5px;
+  outline: none;
+  transition: border-color 120ms ease;
+}
+.a2ui-dropdown-search:focus {
+  border-color: var(--accent, #ff6a18);
+}
+.a2ui-dropdown-search::placeholder {
+  color: var(--text-dim);
+}
+.a2ui-dropdown-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.a2ui-dropdown-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 5px;
+  cursor: pointer;
+  color: var(--text);
+  transition:
+    background 100ms ease,
+    color 100ms ease;
+  min-width: 0;
+}
+.a2ui-dropdown-item:hover {
+  background: var(--accent-soft, rgba(255, 106, 24, 0.1));
+}
+.a2ui-dropdown-item-active {
+  background: var(--accent-soft, rgba(255, 106, 24, 0.15));
+  color: var(--accent, #ff6a18);
+}
+.a2ui-dropdown-item-active::after {
+  content: "●";
+  color: var(--accent, #ff6a18);
+  font-size: var(--chrome-text-muted);
+  margin-left: 6px;
+}
+.a2ui-dropdown-item-label {
+  flex: 1 1 auto;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  overflow: hidden;
+}
+.a2ui-dropdown-item-hint {
+  font-size: var(--chrome-text-muted);
+  color: var(--text-dim);
+  letter-spacing: 0.04em;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 50%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.a2ui-dropdown-empty {
+  padding: 8px;
+  color: var(--text-dim);
+  font-style: italic;
+  text-align: center;
+}
+

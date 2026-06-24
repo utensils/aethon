@@ -1,0 +1,865 @@
+/* =============================================================================
+   Settings panel — Cmd+, opens. Modal overlay with sectioned form.
+   ============================================================================= */
+
+.ae-settings-overlay {
+  position: fixed;
+  inset: 0;
+  /* Scrim alpha tuned by the theme — light themes need a softer veil
+     so the cream palette stays visible, dark themes can go deeper. */
+  background: rgba(0, 0, 0, var(--opacity-overlay-scrim, 0.45));
+  backdrop-filter: blur(2px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: var(--z-modal, 1200);
+}
+.ae-settings-panel {
+  background: var(--modal-bg, var(--bg-elev));
+  border: 1px solid var(--modal-border, var(--border));
+  border-radius: var(--radius-lg, 12px);
+  width: min(860px, 94vw);
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow:
+    var(--modal-shadow, 0 24px 64px rgba(0, 0, 0, 0.45)),
+    var(--inner-highlight, none);
+  font-family: ui-sans-serif, system-ui, sans-serif;
+}
+.ae-settings-header {
+  display: flex;
+  align-items: center;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border);
+  /* Header strip catches the theme's surface wash so it reads as a
+     lit ridge above the modal body. */
+  background: var(--gradient-surface, transparent);
+  border-radius: var(--radius-lg, 12px) var(--radius-lg, 12px) 0 0;
+}
+.ae-settings-header h2 {
+  margin: 0;
+  font-size: 1.05rem;
+  flex: 1 1 auto;
+}
+.ae-settings-save-state {
+  font-size: var(--chrome-text-muted);
+  margin-right: var(--space-3);
+  white-space: nowrap;
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-pill);
+  background: var(--state-success-bg, transparent);
+  color: var(--state-success-fg, var(--text-secondary, var(--text-dim)));
+}
+.ae-settings-save-state--error {
+  color: var(--state-error-fg, var(--error));
+  background: var(--state-error-bg, transparent);
+}
+.ae-settings-close {
+  background: transparent;
+  border: 0;
+  color: var(--text-dim);
+  font-size: 1.4rem;
+  cursor: pointer;
+  padding: 0 6px;
+}
+.ae-settings-close:hover {
+  color: var(--text);
+}
+.ae-settings-body {
+  padding: 16px 20px;
+  overflow-y: auto;
+  overscroll-behavior: none;
+  flex: 1 1 auto;
+}
+.ae-settings-section {
+  margin-bottom: 22px;
+}
+.ae-settings-section-title {
+  margin: 0 0 8px 0;
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 600;
+  /* Section headings pick up the cool secondary accent — gives the
+     settings panel the same hierarchical voice as THINKING blocks
+     in chat. */
+  color: var(--accent-2, var(--text-dim));
+}
+.ae-settings-section-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* Extensions list — one row per extension with name + provenance + a
+   toggle button. Failed extensions get an error tint. */
+.ae-settings-ext-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.ae-settings-ext-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, auto) auto;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--card-border, var(--border));
+  border-radius: var(--radius-md);
+  background: var(--card-bg, var(--bg-elev));
+  box-shadow: var(--inner-highlight, none);
+}
+.ae-settings-ext-row--failed {
+  border-color: var(
+    --state-error-border,
+    color-mix(in srgb, var(--error) 40%, var(--border))
+  );
+  background: var(
+    --state-error-bg,
+    color-mix(in srgb, var(--error) 5%, var(--bg-elev))
+  );
+}
+.ae-settings-ext-row--disabled {
+  opacity: var(--opacity-muted);
+}
+.ae-settings-ext-name {
+  font-family: var(--font-mono);
+  font-size: var(--chrome-text);
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ae-settings-ext-hint {
+  color: var(--text-dim);
+  font-size: var(--chrome-text-muted);
+  font-family: var(--font-mono);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  overflow: hidden;
+}
+.ae-settings-ext-action {
+  white-space: nowrap;
+}
+.ae-settings-field {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.ae-settings-field-label {
+  flex: 1 1 auto;
+  font-size: 0.92rem;
+  color: var(--text);
+}
+.ae-settings-field-control {
+  flex: 0 0 auto;
+}
+.ae-settings-input {
+  background: var(--bg-input);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 5px 9px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.9rem;
+  min-width: 200px;
+  transition:
+    border-color var(--motion-fast) var(--ease-out),
+    box-shadow var(--motion-fast) var(--ease-out);
+}
+.ae-settings-input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: var(--focus-ring);
+}
+.ae-settings-note {
+  color: var(--text-dim);
+  font-size: 0.88rem;
+  margin: 0 0 8px 0;
+}
+/* Settings model picker — flex row carrying either the dropdown or the
+   free-text override input plus a small toggle to swap modes. */
+.ae-settings-model-picker {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+}
+.ae-settings-model-picker .ae-settings-input {
+  min-width: 260px;
+}
+.ae-settings-model-picker-toggle {
+  padding: 5px 10px;
+  font-size: 0.82rem;
+}
+.ae-settings-ansi-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.ae-ansi-grid {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  grid-auto-rows: 22px;
+  gap: 4px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px;
+  background: var(--terminal-bg, var(--bg-input));
+}
+.ae-ansi-swatch {
+  border-radius: 4px;
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.ae-settings-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 12px 18px;
+  border-top: 1px solid var(--border);
+  background: var(--bg);
+}
+.ae-settings-primary,
+.ae-settings-secondary {
+  padding: 6px 14px;
+  border-radius: 6px;
+  font-size: 0.92rem;
+  cursor: pointer;
+  border: 1px solid var(--border);
+}
+.ae-settings-primary {
+  background: var(--accent);
+  color: var(--bg);
+  border-color: var(--accent);
+}
+.ae-settings-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.ae-settings-secondary {
+  background: transparent;
+  color: var(--text);
+}
+.ae-settings-secondary:hover {
+  background: color-mix(in oklab, var(--accent) 8%, transparent);
+}
+
+/* =============================================================================
+   Scheduled Tasks manager
+   ============================================================================= */
+
+.ae-scheduled-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, var(--opacity-overlay-scrim, 0.45));
+  backdrop-filter: blur(2px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: var(--z-modal, 1200);
+}
+.ae-scheduled-panel {
+  width: min(980px, 94vw);
+  max-height: 86vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--modal-bg, var(--bg-elev));
+  border: 1px solid var(--modal-border, var(--border));
+  border-radius: var(--radius-lg, 12px);
+  box-shadow:
+    var(--modal-shadow, 0 24px 64px rgba(0, 0, 0, 0.45)),
+    var(--inner-highlight, none);
+  font-family: ui-sans-serif, system-ui, sans-serif;
+}
+.ae-scheduled-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border);
+  background: var(--gradient-surface, transparent);
+}
+.ae-scheduled-header h2 {
+  flex: 1 1 auto;
+  margin: 0;
+  font-size: 1.05rem;
+}
+.ae-scheduled-body {
+  display: grid;
+  grid-template-columns: minmax(280px, 340px) minmax(0, 1fr);
+  min-height: 0;
+  overflow: hidden;
+}
+.ae-scheduled-create,
+.ae-scheduled-list {
+  min-width: 0;
+  min-height: 0;
+  padding: var(--space-4);
+  overflow-y: auto;
+}
+.ae-scheduled-create {
+  border-right: 1px solid var(--border);
+  background: color-mix(in oklab, var(--bg-elev) 92%, var(--bg));
+}
+.ae-scheduled-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--space-3);
+}
+.ae-scheduled-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  font-size: var(--chrome-text-muted);
+  color: var(--text-dim);
+}
+.ae-scheduled-field select,
+.ae-scheduled-field input,
+.ae-scheduled-field textarea {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-input);
+  color: var(--text);
+  padding: 7px 9px;
+  font: inherit;
+}
+.ae-scheduled-field textarea {
+  resize: vertical;
+  min-height: 96px;
+  font-family: var(--font-mono);
+  font-size: var(--chrome-text);
+}
+.ae-scheduled-error {
+  margin-top: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--state-error-border, var(--error));
+  border-radius: var(--radius-md);
+  color: var(--state-error-fg, var(--error));
+  background: var(--state-error-bg, transparent);
+  font-size: var(--chrome-text-muted);
+}
+.ae-scheduled-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-top: var(--space-3);
+}
+.ae-scheduled-target {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-dim);
+  font-size: var(--chrome-text-muted);
+}
+.ae-scheduled-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.ae-scheduled-empty {
+  color: var(--text-dim);
+  font-size: var(--chrome-text);
+  text-align: center;
+  padding: var(--space-5);
+}
+.ae-scheduled-row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--card-border, var(--border));
+  border-radius: var(--radius-md);
+  background: var(--card-bg, var(--bg-elev));
+}
+.ae-scheduled-row-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+.ae-scheduled-row-main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.ae-scheduled-title,
+.ae-scheduled-meta,
+.ae-scheduled-row-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+.ae-scheduled-title strong {
+  max-width: 64ch;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+.ae-scheduled-title code {
+  font-size: var(--chrome-text-muted);
+  color: var(--text-dim);
+}
+.ae-scheduled-meta {
+  color: var(--text-dim);
+  font-size: var(--chrome-text-muted);
+}
+.ae-scheduled-edit-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(180px, 260px));
+  gap: var(--space-3);
+  align-items: start;
+}
+.ae-scheduled-edit-grid .ae-scheduled-field--mode,
+.ae-scheduled-edit-grid .ae-scheduled-field--schedule {
+  width: min(260px, 100%);
+}
+.ae-scheduled-edit-grid .ae-scheduled-field--wide {
+  grid-column: 1 / -1;
+}
+.ae-scheduled-edit-grid textarea {
+  min-height: 180px;
+  max-height: min(42vh, 360px);
+}
+.ae-scheduled-row-actions {
+  align-content: flex-start;
+  align-items: flex-start;
+  justify-content: flex-end;
+}
+.ae-scheduled-row-actions button {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text);
+  padding: 5px 9px;
+  cursor: pointer;
+}
+.ae-scheduled-row-actions button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+@media (max-width: 780px) {
+  .ae-scheduled-panel {
+    width: 96vw;
+  }
+  .ae-scheduled-body {
+    grid-template-columns: 1fr;
+  }
+  .ae-scheduled-create {
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .ae-scheduled-row-head {
+    flex-direction: column;
+  }
+  .ae-scheduled-row-actions {
+    justify-content: flex-start;
+  }
+}
+
+@media (max-width: 720px) {
+  .ae-settings-panel {
+    width: min(96vw, 860px);
+  }
+  .ae-settings-field {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .ae-settings-field-control,
+  .ae-settings-input,
+  .ae-settings-model-picker,
+  .ae-settings-model-picker .ae-settings-input {
+    width: 100%;
+    min-width: 0;
+  }
+}
+
+.ae-auth-panel {
+  width: min(760px, 92vw);
+}
+.ae-auth-add {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: center;
+}
+.ae-auth-add .ae-settings-input {
+  min-width: min(220px, 100%);
+}
+.ae-auth-login {
+  margin-top: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: color-mix(in oklab, var(--accent) 5%, transparent);
+}
+.ae-auth-instructions {
+  margin: var(--space-2) 0 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: center;
+  color: var(--fg);
+  font-size: 13px;
+}
+.ae-auth-code-copy {
+  display: inline-flex;
+  gap: var(--space-2);
+  align-items: center;
+  min-width: 0;
+}
+.ae-auth-code-input {
+  width: 132px;
+  max-width: 100%;
+  padding: 4px 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--bg-elev);
+  color: var(--fg);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-align: center;
+  user-select: all;
+}
+.ae-auth-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.ae-auth-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--space-3);
+  align-items: center;
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-elev);
+}
+.ae-auth-row--active {
+  border-color: color-mix(in oklab, var(--accent) 40%, var(--border));
+  border-left: 3px solid var(--accent);
+  background: color-mix(in oklab, var(--accent) 6%, var(--bg-elev));
+}
+.ae-auth-row-main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.ae-auth-row-label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.ae-auth-row-label strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ae-auth-badge {
+  flex-shrink: 0;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  line-height: 1.4;
+}
+.ae-auth-badge--active {
+  background: color-mix(in oklab, var(--accent) 20%, transparent);
+  color: var(--accent);
+}
+.ae-auth-badge--default {
+  background: color-mix(in oklab, var(--text-dim) 15%, transparent);
+  color: var(--text-dim);
+}
+.ae-auth-row-main span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ae-auth-row-main span {
+  color: var(--text-dim);
+  font-size: var(--chrome-text-muted);
+}
+.ae-auth-row-email {
+  color: var(--text) !important;
+  font-size: var(--chrome-text-muted);
+  font-weight: 500;
+}
+.ae-auth-row-meta {
+  color: var(--text-dim);
+  font-size: var(--chrome-text-muted);
+}
+.ae-auth-row-name {
+  cursor: default;
+}
+.ae-auth-rename-input {
+  max-width: 200px;
+  font-weight: 600;
+  padding: 2px 6px;
+}
+.ae-auth-btn-danger:hover {
+  color: var(--danger, #e55);
+  border-color: var(--danger, #e55);
+}
+.ae-auth-usage {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 4px;
+}
+.ae-auth-usage-bar-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.ae-auth-usage-bar-header {
+  display: flex;
+  justify-content: space-between;
+  font-size: 10px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.ae-auth-usage-bar-track {
+  height: 4px;
+  border-radius: 2px;
+  background: color-mix(in oklab, var(--text-dim) 15%, transparent);
+  overflow: hidden;
+}
+.ae-auth-usage-bar-fill {
+  height: 100%;
+  border-radius: 2px;
+  background: var(--accent);
+  transition: width 0.3s ease;
+}
+.ae-auth-usage-bar-fill--warn {
+  background: var(--warning, #e8a83e);
+}
+.ae-auth-usage-bar-fill--danger {
+  background: var(--danger, #e55);
+}
+.ae-auth-usage-reset {
+  font-size: 10px;
+  color: var(--text-dim);
+}
+.ae-auth-usage-credits {
+  font-size: var(--chrome-text-muted);
+  color: var(--text-dim);
+}
+.ae-auth-usage-error {
+  font-size: var(--chrome-text-muted);
+  color: var(--danger, #e55);
+}
+.ae-auth-row-actions {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+@media (max-width: 640px) {
+  .ae-auth-row {
+    grid-template-columns: 1fr;
+  }
+  .ae-auth-row-actions {
+    flex-wrap: wrap;
+  }
+}
+
+/* =============================================================================
+   Cross-session search overlay (Cmd+Shift+F). Modeled after the
+   command palette but with a results pane sized for snippets.
+   ============================================================================= */
+
+.ae-search-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 12vh;
+  z-index: 200;
+}
+.ae-search-panel {
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  width: min(680px, 92vw);
+  max-height: 70vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.45);
+  font-family: ui-sans-serif, system-ui, sans-serif;
+}
+.ae-search-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+}
+.ae-search-icon {
+  color: var(--accent);
+  font-size: 1.1rem;
+}
+.ae-search-input {
+  flex: 1 1 auto;
+  background: transparent;
+  border: 0;
+  outline: none;
+  color: var(--text);
+  font-size: 1rem;
+  font-family: inherit;
+  padding: 4px 0;
+}
+.ae-search-busy {
+  font-size: 0.8rem;
+  color: var(--text-dim);
+  font-style: italic;
+}
+.ae-search-results {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  overscroll-behavior: none;
+  padding: 6px 0;
+}
+.ae-search-empty {
+  padding: 18px 20px;
+  color: var(--text-dim);
+  text-align: center;
+  font-size: 0.92rem;
+}
+.ae-search-row {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  padding: 8px 16px;
+  cursor: pointer;
+  border-left: 3px solid transparent;
+  font-family: inherit;
+}
+.ae-search-row:hover,
+.ae-search-row:focus-visible {
+  background: color-mix(in oklab, var(--accent) 8%, transparent);
+  border-left-color: var(--accent);
+  outline: none;
+}
+.ae-search-row-meta {
+  display: flex;
+  gap: 10px;
+  font-size: 0.78rem;
+  color: var(--text-dim);
+  margin-bottom: 2px;
+}
+.ae-search-row-role {
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--accent);
+}
+.ae-search-row-tab {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.ae-search-row-time {
+  margin-left: auto;
+}
+.ae-search-row-snippet {
+  color: var(--text);
+  font-size: 0.92rem;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.ae-search-row-mark {
+  background: var(--accent-soft);
+  color: var(--text);
+  font-weight: 600;
+  border-radius: 2px;
+  padding: 0 2px;
+}
+
+.ae-search-scope {
+  display: flex;
+  gap: 4px;
+  padding: 6px 14px;
+  border-bottom: 1px solid var(--border);
+}
+.ae-search-scope-tab {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 4px 10px;
+  color: var(--text-dim);
+  font-size: 0.82rem;
+  cursor: pointer;
+  transition:
+    background var(--motion-fast) ease,
+    color var(--motion-fast) ease;
+}
+.ae-search-scope-tab:hover:not(:disabled) {
+  background: var(--accent-hover-tint);
+  color: var(--text);
+}
+.ae-search-scope-tab:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.ae-search-scope-active {
+  background: var(--accent-soft);
+  color: var(--text);
+  border-color: var(--border);
+}
+
+/* Search-hit scroll-to-match flash on the chat row that contained the
+   matched substring. Quick attention pull, then the row settles back to
+   normal so the user can continue reading. */
+.a2ui-chat-message-flash {
+  animation: a2ui-chat-flash 1200ms ease-out;
+}
+@keyframes a2ui-chat-flash {
+  0% {
+    background: var(--accent-soft);
+  }
+  100% {
+    background: transparent;
+  }
+}
+
+.ae-search-footer {
+  display: flex;
+  gap: 12px;
+  padding: 8px 14px;
+  border-top: 1px solid var(--border);
+  font-size: 0.78rem;
+  color: var(--text-dim);
+}
+.ae-search-footer kbd {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  background: var(--bg);
+  padding: 1px 6px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+}
+

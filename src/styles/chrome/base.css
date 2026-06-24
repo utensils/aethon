@@ -1,0 +1,361 @@
+/* Aethon chrome rules — consumes tokens (tokens.css) + theme color tokens
+ * (themes.css). Selectors target Aethon-authored chrome only (.a2ui-*,
+ * .ae-*, .app-*) plus a tiny global reset; do not put third-party-library
+ * styles here.
+ *
+ * Text-selection policy: chrome surfaces set `user-select: none` on the
+ * container; content surfaces inherit the default. Any string inside
+ * chrome that should remain copyable (paths, branch names, error
+ * messages) opts in via `data-selectable`. See
+ * docs/aethon-agent/text-selection.md for the full rules. */
+
+/* Chrome surfaces lock down text selection — the app should feel
+ * like an app, not a website. `data-selectable` is the explicit
+ * opt-in for the rare path-like strings inside chrome that need to
+ * stay copyable (today: none — Copy Path lives in context menus). */
+.a2ui-sidebar,
+.a2ui-sidebar *,
+.ae-files-sidebar-area,
+.ae-files-sidebar-area *,
+.app-header,
+.app-header *,
+.a2ui-status-bar,
+.a2ui-status-bar *,
+.a2ui-tab-strip,
+.a2ui-tab-strip *,
+.ae-terminal-panel-tabs,
+.ae-terminal-panel-tabs *,
+.a2ui-context-menu,
+.a2ui-context-menu *,
+.ae-palette-panel,
+.ae-palette-panel *,
+.ae-settings-panel,
+.ae-settings-panel *,
+.ae-notification,
+.ae-notification *,
+.a2ui-projects-dashboard,
+.a2ui-projects-dashboard *,
+.a2ui-project-dashboard,
+.a2ui-project-dashboard *,
+.a2ui-empty-state,
+.a2ui-empty-state *,
+.a2ui-empty-state-card,
+.a2ui-empty-state-card *,
+.ae-extension-component,
+.ae-extension-component * {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+[data-selectable] {
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+/* macOS overlay-titlebar drag regions. With `titleBarStyle: Overlay`
+   there's no native bar to grab, so marked chrome (the sidebar brand
+   strip + the canvas header strip) drags the window; interactive
+   descendants opt back out so clicks still land. Scoped under
+   `[data-platform="mac"]` — and the `data-tauri-drag-region` attribute is
+   only emitted on mac (see isMacOS() gating in the components) — so
+   Linux/Windows native-titlebar dragging is unchanged. */
+[data-platform="mac"] [data-tauri-drag-region] {
+  -webkit-app-region: drag;
+  app-region: drag;
+}
+[data-platform="mac"] [data-tauri-drag-region] button,
+[data-platform="mac"] [data-tauri-drag-region] input,
+[data-platform="mac"] [data-tauri-drag-region] textarea,
+[data-platform="mac"] [data-tauri-drag-region] select,
+[data-platform="mac"] [data-tauri-drag-region] a,
+[data-platform="mac"] [data-tauri-drag-region] [role="button"],
+[data-platform="mac"] [data-tauri-drag-region] [data-no-drag] {
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
+
+input,
+textarea,
+[contenteditable="true"],
+.monaco-editor,
+.monaco-editor * {
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+body {
+  margin: 0;
+  /* App backdrop is a subtle radial centred above the canvas — gives
+     the otherwise flat --bg a tiny warm core under the header. Themes
+     can disable the gradient by aliasing --gradient-app-backdrop to
+     `var(--bg)`. */
+  background: var(--gradient-app-backdrop, var(--bg));
+  background-attachment: fixed;
+  color: var(--text);
+  font-family: var(--font-ui);
+  /* `~/.aethon/config.toml` `[ui] font_size` writes to --app-font-size
+     in App.tsx; the fallback keeps existing builds rendering the
+     default 14px when the user hasn't set the option. */
+  font-size: var(--app-font-size, 14px);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  --ae-mac-titlebar-clearance: calc(94px / var(--app-ui-scale, 1));
+}
+
+/* Dark, slim scrollbars — defaults are jarring on the elevated panels. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+*::-webkit-scrollbar {
+  width: var(--scrollbar-size);
+  height: var(--scrollbar-size);
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border-radius: var(--radius-sm);
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover);
+}
+
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  width: 100vw;
+  height: var(--app-viewport-height);
+  width: var(--app-viewport-width);
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.ae-boot-curtain {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  place-items: center;
+  background: var(--gradient-app-backdrop, var(--bg));
+}
+
+.ae-boot-curtain img {
+  width: 56px;
+  max-width: 18vw;
+  height: auto;
+  opacity: 0.9;
+}
+
+.ae-startup-curtain {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+  place-items: center;
+  padding: 24px;
+  overflow: auto;
+  background: var(--gradient-app-backdrop, var(--bg));
+}
+
+.ae-startup-curtain--workspace {
+  position: absolute;
+  z-index: auto;
+  background: var(--bg);
+}
+
+.ae-workspace-startup-host {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  min-width: 0;
+  min-height: 0;
+  pointer-events: auto;
+}
+
+.ae-startup-panel {
+  width: min(620px, 100%);
+  max-height: min(620px, calc(var(--app-viewport-height) - 48px));
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  overflow: hidden;
+}
+
+.ae-startup-curtain--workspace .ae-startup-panel {
+  max-height: min(620px, calc(100% - 48px));
+}
+
+.ae-startup-header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+}
+
+.ae-startup-header img {
+  width: 44px;
+  height: auto;
+  flex: 0 0 auto;
+  opacity: 0.9;
+}
+
+.ae-startup-header h1 {
+  margin: 0;
+  color: var(--text);
+  font-size: 18px;
+  font-weight: 650;
+  line-height: 1.2;
+}
+
+.ae-startup-header p,
+.ae-startup-reason {
+  margin: 4px 0 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.ae-startup-tasks {
+  display: grid;
+  gap: 8px;
+}
+
+.ae-startup-task {
+  display: grid;
+  grid-template-columns: 12px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 9px;
+  min-height: 28px;
+  color: var(--text);
+  font-size: 13px;
+}
+
+.ae-startup-task-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-muted);
+}
+
+.ae-startup-task-dot.is-running,
+.ae-startup-task-dot.is-idle {
+  background: var(--accent);
+}
+
+.ae-startup-task-dot.is-ready {
+  background: var(--success, #2f9e44);
+}
+
+.ae-startup-task-dot.is-failed {
+  background: var(--danger, #d94848);
+}
+
+.ae-startup-task-meta {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.ae-startup-output {
+  margin: 0;
+  min-height: 0;
+  max-height: 220px;
+  overflow: auto;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.ae-startup-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.ae-startup-actions button {
+  height: 30px;
+  padding: 0 12px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm);
+  background: var(--accent);
+  color: var(--accent-contrast, #fff);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.ae-startup-actions button.is-secondary {
+  border-color: var(--border);
+  background: var(--surface);
+  color: var(--text);
+}
+
+.a2ui-renderer {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.ae-native-canvas-window {
+  background: var(--bg);
+}
+
+.ae-native-canvas-window > .a2ui-renderer {
+  padding: 16px;
+  overflow: auto;
+}
+
+.ae-native-canvas-empty {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  place-items: center;
+  padding: 24px;
+  color: var(--text-dim);
+  font-size: var(--type-body-size);
+  text-align: center;
+}
+
+.a2ui-container,
+.a2ui-card,
+.a2ui-image,
+.a2ui-text-input {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.a2ui-image img {
+  max-width: 100%;
+}
+

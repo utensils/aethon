@@ -1,0 +1,1174 @@
+/* =====================================================================
+ * M9 — Projects dashboard + per-project dashboard + task launcher.
+ *
+ * All rules are scoped under .a2ui-projects-dashboard /
+ * .a2ui-project-dashboard / .a2ui-project-card / .a2ui-gh-stats-strip /
+ * .a2ui-task-launcher to avoid leaking into other surfaces. Tokens used
+ * throughout so themes pick up automatically.
+ * ===================================================================== */
+
+.a2ui-projects-dashboard,
+.a2ui-project-dashboard {
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  flex: 1;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  background: var(--bg);
+  padding: var(--space-8) var(--space-5);
+  overflow-y: auto;
+  /* Hard stop on horizontal overflow — long issue titles or wide
+     stat strips should never push the viewport into a horizontal
+     scroll. The card respects max-width; this is the safety net for
+     anything inside that exceeds it. */
+  overflow-x: hidden;
+  overscroll-behavior: none;
+}
+
+.a2ui-projects-dashboard-card,
+.a2ui-project-dashboard-card {
+  /* Was 920px — left a wide empty band on typical windows. Scales now
+     up to ~1400px and respects a 96px window padding so the dashboard
+     stays comfortably edge-aligned on small windows too. */
+  max-width: min(1400px, calc(100% - 96px));
+  width: 100%;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-8);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  box-shadow: var(--shadow-2);
+}
+
+/* Host banner — sits inside the dashboard card to anchor it to the
+   current host. Uses the existing token palette; no new variables. */
+.a2ui-host-banner {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  align-self: stretch;
+  font-size: var(--text-sm);
+  color: var(--text-dim);
+}
+.a2ui-host-banner-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--accent);
+  flex-shrink: 0;
+}
+.a2ui-host-banner-text {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.a2ui-host-banner-text strong {
+  color: var(--text);
+  font-weight: 600;
+}
+.a2ui-host-banner-hint {
+  color: var(--text-dim);
+  font-size: var(--text-xs);
+}
+
+/* Project-card icon — 20px square before the label. The
+   --initial modifier renders a deterministic letter tile for projects
+   without a discovered logo. */
+.a2ui-project-card-icon {
+  width: 20px;
+  height: 20px;
+  border-radius: var(--radius-sm);
+  flex-shrink: 0;
+  object-fit: cover;
+  margin-right: var(--space-2);
+}
+span.a2ui-project-card-icon--initial {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+/* ---- Projects dashboard (global overview) --------------------------- */
+
+.a2ui-projects-dashboard-card {
+  align-items: center;
+  text-align: center;
+}
+
+.a2ui-projects-dashboard-hero {
+  filter: drop-shadow(var(--shadow-1));
+}
+
+.a2ui-projects-dashboard-title {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.a2ui-projects-dashboard-subtitle {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: var(--text-md);
+  line-height: 1.4;
+}
+
+.a2ui-projects-dashboard-actions {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.a2ui-projects-dashboard-primary {
+  background: var(--accent);
+  color: var(--btn-text);
+  border: none;
+  border-radius: var(--radius-md);
+  padding: 10px 24px;
+  font-size: var(--text-md);
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity var(--motion-fast) ease;
+}
+.a2ui-projects-dashboard-primary:hover {
+  opacity: 0.88;
+}
+.a2ui-projects-dashboard-primary:active {
+  opacity: 0.78;
+}
+.a2ui-projects-dashboard-primary:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.a2ui-projects-dashboard-secondary {
+  background: transparent;
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 10px 20px;
+  font-size: var(--text-md);
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    background var(--motion-fast) ease,
+    border-color var(--motion-fast) ease;
+}
+.a2ui-projects-dashboard-secondary:hover {
+  background: var(--bg-hover);
+}
+.a2ui-projects-dashboard-secondary:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.a2ui-projects-dashboard-section {
+  width: 100%;
+  text-align: left;
+  margin-top: var(--space-4);
+}
+.a2ui-projects-dashboard-section h2 {
+  margin: 0 0 var(--space-3) 0;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.a2ui-projects-dashboard-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: var(--space-3);
+}
+
+.a2ui-projects-dashboard-sessions {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+.a2ui-projects-dashboard-sessions li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background var(--motion-fast) ease;
+}
+.a2ui-projects-dashboard-sessions li:hover {
+  background: var(--bg-hover);
+}
+.a2ui-projects-dashboard-sessions li.is-confirming,
+.a2ui-project-dashboard-sessions li.is-confirming {
+  background: var(--bg-hover);
+  cursor: default;
+}
+.a2ui-projects-dashboard-session-label {
+  font-size: var(--text-md);
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1 1 auto;
+}
+.a2ui-projects-dashboard-session-meta {
+  font-size: var(--chrome-text-muted);
+  color: var(--text-dim);
+  flex-shrink: 0;
+}
+.a2ui-projects-dashboard-session-actions,
+.a2ui-project-dashboard-session-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: 0 0 auto;
+  min-width: max-content;
+}
+.a2ui-dashboard-session-confirm {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: max-content;
+}
+.a2ui-dashboard-session-confirm-delete {
+  height: 28px;
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-sm);
+  font-size: var(--chrome-text-compact);
+  border: 1px solid color-mix(in oklab, var(--error) 28%, var(--border));
+  background: color-mix(in oklab, var(--error) 10%, transparent);
+  color: var(--error);
+  cursor: pointer;
+  transition:
+    background var(--motion-fast) var(--ease-out),
+    border-color var(--motion-fast) var(--ease-out),
+    color var(--motion-fast) var(--ease-out);
+}
+.a2ui-dashboard-session-confirm-delete:hover {
+  background: color-mix(in oklab, var(--error) 16%, transparent);
+  border-color: color-mix(in oklab, var(--error) 52%, var(--border));
+}
+.a2ui-dashboard-session-confirm-delete:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+.a2ui-projects-dashboard-session-delete,
+.a2ui-project-dashboard-session-delete {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  color: var(--text-dim);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  opacity: 0;
+  transform: scale(0.96);
+  transition:
+    opacity var(--motion-fast) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out),
+    color var(--motion-fast) var(--ease-out),
+    background var(--motion-fast) var(--ease-out),
+    border-color var(--motion-fast) var(--ease-out);
+}
+.a2ui-projects-dashboard-sessions
+  li:hover
+  .a2ui-projects-dashboard-session-delete,
+.a2ui-projects-dashboard-session-delete:focus-visible,
+.a2ui-projects-dashboard-sessions
+  li.is-confirming
+  .a2ui-projects-dashboard-session-delete,
+.a2ui-project-dashboard-sessions
+  li:hover
+  .a2ui-project-dashboard-session-delete,
+.a2ui-project-dashboard-session-delete:focus-visible,
+.a2ui-project-dashboard-sessions
+  li.is-confirming
+  .a2ui-project-dashboard-session-delete {
+  opacity: 1;
+  transform: scale(1);
+}
+.a2ui-projects-dashboard-session-delete:hover,
+.a2ui-project-dashboard-session-delete:hover {
+  color: var(--error);
+  background: color-mix(in oklab, var(--error) 10%, transparent);
+  border-color: color-mix(in oklab, var(--error) 28%, transparent);
+}
+.a2ui-projects-dashboard-session-delete:focus-visible,
+.a2ui-project-dashboard-session-delete:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+/* ---- Project card --------------------------------------------------- */
+
+.a2ui-project-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background var(--motion-fast) ease,
+    border-color var(--motion-fast) ease,
+    transform var(--motion-fast) ease;
+  font: inherit;
+  color: inherit;
+}
+.a2ui-project-card:hover {
+  background: var(--bg-hover);
+  border-color: var(--border-hover, var(--accent));
+  transform: translateY(-1px);
+}
+.a2ui-project-card:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+.a2ui-project-card--active {
+  border-color: var(--accent);
+  background: var(--accent-hover-tint, var(--bg-hover));
+}
+
+.a2ui-project-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+.a2ui-project-card-label {
+  font-size: var(--text-md);
+  font-weight: 600;
+  color: var(--text);
+}
+.a2ui-project-card-active-chip {
+  font-size: var(--chrome-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--accent);
+}
+.a2ui-project-card-path {
+  font-family: var(--font-mono);
+  font-size: var(--chrome-text-muted);
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.a2ui-project-card-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: var(--chrome-text-compact);
+  color: var(--text-dim);
+  gap: var(--space-2);
+}
+.a2ui-project-card-branch {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+.a2ui-project-card-branch--dirty {
+  color: var(--accent);
+}
+.a2ui-project-card-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-circle);
+  background: var(--accent);
+}
+.a2ui-project-card-ahead,
+.a2ui-project-card-behind {
+  font-family: var(--font-mono);
+}
+.a2ui-project-card-gh {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.a2ui-project-card-gh-loading {
+  opacity: 0.5;
+}
+
+/* ---- gh-stats-strip ------------------------------------------------- */
+
+.a2ui-gh-stats-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: center;
+}
+.a2ui-gh-stat {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 4px var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: var(--bg);
+  font-size: var(--chrome-text-compact);
+  color: var(--text);
+  cursor: default;
+  font: inherit;
+}
+button.a2ui-gh-stat {
+  cursor: pointer;
+  transition: background var(--motion-fast) ease;
+}
+button.a2ui-gh-stat:hover {
+  background: var(--bg-hover);
+}
+.a2ui-gh-stat--repo {
+  font-weight: 600;
+}
+.a2ui-gh-stat-icon {
+  opacity: 0.7;
+}
+.a2ui-gh-stat-value {
+  font-family: var(--font-mono);
+}
+.a2ui-gh-stat-label {
+  color: var(--text-dim);
+  margin-left: 2px;
+}
+
+/* ---- Project dashboard (per-project) -------------------------------- */
+
+.a2ui-project-dashboard-card {
+  align-items: stretch;
+  /* Premium landing touch: a thin accent strip across the very top of
+     the card so the dashboard reads as the app's "home" surface. */
+  position: relative;
+  overflow: hidden;
+}
+.a2ui-project-dashboard-card::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--gradient-accent, var(--accent));
+  opacity: 0.9;
+}
+
+.a2ui-project-dashboard-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+.a2ui-project-dashboard-hero {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-2);
+  border-radius: var(--radius-lg);
+  background: var(--accent-soft);
+  box-shadow: 0 0 0 1px var(--accent-soft);
+}
+.a2ui-project-dashboard-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: var(--radius-md);
+  object-fit: cover;
+  display: block;
+}
+.a2ui-project-dashboard-header-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.a2ui-project-dashboard-title {
+  margin: 0;
+  font-size: 1.4rem;
+  font-weight: 600;
+  color: var(--text);
+}
+.a2ui-project-dashboard-path {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--chrome-text-muted);
+  color: var(--text-dim);
+}
+.a2ui-project-dashboard-description {
+  margin: 4px 0 0 0;
+  color: var(--text-dim);
+  font-size: var(--text-md);
+}
+.a2ui-project-dashboard-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.a2ui-project-dashboard-section h2 {
+  margin: 0;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+.a2ui-project-dashboard-section-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.a2ui-project-dashboard-section-action {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-size: var(--chrome-text-compact);
+  padding: 3px var(--space-2);
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+  transition:
+    background var(--motion-fast) ease,
+    border-color var(--motion-fast) ease;
+}
+.a2ui-project-dashboard-section-action:hover {
+  background: var(--bg-hover);
+  border-color: var(--accent);
+}
+.a2ui-project-dashboard-startup-policy {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  margin-top: calc(var(--space-1) * -1);
+  color: var(--text-dim);
+  font-size: var(--chrome-text-compact);
+}
+.a2ui-project-dashboard-startup-checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--text);
+  cursor: pointer;
+  user-select: none;
+}
+.a2ui-project-dashboard-startup-checkbox input {
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+.a2ui-project-dashboard-startup-checkbox input:disabled,
+.a2ui-project-dashboard-startup-checkbox input:disabled + span {
+  cursor: not-allowed;
+  opacity: 0.56;
+}
+.a2ui-project-dashboard-startup-label {
+  font-weight: 500;
+}
+.a2ui-project-dashboard-startup-hint {
+  min-width: min(100%, 22rem);
+  color: var(--text-dim);
+}
+
+.a2ui-project-dashboard-workspaces {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.a2ui-project-dashboard-workspace {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 6px var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: background var(--motion-fast) ease;
+}
+.a2ui-project-dashboard-workspace:hover {
+  background: var(--bg-hover);
+}
+.a2ui-project-dashboard-workspace.is-active {
+  border-color: var(--accent);
+  background: var(--accent-hover-tint, var(--bg-hover));
+}
+.a2ui-project-dashboard-workspace-label {
+  font-weight: 600;
+  color: var(--text);
+}
+.a2ui-project-dashboard-workspace-branch {
+  font-family: var(--font-mono);
+  color: var(--accent);
+  font-size: var(--chrome-text-muted);
+}
+.a2ui-project-dashboard-workspace-main {
+  margin-left: auto;
+  font-size: var(--chrome-text-muted);
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.a2ui-project-dashboard-workspace-remove {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  margin-left: auto;
+  padding: 0;
+  color: var(--text-dim);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  opacity: 0;
+  transform: scale(0.96);
+  transition:
+    opacity var(--motion-fast) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out),
+    color var(--motion-fast) var(--ease-out),
+    background var(--motion-fast) var(--ease-out),
+    border-color var(--motion-fast) var(--ease-out);
+}
+.a2ui-project-dashboard-workspace:hover
+  .a2ui-project-dashboard-workspace-remove,
+.a2ui-project-dashboard-workspace-remove:focus-visible {
+  opacity: 1;
+  transform: scale(1);
+}
+.a2ui-project-dashboard-workspace-remove:hover {
+  color: var(--error);
+  background: color-mix(in oklab, var(--error) 10%, transparent);
+  border-color: color-mix(in oklab, var(--error) 28%, transparent);
+}
+.a2ui-project-dashboard-workspace-confirm-remove {
+  height: 28px;
+  margin-left: auto;
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-sm);
+  font-size: var(--chrome-text-compact);
+  border: 1px solid color-mix(in oklab, var(--error) 28%, var(--border));
+  background: color-mix(in oklab, var(--error) 10%, transparent);
+  color: var(--error);
+  cursor: pointer;
+}
+.a2ui-project-dashboard-workspace-confirm-remove:hover {
+  background: color-mix(in oklab, var(--error) 16%, transparent);
+  border-color: color-mix(in oklab, var(--error) 52%, var(--border));
+}
+.a2ui-project-dashboard-workspace-remove:focus-visible,
+.a2ui-project-dashboard-workspace-confirm-remove:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.a2ui-project-dashboard-sessions {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+.a2ui-project-dashboard-sessions li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background var(--motion-fast) ease;
+}
+.a2ui-project-dashboard-sessions li:hover {
+  background: var(--bg-hover);
+}
+.a2ui-project-dashboard-session-label {
+  font-size: var(--text-md);
+  color: var(--text);
+  flex: 1 1 auto;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.a2ui-project-dashboard-session-meta {
+  font-size: var(--chrome-text-muted);
+  color: var(--text-dim);
+  flex-shrink: 0;
+}
+
+.a2ui-project-dashboard-widgets {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: var(--space-3);
+}
+
+/* ---- Issues section (per-project dashboard) ------------------------- */
+
+.a2ui-dashboard-issues {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.a2ui-dashboard-issues-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-2);
+}
+.a2ui-dashboard-issues-head h2 {
+  margin: 0;
+  font-size: var(--text-lg);
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.a2ui-dashboard-issues-count {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 8px;
+  background: var(--bg-elev, var(--bg-input));
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  border-radius: var(--radius-pill);
+  font-size: var(--chrome-text-muted);
+  min-width: 1.6em;
+  justify-content: center;
+}
+.a2ui-dashboard-issues-refresh {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: var(--space-1) var(--space-3);
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: var(--chrome-text-muted);
+}
+.a2ui-dashboard-issues-refresh:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+.a2ui-dashboard-issues-refresh:disabled {
+  opacity: var(--opacity-disabled);
+  cursor: not-allowed;
+}
+.a2ui-dashboard-issues-empty {
+  color: var(--text-dim);
+  font-size: var(--chrome-text-muted);
+  padding: var(--space-2) 0;
+  margin: 0;
+}
+.a2ui-dashboard-issues-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.a2ui-dashboard-issue-row {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: var(--space-2);
+  align-items: start;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition:
+    background var(--motion-fast) ease,
+    border-color var(--motion-fast) ease;
+}
+.a2ui-dashboard-issue-row:hover {
+  background: var(--bg-hover);
+  border-color: var(--border-strong, var(--border));
+}
+.a2ui-dashboard-issue-row.is-linked-session {
+  border-color: color-mix(in oklab, var(--accent) 32%, var(--border));
+}
+.a2ui-dashboard-issue-line {
+  display: flex;
+  gap: var(--space-2);
+  align-items: baseline;
+  min-width: 0;
+  /* Allow long titles to wrap rather than ellipsize off-screen. */
+}
+.a2ui-dashboard-issue-num {
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--chrome-text-muted);
+  flex: 0 0 auto;
+}
+.a2ui-dashboard-issue-title {
+  color: var(--text);
+  font-size: var(--text-md);
+  flex: 1 1 auto;
+  min-width: 0;
+  /* Wrap mid-word for very long titles so the row never forces a
+     horizontal scroll on the canvas. */
+  overflow-wrap: anywhere;
+}
+.a2ui-dashboard-issue-meta {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: center;
+  margin-top: var(--space-1);
+  font-size: var(--chrome-text-muted);
+  color: var(--text-dim);
+}
+.a2ui-dashboard-issue-author,
+.a2ui-dashboard-issue-updated,
+.a2ui-dashboard-issue-comments {
+  white-space: nowrap;
+}
+.a2ui-dashboard-issue-session {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: min(100%, 24rem);
+  min-width: 0;
+  padding: 1px var(--space-2);
+  border: 1px solid color-mix(in oklab, var(--accent) 40%, var(--border));
+  border-radius: var(--radius-pill);
+  background: color-mix(in oklab, var(--accent) 12%, transparent);
+  color: var(--text);
+  font: inherit;
+  line-height: 1.2;
+  cursor: pointer;
+}
+.a2ui-dashboard-issue-session[data-state="working"] {
+  background: color-mix(in oklab, var(--accent) 16%, transparent);
+}
+.a2ui-dashboard-issue-session:hover {
+  background: color-mix(in oklab, var(--accent) 18%, transparent);
+  border-color: color-mix(in oklab, var(--accent) 62%, var(--border));
+}
+.a2ui-dashboard-issue-session:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+.a2ui-dashboard-issue-session-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-circle);
+  background: var(--accent);
+  flex: 0 0 auto;
+}
+.a2ui-dashboard-issue-session-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.a2ui-dashboard-issue-label {
+  padding: 1px var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  font-size: 0.78rem;
+  line-height: 1.2;
+  /* When the issue carries a `color` from GitHub, the JSX inlines it as
+     `--label-color: #abc123`. We then compose the chip's bg/border/fg
+     from that single hue mixed with the theme's --text / --border /
+     --bg-elev tokens. The result keeps each label's identity (pink for
+     bug, mint for enhancement, etc.) while guaranteeing the fg/bg pair
+     clears WCAG AA — the foreground inherits most of its luminance
+     from --text, which is already a passing colour in every theme. */
+  background: color-mix(
+    in oklab,
+    var(--label-color, var(--accent)) 18%,
+    var(--bg-elev)
+  );
+  border-color: color-mix(
+    in oklab,
+    var(--label-color, var(--accent)) 55%,
+    var(--border)
+  );
+  color: color-mix(in oklab, var(--label-color, var(--text)) 30%, var(--text));
+}
+.a2ui-dashboard-issue-send {
+  align-self: center;
+  grid-row: 1;
+  grid-column: 2;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  padding: var(--space-1) var(--space-3);
+  font-size: var(--chrome-text-muted);
+  color: var(--text);
+  cursor: pointer;
+  opacity: 0;
+  transition:
+    opacity var(--motion-fast) ease,
+    background var(--motion-fast) ease;
+}
+.a2ui-dashboard-issue-row:hover .a2ui-dashboard-issue-send,
+.a2ui-dashboard-issue-row:focus-within .a2ui-dashboard-issue-send,
+.a2ui-dashboard-issue-send:disabled {
+  opacity: 1;
+}
+.a2ui-dashboard-issue-send:hover:not(:disabled) {
+  background: var(--accent);
+  color: var(--text-on-accent, var(--bg));
+  border-color: var(--accent);
+}
+
+/* Lightweight context menu used by the issues section. Mirrors the
+   shape of `.a2ui-context-menu` but stays self-contained until the
+   Phase-2 primitive lands. */
+.a2ui-dashboard-issue-menu {
+  z-index: var(--z-popover);
+  background: var(--bg-elev, var(--bg));
+  border: 1px solid var(--border-strong, var(--border));
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-3, 0 6px 20px rgba(0, 0, 0, 0.35));
+  padding: var(--space-1);
+  min-width: 220px;
+  display: flex;
+  flex-direction: column;
+}
+.a2ui-dashboard-issue-menu-item {
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  text-align: left;
+  padding: var(--space-2) var(--space-3);
+  cursor: pointer;
+  font-size: var(--text-sm, var(--chrome-text));
+}
+.a2ui-dashboard-issue-menu-item:hover {
+  background: var(--bg-hover);
+}
+.a2ui-dashboard-issues-warning {
+  margin: var(--space-1) 0 var(--space-2) 0;
+  color: var(--warning, var(--text-muted));
+  font-size: var(--text-sm, var(--chrome-text));
+}
+.a2ui-project-dashboard-widget {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: var(--space-3);
+}
+.a2ui-project-dashboard-widget-title {
+  margin: 0 0 var(--space-2) 0;
+  font-size: var(--text-md);
+  font-weight: 600;
+}
+
+/* ---- Task launcher (Codex-style composer) --------------------------- */
+
+.a2ui-task-launcher {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+.a2ui-task-launcher-input {
+  width: 100%;
+  resize: none;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--text-md);
+  outline: none;
+  min-height: 60px;
+}
+.a2ui-task-launcher-input::placeholder {
+  color: var(--text-dim);
+}
+
+.a2ui-task-launcher-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: center;
+  margin-top: var(--space-2);
+  padding-top: var(--space-2);
+  border-top: 1px dashed var(--border);
+}
+
+.a2ui-task-launcher-chip-wrap {
+  position: relative;
+  display: inline-block;
+}
+.a2ui-task-launcher-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 4px var(--space-2);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--chrome-text-compact);
+  cursor: pointer;
+  transition:
+    background var(--motion-fast) ease,
+    border-color var(--motion-fast) ease;
+}
+.a2ui-task-launcher-chip:hover {
+  background: var(--bg-hover);
+  border-color: var(--accent);
+}
+.a2ui-task-launcher-chip-icon {
+  opacity: 0.7;
+}
+.a2ui-task-launcher-chip-caret {
+  opacity: 0.5;
+  font-size: 0.7em;
+}
+.a2ui-task-launcher-chip-menu {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  margin-top: 4px;
+  min-width: 200px;
+  max-height: 280px;
+  overflow-y: auto;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-2);
+  z-index: var(--z-dropdown);
+  padding: 4px 0;
+  display: flex;
+  flex-direction: column;
+}
+.a2ui-task-launcher-chip-menu-item {
+  display: block;
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  text-align: left;
+  background: transparent;
+  border: 0;
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+  transition: background var(--motion-fast) ease;
+}
+.a2ui-task-launcher-chip-menu-item:hover {
+  background: var(--bg-hover);
+}
+.a2ui-task-launcher-chip-menu-item.is-current {
+  color: var(--accent);
+}
+.a2ui-task-launcher-chip-search {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  margin: -4px 0 4px;
+  padding: var(--space-2) var(--space-3);
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-elev);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--chrome-text-compact);
+  outline: none;
+}
+.a2ui-task-launcher-chip-search::placeholder {
+  color: var(--text-dim);
+}
+.a2ui-task-launcher-chip-menu-empty {
+  padding: var(--space-2) var(--space-3);
+  color: var(--text-dim);
+  font-size: var(--chrome-text-compact);
+}
+
+.a2ui-task-launcher-branch-input,
+.a2ui-task-launcher-base-input {
+  padding: 4px var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--chrome-text-compact);
+  font-family: var(--font-mono);
+  outline: none;
+  max-width: 160px;
+}
+.a2ui-task-launcher-branch-input:focus,
+.a2ui-task-launcher-base-input:focus {
+  border-color: var(--accent);
+}
+
+.a2ui-task-launcher-voice-controls {
+  margin-left: auto;
+  min-height: 30px;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.a2ui-task-launcher-voice-controls + .a2ui-task-launcher-submit {
+  margin-left: 0;
+}
+.a2ui-task-launcher-voice-controls .a2ui-chat-input-voice {
+  position: static;
+  right: auto;
+  bottom: auto;
+}
+.a2ui-task-launcher-voice-controls .a2ui-chat-input-voice-status,
+.a2ui-task-launcher-voice-controls .a2ui-chat-input-voice-error {
+  position: static;
+  right: auto;
+  bottom: auto;
+  max-width: min(260px, 40vw);
+}
+
+.a2ui-task-launcher-submit {
+  margin-left: auto;
+  padding: 4px var(--space-3);
+  background: var(--accent);
+  color: var(--btn-text);
+  border: none;
+  border-radius: var(--radius-pill);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity var(--motion-fast) ease;
+}
+.a2ui-task-launcher-submit:hover {
+  opacity: 0.88;
+}
+.a2ui-task-launcher-submit:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+

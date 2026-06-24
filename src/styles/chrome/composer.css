@@ -1,0 +1,218 @@
+/* ── Composer visibility pills (on/off Thinking / Tool calls) ─────────── */
+.ae-composer-area {
+  min-width: 0;
+}
+.ae-composer-pills {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px 2px;
+  justify-content: flex-end;
+}
+.ae-vis-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 11px;
+  line-height: 1;
+  padding: 3px 9px;
+  cursor: pointer;
+  transition:
+    border-color 120ms ease,
+    background 120ms ease,
+    color 120ms ease;
+}
+.ae-vis-pill:hover {
+  border-color: var(--border-strong);
+  background: var(--bg-hover);
+  color: var(--text);
+}
+.ae-vis-pill-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  flex: none;
+}
+/* Per-session override marker — a small accent tag after the state text. */
+.ae-vis-pill[data-scope="session"] {
+  border-color: color-mix(in oklab, var(--accent) 55%, var(--border));
+}
+.ae-vis-pill-scope {
+  font-size: 9px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 1px 4px;
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--accent) 20%, transparent);
+  color: var(--accent);
+}
+.ae-vis-pill[data-mode="hide"],
+.ae-vis-pill[data-mode="collapse"],
+.ae-vis-pill[data-mode="group-turn"],
+.ae-vis-pill[data-mode="group-run"],
+.ae-vis-pill[data-mode="group-block"] {
+  color: color-mix(in oklab, var(--text-dim) 70%, transparent);
+}
+.ae-vis-pill[data-mode="hide"] .ae-vis-pill-dot,
+.ae-vis-pill[data-mode="collapse"] .ae-vis-pill-dot,
+.ae-vis-pill[data-mode="group-turn"] .ae-vis-pill-dot,
+.ae-vis-pill[data-mode="group-run"] .ae-vis-pill-dot,
+.ae-vis-pill[data-mode="group-block"] .ae-vis-pill-dot {
+  background: transparent;
+  border: 1px solid var(--border-strong);
+}
+.ae-plan-pill[data-mode="on"] {
+  border-color: color-mix(in oklab, var(--accent) 70%, var(--border));
+  background: color-mix(in oklab, var(--accent) 14%, transparent);
+  color: var(--text);
+}
+.ae-plan-pill[data-mode="off"] .ae-vis-pill-dot {
+  background: transparent;
+  border: 1px solid var(--border-strong);
+}
+.ae-vis-pill-state {
+  opacity: 0.75;
+  font-variant-numeric: tabular-nums;
+}
+.ae-vis-more {
+  position: relative;
+  display: inline-flex;
+}
+.ae-vis-more-btn {
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+  padding: 2px 8px;
+}
+.ae-vis-more-btn:hover {
+  border-color: var(--border-strong);
+  background: var(--bg-hover);
+  color: var(--text);
+}
+.ae-vis-menu-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+}
+.ae-vis-menu {
+  /* Fixed positioning so the popover escapes `.a2ui-layout-cell`'s
+     overflow:hidden clip (same trick as `.a2ui-dropdown-panel`). `bottom` /
+     `right` are set inline from the trigger's bounding rect so the menu floats
+     above the composer. */
+  position: fixed;
+  z-index: 41;
+  min-width: 248px;
+  max-width: calc(var(--app-viewport-width, 100vw) - 16px);
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.4);
+  padding: 4px;
+  transform-origin: bottom right;
+  animation: ae-vis-menu-enter var(--motion-base) var(--ease-out-strong) both;
+}
+
+@keyframes ae-vis-menu-enter {
+  from {
+    opacity: 0;
+    transform: translateY(4px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.ae-vis-menu-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  padding: 7px 10px;
+  cursor: pointer;
+  transition:
+    background var(--motion-fast) var(--ease-out),
+    color var(--motion-fast) var(--ease-out);
+}
+.ae-vis-menu-item:hover {
+  background: var(--bg-hover);
+}
+.ae-vis-menu-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.ae-vis-menu-check {
+  display: inline-flex;
+  justify-content: center;
+  width: 12px;
+  color: var(--accent);
+  flex: none;
+}
+.ae-vis-menu-sep {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--border);
+}
+.ae-vis-menu-head {
+  padding: 6px 10px 2px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+.ae-vis-menu-radios {
+  padding: 4px 10px 6px;
+}
+.ae-vis-menu-radios-label {
+  display: block;
+  font-size: 11px;
+  color: var(--text-dim);
+  margin-bottom: 4px;
+}
+.ae-vis-menu-radio-row {
+  display: flex;
+  gap: 4px;
+}
+.ae-vis-menu-radio {
+  flex: 1;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 11px;
+  padding: 4px 6px;
+  cursor: pointer;
+  transition:
+    border-color 120ms ease,
+    background 120ms ease,
+    color 120ms ease;
+}
+.ae-vis-menu-radio:hover {
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+.ae-vis-menu-radio[data-checked="true"] {
+  border-color: var(--accent);
+  background: color-mix(in oklab, var(--accent) 16%, transparent);
+  color: var(--text);
+}
+
