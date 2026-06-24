@@ -37,6 +37,7 @@ struct StartupRecord {
     state: StartupState,
     reason: Option<String>,
     active_task_id: Option<String>,
+    task_states: BTreeMap<String, StartupState>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -90,6 +91,8 @@ pub struct StartupConfig {
     pub auto_approve: bool,
     pub commands: Vec<StartupCommandConfig>,
     pub warning: Option<String>,
+    #[serde(skip_serializing)]
+    pub parse_error: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -127,13 +130,24 @@ struct RawStartupCommand {
 }
 
 pub(crate) fn parse_startup_config(input: &str) -> StartupConfig {
-    let parsed = if input.trim().is_empty() {
-        RawStartupToml::default()
+    let (parsed, parse_error) = if input.trim().is_empty() {
+        (RawStartupToml::default(), None)
     } else {
-        toml::from_str::<RawStartupToml>(input).unwrap_or_default()
+        match toml::from_str::<RawStartupToml>(input) {
+            Ok(parsed) => (parsed, None),
+            Err(err) => (
+                RawStartupToml::default(),
+                Some(format!(
+                    "Could not parse .aethon/startup.toml; startup commands were not run: {err}"
+                )),
+            ),
+        }
     };
     let timeout_seconds = normalize_timeout(parsed.startup.timeout_seconds);
     let mut warnings = Vec::new();
+    if let Some(error) = &parse_error {
+        warnings.push(error.clone());
+    }
     if parsed.startup.auto_approve == Some(true) {
         warnings.push(
             "Ignored [startup].auto_approve from project config; configure startup trust in Aethon"
@@ -179,6 +193,7 @@ pub(crate) fn parse_startup_config(input: &str) -> StartupConfig {
         auto_approve: false,
         commands,
         warning: (!warnings.is_empty()).then(|| warnings.join("; ")),
+        parse_error,
     }
 }
 
@@ -193,6 +208,11 @@ pub(crate) fn startup_fingerprint(config: &StartupConfig) -> String {
     let mut hasher = Sha1::new();
     hasher.update(b"aethon-startup:v1");
     hasher.update(config.timeout_seconds.to_le_bytes());
+    if let Some(parse_error) = &config.parse_error {
+        hasher.update(b"parse_error\0");
+        hasher.update(parse_error.as_bytes());
+        hasher.update(b"\0");
+    }
     for command in &config.commands {
         hasher.update(command.id.as_bytes());
         hasher.update(b"\0");
@@ -397,6 +417,7 @@ pub async fn workspace_startup_continue(
             state: StartupState::Continued,
             reason: Some("continued by user".to_string()),
             active_task_id: None,
+            task_states: BTreeMap::new(),
         },
     );
     emit_startup_event(
@@ -508,6 +529,36 @@ async fn prepare_workspace_startup_inner(
     let config = read_startup_config(root);
     let fingerprint = startup_fingerprint(&config);
     let policy = startup_approval_policy(app, root, &config, &fingerprint)?;
+    if let Some(reason) = config.parse_error.clone() {
+        let record = StartupRecord {
+            fingerprint: fingerprint.clone(),
+            state: StartupState::Failed,
+            reason: Some(reason.clone()),
+            active_task_id: None,
+            task_states: BTreeMap::new(),
+        };
+        startup.set_record(root, record.clone());
+        emit_startup_event(
+            app,
+            StartupEvent {
+                root: root.display().to_string(),
+                fingerprint: fingerprint.clone(),
+                state: "failed".to_string(),
+                task_id: None,
+                task_label: None,
+                required: None,
+                message: Some("Startup config could not be parsed".to_string()),
+                reason: Some(reason),
+            },
+        );
+        return Ok(status_response(
+            root,
+            &config,
+            &fingerprint,
+            policy,
+            Some(record),
+        ));
+    }
     if let Some(record) = startup.record(root)
         && record.fingerprint == fingerprint
         && matches!(record.state, StartupState::Ready | StartupState::Continued)
@@ -528,6 +579,7 @@ async fn prepare_workspace_startup_inner(
             state: StartupState::Running,
             reason: None,
             active_task_id: Some(STARTUP_DEVSHELL_TASK_ID.to_string()),
+            task_states: BTreeMap::new(),
         },
     );
     emit_startup_event(
@@ -551,6 +603,7 @@ async fn prepare_workspace_startup_inner(
                 state: StartupState::Failed,
                 reason: Some(reason.clone()),
                 active_task_id: Some(STARTUP_DEVSHELL_TASK_ID.to_string()),
+                task_states: BTreeMap::new(),
             };
             startup.set_record(root, record.clone());
             emit_startup_event(
@@ -595,6 +648,7 @@ async fn prepare_workspace_startup_inner(
             state: StartupState::ApprovalRequired,
             reason: Some("startup commands require approval".to_string()),
             active_task_id: None,
+            task_states: BTreeMap::new(),
         };
         startup.set_record(root, record.clone());
         emit_startup_event(
@@ -626,10 +680,13 @@ async fn prepare_workspace_startup_inner(
             state: StartupState::Running,
             reason: None,
             active_task_id: None,
+            task_states: BTreeMap::new(),
         },
     );
 
+    let mut task_states = BTreeMap::new();
     for command in &config.commands {
+        task_states.insert(command.id.clone(), StartupState::Running);
         startup.set_record(
             root,
             StartupRecord {
@@ -637,6 +694,7 @@ async fn prepare_workspace_startup_inner(
                 state: StartupState::Running,
                 reason: None,
                 active_task_id: Some(command.id.clone()),
+                task_states: task_states.clone(),
             },
         );
         emit_startup_event(
@@ -654,25 +712,30 @@ async fn prepare_workspace_startup_inner(
         );
         let result = run_startup_command(app, root, &fingerprint, command, &devshell_env).await;
         match result {
-            Ok(()) => emit_startup_event(
-                app,
-                StartupEvent {
-                    root: root.display().to_string(),
-                    fingerprint: fingerprint.clone(),
-                    state: "ready".to_string(),
-                    task_id: Some(command.id.clone()),
-                    task_label: Some(command.label.clone()),
-                    required: Some(command.required),
-                    message: Some(format!("{} completed", command.label)),
-                    reason: None,
-                },
-            ),
+            Ok(()) => {
+                task_states.insert(command.id.clone(), StartupState::Ready);
+                emit_startup_event(
+                    app,
+                    StartupEvent {
+                        root: root.display().to_string(),
+                        fingerprint: fingerprint.clone(),
+                        state: "ready".to_string(),
+                        task_id: Some(command.id.clone()),
+                        task_label: Some(command.label.clone()),
+                        required: Some(command.required),
+                        message: Some(format!("{} completed", command.label)),
+                        reason: None,
+                    },
+                )
+            }
             Err(reason) if command.required => {
+                task_states.insert(command.id.clone(), StartupState::Failed);
                 let record = StartupRecord {
                     fingerprint: fingerprint.clone(),
                     state: StartupState::Failed,
                     reason: Some(reason.clone()),
                     active_task_id: Some(command.id.clone()),
+                    task_states: task_states.clone(),
                 };
                 startup.set_record(root, record.clone());
                 emit_startup_event(
@@ -696,19 +759,22 @@ async fn prepare_workspace_startup_inner(
                     Some(record),
                 ));
             }
-            Err(reason) => emit_startup_event(
-                app,
-                StartupEvent {
-                    root: root.display().to_string(),
-                    fingerprint: fingerprint.clone(),
-                    state: "failed".to_string(),
-                    task_id: Some(command.id.clone()),
-                    task_label: Some(command.label.clone()),
-                    required: Some(command.required),
-                    message: Some(format!("{} failed; continuing", command.label)),
-                    reason: Some(reason),
-                },
-            ),
+            Err(reason) => {
+                task_states.insert(command.id.clone(), StartupState::Failed);
+                emit_startup_event(
+                    app,
+                    StartupEvent {
+                        root: root.display().to_string(),
+                        fingerprint: fingerprint.clone(),
+                        state: "failed".to_string(),
+                        task_id: Some(command.id.clone()),
+                        task_label: Some(command.label.clone()),
+                        required: Some(command.required),
+                        message: Some(format!("{} failed; continuing", command.label)),
+                        reason: Some(reason),
+                    },
+                )
+            }
         }
     }
 
@@ -717,6 +783,7 @@ async fn prepare_workspace_startup_inner(
         state: StartupState::Ready,
         reason: None,
         active_task_id: None,
+        task_states,
     };
     startup.set_record(root, record.clone());
     emit_startup_event(
@@ -916,16 +983,21 @@ fn status_response(
         .as_ref()
         .filter(|record| record.fingerprint == fingerprint)
         .cloned();
-    let state = matching_record
-        .as_ref()
-        .map(|record| record.state.as_str())
-        .unwrap_or(if config.commands.is_empty() {
-            "disabled"
-        } else if policy.approved {
-            "idle"
-        } else {
-            "approval_required"
-        });
+    let state = config.parse_error.as_ref().map_or_else(
+        || {
+            matching_record
+                .as_ref()
+                .map(|record| record.state.as_str())
+                .unwrap_or(if config.commands.is_empty() {
+                    "disabled"
+                } else if policy.approved {
+                    "idle"
+                } else {
+                    "approval_required"
+                })
+        },
+        |_| "failed",
+    );
     let mut commands = Vec::with_capacity(config.commands.len() + 1);
     commands.push(StartupTaskStatus {
         id: STARTUP_DEVSHELL_TASK_ID.to_string(),
@@ -949,7 +1021,10 @@ fn status_response(
         project_auto_approve: policy.project_auto_approve,
         commands,
         warning: config.warning.clone(),
-        reason: matching_record.and_then(|record| record.reason),
+        reason: config
+            .parse_error
+            .clone()
+            .or_else(|| matching_record.and_then(|record| record.reason)),
     }
 }
 
@@ -980,6 +1055,9 @@ fn command_task_state(
     let Some(record) = record else {
         return "idle";
     };
+    if let Some(state) = record.task_states.get(&command.id) {
+        return state.as_str();
+    }
     match record.state {
         StartupState::Ready => "ready",
         StartupState::Running if record.active_task_id.as_deref() == Some(command.id.as_str()) => {
@@ -1327,6 +1405,7 @@ command = "bun install"
                 state: StartupState::ApprovalRequired,
                 reason: Some("startup commands require approval".to_string()),
                 active_task_id: None,
+                task_states: BTreeMap::new(),
             }),
         );
 
@@ -1356,6 +1435,7 @@ command = "bun install"
                 state: StartupState::Failed,
                 reason: Some("deps exited with 1".to_string()),
                 active_task_id: Some("deps".to_string()),
+                task_states: BTreeMap::from([("deps".to_string(), StartupState::Failed)]),
             }),
         );
 
@@ -1378,6 +1458,7 @@ command = "bun install"
                 state: StartupState::Failed,
                 reason: Some("devshell prepare failed".to_string()),
                 active_task_id: Some(STARTUP_DEVSHELL_TASK_ID.to_string()),
+                task_states: BTreeMap::new(),
             }),
         );
 
@@ -1385,6 +1466,71 @@ command = "bun install"
         assert_eq!(response.commands.len(), 1);
         assert_eq!(response.commands[0].id, STARTUP_DEVSHELL_TASK_ID);
         assert_eq!(response.commands[0].state, "failed");
+    }
+
+    #[test]
+    fn malformed_startup_config_surfaces_failed_status() {
+        let cfg = parse_startup_config("[startup\ncommands = [");
+        let fingerprint = startup_fingerprint(&cfg);
+        let response = status_response(
+            Path::new("/tmp/example"),
+            &cfg,
+            &fingerprint,
+            policy(true),
+            None,
+        );
+
+        assert_eq!(response.state, "failed");
+        assert!(
+            response
+                .warning
+                .as_deref()
+                .is_some_and(|warning| warning.contains("Could not parse"))
+        );
+        assert!(
+            response
+                .reason
+                .as_deref()
+                .is_some_and(|reason| reason.contains("startup commands were not run"))
+        );
+    }
+
+    #[test]
+    fn status_response_preserves_optional_command_failure_after_overall_ready() {
+        let cfg = parse_startup_config(
+            r#"[[startup.commands]]
+id = "assets"
+command = "bun run assets"
+required = false
+
+[[startup.commands]]
+id = "deps"
+command = "bun install"
+"#,
+        );
+        let fingerprint = startup_fingerprint(&cfg);
+        let response = status_response(
+            Path::new("/tmp/example"),
+            &cfg,
+            &fingerprint,
+            policy(true),
+            Some(StartupRecord {
+                fingerprint: fingerprint.clone(),
+                state: StartupState::Ready,
+                reason: None,
+                active_task_id: None,
+                task_states: BTreeMap::from([
+                    ("assets".to_string(), StartupState::Failed),
+                    ("deps".to_string(), StartupState::Ready),
+                ]),
+            }),
+        );
+
+        assert_eq!(response.state, "ready");
+        assert_eq!(response.commands[1].id, "assets");
+        assert_eq!(response.commands[1].state, "failed");
+        assert_eq!(response.commands[2].id, "deps");
+        assert_eq!(response.commands[2].state, "ready");
     }
 
     #[test]

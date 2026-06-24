@@ -183,6 +183,52 @@ export function createBridgePayloadPump(
   };
 }
 
+function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
+export function processBridgePayload(
+  payload: string,
+  options: UseBridgeMessagesOptions,
+  ackMutation: UseBridgeMessagesActions["ackMutation"],
+): void {
+  let data: BridgeMessage;
+  try {
+    data = JSON.parse(payload) as BridgeMessage;
+  } catch {
+    // Non-JSON line from the bridge — ignore.
+    return;
+  }
+  const type = data.type;
+  if (typeof type !== "string") return;
+  const handler = bridgeMessageHandlers[type];
+  const decision = bridgeDispatchDecision(data, handler !== undefined, () =>
+    activeTabIdsFromState(options.ctx.stateRef.current),
+  );
+  if (decision.kind === "ack-reject") {
+    ackMutation(data.mutationId, false, decision.error);
+    return;
+  }
+  if (decision.kind === "ignore" || !handler) return;
+  const fullCtx: BridgeMessageContext = {
+    ...options.ctx,
+    ackMutation,
+    hangWarnNotifId,
+    hangWarnMs: options.hangWarnMs ?? DEFAULT_HANG_WARN_MS,
+    bootLayout: options.bootLayout,
+  };
+  try {
+    refreshHangWarnForBridgeMessage(data, fullCtx);
+    handler(data, fullCtx);
+  } catch (err) {
+    const message = errorMessage(err);
+    if (typeof data.mutationId === "string" && data.mutationId.length > 0) {
+      ackMutation(data.mutationId, false, message);
+    }
+    console.error(`[bridge] handler ${type} failed:`, err);
+  }
+}
+
 export function useBridgeMessages(
   options: UseBridgeMessagesOptions,
 ): UseBridgeMessagesActions {
@@ -238,34 +284,7 @@ export function useBridgeMessages(
     })();
 
     const processPayload = (payload: string) => {
-      try {
-        const data = JSON.parse(payload) as BridgeMessage;
-        const type = data.type;
-        if (typeof type !== "string") return;
-        const handler = bridgeMessageHandlers[type];
-        const opts = optionsRef.current;
-        const decision = bridgeDispatchDecision(
-          data,
-          handler !== undefined,
-          () => activeTabIdsFromState(opts.ctx.stateRef.current),
-        );
-        if (decision.kind === "ack-reject") {
-          ackMutation(data.mutationId, false, decision.error);
-          return;
-        }
-        if (decision.kind === "ignore" || !handler) return;
-        const fullCtx: BridgeMessageContext = {
-          ...opts.ctx,
-          ackMutation,
-          hangWarnNotifId,
-          hangWarnMs: opts.hangWarnMs ?? DEFAULT_HANG_WARN_MS,
-          bootLayout: opts.bootLayout,
-        };
-        refreshHangWarnForBridgeMessage(data, fullCtx);
-        handler(data, fullCtx);
-      } catch {
-        // Non-JSON line from the bridge — ignore.
-      }
+      processBridgePayload(payload, optionsRef.current, ackMutation);
     };
 
     const pump = createBridgePayloadPump(processPayload);

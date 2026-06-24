@@ -85,11 +85,11 @@ describe("reduceReadyState", () => {
       },
     );
 
-    const tabs = next.tabs as typeof local[];
+    const tabs = next.tabs as (typeof local)[];
     expect(tabs).toHaveLength(1);
     expect(tabs[0]).toMatchObject({
       id: "tab-1",
-      model: "fallback",
+      model: "bridge-model",
       cwd: "/repo/a",
       thinkingLevel: "high",
       canvas: { components: [{ id: "card", type: "card" }] },

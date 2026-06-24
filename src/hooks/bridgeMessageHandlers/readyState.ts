@@ -27,6 +27,7 @@ export interface ReadyStateInput {
   fallbackModel: string;
   models: ModelDescriptor[];
   projectRoot?: string;
+  readyModel?: string;
   readyThinkingLevel?: string;
   recentSessions: RecentSessionItem[];
   shouldNormalizeWorkstationLayout: boolean;
@@ -82,21 +83,15 @@ function reconcileReadyTabs(
       ? next.defaultThinkingLevel
       : undefined;
   const localTabs = ((next.tabs as Tab[] | undefined) ?? []).slice();
-  const dIdx = localTabs.findIndex((t) => t.id === "default");
-  if (dIdx >= 0 && !localTabs[dIdx].model && input.fallbackModel) {
-    localTabs[dIdx] = { ...localTabs[dIdx], model: input.fallbackModel };
-  }
-  for (let i = 0; i < localTabs.length; i++) {
-    if (!localTabs[i].model && input.fallbackModel) {
-      localTabs[i] = { ...localTabs[i], model: input.fallbackModel };
-    }
-  }
   for (let i = 0; i < localTabs.length; i++) {
     const bt = input.bridgeTabs.find(
       (candidate) => candidate.id === localTabs[i].id,
     );
-    if (bt?.model && !localTabs[i].model) {
-      localTabs[i] = { ...localTabs[i], model: bt.model };
+    if (!localTabs[i].model) {
+      const bridgeModel =
+        bt?.model && bt.model !== input.readyModel ? bt.model : "";
+      const model = bridgeModel || input.fallbackModel;
+      if (model) localTabs[i] = { ...localTabs[i], model };
     }
     const tabThinkingLevel = localTabs[i]?.thinkingLevel;
     const localThinkingLevel =

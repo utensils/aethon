@@ -14,6 +14,7 @@ import {
 import { ImageAttachmentImage } from "./image-attachment-image";
 import { ImageLightbox } from "./image-lightbox";
 import { forwardNestedA2UIEvent } from "./message-rendering-utils";
+import { tabIsRunning } from "./message-row-state";
 
 const FENCED_CODE_MARKER_RE = /(^|\n)(```|~~~)/;
 
@@ -118,17 +119,6 @@ function sidebarModelsRef(state: Record<string, unknown>): unknown {
   return sidebar && typeof sidebar === "object"
     ? (sidebar as { models?: unknown }).models
     : undefined;
-}
-
-export function tabIsRunning(
-  state: Record<string, unknown>,
-  tabId?: string,
-): boolean {
-  if (state.waiting === true) return true;
-  if (!tabId) return false;
-  const runningTabs = state.agentRunningTabs;
-  if (!runningTabs || typeof runningTabs !== "object") return false;
-  return Boolean((runningTabs as Record<string, unknown>)[tabId]);
 }
 
 function deliveryLabel(delivery: ChatMessage["delivery"]): string | null {

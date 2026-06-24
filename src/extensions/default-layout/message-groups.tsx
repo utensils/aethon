@@ -14,7 +14,8 @@ import {
 } from "../../utils/toolCardGrouping";
 import type { ConversationTurn } from "../../utils/transcriptRows";
 import type { ToolCallsMode, VisibilityMode } from "../../config";
-import { ChatMessageRow, tabIsRunning, TypingIndicator } from "./message-row";
+import { ChatMessageRow, TypingIndicator } from "./message-row";
+import { tabIsRunning } from "./message-row-state";
 import { truncateDiffSnapshotContent } from "../../utils/editorDiffSnapshot";
 
 const ACTIVITY_DISCLOSURE_EXIT_MS = 240;
@@ -862,9 +863,9 @@ function tabCwdFromState(
     (candidate): candidate is { id: string; cwd?: string } =>
       Boolean(
         candidate &&
-          typeof candidate === "object" &&
-          "id" in candidate &&
-          candidate.id === tabId,
+        typeof candidate === "object" &&
+        "id" in candidate &&
+        candidate.id === tabId,
       ),
   );
   return typeof tab?.cwd === "string" ? tab.cwd : undefined;

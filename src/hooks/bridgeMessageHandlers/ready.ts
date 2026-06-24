@@ -252,6 +252,7 @@ export const handleReady: BridgeMessageHandler = (data, ctx) => {
       fallbackModel,
       models,
       projectRoot,
+      readyModel: model,
       readyThinkingLevel:
         typeof data.thinkingLevel === "string" ? data.thinkingLevel : undefined,
       recentSessions,
