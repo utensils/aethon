@@ -8699,6 +8699,9 @@ button.a2ui-gh-stat:hover {
   background: var(--bg-hover);
   border-color: var(--border-strong, var(--border));
 }
+.a2ui-dashboard-issue-row.is-linked-session {
+  border-color: color-mix(in oklab, var(--accent) 32%, var(--border));
+}
 .a2ui-dashboard-issue-line {
   display: flex;
   gap: var(--space-2);
@@ -8734,6 +8737,45 @@ button.a2ui-gh-stat:hover {
 .a2ui-dashboard-issue-author,
 .a2ui-dashboard-issue-updated,
 .a2ui-dashboard-issue-comments {
+  white-space: nowrap;
+}
+.a2ui-dashboard-issue-session {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: min(100%, 24rem);
+  min-width: 0;
+  padding: 1px var(--space-2);
+  border: 1px solid color-mix(in oklab, var(--accent) 40%, var(--border));
+  border-radius: var(--radius-pill);
+  background: color-mix(in oklab, var(--accent) 12%, transparent);
+  color: var(--text);
+  font: inherit;
+  line-height: 1.2;
+  cursor: pointer;
+}
+.a2ui-dashboard-issue-session[data-state="working"] {
+  background: color-mix(in oklab, var(--accent) 16%, transparent);
+}
+.a2ui-dashboard-issue-session:hover {
+  background: color-mix(in oklab, var(--accent) 18%, transparent);
+  border-color: color-mix(in oklab, var(--accent) 62%, var(--border));
+}
+.a2ui-dashboard-issue-session:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+.a2ui-dashboard-issue-session-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-circle);
+  background: var(--accent);
+  flex: 0 0 auto;
+}
+.a2ui-dashboard-issue-session-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 .a2ui-dashboard-issue-label {

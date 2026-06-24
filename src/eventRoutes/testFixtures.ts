@@ -76,6 +76,7 @@ export interface RouteFixture {
     activateWorkspace: Mock;
     reorderWorkspace: Mock;
     sortProjectWorkspacesNewest: Mock;
+    clearClosedIssueLinksForProject: Mock;
     invoke: Mock;
     writeState: Mock;
   };
@@ -169,6 +170,7 @@ export function buildRouteFixture(
   const activateWorkspace = vi.fn();
   const reorderWorkspace = vi.fn();
   const sortProjectWorkspacesNewest = vi.fn();
+  const clearClosedIssueLinksForProject = vi.fn();
   const invoke = vi.fn(() => Promise.resolve(undefined));
   const writeState = vi.fn(() => Promise.resolve(true));
 
@@ -239,6 +241,7 @@ export function buildRouteFixture(
     activateWorkspace,
     createWorkspaceForProject: vi.fn(() => Promise.resolve()),
     startTaskInProject: vi.fn(() => Promise.resolve()),
+    clearClosedIssueLinksForProject,
     removeWorkspaceById: vi.fn(() => Promise.resolve()),
     dismissPendingWorkspace: vi.fn(),
     retryPendingWorkspace: vi.fn(() => Promise.resolve()),
@@ -323,6 +326,7 @@ export function buildRouteFixture(
       activateWorkspace,
       reorderWorkspace,
       sortProjectWorkspacesNewest,
+      clearClosedIssueLinksForProject,
       invoke,
       writeState,
     },

@@ -21,6 +21,7 @@ import {
   type IssueTemplate,
 } from "./issue-templates";
 import type { GhIssue } from "../../../ghIssuesCache";
+import { makeEmptyTab } from "../../../types/tab";
 
 const { getIssueDetail, refreshIssues, openUrl, invoke } = vi.hoisted(() => ({
   getIssueDetail: vi.fn(),
@@ -61,6 +62,7 @@ const issue: GhIssue = {
 function renderIssues(
   onEvent = vi.fn(),
   templateConfig: unknown = { templates: [], warning: null },
+  stateOverrides: Record<string, unknown> = {},
 ) {
   refreshIssues.mockResolvedValue([issue]);
   getIssueDetail.mockResolvedValue({
@@ -90,6 +92,7 @@ function renderIssues(
             },
           ],
         },
+        ...stateOverrides,
       },
       onEvent,
     }),
@@ -387,6 +390,47 @@ describe("IssuesSection", () => {
         }),
         "issue-85",
       ),
+    );
+  });
+
+  it("shows linked issue-session status and opens it instead of dispatching", async () => {
+    const linked = {
+      ...makeEmptyTab("issue-tab", "Issue #85", "p1"),
+      cwd: "/repo/aethon-issue-85",
+      sourceIssue: {
+        kind: "github-issue" as const,
+        projectId: "p1",
+        number: 85,
+        url: issue.url,
+        title: issue.title,
+        branch: "fix/issue-85-existing",
+        workspaceId: "wt-other",
+        workspacePath: "/repo/aethon-issue-85",
+        createdAt: 1,
+      },
+    };
+    const { onEvent } = renderIssues(
+      vi.fn(),
+      { templates: [], warning: null },
+      {
+        tabs: [linked],
+        agentRunningTabs: { "issue-tab": true },
+      },
+    );
+
+    await screen.findByText(issue.title);
+    expect(screen.getByText("Working · fix/issue-85-existing")).toBeTruthy();
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: /open existing session for issue #85/i,
+      }),
+    );
+
+    expect(getIssueDetail).not.toHaveBeenCalled();
+    expect(onEvent).toHaveBeenCalledWith(
+      "open-issue-session",
+      { tabId: "issue-tab", issueNumber: 85 },
+      "issue-85",
     );
   });
 

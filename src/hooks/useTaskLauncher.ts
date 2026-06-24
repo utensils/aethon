@@ -8,7 +8,7 @@ import { invoke } from "@tauri-apps/api/core";
 import type { ChatAttachment } from "../types/a2ui";
 import type { ProjectsState } from "../projects";
 import type { NotificationInput } from "./useNotifications";
-import { makeEmptyTab, type Tab } from "../types/tab";
+import { makeEmptyTab, type GitHubIssueSource, type Tab } from "../types/tab";
 import { modelForNewProjectTab } from "./tabOps/helpers";
 import {
   devshellNeedsPreparation,
@@ -40,6 +40,7 @@ export interface StartTaskOptions {
    *  visible/local-history text. Used when agent-side launchers need to pass
    *  deterministic context without polluting the chat transcript. */
   bridgePrompt?: string;
+  sourceIssue?: GitHubIssueSource;
 }
 
 export interface UseTaskLauncherOptions {
@@ -62,6 +63,7 @@ export interface UseTaskLauncherOptions {
       cwd?: string;
       scrollToMatch?: string;
       model?: string;
+      sourceIssue?: GitHubIssueSource;
     },
   ) => void;
   pendingTabOpens: MutableRefObject<Map<string, Promise<unknown>>>;
@@ -152,6 +154,7 @@ export function useTaskLauncher({
       }
       let cwd = project.path;
       let workspaceIdForBucket: string | null | undefined = null;
+      let workspaceBranch: string | undefined;
       if (opts.newWorkspace) {
         const branch = (opts.branch ?? "").trim();
         const created = await createWorkspaceWithParams({
@@ -176,6 +179,7 @@ export function useTaskLauncher({
             (w) => w.path === created,
           );
         workspaceIdForBucket = createdWorkspace?.id ?? null;
+        workspaceBranch = (createdWorkspace?.branch ?? branch) || undefined;
         if (shouldActivate && createdWorkspace)
           activateWorkspace(createdWorkspace.id);
       } else if (opts.workspaceId) {
@@ -185,14 +189,24 @@ export function useTaskLauncher({
         if (wt) {
           cwd = wt.path;
           workspaceIdForBucket = wt.id;
+          workspaceBranch = wt.branch ?? undefined;
           if (shouldActivate) activateWorkspace(wt.id);
         }
       }
       const tabId = crypto.randomUUID();
+      const sourceIssue = opts.sourceIssue
+        ? {
+            ...opts.sourceIssue,
+            branch: workspaceBranch ?? opts.branch ?? opts.sourceIssue.branch,
+            ...(workspaceIdForBucket ? { workspaceId: workspaceIdForBucket } : {}),
+            workspacePath: cwd,
+          }
+        : undefined;
       if (shouldActivate || !setState || !stateRef || !tabBucketsRef) {
         newTab(tabId, opts.label, {
           cwd,
           ...(opts.model ? { model: opts.model } : {}),
+          ...(sourceIssue ? { sourceIssue } : {}),
         });
       } else {
         const activeBucketKey = projectScopeBucketKey(
@@ -239,6 +253,7 @@ export function useTaskLauncher({
             ? { thinkingLevel: inheritedThinkingLevel }
             : {}),
           cwd,
+          ...(sourceIssue ? { sourceIssue } : {}),
         };
         if (targetBucketKey === activeBucketKey) {
           setState((prev) => {

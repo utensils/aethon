@@ -15,12 +15,47 @@
  * the same handlers.
  */
 import type { EventRouteHandler } from "./types";
+import type { GitHubIssueSource } from "../types/tab";
 import {
   handleSidebarDeleteSession,
   handleSidebarRemoveWorkspace,
   handleSidebarSwitchWorkspace,
 } from "./sidebar";
 import { restoreSessionFromSelection } from "./sessionRestore";
+import { firstIssueSessionTab } from "../extensions/default-layout/dashboard/issue-sessions";
+
+function issueSourceFromStartTask(data: {
+  projectId?: string;
+  source?: string;
+  issueNumber?: unknown;
+  issueUrl?: unknown;
+  issueTitle?: unknown;
+  branch?: string;
+  workspaceId?: string;
+}): GitHubIssueSource | null {
+  const number =
+    typeof data.issueNumber === "number"
+      ? data.issueNumber
+      : Number(data.issueNumber);
+  if (
+    data.source !== "github-issue" ||
+    !data.projectId ||
+    !Number.isInteger(number) ||
+    number <= 0
+  ) {
+    return null;
+  }
+  return {
+    kind: "github-issue",
+    projectId: data.projectId,
+    number,
+    url: typeof data.issueUrl === "string" ? data.issueUrl : "",
+    title: typeof data.issueTitle === "string" ? data.issueTitle : "",
+    ...(data.branch ? { branch: data.branch } : {}),
+    ...(data.workspaceId ? { workspaceId: data.workspaceId } : {}),
+    createdAt: Date.now(),
+  };
+}
 
 /** New-tab / Open Project… / restore-session / select-project-card
  *  for the global projects-dashboard surface. */
@@ -88,7 +123,12 @@ export const handleProjectDashboard: EventRouteHandler = (
       ctx,
     );
   }
-  if (eventType === "start-task" || eventType === "paste-image-failed") {
+  if (
+    eventType === "start-task" ||
+    eventType === "open-issue-session" ||
+    eventType === "issues-refreshed" ||
+    eventType === "paste-image-failed"
+  ) {
     return handleTaskLauncher(
       { component: { id: "", type: "task-launcher" }, eventType, data },
       ctx,
@@ -136,6 +176,35 @@ export const handleTaskLauncher: EventRouteHandler = (
   { eventType, data },
   ctx,
 ) => {
+  if (eventType === "open-issue-session") {
+    const tabId = (data as { tabId?: string } | undefined)?.tabId;
+    if (tabId) ctx.activateTabAnywhere(tabId);
+    return true;
+  }
+  if (eventType === "issues-refreshed") {
+    const sel =
+      (data as
+        | {
+            projectId?: string;
+            openIssueNumbers?: unknown;
+          }
+        | undefined) ?? {};
+    const numbers = Array.isArray(sel.openIssueNumbers)
+      ? new Set(
+          sel.openIssueNumbers
+            .map((value) =>
+              typeof value === "number" ? value : Number(value),
+            )
+            .filter(
+              (value) => Number.isInteger(value) && value > 0,
+            ),
+        )
+      : null;
+    if (sel.projectId && numbers) {
+      ctx.clearClosedIssueLinksForProject(sel.projectId, numbers);
+    }
+    return true;
+  }
   if (eventType === "paste-image-failed") {
     const sel = data as { message?: unknown } | undefined;
     ctx.pushNotification({
@@ -161,9 +230,27 @@ export const handleTaskLauncher: EventRouteHandler = (
           baseBranch?: string;
           workspaceId?: string;
           model?: string;
+          source?: string;
+          issueNumber?: unknown;
+          issueUrl?: unknown;
+          issueTitle?: unknown;
+          issueTemplateId?: string;
+          issueTemplateLabel?: string;
         }
       | undefined;
     if (!sel?.projectId || !sel.prompt) return true;
+    const sourceIssue = issueSourceFromStartTask(sel);
+    if (sourceIssue) {
+      const existing = firstIssueSessionTab(
+        ctx.stateRef.current,
+        sourceIssue.projectId,
+        sourceIssue.number,
+      );
+      if (existing) {
+        ctx.activateTabAnywhere(existing.id);
+        return true;
+      }
+    }
     void ctx.startTaskInProject({
       projectId: sel.projectId,
       prompt: sel.prompt,
@@ -175,6 +262,7 @@ export const handleTaskLauncher: EventRouteHandler = (
       ...(typeof sel.model === "string" && sel.model.length > 0
         ? { model: sel.model }
         : {}),
+      ...(sourceIssue ? { sourceIssue } : {}),
     });
     return true;
   }
