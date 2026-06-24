@@ -3,6 +3,10 @@ import type { ShellMeta, Tab } from "../../types/tab";
 import { OVERVIEW_TAB_ID } from "../../types/tab";
 import { recomputeModelPicker } from "../../utils/modelPicker";
 import { TAB_MIRROR_KEYS, VALID_SHARE_MODES } from "./constants";
+import {
+  mirrorOverviewSurfaceSelection,
+  mirrorOverviewSurfaceToRoot,
+} from "./helpers";
 
 /** Tell the shared xterm panel to clear and replay a tab's terminal
  *  buffer. Microtask deferral so xterm's mount-once useEffect has
@@ -30,6 +34,20 @@ export interface MutationsActions {
   setActiveSubTab: (subId: string) => void;
 }
 
+function mirrorTabToRoot(
+  result: Record<string, unknown>,
+  sourceState: Record<string, unknown>,
+  tab: Tab,
+): string {
+  const tabRec = tab as unknown as Record<string, unknown>;
+  for (const key of TAB_MIRROR_KEYS) {
+    result[key as string] = tabRec[key as string];
+  }
+  if (tab.kind !== "shell") return tab.model || "";
+
+  return mirrorOverviewSurfaceToRoot(result, sourceState);
+}
+
 /** Mirror writes + active-tab switching. These are the lowest-level
  *  tab mutations — everything else builds on `updateTab` /
  *  `updateActiveTab` (which copy TAB_MIRROR_KEYS into the root state
@@ -47,10 +65,7 @@ export function useMutations(deps: MutationsDeps): MutationsActions {
       tabs[idx] = next;
       const result: Record<string, unknown> = { ...prev, tabs };
       if (prev.activeTabId === tabId) {
-        const nextRec = next as unknown as Record<string, unknown>;
-        for (const key of TAB_MIRROR_KEYS) {
-          result[key as string] = nextRec[key as string];
-        }
+        mirrorTabToRoot(result, prev, next);
       }
       return result;
     });
@@ -66,10 +81,7 @@ export function useMutations(deps: MutationsDeps): MutationsActions {
       const next = mutator(tabs[idx]);
       tabs[idx] = next;
       const result: Record<string, unknown> = { ...prev, tabs };
-      const nextRec = next as unknown as Record<string, unknown>;
-      for (const key of TAB_MIRROR_KEYS) {
-        result[key as string] = nextRec[key as string];
-      }
+      mirrorTabToRoot(result, prev, next);
       return result;
     });
   }
@@ -101,10 +113,22 @@ export function useMutations(deps: MutationsDeps): MutationsActions {
   function setActiveTab(tabId: string): void {
     if (tabId === OVERVIEW_TAB_ID) {
       setState((prev) => {
-        if (prev.activeTabId === OVERVIEW_TAB_ID && prev.landing == null) {
+        const result: Record<string, unknown> = {
+          ...prev,
+          activeTabId: OVERVIEW_TAB_ID,
+          landing: null,
+        };
+        const visibleModel = mirrorOverviewSurfaceSelection(result, prev);
+        const desiredThinkingLevel = result.thinkingLevel;
+        const alreadyClean =
+          prev.activeTabId === OVERVIEW_TAB_ID &&
+          prev.landing == null &&
+          (visibleModel ? prev.model === visibleModel : true) &&
+          prev.thinkingLevel === desiredThinkingLevel;
+        if (alreadyClean) {
           return prev;
         }
-        return { ...prev, activeTabId: OVERVIEW_TAB_ID, landing: null };
+        return result;
       });
       dispatchTerminalReplay("");
       return;
@@ -124,13 +148,10 @@ export function useMutations(deps: MutationsDeps): MutationsActions {
         delete nextAttention[tabId];
         result.agentAttentionTabs = nextAttention;
       }
-      const targetRec = target as unknown as Record<string, unknown>;
-      for (const key of TAB_MIRROR_KEYS) {
-        result[key as string] = targetRec[key as string];
-      }
+      const visibleModel = mirrorTabToRoot(result, prev, target);
       result.sidebar = recomputeModelPicker(
         prev.sidebar as Record<string, unknown> | undefined,
-        target.model,
+        visibleModel,
       );
       // Selecting any tab clears a workspace-landing override so the
       // chat canvas can render. Without this, clicking a tab while the

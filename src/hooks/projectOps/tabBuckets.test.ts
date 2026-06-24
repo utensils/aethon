@@ -220,4 +220,34 @@ describe("switchProjectBucket", () => {
     expect(h.get().activeTabId).toBe("b1");
     expect((h.get().tabs as Tab[]).map((t) => t.id)).toEqual(["shell-b", "b1"]);
   });
+
+  it("keeps the overview model when restoring a shell-only project bucket", () => {
+    const shellMain = {
+      ...shellTab("shell-main", "P", "/P"),
+      model: "anthropic/claude-opus-4-7",
+      thinkingLevel: "high",
+    };
+    const h = makeHarness({
+      tabs: [],
+      activeTabId: "a1",
+      project: { id: "P" },
+      defaultModel: "openai-codex/gpt-5.5",
+      piDefaultModel: "openai-codex/gpt-5.5",
+      defaultThinkingLevel: "medium",
+      model: "openai-codex/gpt-5.5",
+      thinkingLevel: "medium",
+    });
+    h.tabBucketsRef.current.set("P", {
+      tabs: [shellMain],
+      activeTabId: "shell-main",
+    });
+
+    const restored = switchProjectBucket(h.deps, "P::workspace::A", "P");
+
+    expect(restored).toBe("shell-main");
+    expect(h.get().activeTabId).toBe("shell-main");
+    expect(h.get().kind).toBe("shell");
+    expect(h.get().model).toBe("openai-codex/gpt-5.5");
+    expect(h.get().thinkingLevel).toBe("medium");
+  });
 });

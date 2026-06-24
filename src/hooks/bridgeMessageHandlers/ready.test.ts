@@ -240,6 +240,101 @@ describe("handleReady", () => {
     );
   });
 
+  it("keeps overview reasoning defaults ahead of bridge fallback ready data", () => {
+    const { ctx, applySetState } = buildHandlerFixture({
+      state: {
+        activeTabId: "__overview__",
+        defaultModel: "openai-codex/gpt-5.5",
+        piDefaultModel: "openai-codex/gpt-5.5",
+        defaultThinkingLevel: "medium",
+        model: "openai-codex/gpt-5.5",
+        thinkingLevel: "medium",
+        tabs: [
+          {
+            id: "shell-1",
+            kind: "shell",
+            model: "anthropic/claude-opus-4-7",
+            thinkingLevel: "high",
+            messages: [],
+          },
+        ],
+        sidebar: {},
+      },
+    });
+
+    handleReady(
+      {
+        type: "ready",
+        model: "openai-codex/gpt-5.5",
+        thinkingLevel: "high",
+        models: [
+          {
+            id: "openai-codex/gpt-5.5",
+            label: "GPT-5.5",
+            provider: "openai",
+            thinkingLevels: ["medium", "high"],
+          },
+          {
+            id: "anthropic/claude-opus-4-7",
+            label: "Claude Opus 4.7",
+            provider: "anthropic",
+            thinkingLevels: ["high"],
+          },
+        ],
+        tabs: [
+          {
+            id: "shell-1",
+            model: "anthropic/claude-opus-4-7",
+            thinkingLevel: "high",
+          },
+        ],
+      },
+      ctx,
+    );
+
+    const next = applySetState();
+    expect(next.activeTabId).toBe("__overview__");
+    expect(next.model).toBe("openai-codex/gpt-5.5");
+    expect(next.thinkingLevel).toBe("medium");
+    expect(next.defaultThinkingLevel).toBe("medium");
+  });
+
+  it("uses bridge ready reasoning when overview has no local default", () => {
+    const { ctx, applySetState } = buildHandlerFixture({
+      state: {
+        activeTabId: "__overview__",
+        defaultModel: "openai-codex/gpt-5.5",
+        piDefaultModel: "openai-codex/gpt-5.5",
+        model: "openai-codex/gpt-5.5",
+        tabs: [],
+        sidebar: {},
+      },
+    });
+
+    handleReady(
+      {
+        type: "ready",
+        model: "openai-codex/gpt-5.5",
+        thinkingLevel: "high",
+        models: [
+          {
+            id: "openai-codex/gpt-5.5",
+            label: "GPT-5.5",
+            provider: "openai",
+            thinkingLevels: ["medium", "high"],
+          },
+        ],
+      },
+      ctx,
+    );
+
+    const next = applySetState();
+    expect(next.activeTabId).toBe("__overview__");
+    expect(next.model).toBe("openai-codex/gpt-5.5");
+    expect(next.thinkingLevel).toBe("high");
+    expect(next.defaultThinkingLevel).toBe("high");
+  });
+
   it("prunes extension state keys that disappeared between readies", () => {
     const { ctx, applySetState } = buildHandlerFixture({
       state: { activeTabId: "default", tabs: [{ id: "default" }], sidebar: {} },
