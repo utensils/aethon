@@ -1,6 +1,11 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useRef } from "react";
 import { clearConfigCache, getConfig, type AethonConfig } from "../../config";
+import {
+  buildConfigWritePayload,
+  mergeConfigPatch,
+  type ConfigWritePatch,
+} from "../../configWrites";
 import type { UseUiOverlaysContext } from "./types";
 
 export const SETTINGS_AUTOSAVE_DELAY_MS = 350;
@@ -83,18 +88,7 @@ export function useSettingsOverlay(ctx: SettingsOverlayContext) {
 
   /** Apply a partial AethonConfig patch to `/settings/pending` and
    *  schedule a debounced autosave. */
-  function applySettingsPatch(
-    patch: Partial<{
-      ui: unknown;
-      agent: unknown;
-      shell: unknown;
-      shortcuts: unknown;
-      voice: unknown;
-      updates: unknown;
-      devshell: unknown;
-      guardrails: unknown;
-    }>,
-  ) {
+  function applySettingsPatch(patch: ConfigWritePatch) {
     setState((prev) => {
       const cur =
         (prev.settings as
@@ -167,48 +161,7 @@ export function useSettingsOverlay(ctx: SettingsOverlayContext) {
     } catch (err) {
       console.warn("settings save: getConfig failed:", err);
     }
-    const merged = {
-      ui: {
-        ...(live?.ui ?? {}),
-        ...((pendingSnapshot as { ui?: object }).ui ?? {}),
-      },
-      agent: {
-        ...(live?.agent ?? {}),
-        ...((pendingSnapshot as { agent?: object }).agent ?? {}),
-      },
-      shell: {
-        ...(live?.shell ?? {}),
-        ...((pendingSnapshot as { shell?: object }).shell ?? {}),
-      },
-      // Keep deprecated `[shortcuts] new_tab_kind` round-tripping when
-      // users save unrelated settings. write_config drops sections it
-      // doesn't see.
-      shortcuts: {
-        ...(live?.shortcuts ?? {}),
-        ...((pendingSnapshot as { shortcuts?: object }).shortcuts ?? {}),
-      },
-      voice: {
-        ...(live?.voice ?? {}),
-        ...((pendingSnapshot as { voice?: object }).voice ?? {}),
-      },
-      // Likewise for `[updates]` — preserve channel + auto-check settings
-      // across saves of unrelated sections.
-      updates: {
-        ...(live?.updates ?? {}),
-        ...((pendingSnapshot as { updates?: object }).updates ?? {}),
-      },
-      devshell: {
-        ...(live?.devshell ?? {}),
-        ...((pendingSnapshot as { devshell?: object }).devshell ?? {}),
-      },
-      // Preserve `[guardrails]` (soft anchor + hard-enforce default) across
-      // saves of unrelated sections — write_config drops any section it
-      // isn't handed, so omitting this would wipe the user's guardrails.
-      guardrails: {
-        ...(live?.guardrails ?? {}),
-        ...((pendingSnapshot as { guardrails?: object }).guardrails ?? {}),
-      },
-    };
+    const merged = buildConfigWritePayload(live, pendingSnapshot);
     try {
       await invoke("write_config", { config: merged });
       clearConfigCache();
@@ -319,21 +272,6 @@ export function useSettingsOverlay(ctx: SettingsOverlayContext) {
     applySettingsPatch,
     saveSettings,
   };
-}
-
-function mergeConfigPatch(
-  pending: Record<string, unknown>,
-  patch: Record<string, unknown>,
-): Record<string, unknown> {
-  const merged = { ...pending };
-  for (const [key, value] of Object.entries(patch)) {
-    const previous = merged[key];
-    merged[key] =
-      isPlainObject(previous) && isPlainObject(value)
-        ? { ...previous, ...value }
-        : value;
-  }
-  return merged;
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {

@@ -4,6 +4,7 @@ import { act, renderHook } from "@testing-library/react";
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 
 import { makeEmptyTab, type Tab } from "../types/tab";
+import { clearConfigCache, type AethonConfig } from "../config";
 import { useChat, type UseChatContext } from "./useChat";
 import { PI_DEFAULT_MODEL_SENTINEL } from "../utils/modelPicker";
 import {
@@ -19,12 +20,70 @@ vi.mock("@tauri-apps/api/core", () => ({
   invoke: (cmd: string, args?: unknown) => invoke(cmd, args),
 }));
 
+const fullConfig: AethonConfig = {
+  ui: {
+    theme: "ember",
+    fontSize: 14,
+    restoreTabs: false,
+    notifyOnCompletion: true,
+    notifyMinDurationSeconds: 8,
+    thinkingVisibility: "show",
+    toolCallsVisibility: "hide",
+  },
+  agent: {
+    model: "anthropic/claude-opus-4-7",
+    thinkingLevel: "medium",
+    providerTimeoutSeconds: null,
+    codexFastMode: false,
+    bashTimeoutFloorSeconds: 300,
+    subagentTimeoutSeconds: 300,
+  },
+  shell: {
+    defaultShareMode: "read",
+    autoRestartAgent: false,
+    defaultCommand: "/bin/zsh",
+    defaultArgs: ["-l"],
+    inheritEnv: false,
+    promptBeforeClose: false,
+  },
+  shortcuts: { newTabKind: "shell" },
+  voice: {
+    toggleHotkey: "mod+shift+m",
+    holdHotkey: "AltRight",
+    speakAgentReplies: true,
+    speakMaxChars: 1200,
+    conversationContinuous: true,
+  },
+  updates: { channel: "nightly", disableAutoCheck: true },
+  devshell: {
+    enabled: "always",
+    mode: "direnv",
+    cacheTtlHours: 12,
+    refreshOnLockfileChange: false,
+  },
+  startup: { autoApprove: true },
+  guardrails: {
+    softPromptAnchor: "stay inside the repo",
+    hardEnforceProjectRoot: true,
+  },
+};
+
+function mockConfigRead(config: AethonConfig = fullConfig) {
+  clearConfigCache();
+  (window as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__ = {};
+  invoke.mockImplementation((cmd) =>
+    cmd === "read_config" ? Promise.resolve(config) : Promise.resolve(),
+  );
+}
+
 afterEach(() => {
   // Reset both call history AND any per-test implementation override
   // (the live-switch-failure test installs a rejecting impl) so nothing
   // leaks into the next test.
   invoke.mockReset();
   invoke.mockImplementation(() => Promise.resolve(undefined));
+  clearConfigCache();
+  delete (window as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__;
   window.sessionStorage.clear();
 });
 
@@ -1060,6 +1119,35 @@ describe("useChat setModel", () => {
     );
   });
 
+  it("model and reasoning default writes preserve unrelated config sections", async () => {
+    vi.useFakeTimers();
+    try {
+      mockConfigRead();
+      const { ctx } = buildContext();
+      const { result } = renderHook(() => useChat(ctx));
+
+      await act(async () => {
+        await result.current.setModel("openai-codex/gpt-5.5:high");
+      });
+      await vi.advanceTimersByTimeAsync(450);
+
+      const write = invoke.mock.calls.find((c) => c[0] === "write_config");
+      const config = write?.[1] as { config: AethonConfig } | undefined;
+      expect(config?.config.agent).toMatchObject({
+        model: "openai-codex/gpt-5.5",
+        thinkingLevel: "high",
+      });
+      expect(config?.config.updates).toEqual(fullConfig.updates);
+      expect(config?.config.voice).toEqual(fullConfig.voice);
+      expect(config?.config.devshell).toEqual(fullConfig.devshell);
+      expect(config?.config.startup).toEqual(fullConfig.startup);
+      expect(config?.config.guardrails).toEqual(fullConfig.guardrails);
+    } finally {
+      vi.clearAllTimers();
+      vi.useRealTimers();
+    }
+  });
+
   it("persists active-session reasoning choices to [agent] thinking_level", async () => {
     vi.useFakeTimers();
     try {
@@ -1091,6 +1179,31 @@ describe("useChat setModel", () => {
       vi.clearAllTimers();
       vi.useRealTimers();
     }
+  });
+
+  it("Codex Fast mode writes preserve unrelated config sections", async () => {
+    mockConfigRead();
+    const { ctx } = buildContext({ codexFastMode: false });
+    const { result } = renderHook(() => useChat(ctx));
+
+    await act(async () => {
+      await result.current.setCodexFastMode(true);
+    });
+
+    const write = invoke.mock.calls.find((c) => c[0] === "write_config");
+    const config = write?.[1] as { config: AethonConfig } | undefined;
+    expect(config?.config.agent).toMatchObject({ codexFastMode: true });
+    expect(config?.config.updates).toEqual(fullConfig.updates);
+    expect(config?.config.voice).toEqual(fullConfig.voice);
+    expect(config?.config.devshell).toEqual(fullConfig.devshell);
+    expect(config?.config.startup).toEqual(fullConfig.startup);
+    expect(config?.config.guardrails).toEqual(fullConfig.guardrails);
+    expect(invoke).toHaveBeenCalledWith("agent_broadcast_command", {
+      payload: JSON.stringify({
+        type: "set_codex_fast_mode",
+        codexFastMode: true,
+      }),
+    });
   });
 
   it("rolls back optimistic Codex Fast mode changes when persistence fails", async () => {
@@ -1164,6 +1277,7 @@ describe("useChat setModel", () => {
   it("'(pi default)' clears every runtime fallback and persists null without retargeting", async () => {
     vi.useFakeTimers();
     try {
+      mockConfigRead();
       const { ctx, stateRef, piDefaultModelRef } = buildContext({
         activeTabId: undefined,
         tabs: [],
@@ -1192,10 +1306,13 @@ describe("useChat setModel", () => {
       await vi.advanceTimersByTimeAsync(450);
       const write = invoke.mock.calls.find((c) => c[0] === "write_config");
       expect(write).toBeTruthy();
-      expect(
-        (write?.[1] as { config: { agent: { model: string | null } } }).config
-          .agent.model,
-      ).toBeNull();
+      const config = write?.[1] as { config: AethonConfig } | undefined;
+      expect(config?.config.agent.model).toBeNull();
+      expect(config?.config.updates).toEqual(fullConfig.updates);
+      expect(config?.config.voice).toEqual(fullConfig.voice);
+      expect(config?.config.devshell).toEqual(fullConfig.devshell);
+      expect(config?.config.startup).toEqual(fullConfig.startup);
+      expect(config?.config.guardrails).toEqual(fullConfig.guardrails);
     } finally {
       vi.clearAllTimers();
       vi.useRealTimers();

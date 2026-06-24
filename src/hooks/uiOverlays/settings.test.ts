@@ -153,6 +153,8 @@ describe("useSettingsOverlay", () => {
         updates: baseConfig.updates,
         voice: baseConfig.voice,
         devshell: baseConfig.devshell,
+        startup: baseConfig.startup,
+        guardrails: baseConfig.guardrails,
       }),
     });
     expect(invoke).toHaveBeenCalledWith("agent_broadcast_command", {
