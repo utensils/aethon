@@ -6,20 +6,23 @@ import {
   shouldSubmitAtMentionEnter,
 } from "./textarea-input-semantics";
 
-const agent = { kind: "agent" as const, name: "kimi", description: "review", surface: "inline" as const };
-const file = (rel: string) => ({ kind: "file" as const, rel, path: `/repo/${rel}` });
+const agent = {
+  kind: "agent" as const,
+  name: "kimi",
+  description: "review",
+  surface: "inline" as const,
+};
+const file = (rel: string) => ({
+  kind: "file" as const,
+  rel,
+  path: `/repo/${rel}`,
+});
 
 function at(query: string, matches = [agent, file("src/App.tsx")]): AtMention {
   return { query, start: 0, end: query.length + 1, matches };
 }
 
 describe("shared textarea input semantics", () => {
-  it("cycles @ picker rows with Arrow navigation outside surface code", () => {
-    const list = [0, 1, 2];
-    expect((0 + 1) % list.length).toBe(1);
-    expect((0 - 1 + list.length) % list.length).toBe(2);
-  });
-
   it("inserts the selected @ mention text and cursor position for Tab-style completion", () => {
     expect(
       insertMentionAtCursor({
@@ -62,6 +65,7 @@ describe("shared textarea input semantics", () => {
     ["Settings open", { surfaceActive: true, settingsOpen: true }, true],
     ["palette open", { surfaceActive: true, paletteOpen: true }, true],
     ["search open", { surfaceActive: true, searchOpen: true }, true],
+    ["disabled textarea", { surfaceActive: true, disabled: true }, true],
     ["visible surface", { surfaceActive: true }, false],
   ] as const)("blocks voice start for %s", (_label, state, expected) => {
     expect(isVoiceSurfaceBlocked(state)).toBe(expected);
