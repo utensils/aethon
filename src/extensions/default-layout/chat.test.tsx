@@ -9,35 +9,30 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  ChatHistory,
-  ChatInput,
-  MainCanvas,
-  QueuedMessagesPopover,
-  ToolCard,
-} from "./chat";
+import { ChatHistory, ToolCard } from "./chat";
 import { ComposerVisibilityPills } from "./composer-visibility-pills";
+import {
+  createResizeObserverFixture,
+  groupedHistoryElement,
+  renderChatInput as renderInput,
+  renderChatHistory as renderHistory,
+  renderGroupedHistory,
+  renderMainCanvas,
+  resetMockVirtuosoState,
+  setScrollerMetrics,
+  setScrollTop,
+  toolTranscript,
+  userScrollToBottom,
+  userScrollUp,
+  type MockVirtuosoState,
+} from "./testFixtures";
 
 const { openUrl } = vi.hoisted(() => ({
   openUrl: vi.fn(),
 }));
 
 const virtuosoMockState = vi.hoisted(
-  (): {
-    alignToBottom?: unknown;
-    followOutput?: unknown;
-    scrollToCalls: unknown[];
-    scrollToIndexCalls: unknown[];
-    dataLength?: number;
-    heightEstimates?: unknown;
-    increaseViewportBy?: unknown;
-    minOverscanItemCount?: unknown;
-    // Virtuoso callbacks captured so tests can drive at-bottom / range
-    // transitions explicitly (the real library is the sole at-bottom signal).
-    atBottomStateChange?: (atBottom: boolean) => void;
-    rangeChanged?: (range: { startIndex: number; endIndex: number }) => void;
-    totalListHeightChanged?: (height: number) => void;
-  } => ({
+  (): MockVirtuosoState => ({
     alignToBottom: undefined,
     followOutput: undefined,
     scrollToCalls: [],
@@ -52,11 +47,7 @@ const virtuosoMockState = vi.hoisted(
   }),
 );
 
-const resizeObserverMockState = vi.hoisted(
-  (): { callbacks: Array<ResizeObserverCallback> } => ({
-    callbacks: [],
-  }),
-);
+const resizeObserver = createResizeObserverFixture();
 
 vi.mock("@tauri-apps/plugin-opener", () => ({
   openUrl: (...args: unknown[]) => openUrl(...args),
@@ -181,37 +172,14 @@ import { invoke } from "@tauri-apps/api/core";
 
 const invokeMock = invoke as unknown as ReturnType<typeof vi.fn>;
 
-class ResizeObserverMock implements ResizeObserver {
-  private callback: ResizeObserverCallback;
-
-  constructor(callback: ResizeObserverCallback) {
-    this.callback = callback;
-    resizeObserverMockState.callbacks.push(callback);
-  }
-
-  observe = vi.fn();
-  unobserve = vi.fn();
-  disconnect = vi.fn(() => {
-    resizeObserverMockState.callbacks =
-      resizeObserverMockState.callbacks.filter((cb) => cb !== this.callback);
-  });
-}
-
 beforeEach(() => {
-  vi.stubGlobal("ResizeObserver", ResizeObserverMock);
+  vi.stubGlobal("ResizeObserver", resizeObserver.Mock);
   invokeMock.mockImplementation(() =>
     Promise.reject(new Error("invoke not mocked")),
   );
-  resizeObserverMockState.callbacks = [];
+  resizeObserver.callbacks.length = 0;
   openUrl.mockResolvedValue(undefined);
-  virtuosoMockState.followOutput = undefined;
-  virtuosoMockState.alignToBottom = undefined;
-  virtuosoMockState.scrollToCalls = [];
-  virtuosoMockState.scrollToIndexCalls = [];
-  virtuosoMockState.dataLength = undefined;
-  virtuosoMockState.heightEstimates = undefined;
-  virtuosoMockState.increaseViewportBy = undefined;
-  virtuosoMockState.minOverscanItemCount = undefined;
+  resetMockVirtuosoState(virtuosoMockState);
 });
 
 afterEach(() => {
@@ -219,44 +187,6 @@ afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
 });
-
-function renderInput(
-  onEvent = vi.fn(),
-  props: Record<string, unknown> = {},
-  state: Record<string, unknown> = {},
-) {
-  // ChatInput resolves the queued-messages popover via
-  // `useExtensionRegistry().resolve(...)` and renders it with
-  // `createElement`, which means the test needs a real ExtensionRegistry
-  // in context with the popover registered — otherwise the resolver
-  // returns undefined and the popover stays unmounted even when the
-  // test fixture seeds `state.queuedMessages`. Registering it here
-  // exercises the production wiring.
-  const registry = new ExtensionRegistry();
-  registry.register({
-    name: "test-default-layout",
-    components: { "queued-messages-popover": QueuedMessagesPopover },
-  });
-  const result = render(
-    <ExtensionRegistryProvider registry={registry}>
-      <ChatInput
-        component={{
-          id: "chat-input",
-          type: "chat-input",
-          props: { value: "", placeholder: "Message", ...props },
-        }}
-        state={state}
-        tabId="tab-1"
-        onEvent={onEvent}
-      />
-    </ExtensionRegistryProvider>,
-  );
-  return {
-    input: screen.getByPlaceholderText("Message"),
-    onEvent,
-    ...result,
-  };
-}
 
 function renderComposerPills(
   onEvent = vi.fn(),
@@ -278,72 +208,8 @@ function renderComposerPills(
   return { onEvent, ...result };
 }
 
-function renderHistory(state: Record<string, unknown>) {
-  const onEvent = vi.fn();
-  const result = render(
-    <ChatHistory
-      component={{
-        id: "chat-history",
-        type: "chat-history",
-        props: { messages: { $ref: "/messages" } },
-      }}
-      state={state}
-      onEvent={onEvent}
-    />,
-  );
-  return { onEvent, ...result };
-}
-
-function setScrollTop(el: HTMLElement, top: number) {
-  Object.defineProperty(el, "scrollTop", {
-    value: top,
-    writable: true,
-    configurable: true,
-  });
-}
-
-function setScrollerMetrics(
-  el: HTMLElement,
-  metrics: Partial<{
-    scrollTop: number;
-    scrollHeight: number;
-    clientHeight: number;
-  }>,
-) {
-  for (const [key, value] of Object.entries(metrics)) {
-    Object.defineProperty(el, key, {
-      value,
-      writable: key === "scrollTop",
-      configurable: true,
-    });
-  }
-}
-
 function triggerResizeObservers() {
-  for (const callback of resizeObserverMockState.callbacks) {
-    callback([], {} as ResizeObserver);
-  }
-}
-
-// Simulate a genuine user scroll-away: a gesture (wheel) then a scroll event at
-// a non-bottom position. The component only honors gesture-flagged scrolls.
-function userScrollUp(el: HTMLElement) {
-  fireEvent.wheel(el);
-  if (el.scrollHeight <= el.clientHeight) {
-    setScrollerMetrics(el, {
-      scrollHeight: el.clientHeight + 400,
-      scrollTop: el.scrollTop,
-    });
-  }
-  setScrollTop(el, 0);
-  fireEvent.scroll(el);
-}
-
-// Simulate the user scrolling back to the bottom.
-function userScrollToBottom(el: HTMLElement) {
-  fireEvent.wheel(el);
-  setScrollTop(el, el.scrollHeight - el.clientHeight);
-  fireEvent.scroll(el);
+  resizeObserver.trigger();
 }
 
 function renderToolCard(props: Record<string, unknown>) {
@@ -733,23 +599,13 @@ describe("ChatInput", () => {
   });
 
   it("renders the typing indicator inside the transcript row column", () => {
-    render(
-      <MainCanvas
-        component={{
-          id: "main-canvas",
-          type: "main-canvas",
-          props: { messages: { $ref: "/messages" } },
-        }}
-        state={{
-          waiting: true,
-          messages: [
-            { id: "1", role: "user", text: "start" },
-            { id: "2", role: "agent", text: "streaming update" },
-          ],
-        }}
-        onEvent={vi.fn()}
-      />,
-    );
+    renderMainCanvas({
+      waiting: true,
+      messages: [
+        { id: "1", role: "user", text: "start" },
+        { id: "2", role: "agent", text: "streaming update" },
+      ],
+    });
 
     const indicator = screen.getByRole("status", {
       name: "Agent is thinking",
@@ -1841,82 +1697,7 @@ describe("ChatHistory render isolation", () => {
 describe("ChatHistory turn activity feed (mocked Virtuoso renders rows)", () => {
   // Two completed tool-using turns plus a final live-ish turn; the bridge
   // emits each tool call as its own role:"agent" message carrying a tool-card.
-  const toolMessages = [
-    { id: "u1", role: "user", text: "do the thing" },
-    { id: "a1", role: "agent", text: "reading files" },
-    {
-      id: "t1",
-      role: "agent",
-      a2ui: {
-        components: [
-          {
-            id: "c1",
-            type: "tool-card",
-            props: { title: "read", startedAt: 1, endedAt: 2 },
-          },
-        ],
-      },
-    },
-    {
-      id: "t2",
-      role: "agent",
-      a2ui: {
-        components: [
-          {
-            id: "c2",
-            type: "tool-card",
-            props: { title: "bash", startedAt: 1, endedAt: 2 },
-          },
-        ],
-      },
-    },
-    { id: "a2", role: "agent", text: "done" },
-    { id: "u2", role: "user", text: "now this" },
-    {
-      id: "t3",
-      role: "agent",
-      a2ui: {
-        components: [
-          {
-            id: "c3",
-            type: "tool-card",
-            props: { title: "edit", startedAt: 1, endedAt: 2 },
-          },
-        ],
-      },
-    },
-  ];
-
-  // Single tool cards render through A2UIRenderer, which resolves the
-  // `tool-card` component from the registry — so wrap in a provider that has it.
-  function groupedHistoryElement(
-    state: Record<string, unknown>,
-    registry = new ExtensionRegistry(),
-    onEvent = vi.fn(),
-  ) {
-    registry.register({
-      name: "test-tool-card",
-      components: { "tool-card": ToolCard },
-    });
-    return (
-      <ExtensionRegistryProvider registry={registry}>
-        <ChatHistory
-          component={{
-            id: "chat-history",
-            type: "chat-history",
-            props: { messages: { $ref: "/messages" } },
-          }}
-          state={state}
-          tabId="tab-1"
-          onEvent={onEvent}
-        />
-      </ExtensionRegistryProvider>
-    );
-  }
-
-  function renderGroupedHistory(state: Record<string, unknown>) {
-    return render(groupedHistoryElement(state));
-  }
+  const toolMessages = toolTranscript();
 
   it("group-run summarizes completed tool work without leaking tool names", () => {
     renderGroupedHistory({

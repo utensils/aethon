@@ -8,7 +8,12 @@
 // (session restore, opening any existing chat). This pins that it stays fixed.
 import { cleanup, render } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { ChatHistory, MainCanvas } from "./chat";
+import { ChatHistory } from "./chat";
+import {
+  makeTextTranscript,
+  renderMainCanvas,
+  toolTranscript,
+} from "./testFixtures";
 
 vi.mock("../../components/HighlightedCode", () => ({
   HighlightedCode: ({ code }: { code: string }) => code,
@@ -30,11 +35,6 @@ afterEach(() => {
 });
 
 function renderChat(count: number) {
-  const messages = Array.from({ length: count }, (_, i) => ({
-    id: `m${i}`,
-    role: i % 2 === 0 ? "user" : "agent",
-    text: `message ${i}`,
-  }));
   return render(
     <ChatHistory
       component={{
@@ -42,7 +42,7 @@ function renderChat(count: number) {
         type: "chat-history",
         props: { messages: { $ref: "/messages" } },
       }}
-      state={{ messages }}
+      state={{ messages: makeTextTranscript(count) }}
       onEvent={vi.fn()}
     />,
   );
@@ -59,75 +59,13 @@ describe("ChatHistory + real Virtuoso", () => {
   });
 
   it("mounts MainCanvas (Virtuoso + footer) without crashing", () => {
-    const messages = Array.from({ length: 30 }, (_, i) => ({
-      id: `c${i}`,
-      role: i % 2 === 0 ? "user" : "agent",
-      text: `canvas message ${i}`,
-    }));
     expect(() =>
-      render(
-        <MainCanvas
-          component={{
-            id: "main-canvas",
-            type: "main-canvas",
-            props: { messages: { $ref: "/messages" } },
-          }}
-          state={{ messages, waiting: false }}
-          onEvent={vi.fn()}
-        />,
-      ),
+      renderMainCanvas({
+        messages: makeTextTranscript(30, "canvas message"),
+        waiting: false,
+      }),
     ).not.toThrow();
   });
-
-  // A transcript with two completed turns, each using multiple tools, plus a
-  // final live-ish turn. Exercises every grouped rendering path.
-  function toolTranscript() {
-    return [
-      { id: "u1", role: "user", text: "do the thing" },
-      { id: "a1", role: "agent", text: "reading files" },
-      {
-        id: "t1",
-        role: "agent",
-        a2ui: {
-          components: [
-            {
-              id: "c1",
-              type: "tool-card",
-              props: { title: "read", startedAt: 1, endedAt: 2 },
-            },
-          ],
-        },
-      },
-      {
-        id: "t2",
-        role: "agent",
-        a2ui: {
-          components: [
-            {
-              id: "c2",
-              type: "tool-card",
-              props: { title: "bash", startedAt: 1, endedAt: 2 },
-            },
-          ],
-        },
-      },
-      { id: "a2", role: "agent", text: "done" },
-      { id: "u2", role: "user", text: "now this" },
-      {
-        id: "t3",
-        role: "agent",
-        a2ui: {
-          components: [
-            {
-              id: "c3",
-              type: "tool-card",
-              props: { title: "edit", startedAt: 1, endedAt: 2 },
-            },
-          ],
-        },
-      },
-    ];
-  }
 
   function renderToolChat(mode: string) {
     return render(
