@@ -113,6 +113,13 @@ function roleBadge(
   return "SYS";
 }
 
+function sidebarModelsRef(state: Record<string, unknown>): unknown {
+  const sidebar = state.sidebar;
+  return sidebar && typeof sidebar === "object"
+    ? (sidebar as { models?: unknown }).models
+    : undefined;
+}
+
 function deliveryLabel(delivery: ChatMessage["delivery"]): string | null {
   switch (delivery) {
     case "queued":
@@ -382,6 +389,9 @@ export const ChatMessageRow = memo(
       !next.isLatest ||
       prev.state.waiting === next.state.waiting) &&
     (!next.message.text || prev.isLatest === next.isLatest) &&
+    (next.message.role !== "agent" ||
+      (prev.state.model === next.state.model &&
+        sidebarModelsRef(prev.state) === sidebarModelsRef(next.state))) &&
     (!next.message.a2ui ||
       shallowEqualExcept(prev.state, next.state, VOLATILE_ROW_STATE_KEYS)),
 );

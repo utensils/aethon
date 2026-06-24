@@ -188,6 +188,15 @@ function hasFileChange(message: ChatMessage): boolean {
   return Boolean(toolCardDetails(message).fileChange?.path);
 }
 
+function hasToolCardChildren(message: ChatMessage): boolean {
+  return Boolean(
+    message.a2ui?.components?.some(
+      (component) =>
+        component.type === "tool-card" && (component.children?.length ?? 0) > 0,
+    ),
+  );
+}
+
 function withOpenToolCards(message: ChatMessage): ChatMessage {
   if (!message.a2ui?.components?.length) return message;
   return {
@@ -484,12 +493,25 @@ function TurnActivity({
     forceOpen && !live && (visibleAgentMessageIds?.size ?? 0) === 0;
   const visibleTools = detailsOpen ? toolMessages : runningTools;
   const detailTools = detailsBodyVisible ? toolMessages : [];
-  const fileChangeEntries = detailsBodyVisible && !showOriginalToolCards
-    ? collectFileChangeEntries(detailTools)
-    : [];
+  const originalToolCardIds = new Set(
+    detailTools
+      .filter((message) => showOriginalToolCards || hasToolCardChildren(message))
+      .map((message) => message.id),
+  );
+  const fileChangeEntries =
+    detailsBodyVisible && !showOriginalToolCards
+      ? collectFileChangeEntries(
+          detailTools.filter(
+            (message) => !originalToolCardIds.has(message.id),
+          ),
+        )
+      : [];
   const detailToolRows = showOriginalToolCards
     ? []
-    : detailTools.filter((message) => !hasFileChange(message));
+    : detailTools.filter(
+        (message) =>
+          !hasFileChange(message) && !originalToolCardIds.has(message.id),
+      );
   const hasActivity =
     progressMessages.length > 0 ||
     toolMessages.length > 0 ||
@@ -579,19 +601,21 @@ function TurnActivity({
       </button>
       {detailsBodyVisible && (
         <div className="ae-turn-activity-body" data-state={detailsBodyState}>
-          {showOriginalToolCards
-            ? detailTools.map((message) => (
-                <ChatMessageRow
-                  key={message.id}
-                  message={withOpenToolCards(message)}
-                  state={state}
-                  tabId={tabId}
-                  className={`${rowClassName} ae-turn-tool-message`}
-                  prevRole="agent"
-                  onEvent={onEvent}
-                  thinkingVisibility={thinkingVisibility}
-                />
-              ))
+          {originalToolCardIds.size > 0
+            ? detailTools
+                .filter((message) => originalToolCardIds.has(message.id))
+                .map((message) => (
+                  <ChatMessageRow
+                    key={message.id}
+                    message={withOpenToolCards(message)}
+                    state={state}
+                    tabId={tabId}
+                    className={`${rowClassName} ae-turn-tool-message`}
+                    prevRole="agent"
+                    onEvent={onEvent}
+                    thinkingVisibility={thinkingVisibility}
+                  />
+                ))
             : null}
           {progressMessages.map((message, index) => (
             <ChatMessageRow

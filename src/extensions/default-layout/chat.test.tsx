@@ -1991,6 +1991,49 @@ describe("ChatHistory turn activity feed (mocked Virtuoso renders rows)", () => 
     expect(screen.queryByText("AI")).toBeNull();
   });
 
+  it("refreshes assistant model labels when model metadata arrives later", () => {
+    const messages = [
+      { id: "u1", role: "user", text: "hi" },
+      {
+        id: "a1",
+        role: "agent",
+        text: "done",
+        model: "openai-codex/gpt-5.5",
+      },
+    ];
+    const registry = new ExtensionRegistry();
+    const { rerender } = render(
+      groupedHistoryElement(
+        {
+          model: "openai-codex/gpt-5.5",
+          sidebar: { models: [] },
+          messages,
+          transcriptVisibility: { toolCalls: "group-block" },
+        },
+        registry,
+      ),
+    );
+
+    expect(screen.getByText("gpt-5.5")).toBeTruthy();
+
+    rerender(
+      groupedHistoryElement(
+        {
+          model: "openai-codex/gpt-5.5",
+          sidebar: {
+            models: [{ id: "openai-codex/gpt-5.5", label: "GPT-5.5" }],
+          },
+          messages,
+          transcriptVisibility: { toolCalls: "group-block" },
+        },
+        registry,
+      ),
+    );
+
+    expect(screen.getByText("GPT-5.5")).toBeTruthy();
+    expect(screen.queryByText("gpt-5.5")).toBeNull();
+  });
+
   it("expands turn activity into concrete tool rows", () => {
     renderGroupedHistory({
       messages: toolMessages,
@@ -2004,6 +2047,39 @@ describe("ChatHistory turn activity feed (mocked Virtuoso renders rows)", () => 
     expect(virtuosoMockState.dataLength).toBe(collapsedLength);
     expect(screen.getByText("read")).toBeTruthy();
     expect(screen.getByText("bash")).toBeTruthy();
+  });
+
+  it("keeps raw tool output visible when activity details are shown", () => {
+    renderGroupedHistory({
+      messages: [
+        { id: "u1", role: "user", text: "run command" },
+        {
+          id: "t1",
+          role: "agent",
+          a2ui: {
+            components: [
+              {
+                id: "c1",
+                type: "tool-card",
+                props: { title: "bash", startedAt: 1, endedAt: 2 },
+                children: [
+                  {
+                    id: "out",
+                    type: "code",
+                    props: { content: "raw command output" },
+                  },
+                ],
+              },
+            ],
+          },
+        },
+        { id: "a1", role: "agent", text: "done" },
+      ],
+      transcriptVisibility: { toolCalls: "show" },
+    });
+
+    expect(screen.getByText("raw command output")).toBeTruthy();
+    expect(screen.getByText("done")).toBeTruthy();
   });
 
   it("keeps turn activity mounted briefly while collapsing", () => {
@@ -2288,6 +2364,13 @@ describe("ChatHistory turn activity feed (mocked Virtuoso renders rows)", () => 
                 id: "c1",
                 type: "tool-card",
                 props: { title: "bash", startedAt: 1, endedAt: 2 },
+                children: [
+                  {
+                    id: "out",
+                    type: "code",
+                    props: { content: "mixed stop command output" },
+                  },
+                ],
               },
             ],
           },
@@ -2311,6 +2394,7 @@ describe("ChatHistory turn activity feed (mocked Virtuoso renders rows)", () => 
     ).toBeTruthy();
     expect(screen.getByText(/1 tool call/)).toBeTruthy();
     expect(screen.getByText("bash")).toBeTruthy();
+    expect(screen.getByText("mixed stop command output")).toBeTruthy();
     expect(
       screen
         .getByRole("button", { name: /1 tool call/ })
