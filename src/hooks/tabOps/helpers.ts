@@ -1,6 +1,7 @@
 import type { Tab } from "../../types/tab";
 import { activeCwd, type ProjectsState } from "../../projects";
 import type { DiscoveredSession } from "./types";
+import { recomputeModelPicker } from "../../utils/modelPicker";
 
 /** Tab-strip label for a bridge-discovered persistent session. Prefers
  *  an explicit `customLabel` from the bridge, then the first user
@@ -56,6 +57,72 @@ export function modelForNewProjectTab(
     projectModel ||
     fallbackModel
   ).trim();
+}
+
+export function activeProjectIdForModelDefaults(
+  state: Record<string, unknown>,
+): string | null {
+  const project = state.project as { id?: unknown } | null | undefined;
+  if (typeof project?.id === "string" && project.id.length > 0) {
+    return project.id;
+  }
+  return typeof state.activeProjectId === "string" &&
+    state.activeProjectId.length > 0
+    ? state.activeProjectId
+    : null;
+}
+
+/** Model displayed by overview-owned surfaces. Shell tabs can be the
+ *  active tab for terminal focus, but the overview still owns the composer
+ *  and header in that state, so the visible model must be the model a new
+ *  task would inherit rather than stale shell metadata. */
+export function modelForOverviewSurface(
+  state: Record<string, unknown>,
+): string {
+  const piDefaultModel =
+    typeof state.piDefaultModel === "string" ? state.piDefaultModel : "";
+  return modelForNewProjectTab(
+    state,
+    activeProjectIdForModelDefaults(state),
+    piDefaultModel,
+  );
+}
+
+export function thinkingLevelForOverviewSurface(
+  state: Record<string, unknown>,
+): string | undefined {
+  return typeof state.defaultThinkingLevel === "string"
+    ? state.defaultThinkingLevel
+    : undefined;
+}
+
+export function mirrorOverviewSurfaceToRoot(
+  result: Record<string, unknown>,
+  sourceState: Record<string, unknown>,
+): string {
+  const overviewModel = modelForOverviewSurface(sourceState);
+  const overviewThinkingLevel = thinkingLevelForOverviewSurface(sourceState);
+  if (overviewModel) {
+    result.model = overviewModel;
+  }
+  if (overviewThinkingLevel) {
+    result.thinkingLevel = overviewThinkingLevel;
+  } else {
+    delete result.thinkingLevel;
+  }
+  return overviewModel;
+}
+
+export function mirrorOverviewSurfaceSelection(
+  result: Record<string, unknown>,
+  sourceState: Record<string, unknown>,
+): string {
+  const overviewModel = mirrorOverviewSurfaceToRoot(result, sourceState);
+  result.sidebar = recomputeModelPicker(
+    sourceState.sidebar as Record<string, unknown> | undefined,
+    overviewModel,
+  );
+  return overviewModel;
 }
 
 /** Resolve the cwd a freshly-opened tab should inherit. Active project

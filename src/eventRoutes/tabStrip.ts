@@ -3,14 +3,26 @@ import { OVERVIEW_TAB_ID, type Tab } from "../types/tab";
 import { restoreSessionFromSelection } from "./sessionRestore";
 import { renameSessionLabel } from "./sessionRename";
 import { reorderTabToIndex } from "../utils/tabReorder";
+import { mirrorOverviewSurfaceSelection } from "../hooks/tabOps/helpers";
 
 /** Switch the active tab to the overview sentinel. Used both by the
  *  permanent overview pill in the tab strip and by the sidebar
  *  re-click gestures in `sidebar/chrome.ts` + `sidebar/workspace.ts`. */
 export function activateOverview(ctx: EventRouteContext): void {
   ctx.setState((prev) => {
-    if (prev.activeTabId === OVERVIEW_TAB_ID) return prev;
-    return { ...prev, activeTabId: OVERVIEW_TAB_ID };
+    const result: Record<string, unknown> = {
+      ...prev,
+      activeTabId: OVERVIEW_TAB_ID,
+      landing: null,
+    };
+    const visibleModel = mirrorOverviewSurfaceSelection(result, prev);
+    const desiredThinkingLevel = result.thinkingLevel;
+    const alreadyClean =
+      prev.activeTabId === OVERVIEW_TAB_ID &&
+      prev.landing == null &&
+      (visibleModel ? prev.model === visibleModel : true) &&
+      prev.thinkingLevel === desiredThinkingLevel;
+    return alreadyClean ? prev : result;
   });
 }
 

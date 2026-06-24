@@ -2,7 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import type { A2UIPayload } from "../../types/a2ui";
 import { activeCwd, activeProject } from "../../projects";
 import { TAB_MIRROR_KEYS } from "../useTabs";
-import type { Tab } from "../../types/tab";
+import { OVERVIEW_TAB_ID, type Tab } from "../../types/tab";
 import {
   EMPTY_AUTH_PROFILES,
   type AuthProfilesSnapshot,
@@ -26,6 +26,7 @@ import {
   replayHighlightGrammars,
   type ExtensionHighlightGrammar,
 } from "./extensionHighlightGrammars";
+import { mirrorOverviewSurfaceToRoot } from "../tabOps/helpers";
 
 function isWorkstationBootLayout(layout: A2UIPayload): boolean {
   const state = layout.state as
@@ -422,10 +423,24 @@ export const handleReady: BridgeMessageHandler = (data, ctx) => {
     const activeId = (next.activeTabId as string | undefined) ?? "default";
     const tabsList = (next.tabs as Tab[] | undefined) ?? [];
     const activeTab = tabsList.find((t) => t.id === activeId);
-    const activeModel = activeTab?.model || fallbackModel;
-    const activeThinkingLevel =
-      activeTab?.thinkingLevel ||
-      (typeof data.thinkingLevel === "string" ? data.thinkingLevel : undefined);
+    const overviewOwnsSurface =
+      activeId === OVERVIEW_TAB_ID || !activeTab || activeTab.kind === "shell";
+    const overviewMirror: Record<string, unknown> = {};
+    const overviewModel = overviewOwnsSurface
+      ? mirrorOverviewSurfaceToRoot(overviewMirror, next)
+      : "";
+    const overviewThinkingLevel =
+      typeof overviewMirror.thinkingLevel === "string"
+        ? overviewMirror.thinkingLevel
+        : undefined;
+    const readyThinkingLevel =
+      typeof data.thinkingLevel === "string" ? data.thinkingLevel : undefined;
+    const activeModel = overviewOwnsSurface
+      ? overviewModel || fallbackModel
+      : activeTab.model || fallbackModel;
+    const activeThinkingLevel = overviewOwnsSurface
+      ? (overviewThinkingLevel ?? readyThinkingLevel)
+      : activeTab.thinkingLevel || readyThinkingLevel;
     const existingDefaultThinkingLevel =
       typeof next.defaultThinkingLevel === "string"
         ? next.defaultThinkingLevel
@@ -466,11 +481,13 @@ export const handleReady: BridgeMessageHandler = (data, ctx) => {
     // only on the tab record but the layout binds via the root mirror,
     // so the user wouldn't see the restored state until they switched
     // tabs and back.
-    if (activeTab) {
+    if (activeTab && !overviewOwnsSurface) {
       const tabRec = activeTab as unknown as Record<string, unknown>;
       for (const key of TAB_MIRROR_KEYS) {
         next[key as string] = tabRec[key as string];
       }
+    } else if (overviewOwnsSurface) {
+      mirrorOverviewSurfaceToRoot(next, next);
     }
     return next;
   });

@@ -20,6 +20,7 @@ import {
 } from "../layoutPrefs";
 import { shouldReloadForHmrPayload } from "../utils/hmr";
 import { OVERVIEW_TAB_ID, type Tab } from "../types/tab";
+import { mirrorOverviewSurfaceToRoot } from "./tabOps/helpers";
 
 export interface BuildInitialAppStoreOptions {
   bootLayout: A2UIPayload;
@@ -43,6 +44,26 @@ function restoredActiveTabId(
   return tabs[0]?.id ?? null;
 }
 
+function rootMirrorForActiveSurface(
+  tabs: readonly Tab[],
+  activeTabId: string | null | undefined,
+  sourceState: Record<string, unknown>,
+): Record<string, unknown> {
+  const activeTab =
+    activeTabId && activeTabId !== OVERVIEW_TAB_ID
+      ? tabs.find((t) => t.id === activeTabId && t.kind !== "shell")
+      : undefined;
+  if (activeTab) {
+    const activeRecord = activeTab as unknown as Record<string, unknown>;
+    return Object.fromEntries(
+      TAB_MIRROR_KEYS.map((key) => [key, activeRecord[key]]),
+    );
+  }
+  const result: Record<string, unknown> = {};
+  mirrorOverviewSurfaceToRoot(result, sourceState);
+  return result;
+}
+
 export function buildInitialAppStore({
   bootLayout,
   logoUrl,
@@ -52,7 +73,6 @@ export function buildInitialAppStore({
   const layoutPrefs = loadLayoutPrefsSync();
   const tabs = restored?.tabs.length ? restored.tabs : [];
   const activeTabId = restoredActiveTabId(tabs, restored?.activeTabId);
-  const activeTab = tabs.find((t) => t.id === activeTabId) ?? tabs[0] ?? null;
   const restoredLayout =
     restored?.layout && typeof restored.layout === "object"
       ? (restored.layout as Record<string, unknown>)
@@ -73,15 +93,12 @@ export function buildInitialAppStore({
     (restored?.terminal as { open?: boolean } | undefined)?.open ?? false;
   const terminalHeight =
     typeof terminalPanel.height === "number" ? terminalPanel.height : 240;
-  const activeRecord =
-    (activeTab as unknown as Record<string, unknown> | null) ?? {};
-  const rootMirror = Object.fromEntries(
-    TAB_MIRROR_KEYS.map((key) => [key, activeRecord[key]]),
-  );
+  const bootState = bootLayout.state ?? {};
+  const rootMirror = rootMirrorForActiveSurface(tabs, activeTabId, bootState);
 
   return {
     appStore: createAppStore({
-      ...(bootLayout.state ?? {}),
+      ...bootState,
       ...(restored?.terminal ? { terminal: restored.terminal } : {}),
       terminalPanel,
       ...(restored?.scrollToMatchByTab
@@ -152,14 +169,7 @@ export function useSessionPersistence({
         const activeTabId = hasActiveTabs
           ? (restoredActiveTabId(tabs, snapshot.activeTabId) ?? tabs[0].id)
           : OVERVIEW_TAB_ID;
-        const activeTab = hasActiveTabs
-          ? (tabs.find((t) => t.id === activeTabId) ?? tabs[0])
-          : undefined;
-        const activeRecord =
-          (activeTab as unknown as Record<string, unknown>) ?? {};
-        const rootMirror = Object.fromEntries(
-          TAB_MIRROR_KEYS.map((key) => [key, activeRecord[key]]),
-        );
+        const rootMirror = rootMirrorForActiveSurface(tabs, activeTabId, prev);
         const restoredLayout =
           snapshot.layout && typeof snapshot.layout === "object"
             ? (snapshot.layout as Record<string, unknown>)

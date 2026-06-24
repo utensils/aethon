@@ -3,6 +3,7 @@ import { NO_PROJECT_KEY, OVERVIEW_TAB_ID, type Tab } from "../../types/tab";
 import { recomputeModelPicker } from "../../utils/modelPicker";
 import type { ProjectsState } from "../../projects";
 import { TAB_MIRROR_KEYS } from "../useTabs";
+import { mirrorOverviewSurfaceToRoot } from "../tabOps/helpers";
 import type { TabBucket } from "./types";
 
 const WORKSPACE_BUCKET_SEPARATOR = "::workspace::";
@@ -262,6 +263,10 @@ export function switchProjectBucket(
       for (const key of TAB_MIRROR_KEYS) {
         result[key as string] = rec[key as string];
       }
+      const visibleModel =
+        activeTab.kind === "shell"
+          ? mirrorOverviewSurfaceToRoot(result, prev)
+          : activeTab.model;
       result.empty = false;
       result.hasTabs = true;
       // Restoring a real tab must clear any workspace-landing override,
@@ -270,7 +275,7 @@ export function switchProjectBucket(
       result.landing = null;
       result.sidebar = recomputeModelPicker(
         prev.sidebar as Record<string, unknown> | undefined,
-        activeTab.model,
+        visibleModel,
       );
       nextTerminalBuffer = activeTab.terminalBuffer ?? "";
     } else {

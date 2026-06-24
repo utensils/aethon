@@ -58,6 +58,34 @@ describe("handleTabStrip", () => {
     expect(next).toEqual({ activeTabId: OVERVIEW_TAB_ID, foo: "bar" });
   });
 
+  it("selecting overview repairs stale shell model state", async () => {
+    const { ctx, mocks, applySetState } = buildRouteFixture({
+      state: {
+        activeTabId: "shell-1",
+        project: { id: "p1" },
+        defaultModel: "openai-codex/gpt-5.5",
+        piDefaultModel: "openai-codex/gpt-5.5",
+        defaultThinkingLevel: "medium",
+        model: "anthropic/claude-opus-4-7",
+        thinkingLevel: "high",
+      },
+    });
+    await handleTabStrip(
+      {
+        component: { id: "header-tabs", type: "tab-strip" },
+        eventType: "select",
+        data: { tabId: OVERVIEW_TAB_ID },
+      },
+      ctx,
+    );
+    expect(mocks.setActiveTab).not.toHaveBeenCalled();
+    const next = applySetState();
+    expect(next.activeTabId).toBe(OVERVIEW_TAB_ID);
+    expect(next.landing).toBeNull();
+    expect(next.model).toBe("openai-codex/gpt-5.5");
+    expect(next.thinkingLevel).toBe("medium");
+  });
+
   it("close removes the chosen tab", async () => {
     const { ctx, mocks } = buildRouteFixture();
     await handleTabStrip(
