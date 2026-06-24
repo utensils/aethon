@@ -88,6 +88,28 @@ describe("dispatchEvent — precedence contract", () => {
     expect(mocks.sendChat).toHaveBeenCalledWith("hello", { mode: "normal" });
   });
 
+  it("Layer 3 routes chat-history fork actions to the clicked tab", async () => {
+    const { ctx, mocks } = buildRouteFixture({
+      state: { activeTabId: "stale-tab" },
+    });
+    const handled = await dispatchEvent(
+      {
+        component: { id: "chat-history", type: "chat-history" },
+        eventType: "fork-to-tab",
+        data: { entryId: "entry-1", tabId: "rendered-tab" },
+      },
+      ctx,
+    );
+    expect(handled).toBe(true);
+    expect(mocks.invoke).toHaveBeenCalledWith("agent_command", {
+      payload: JSON.stringify({
+        type: "fork_session",
+        tabId: "rendered-tab",
+        entryId: "entry-1",
+      }),
+    });
+  });
+
   it("Layer 3 lookup uses both id-key and type-key — type-keyed terminal-panel matches even when id differs across layouts", async () => {
     const { ctx, mocks } = buildRouteFixture();
     const handled = await dispatchEvent(

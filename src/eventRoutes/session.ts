@@ -24,11 +24,15 @@ export const handleSessionBranch: EventRouteHandler = (
   const record =
     data && typeof data === "object" ? (data as Record<string, unknown>) : {};
   const entryId = str(record.entryId);
+  const explicitTabId = str(record.tabId);
+  const targetTabId = () =>
+    explicitTabId || str(ctx.stateRef.current.activeTabId);
 
   if (eventType === "rollback-to-here") {
     if (!entryId) return false;
-    const tabId = str(ctx.stateRef.current.activeTabId);
-    ctx.updateActiveTab((tab) => {
+    const tabId = targetTabId();
+    if (!tabId) return false;
+    ctx.updateTab(tabId, (tab) => {
       const messages = truncateToEntry(tab.messages, entryId);
       return messages === tab.messages
         ? tab
@@ -42,7 +46,8 @@ export const handleSessionBranch: EventRouteHandler = (
 
   if (eventType === "fork-to-tab") {
     if (!entryId) return false;
-    const tabId = str(ctx.stateRef.current.activeTabId);
+    const tabId = targetTabId();
+    if (!tabId) return false;
     void ctx.invoke("agent_command", {
       payload: JSON.stringify({ type: "fork_session", tabId, entryId }),
     });

@@ -335,7 +335,10 @@ export const ChatMessageRow = memo(
                   className="ae-msg-branch-btn ae-msg-branch-confirm"
                   onClick={() => {
                     setConfirmingRollback(false);
-                    onEvent?.("rollback-to-here", { entryId: message.entryId });
+                    onEvent?.("rollback-to-here", {
+                      entryId: message.entryId,
+                      tabId,
+                    });
                   }}
                 >
                   Confirm rollback
@@ -357,7 +360,17 @@ export const ChatMessageRow = memo(
                   title="Rewind the conversation to this message"
                   onClick={() => setConfirmingRollback(true)}
                 >
-                  <span aria-hidden="true">↶</span>
+                  <svg
+                    viewBox="0 0 16 16"
+                    width="14"
+                    height="14"
+                    aria-hidden="true"
+                    focusable="false"
+                  >
+                    <path d="M5.2 5.1H10a4 4 0 1 1-3.1 6.55" />
+                    <path d="M5.2 5.1 7.55 2.8" />
+                    <path d="M5.2 5.1 7.55 7.45" />
+                  </svg>
                 </button>
                 <button
                   type="button"
@@ -365,10 +378,21 @@ export const ChatMessageRow = memo(
                   aria-label="Fork from this message"
                   title="Fork the conversation into a new tab from here"
                   onClick={() =>
-                    onEvent?.("fork-to-tab", { entryId: message.entryId })
+                    onEvent?.("fork-to-tab", { entryId: message.entryId, tabId })
                   }
                 >
-                  <span aria-hidden="true">⑂</span>
+                  <svg
+                    viewBox="0 0 16 16"
+                    width="14"
+                    height="14"
+                    aria-hidden="true"
+                    focusable="false"
+                  >
+                    <path d="M5 3.25v4.15c0 2.4 1.55 4.1 4.2 4.1H11" />
+                    <path d="M8.75 9.2 11 11.5l-2.25 2.3" />
+                    <circle cx="5" cy="3.25" r="1.6" />
+                    <circle cx="5" cy="12.75" r="1.6" />
+                  </svg>
                 </button>
               </>
             )}

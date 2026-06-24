@@ -7,8 +7,15 @@ import type { ChatMessage } from "../../types/a2ui";
 
 afterEach(cleanup);
 
-function row(message: ChatMessage, onEvent = vi.fn()) {
-  render(<ChatMessageRow message={message} state={{}} onEvent={onEvent} />);
+function row(message: ChatMessage, onEvent = vi.fn(), tabId = "tab-1") {
+  render(
+    <ChatMessageRow
+      message={message}
+      state={{}}
+      tabId={tabId}
+      onEvent={onEvent}
+    />,
+  );
   return onEvent;
 }
 
@@ -66,7 +73,10 @@ describe("ChatMessageRow rollback/fork affordance", () => {
     fireEvent.click(
       screen.getByRole("button", { name: "Fork from this message" }),
     );
-    expect(onEvent).toHaveBeenCalledWith("fork-to-tab", { entryId: "e1" });
+    expect(onEvent).toHaveBeenCalledWith("fork-to-tab", {
+      entryId: "e1",
+      tabId: "tab-1",
+    });
   });
 
   it("rollback requires a second confirm click", () => {
@@ -77,6 +87,9 @@ describe("ChatMessageRow rollback/fork affordance", () => {
     // First click only arms the confirm — no event yet.
     expect(onEvent).not.toHaveBeenCalled();
     fireEvent.click(screen.getByText("Confirm rollback"));
-    expect(onEvent).toHaveBeenCalledWith("rollback-to-here", { entryId: "e1" });
+    expect(onEvent).toHaveBeenCalledWith("rollback-to-here", {
+      entryId: "e1",
+      tabId: "tab-1",
+    });
   });
 });

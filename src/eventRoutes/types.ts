@@ -71,6 +71,7 @@ export interface EventRouteContext {
     options?: { mode?: "normal" | "steer"; attachments?: ChatAttachment[] },
   ) => Promise<void>;
   stopPrompt: (explicitTabId?: string) => Promise<void>;
+  updateTab: (tabId: string, updater: (tab: Tab) => Tab) => void;
   updateActiveTab: (updater: (tab: Tab) => Tab) => void;
 
   // ─── Queue (popover above composer) ─────────────────────────────────

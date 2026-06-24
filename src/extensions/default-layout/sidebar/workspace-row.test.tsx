@@ -170,6 +170,41 @@ describe("WorkspaceRow", () => {
     );
   });
 
+  it("keeps a quiet status marker for workspaces with no agent session", () => {
+    harness(wt());
+
+    const marker = screen.getByLabelText("No agent session");
+    expect(marker.className).toContain("ae-sb-agent-dot--dormant");
+    expect(marker.getAttribute("title")).toBe("No agent session yet");
+  });
+
+  it("updates marker state without adding a new slot when a session appears", () => {
+    const { rerender } = harness(wt());
+
+    expect(document.querySelectorAll(".ae-sb-agent-dot")).toHaveLength(1);
+    expect(screen.getByLabelText("No agent session")).toBeTruthy();
+
+    rerender(
+      <ul>
+        <WorkspaceRow
+          item={wt({
+            agent: {
+              status: "idle-with-session",
+              activeCount: 1,
+              runningCount: 0,
+            },
+          })}
+          sectionId="projects"
+          onEvent={vi.fn()}
+        />
+      </ul>,
+    );
+
+    expect(document.querySelectorAll(".ae-sb-agent-dot")).toHaveLength(1);
+    const marker = screen.getByLabelText("Agent session idle");
+    expect(marker.className).toContain("ae-sb-agent-dot--idle");
+  });
+
   it("renders pending status with cancel button when queued/starting", () => {
     const { onEvent } = harness(
       wt({ pendingState: "starting", label: "wip" }),

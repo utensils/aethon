@@ -20,7 +20,9 @@ describe("handleSessionBranch", () => {
     expect(handled).toBe(true);
 
     // Optimistic truncate: apply the captured updater to a sample tab.
-    const updater = mocks.updateActiveTab.mock.calls[0][0] as (t: Tab) => Tab;
+    expect(mocks.updateTab).toHaveBeenCalledWith("t1", expect.any(Function));
+    expect(mocks.updateActiveTab).not.toHaveBeenCalled();
+    const updater = mocks.updateTab.mock.calls[0][1] as (t: Tab) => Tab;
     const messages: ChatMessage[] = [
       { id: "1", entryId: "e1", role: "user", text: "a" },
       { id: "2", entryId: "e2", role: "agent", text: "b" },
@@ -50,6 +52,47 @@ describe("handleSessionBranch", () => {
       payload: JSON.stringify({
         type: "fork_session",
         tabId: "t1",
+        entryId: "e2",
+      }),
+    });
+  });
+
+  it("fork-to-tab uses the clicked row tab id when activeTabId is stale", async () => {
+    const { ctx, mocks } = buildRouteFixture({
+      state: { activeTabId: "wrong-tab" },
+    });
+    const handled = await handleSessionBranch(
+      event("fork-to-tab", { entryId: "e2", tabId: "visible-tab" }),
+      ctx,
+    );
+    expect(handled).toBe(true);
+    expect(mocks.invoke).toHaveBeenCalledWith("agent_command", {
+      payload: JSON.stringify({
+        type: "fork_session",
+        tabId: "visible-tab",
+        entryId: "e2",
+      }),
+    });
+  });
+
+  it("rollback-to-here uses the clicked row tab id when activeTabId is stale", async () => {
+    const { ctx, mocks } = buildRouteFixture({
+      state: { activeTabId: "wrong-tab" },
+    });
+    const handled = await handleSessionBranch(
+      event("rollback-to-here", { entryId: "e2", tabId: "visible-tab" }),
+      ctx,
+    );
+    expect(handled).toBe(true);
+    expect(mocks.updateTab).toHaveBeenCalledWith(
+      "visible-tab",
+      expect.any(Function),
+    );
+    expect(mocks.updateActiveTab).not.toHaveBeenCalled();
+    expect(mocks.invoke).toHaveBeenCalledWith("agent_command", {
+      payload: JSON.stringify({
+        type: "rollback_session",
+        tabId: "visible-tab",
         entryId: "e2",
       }),
     });

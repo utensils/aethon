@@ -4,8 +4,10 @@
  * "this is a child of the project above" cue is a continuous vertical
  * guide line drawn via `.ae-workspace-row::before` in chrome.css; each
  * row contributes one segment that joins seamlessly with the next.
- * The non-main rows therefore render *no* per-row glyph — the guide
- * does the work.
+ * Each normal row still reserves a small agent-status marker next to
+ * the label so session state does not pop in only after a workspace is
+ * selected. The guide communicates hierarchy; the marker communicates
+ * session/activity state.
  *
  * Pending workspaces (during `git worktree add` or remove) get a distinct
  * visual treatment + a small Cancel / Retry / Dismiss button cluster. Once
@@ -219,12 +221,34 @@ export function WorkspaceRow({
 
   const tooltip = isFailed && item.pendingError ? item.pendingError : item.path;
   const displayLabel = item.label || item.branch || "workspace";
+  const agentStatus = item.agent?.status ?? "none";
   const agentVisualState =
-    item.agent?.status === "running"
+    agentStatus === "running"
       ? "running"
-      : item.agent?.status === "needs-attention"
+      : agentStatus === "needs-attention"
         ? "attention"
-        : "idle";
+        : agentStatus === "idle-with-session"
+          ? "idle"
+          : "dormant";
+  const showAgentStatusMarker = !isPendingActive && !isFailed;
+  const agentStatusLabel =
+    agentStatus === "running"
+      ? "Agent running"
+      : agentStatus === "needs-attention"
+        ? "Agent ready for your reply"
+        : agentStatus === "idle-with-session"
+          ? "Agent session idle"
+          : "No agent session";
+  const agentStatusTitle =
+    agentStatus === "running"
+      ? `${item.agent?.runningCount ?? 1} agent turn${
+          (item.agent?.runningCount ?? 1) === 1 ? "" : "s"
+        } running`
+      : agentStatus === "needs-attention"
+        ? "Agent finished — ready for your reply"
+        : agentStatus === "idle-with-session"
+          ? "Idle agent session — awaiting your input"
+          : "No agent session yet";
 
   useEffect(() => {
     if (!canRenameInline) return;
@@ -346,25 +370,11 @@ export function WorkspaceRow({
           </svg>
         </span>
       ) : null}
-      {item.agent && item.agent.status !== "none" ? (
+      {showAgentStatusMarker ? (
         <span
           className={`ae-sb-agent-dot ae-sb-agent-dot--${agentVisualState}`}
-          aria-label={
-            item.agent.status === "running"
-              ? "Agent running"
-              : item.agent.status === "needs-attention"
-                ? "Agent ready for your reply"
-                : "Agent session idle"
-          }
-          title={
-            item.agent.status === "running"
-              ? `${item.agent.runningCount} agent turn${
-                  item.agent.runningCount === 1 ? "" : "s"
-                } running`
-              : item.agent.status === "needs-attention"
-                ? "Agent finished — ready for your reply"
-                : "Idle agent session — awaiting your input"
-          }
+          aria-label={agentStatusLabel}
+          title={agentStatusTitle}
         />
       ) : null}
       {canRenameInline ? (
