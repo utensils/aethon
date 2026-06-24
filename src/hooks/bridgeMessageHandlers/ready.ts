@@ -1,15 +1,12 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { A2UIPayload } from "../../types/a2ui";
-import { activeCwd, activeProject } from "../../projects";
-import { TAB_MIRROR_KEYS } from "../useTabs";
-import { OVERVIEW_TAB_ID, type Tab } from "../../types/tab";
+import { activeProject } from "../../projects";
+import type { Tab } from "../../types/tab";
 import {
   EMPTY_AUTH_PROFILES,
   type AuthProfilesSnapshot,
 } from "../../auth-profiles";
-import { deepMergeState, layoutPatch } from "../../utils/stateMutation";
-import { deletePointer } from "../../utils/jsonPointer";
-import { WORKSTATION_AREAS, workstationRows } from "../useFocus";
+import { layoutPatch } from "../../utils/stateMutation";
 import type {
   DisabledExtensionRecord,
   ExtensionFailureSummary,
@@ -21,54 +18,17 @@ import type {
   DiscoveredSession,
   ModelDescriptor,
 } from "./types";
-import { contextUsageFromMessage } from "./contextUsage";
 import {
   replayHighlightGrammars,
   type ExtensionHighlightGrammar,
 } from "./extensionHighlightGrammars";
-import { mirrorOverviewSurfaceToRoot } from "../tabOps/helpers";
+import { runReadyEffects } from "./readyEffects";
+import { isWorkstationBootLayout, reduceReadyState } from "./readyState";
 
-function isWorkstationBootLayout(layout: A2UIPayload): boolean {
-  const state = layout.state as
-    | { layout?: { areas?: unknown; rows?: unknown } }
-    | undefined;
-  const areas = state?.layout?.areas;
-  return (
-    Array.isArray(areas) &&
-    areas.some(
-      (row) => typeof row === "string" && row.includes("files-sidebar"),
-    )
-  );
-}
-
-function terminalHeightFromState(state: Record<string, unknown>): number {
-  const panel = state.terminalPanel as { height?: unknown } | undefined;
-  const height = panel?.height;
-  return typeof height === "number" && Number.isFinite(height) ? height : 240;
-}
-
-function normalizeWorkstationLayout(
-  state: Record<string, unknown>,
-): Record<string, unknown> {
-  const layout = (state.layout as Record<string, unknown> | undefined) ?? {};
-  const terminal = state.terminal as { open?: boolean } | undefined;
-  return {
-    ...state,
-    layout: {
-      ...layout,
-      rows: workstationRows(
-        terminal?.open === true,
-        terminalHeightFromState(state),
-      ),
-      areas: WORKSTATION_AREAS,
-    },
-  };
-}
-
-/** The biggest handler: extension hydration + session restore + model
- *  picker + tabs reconcile. Called whenever the bridge fires `ready` —
- *  on first boot, after a hot-reload, after an `report` request from
- *  the boot sequence. */
+/** Bridge ready ingestion: parse the bridge snapshot, hydrate extension
+ *  registries/layout, reduce ready-owned app state, then run the
+ *  restore/reannounce side-effect phase. Called on first boot, webview
+ *  reloads, bridge respawns, and explicit boot `report` requests. */
 export const handleReady: BridgeMessageHandler = (data, ctx) => {
   const model = (data.model as string) || "";
   const projectRoot =
@@ -272,67 +232,11 @@ export const handleReady: BridgeMessageHandler = (data, ctx) => {
   // Update the ref BEFORE calling setState so the next ready (which may
   // arrive in the same React batch) sees the new "previous" set.
   ctx.lastExtensionStateKeysRef.current = new Set(extStateKeys);
-  ctx.setState((prev) => {
-    // Three-layer hydration in priority order (lowest → highest):
-    //   1. extension layout state — TREATED AS BOOT DEFAULTS (only fills
-    //      keys not already set; existing live state like `messages` /
-    //      `canvas` wins to avoid wiping restored history when ready
-    //      replays after a reload)
-    //   2. extension setState patches (last-write-wins overrides)
-    //   3. ready-owned runtime fields (model picker, status, etc.)
-    //
-    // Stale-key pruning: drop paths the previous ready tracked but this
-    // ready dropped (an extension was uninstalled). Without this, `prev`
-    // keeps the leftover slice forever (deepMerge doesn't remove keys,
-    // only adds/updates). The willPruneKeys diff was captured outside
-    // this callback so it's stable across concurrent-mode re-runs.
-    let next: Record<string, unknown> = { ...prev };
-    for (const stale of willPruneKeys) {
-      next = deletePointer(next, stale);
-    }
-    const layoutDefaults =
-      baseLayout && typeof baseLayout === "object" && "state" in baseLayout
-        ? baseLayout.state
-        : undefined;
-    if (layoutDefaults) {
-      // Defaults semantics: restore the active layout's baseline after
-      // stale extension-owned paths are pruned. This is load-bearing for
-      // project switches: a project extension may have owned
-      // /layout/areas or /sidebar/extraSections, and deleting those paths
-      // must fall back to the workstation defaults, not leave CSS Grid
-      // without template areas.
-      next = deepMergeState(layoutDefaults, next);
-    }
-    next = deepMergeState(next, extState);
-    if (shouldNormalizeWorkstationLayout) {
-      // Older persisted UI snapshots and project-owned layout state had
-      // no dedicated tabs row. Because layout state uses default-merge
-      // semantics, those stale /layout/areas values otherwise win over
-      // the boot workstation payload on every bridge ready, leaving the
-      // tab-strip to auto-place at the bottom of the grid.
-      next = normalizeWorkstationLayout(next);
-    }
-    // Reconcile bridge data onto local tabs without creating visible
-    // records from the bridge tab list. With project buckets, bridge
-    // state is global but the visible UI bucket is project-scoped; if a
-    // ready emitted during project switch backfilled every bridge tab,
-    // tabs from other projects appeared in the current project. Session
-    // UI snapshots and discoveredSessions handle reload restoration;
-    // ready may only enrich local tabs that already exist.
-    //
-    // Also hydrate per-tab mirrored state from extensionTabState —
-    // those values are the bridge's record of what extensions / agents
-    // wrote to /canvas, /messages, etc. for each tab. On a webview
-    // reload they're the only way to restore tab UI state that was
-    // driven by the agent (React state didn't survive).
-    {
-      const configuredDefaultThinkingLevel =
-        typeof next.defaultThinkingLevel === "string" &&
-        next.defaultThinkingLevel.length > 0
-          ? next.defaultThinkingLevel
-          : undefined;
-      const localTabs = ((next.tabs as Tab[] | undefined) ?? []).slice();
-      const bridgeTabs =
+  ctx.setState((prev) =>
+    reduceReadyState(prev, {
+      authProfiles,
+      baseLayout,
+      bridgeTabs:
         (data.tabs as
           | {
               id: string;
@@ -342,223 +246,27 @@ export const handleReady: BridgeMessageHandler = (data, ctx) => {
               contextUsage?: Record<string, unknown>;
               thinkingLevel?: string;
             }[]
-          | undefined) ?? [];
-      const tabReplay =
+          | undefined) ?? [],
+      codexFastMode: data.codexFastMode,
+      extState,
+      fallbackModel,
+      models,
+      projectRoot,
+      readyThinkingLevel:
+        typeof data.thinkingLevel === "string" ? data.thinkingLevel : undefined,
+      recentSessions,
+      shouldNormalizeWorkstationLayout,
+      tabReplay:
         (data.extensionTabState as
           | Record<string, Record<string, unknown>>
-          | undefined) ?? {};
-      const dIdx = localTabs.findIndex((t) => t.id === "default");
-      if (dIdx >= 0 && !localTabs[dIdx].model && fallbackModel) {
-        localTabs[dIdx] = { ...localTabs[dIdx], model: fallbackModel };
-      }
-      // Backfill any tab that has no model yet (e.g. opened before ready
-      // fired) with pi's default so the picker is never blank.
-      for (let i = 0; i < localTabs.length; i++) {
-        if (!localTabs[i].model && fallbackModel) {
-          localTabs[i] = { ...localTabs[i], model: fallbackModel };
-        }
-      }
-      for (let i = 0; i < localTabs.length; i++) {
-        const bt = bridgeTabs.find(
-          (candidate) => candidate.id === localTabs[i].id,
-        );
-        if (bt?.model && !localTabs[i].model) {
-          localTabs[i] = { ...localTabs[i], model: bt.model };
-        }
-        const tabThinkingLevel = localTabs[i]?.thinkingLevel;
-        const localThinkingLevel =
-          typeof tabThinkingLevel === "string" && tabThinkingLevel.length > 0
-            ? tabThinkingLevel
-            : undefined;
-        const readyThinkingLevel =
-          localThinkingLevel ?? configuredDefaultThinkingLevel ?? bt?.thinkingLevel;
-        if (readyThinkingLevel) {
-          localTabs[i] = { ...localTabs[i], thinkingLevel: readyThinkingLevel };
-        }
-        if (bt?.cwd && !localTabs[i].cwd) {
-          localTabs[i] = { ...localTabs[i], cwd: bt.cwd };
-        }
-        if (bt?.authProfileId) {
-          localTabs[i] = { ...localTabs[i], authProfileId: bt.authProfileId };
-        }
-        const contextUsage = bt?.contextUsage
-          ? contextUsageFromMessage(bt.contextUsage)
-          : null;
-        if (contextUsage) {
-          localTabs[i] = { ...localTabs[i], contextUsage };
-        }
-      }
-      // Apply the bridge's per-tab replay over each tab record. prev
-      // wins for keys the React side already restored (e.g. local-only
-      // message history) — agent-driven canvas / model fills the gaps.
-      for (let i = 0; i < localTabs.length; i++) {
-        const replay = tabReplay[localTabs[i].id];
-        if (!replay) continue;
-        const merged = { ...localTabs[i] } as unknown as Record<
-          string,
-          unknown
-        >;
-        for (const [k, v] of Object.entries(replay)) {
-          // Only fill keys that aren't already populated locally, so a
-          // real local update beats a possibly-stale replay.
-          if (
-            merged[k] === undefined ||
-            merged[k] === null ||
-            (Array.isArray(merged[k]) &&
-              (merged[k] as unknown[]).length === 0) ||
-            merged[k] === ""
-          ) {
-            merged[k] = v;
-          }
-        }
-        localTabs[i] = merged as unknown as Tab;
-      }
-      next.tabs = localTabs;
-    }
-    // The model + sidebar mirror tracks the ACTIVE tab, not the default
-    // — so a `ready` arriving while a non-default tab is active doesn't
-    // clobber the visible selection. Look up the active tab's model in
-    // the just-updated tabs array; fall back to data.model on first
-    // boot when no tab record exists.
-    const activeId = (next.activeTabId as string | undefined) ?? "default";
-    const tabsList = (next.tabs as Tab[] | undefined) ?? [];
-    const activeTab = tabsList.find((t) => t.id === activeId);
-    const overviewOwnsSurface =
-      activeId === OVERVIEW_TAB_ID || !activeTab || activeTab.kind === "shell";
-    const overviewMirror: Record<string, unknown> = {};
-    const overviewModel = overviewOwnsSurface
-      ? mirrorOverviewSurfaceToRoot(overviewMirror, next)
-      : "";
-    const overviewThinkingLevel =
-      typeof overviewMirror.thinkingLevel === "string"
-        ? overviewMirror.thinkingLevel
-        : undefined;
-    const readyThinkingLevel =
-      typeof data.thinkingLevel === "string" ? data.thinkingLevel : undefined;
-    const activeModel = overviewOwnsSurface
-      ? overviewModel || fallbackModel
-      : activeTab.model || fallbackModel;
-    const activeThinkingLevel = overviewOwnsSurface
-      ? (overviewThinkingLevel ?? readyThinkingLevel)
-      : activeTab.thinkingLevel || readyThinkingLevel;
-    const existingDefaultThinkingLevel =
-      typeof next.defaultThinkingLevel === "string"
-        ? next.defaultThinkingLevel
-        : undefined;
-    const activeTurnBusy =
-      activeTab?.waiting === true ||
-      (activeTab?.queueCount ?? 0) > 0 ||
-      next.waiting === true ||
-      ((next.queueCount as number | undefined) ?? 0) > 0;
-    next = {
-      ...next,
-      ...(projectRoot ? { projectRoot } : {}),
-      ...(userDir ? { aethonRoot: userDir } : {}),
-      model: activeModel,
-      ...(activeThinkingLevel ? { thinkingLevel: activeThinkingLevel } : {}),
-      defaultThinkingLevel: existingDefaultThinkingLevel ?? activeThinkingLevel,
-      codexFastMode:
-        typeof data.codexFastMode === "boolean"
-          ? data.codexFastMode
-          : next.codexFastMode,
-      status: activeTurnBusy ? "thinking…" : "ready",
-      connection: "connected",
-      recentSessions,
-      authProfiles,
-      sidebar: {
-        ...(next.sidebar ?? {}),
-        models: models.map((m) => ({
-          id: m.id,
-          label: m.label,
-          active: m.id === activeModel,
-          ...(m.thinkingLevels ? { thinkingLevels: m.thinkingLevels } : {}),
-          ...(m.codexFastModeSupported ? { codexFastModeSupported: true } : {}),
-        })),
-      },
-    };
-    // Re-mirror the active tab's full state to the root keys. Without
-    // this, ready-replayed values for /messages, /canvas, etc. live
-    // only on the tab record but the layout binds via the root mirror,
-    // so the user wouldn't see the restored state until they switched
-    // tabs and back.
-    if (activeTab && !overviewOwnsSurface) {
-      const tabRec = activeTab as unknown as Record<string, unknown>;
-      for (const key of TAB_MIRROR_KEYS) {
-        next[key as string] = tabRec[key as string];
-      }
-    } else if (overviewOwnsSurface) {
-      mirrorOverviewSurfaceToRoot(next, next);
-    }
-    return next;
+          | undefined) ?? {},
+      userDir,
+      willPruneKeys,
+    }),
+  );
+  runReadyEffects(ctx, {
+    currentProjectCwd,
+    priorActiveTabCwd,
+    priorActiveTabId,
   });
-  // Re-establish or replay bridge sessions for any non-default local
-  // tabs the webview restored. A right-click / Vite reload keeps the
-  // bridge process alive, so ready may already list the tab; still send
-  // tab_open with restoreHistory so the durable transcript can repair a
-  // stale UI snapshot (for example image attachment metadata) after the
-  // webview reconstructs React state.
-  const localTabs = (ctx.stateRef.current.tabs as Tab[] | undefined) ?? [];
-  for (const t of localTabs) {
-    if ((t.kind ?? "agent") !== "agent") continue;
-    if (t.id === "default") continue;
-    // Pass `model` so the new bridge session boots with the same model
-    // the user previously selected — no race window. Track in
-    // pendingTabOpens so a fast first chat on the restored tab waits
-    // for the bridge to register the session (otherwise send_message
-    // would race tab_open and lazily create the tab without the
-    // inherited model). Preserve the tab's original project bucket
-    // instead of using the currently-active project: existing tabs keep
-    // the cwd they were created with, and a hot reload should restore
-    // that same scoped history.
-    const tabProject = t.projectId
-      ? ctx.projectsRef.current.projects.find((p) => p.id === t.projectId)
-      : null;
-    const restoredCwd = t.cwd ?? tabProject?.path;
-    const opening = (async () => {
-      if (restoredCwd && ctx.prepareWorkspaceStartup) {
-        const ready = await ctx.prepareWorkspaceStartup(restoredCwd);
-        if (!ready) return;
-      }
-      return await invoke("agent_command", {
-        payload: JSON.stringify({
-          type: "tab_open",
-          tabId: t.id,
-          ...(t.model ? { model: t.model } : {}),
-          ...(t.thinkingLevel ? { thinkingLevel: t.thinkingLevel } : {}),
-          ...(restoredCwd ? { cwd: restoredCwd } : {}),
-          ...(t.authProfileId ? { authProfileId: t.authProfileId } : {}),
-          restoreHistory: true,
-        }),
-      });
-    })();
-    ctx.pendingTabOpens.current.set(t.id, opening);
-    opening
-      .catch(() => {
-        /* surfaced on next chat send */
-      })
-      .finally(() => {
-        ctx.pendingTabOpens.current.delete(t.id);
-      });
-  }
-  // Post-respawn project re-announce. The bridge boots with
-  // process.cwd() — which is whatever directory bun was launched from,
-  // NOT necessarily the user's active project. If we don't re-announce,
-  // a hot-reload triggered while a non-cwd project is active leaves the
-  // wrong project's extensions loaded. The loop above only sends
-  // tab_open for non-default tabs, so when the active tab IS "default"
-  // (common: single-tab session) nothing announces. Send an explicit
-  // set_project for the active tab so the bridge swaps to the right
-  // project. Ready can also be emitted *because* set_project loaded or
-  // refreshed resources, so only announce when the bridge reports a
-  // different cwd. Otherwise a ready -> set_project -> ready loop can
-  // monopolize the release app and blank the webview.
-  const projectActivePath = activeCwd(ctx.projectsRef.current);
-  const activePath = ctx.projectsRef.current.activeWorkspaceId
-    ? projectActivePath
-    : (priorActiveTabCwd ?? projectActivePath);
-  if (activePath && currentProjectCwd !== activePath) {
-    ctx.announceProjectToBridge(priorActiveTabId, activePath);
-    return;
-  }
-  ctx.markStartupChromeReady();
 };
