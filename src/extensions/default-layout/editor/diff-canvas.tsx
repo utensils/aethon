@@ -20,10 +20,15 @@ import { invoke } from "@tauri-apps/api/core";
 import * as monaco from "monaco-editor";
 
 import type { BuiltinComponentProps } from "../../../components/A2UIRenderer";
+import type { EditorDiffSnapshot } from "../../../types/tab";
 import { applyMonacoTheme } from "../../../monaco/theme";
 import { ensureShikiMonacoReady } from "../../../monaco/shiki";
 import { languageFromPath } from "../../../monaco/language-detection";
 import { compressPath } from "./path";
+import {
+  isEditorDiffSnapshot,
+  parseUnifiedDiffSnapshot,
+} from "../../../utils/editorDiffSnapshot";
 
 interface DiffCanvasProps {
   filePath: string;
@@ -34,6 +39,9 @@ interface DiffCanvasProps {
    *  saving — which leaves the changed-file *count* unchanged — still
    *  refreshes the diff. */
   refreshKey?: number | string;
+  /** Captured tool-card diff. When present, render this immutable snapshot
+   *  instead of reading current git/disk state. */
+  diffSnapshot?: EditorDiffSnapshot;
 }
 
 function disposeModels(
@@ -49,6 +57,9 @@ export function DiffCanvas(props: BuiltinComponentProps) {
   const projectPath = cp.projectPath ?? "";
   const tabId = cp.tabId ?? "";
   const refreshKey = cp.refreshKey ?? 0;
+  const diffSnapshot = isEditorDiffSnapshot(cp.diffSnapshot)
+    ? cp.diffSnapshot
+    : undefined;
 
   const containerRef = useRef<HTMLDivElement>(null);
   const diffRef = useRef<monaco.editor.IStandaloneDiffEditor | null>(null);
@@ -107,8 +118,25 @@ export function DiffCanvas(props: BuiltinComponentProps) {
   // ─── Load HEAD + working-tree content into the diff models ──────────
   useEffect(() => {
     const ed = diffRef.current;
-    if (!ed || !filePath || !projectPath) return;
+    if (!ed || !filePath) return;
     let cancelled = false;
+    if (diffSnapshot) {
+      void Promise.resolve().then(() => {
+        if (cancelled) return;
+        const prev = ed.getModel();
+        const language = languageFromPath(filePath);
+        const models = parseUnifiedDiffSnapshot(diffSnapshot.content);
+        const original = monaco.editor.createModel(models.original, language);
+        const modified = monaco.editor.createModel(models.modified, language);
+        ed.setModel({ original, modified });
+        disposeModels(prev);
+        setError("");
+      });
+      return () => {
+        cancelled = true;
+      };
+    }
+    if (!projectPath) return;
     const language = languageFromPath(filePath);
     void Promise.all([
       invoke<string | null>("git_show_head", {
@@ -137,7 +165,7 @@ export function DiffCanvas(props: BuiltinComponentProps) {
     return () => {
       cancelled = true;
     };
-  }, [filePath, projectPath, refreshKey]);
+  }, [filePath, projectPath, refreshKey, diffSnapshot]);
 
   return (
     <div className="ae-diff-canvas-wrap" style={{ gridArea: "canvas" }}>
@@ -146,8 +174,11 @@ export function DiffCanvas(props: BuiltinComponentProps) {
         <span className="ae-editor-status-path" title={filePath}>
           {compressPath(filePath)}
         </span>
-        <span className="ae-diff-canvas-badge" aria-label="Diff against HEAD">
-          HEAD ↔ Working Tree
+        <span
+          className="ae-diff-canvas-badge"
+          aria-label={diffSnapshot ? "Captured tool diff" : "Diff against HEAD"}
+        >
+          {diffSnapshot ? "Captured Tool Diff" : "HEAD ↔ Working Tree"}
         </span>
         <span className="ae-editor-status-spacer" />
         {error && <span className="ae-editor-status-lang">{error}</span>}

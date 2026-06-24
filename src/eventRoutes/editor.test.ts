@@ -73,6 +73,7 @@ describe("handleEditorCanvas", () => {
     expect(claimed).toBe(true);
     expect(fx.mocks.updateEditorMeta).toHaveBeenCalledWith("tab-1", {
       diff: false,
+      diffSnapshot: undefined,
     });
   });
 
@@ -336,7 +337,35 @@ describe("handleToolCardFile", () => {
     );
   });
 
-  it("opens a tool-card file in a diff tab", () => {
+  it("opens a tool-card file in a snapshot-backed diff tab", () => {
+    const fx = buildRouteFixture();
+    const diffSnapshot = {
+      format: "unified" as const,
+      content: "--- a/src/App.tsx\n+++ b/src/App.tsx\n@@\n-old\n+new",
+      additions: 1,
+      deletions: 1,
+      source: "tool-card" as const,
+    };
+    const claimed = handleToolCardFile(
+      {
+        component: { id: "tool-1", type: "tool-card" },
+        eventType: "tool-file-diff",
+        data: {
+          filePath: "/projects/aethon/src/App.tsx",
+          rootPath: "/projects/aethon",
+          diffSnapshot,
+        },
+      },
+      fx.ctx,
+    );
+    expect(claimed).toBe(true);
+    expect(fx.mocks.newEditorTab).toHaveBeenCalledWith(
+      "/projects/aethon/src/App.tsx",
+      { diff: true, rootPath: "/projects/aethon", diffSnapshot },
+    );
+  });
+
+  it("warns instead of opening a live git diff for tool-card records without snapshots", () => {
     const fx = buildRouteFixture();
     const claimed = handleToolCardFile(
       {
@@ -350,9 +379,12 @@ describe("handleToolCardFile", () => {
       fx.ctx,
     );
     expect(claimed).toBe(true);
-    expect(fx.mocks.newEditorTab).toHaveBeenCalledWith(
-      "/projects/aethon/src/App.tsx",
-      { diff: true, rootPath: "/projects/aethon" },
+    expect(fx.mocks.newEditorTab).not.toHaveBeenCalled();
+    expect(fx.mocks.pushNotification).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: "Diff snapshot unavailable",
+        kind: "warning",
+      }),
     );
   });
 

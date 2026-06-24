@@ -1396,6 +1396,66 @@ describe("readSessionTranscript", () => {
     });
   });
 
+  it("restores multi-edit file-change snapshots from pi transcripts", async () => {
+    const dir = await tempRoot();
+    await writeFile(
+      join(dir, "session.jsonl"),
+      [
+        JSON.stringify({
+          type: "message",
+          id: "assistant-tool",
+          timestamp: 3_000,
+          message: {
+            role: "assistant",
+            content: [
+              {
+                type: "toolCall",
+                id: "call_edit_multi",
+                name: "edit",
+                arguments: {
+                  path: "src/App.tsx",
+                  edits: [
+                    { oldText: "old one", newText: "new one" },
+                    { oldText: "old two", newText: "new two\nnew extra" },
+                  ],
+                },
+              },
+            ],
+          },
+        }),
+        JSON.stringify({
+          type: "message",
+          id: "tool-result",
+          timestamp: 3_100,
+          message: {
+            role: "toolResult",
+            toolCallId: "call_edit_multi",
+            toolName: "edit",
+            content: [
+              {
+                type: "text",
+                text: "Successfully replaced 2 block(s) in src/App.tsx",
+              },
+            ],
+          },
+        }),
+      ].join("\n") + "\n",
+    );
+
+    const restored = await readSessionTranscript(dir);
+    expect(restored).toHaveLength(1);
+    expect(restored[0].a2ui?.components[0]).toMatchObject({
+      props: {
+        fileChange: {
+          path: "src/App.tsx",
+          preview: expect.stringContaining("@@ edit 2 @@"),
+          additions: 3,
+          deletions: 2,
+        },
+      },
+    });
+  });
+
   it("prefers durable unified diff snapshots over non-diff tool status text", () => {
     const merged = restoreTesting.mergeFileChange(
       {

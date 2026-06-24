@@ -2,6 +2,7 @@ import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import {
   OVERVIEW_TAB_ID,
+  type EditorDiffSnapshot,
   type ClosedTabEntry,
   type Tab,
 } from "../../types/tab";
@@ -48,7 +49,14 @@ export interface CloseTabDeps {
     args?: string[];
     cwd?: string;
   }) => void;
-  newEditorTab: (filePath: string, opts?: { rootPath?: string }) => void;
+  newEditorTab: (
+    filePath: string,
+    opts?: {
+      rootPath?: string;
+      diff?: boolean;
+      diffSnapshot?: EditorDiffSnapshot;
+    },
+  ) => void;
 }
 
 export interface CloseTabActions {
@@ -129,7 +137,14 @@ export function useCloseTabActions(deps: CloseTabDeps): CloseTabActions {
         : {}),
       ...(tab.kind === "agent" && tab.cwd ? { cwd: tab.cwd } : {}),
       ...(tab.kind === "editor" && tab.editor
-        ? { filePath: tab.editor.filePath }
+        ? {
+            filePath: tab.editor.filePath,
+            ...(tab.editor.rootPath ? { rootPath: tab.editor.rootPath } : {}),
+            ...(tab.editor.diff ? { diff: true } : {}),
+            ...(tab.editor.diffSnapshot
+              ? { diffSnapshot: tab.editor.diffSnapshot }
+              : {}),
+          }
         : {}),
     };
     closedTabsRef.current.push(entry);
@@ -169,7 +184,11 @@ export function useCloseTabActions(deps: CloseTabDeps): CloseTabActions {
     } else if (entry.kind === "editor" && entry.filePath) {
       // Re-open the same file. EditorCanvas reads it from disk on mount;
       // unsaved buffer state is intentionally not preserved across close.
-      newEditorTab(entry.filePath);
+      newEditorTab(entry.filePath, {
+        ...(entry.rootPath ? { rootPath: entry.rootPath } : {}),
+        ...(entry.diff ? { diff: true } : {}),
+        ...(entry.diffSnapshot ? { diffSnapshot: entry.diffSnapshot } : {}),
+      });
     } else {
       newTab(entry.id, entry.label, {
         restoredSession: true,

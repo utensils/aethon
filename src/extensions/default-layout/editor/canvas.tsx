@@ -34,6 +34,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import * as monaco from "monaco-editor";
 
 import type { StringValue } from "../../../types/a2ui";
+import type { EditorDiffSnapshot } from "../../../types/tab";
 import { resolveString } from "../../../utils/dataBinding";
 import {
   RegistryComponent,
@@ -86,6 +87,7 @@ interface EditorTabLike {
     /** When true, render the read-only side-by-side diff (HEAD vs working
      *  tree) instead of the editable Monaco editor. */
     diff?: boolean;
+    diffSnapshot?: EditorDiffSnapshot;
   };
 }
 
@@ -637,6 +639,7 @@ export function EditorCanvas({
             refreshKey: `${vcs?.changes?.total ?? 0}:${
               vcs?.changes?.additions ?? 0
             }:${vcs?.changes?.deletions ?? 0}`,
+            diffSnapshot: editorMeta?.diffSnapshot,
           }}
         />
       )}

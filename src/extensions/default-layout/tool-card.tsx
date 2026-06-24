@@ -13,6 +13,7 @@ import type {
   SubagentProgressEntry,
 } from "../../hooks/bridgeMessageHandlers/subagentProgress";
 import { Chevron } from "./sidebar/chevron";
+import { truncateDiffSnapshotContent } from "../../utils/editorDiffSnapshot";
 
 const TOOL_LONG_RUN_THRESHOLD_MS = 30 * 1000;
 
@@ -187,6 +188,11 @@ function previewLines(preview: string): string[] {
     .slice(0, 80);
 }
 
+function looksLikeUnifiedDiff(preview: string | undefined): preview is string {
+  if (!preview) return false;
+  return /(^|\n)(diff --git |@@ |--- |\+\+\+ )/.test(preview);
+}
+
 function lineTone(line: string): "add" | "del" | "hunk" | "meta" | "ctx" {
   if (line.startsWith("+") && !line.startsWith("+++")) return "add";
   if (line.startsWith("-") && !line.startsWith("---")) return "del";
@@ -224,9 +230,23 @@ function ToolFileChangePreview({
     typeof change.deletions === "number" && Number.isFinite(change.deletions)
       ? change.deletions
       : 0;
+  const capturedDiff = looksLikeUnifiedDiff(change.preview)
+    ? change.preview
+    : "";
   const eventPayload = {
     filePath,
     ...(change.rootPath ? { rootPath: change.rootPath } : {}),
+    ...(capturedDiff
+      ? {
+          diffSnapshot: {
+            format: "unified",
+            content: truncateDiffSnapshotContent(capturedDiff),
+            ...(additions > 0 ? { additions } : {}),
+            ...(deletions > 0 ? { deletions } : {}),
+            source: "tool-card",
+          },
+        }
+      : {}),
   };
 
   return (

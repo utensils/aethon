@@ -1,6 +1,6 @@
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 import type { A2UIPayload, ChatMessage } from "../../types/a2ui";
-import type { Tab } from "../../types/tab";
+import type { EditorDiffSnapshot, Tab } from "../../types/tab";
 import type { ExtensionRegistry } from "../../extensions/ExtensionRegistry";
 import type {
   DisabledExtensionRecord,
@@ -93,7 +93,11 @@ export interface BridgeMessageContext {
    *  `openFileInEditor` tool via `editor_query`. */
   newEditorTab: (
     filePath: string,
-    opts?: { rootPath?: string; diff?: boolean },
+    opts?: {
+      rootPath?: string;
+      diff?: boolean;
+      diffSnapshot?: EditorDiffSnapshot;
+    },
   ) => void;
   dispatchTerminalReplay: (buffer: string) => void;
   prepareWorkspaceStartup?: (cwd: string) => Promise<boolean>;

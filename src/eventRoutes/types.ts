@@ -1,5 +1,5 @@
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
-import type { EditorMeta, Tab } from "../types/tab";
+import type { EditorDiffSnapshot, EditorMeta, Tab } from "../types/tab";
 import type { ChatAttachment } from "../types/a2ui";
 import type { ShareMode } from "../utils/shareMode";
 import type {
@@ -97,7 +97,11 @@ export interface EventRouteContext {
   newShellTab: () => void;
   newEditorTab: (
     filePath: string,
-    opts?: { rootPath?: string; diff?: boolean },
+    opts?: {
+      rootPath?: string;
+      diff?: boolean;
+      diffSnapshot?: EditorDiffSnapshot;
+    },
   ) => void;
   updateEditorMeta: (tabId: string, patch: Partial<EditorMeta>) => void;
   /** Toggle markdown preview on the active editor tab. No-op unless the

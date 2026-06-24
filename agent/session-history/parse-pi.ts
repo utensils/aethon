@@ -193,6 +193,7 @@ export function parseSessionHistoryLines(
       const endedAt = parseMessageTime(record, msg);
       const result = {
         content: msg.content,
+        ...(msg.details !== undefined ? { details: msg.details } : {}),
       };
       const isError = msg.isError === true;
       const cached = toolCallId ? toolCalls.get(toolCallId) : undefined;

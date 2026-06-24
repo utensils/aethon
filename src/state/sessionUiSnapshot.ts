@@ -5,6 +5,7 @@ import {
   collapseAmendedAgentMessages,
   dedupeToolResultTextMessages,
 } from "../utils/messages";
+import { isEditorDiffSnapshot } from "../utils/editorDiffSnapshot";
 
 export const SESSION_UI_SNAPSHOT_FILE = "session_ui_snapshot";
 export const SESSION_UI_SNAPSHOT_FLUSH_EVENT =
@@ -404,6 +405,10 @@ function restoreTabRecord(
                 ? t.editor.language
                 : "plaintext",
             isDirty: false,
+            ...(t.editor.diff ? { diff: true } : {}),
+            ...(isEditorDiffSnapshot(t.editor.diffSnapshot)
+              ? { diffSnapshot: t.editor.diffSnapshot }
+              : {}),
             ...(typeof t.editor.cursorLine === "number"
               ? { cursorLine: t.editor.cursorLine }
               : {}),
