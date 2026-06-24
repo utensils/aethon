@@ -7,11 +7,16 @@ import type { ChatMessage } from "../../types/a2ui";
 
 afterEach(cleanup);
 
-function row(message: ChatMessage, onEvent = vi.fn(), tabId = "tab-1") {
+function row(
+  message: ChatMessage,
+  onEvent = vi.fn(),
+  tabId = "tab-1",
+  state: Record<string, unknown> = {},
+) {
   render(
     <ChatMessageRow
       message={message}
-      state={{}}
+      state={state}
       tabId={tabId}
       onEvent={onEvent}
     />,
@@ -60,6 +65,51 @@ describe("ChatMessageRow rollback/fork affordance", () => {
 
   it("shows the affordance on a thinking-only turn", () => {
     row({ id: "1", entryId: "e1", role: "agent", thinking: "let me reason" });
+    expect(
+      screen.getByRole("button", { name: "Rollback to this message" }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "Fork from this message" }),
+    ).toBeTruthy();
+  });
+
+  it("hides the affordance while the session is still running", () => {
+    row(
+      { id: "1", entryId: "e1", role: "agent", text: "working" },
+      vi.fn(),
+      "tab-1",
+      { waiting: true },
+    );
+    expect(
+      screen.queryByRole("button", { name: "Rollback to this message" }),
+    ).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "Fork from this message" }),
+    ).toBeNull();
+  });
+
+  it("hides the affordance while the owning tab is still running", () => {
+    row(
+      { id: "1", entryId: "e1", role: "agent", text: "working" },
+      vi.fn(),
+      "tab-1",
+      { waiting: false, agentRunningTabs: { "tab-1": true } },
+    );
+    expect(
+      screen.queryByRole("button", { name: "Rollback to this message" }),
+    ).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "Fork from this message" }),
+    ).toBeNull();
+  });
+
+  it("keeps affordances available when another tab is running", () => {
+    row(
+      { id: "1", entryId: "e1", role: "agent", text: "done" },
+      vi.fn(),
+      "tab-1",
+      { waiting: false, agentRunningTabs: { "tab-2": true } },
+    );
     expect(
       screen.getByRole("button", { name: "Rollback to this message" }),
     ).toBeTruthy();

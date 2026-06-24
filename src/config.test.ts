@@ -16,8 +16,8 @@ describe("tool-call visibility config", () => {
     expect(normalizeVisibility("yolo")).toBe("show");
   });
 
-  it("defaults missing config to grouped completed turns", () => {
-    expect(DEFAULT_TOOL_CALLS_VISIBILITY).toBe("group-block");
+  it("defaults missing config to hidden tool calls", () => {
+    expect(DEFAULT_TOOL_CALLS_VISIBILITY).toBe("hide");
   });
 
   it("keeps malformed explicit values visible", () => {

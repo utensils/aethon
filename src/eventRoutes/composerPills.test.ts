@@ -75,7 +75,7 @@ describe("handleComposerPills", () => {
     expect(mocks.pushNotification).not.toHaveBeenCalled();
   });
 
-  it("toggles tool calls from shown to collapsed", () => {
+  it("toggles tool calls from shown to off", () => {
     const { ctx, mocks } = buildRouteFixture({
       state: {
         activeTabId: "t1",
@@ -87,13 +87,13 @@ describe("handleComposerPills", () => {
     const updater = mocks.updateActiveTab.mock.calls[0][0];
     expect(
       updater(makeEmptyTab("t1", "T1")).visibilityOverrides.toolCalls,
-    ).toBe("group-block");
+    ).toBe("hide");
   });
 
-  it("toggles collapsed and legacy grouped tool calls back to shown", () => {
+  it("toggles hidden and legacy grouped tool calls back to shown", () => {
     const blockTab = {
       ...makeEmptyTab("t1", "T1"),
-      visibilityOverrides: { toolCalls: "group-block" as const },
+      visibilityOverrides: { toolCalls: "hide" as const },
     };
     const fx = buildRouteFixture({
       state: { activeTabId: "t1", tabs: [blockTab] },
@@ -102,6 +102,19 @@ describe("handleComposerPills", () => {
     expect(
       fx.mocks.updateActiveTab.mock.calls[0][0](blockTab).visibilityOverrides
         .toolCalls,
+    ).toBe("show");
+
+    const groupedTab = {
+      ...makeEmptyTab("t3", "T3"),
+      visibilityOverrides: { toolCalls: "group-block" as const },
+    };
+    const fx3 = buildRouteFixture({
+      state: { activeTabId: "t3", tabs: [groupedTab] },
+    });
+    handleComposerPills(pillEvent("cycle", { category: "toolCalls" }), fx3.ctx);
+    expect(
+      fx3.mocks.updateActiveTab.mock.calls[0][0](groupedTab)
+        .visibilityOverrides.toolCalls,
     ).toBe("show");
 
     const legacyTab = {
@@ -187,7 +200,7 @@ describe("handleComposerPills", () => {
     const handled = handleComposerPills(pillEvent("set-default"), ctx);
     expect(handled).toBe(true);
     expect(mocks.applySettingsPatch).toHaveBeenCalledWith({
-      ui: { thinkingVisibility: "hide", toolCallsVisibility: "group-block" },
+      ui: { thinkingVisibility: "hide", toolCallsVisibility: "group-run" },
     });
   });
 

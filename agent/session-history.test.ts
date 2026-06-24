@@ -1307,6 +1307,94 @@ describe("readSessionTranscript", () => {
     ]);
   });
 
+  it("merges local file-change metadata into restored pi tool cards", async () => {
+    const dir = await tempRoot();
+    await writeFile(
+      join(dir, "session.jsonl"),
+      [
+        JSON.stringify({
+          type: "message",
+          id: "assistant-tool",
+          timestamp: 3_000,
+          message: {
+            role: "assistant",
+            content: [
+              {
+                type: "toolCall",
+                id: "call_edit_1",
+                name: "edit",
+                arguments: {
+                  path: "src/App.tsx",
+                  oldString: "old",
+                  newString: "new",
+                },
+              },
+            ],
+          },
+        }),
+        JSON.stringify({
+          type: "message",
+          id: "tool-result",
+          timestamp: 3_100,
+          message: {
+            role: "toolResult",
+            toolCallId: "call_edit_1",
+            toolName: "edit",
+            content: [
+              {
+                type: "text",
+                text: "Successfully replaced 1 block(s) in src/App.tsx",
+              },
+            ],
+          },
+        }),
+      ].join("\n") + "\n",
+    );
+    await appendLocalChatMessage(dir, {
+      id: "tool-7-call_edit_1",
+      role: "agent",
+      a2ui: {
+        components: [
+          {
+            id: "tool-7-call_edit_1",
+            type: "tool-card",
+            props: {
+              toolName: "edit",
+              startedAt: 3_000,
+              endedAt: 3_100,
+              fileChange: {
+                kind: "edited",
+                path: "src/App.tsx",
+                rootPath: "/repo",
+                preview: "--- a/src/App.tsx\n+++ b/src/App.tsx\n@@\n-old\n+new",
+                additions: 1,
+                deletions: 1,
+              },
+            },
+          },
+        ],
+      },
+      createdAt: 3_100,
+    });
+
+    const restored = await readSessionTranscript(dir);
+    expect(restored.map((message) => message.id)).toEqual([
+      "restored-tool-call_edit_1",
+    ]);
+    expect(restored[0].a2ui?.components[0]).toMatchObject({
+      props: {
+        toolName: "edit",
+        fileChange: {
+          path: "src/App.tsx",
+          rootPath: "/repo",
+          preview: expect.stringContaining("--- a/src/App.tsx"),
+          additions: 1,
+          deletions: 1,
+        },
+      },
+    });
+  });
+
   it("keeps the latest local assistant snapshot for stopped turns", async () => {
     const dir = await tempRoot();
     await appendLocalChatMessage(dir, {

@@ -2,10 +2,10 @@ import { describe, expect, it } from "vitest";
 import { resolveVisibility } from "./visibilityResolver";
 
 describe("resolveVisibility", () => {
-  it("defaults tool calls to group-block when no global value is mirrored", () => {
+  it("defaults tool calls to hide when no global value is mirrored", () => {
     expect(resolveVisibility({}, undefined)).toEqual({
       thinking: "hide",
-      toolCalls: "group-block",
+      toolCalls: "hide",
     });
   });
 

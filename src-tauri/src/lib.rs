@@ -248,7 +248,9 @@ pub fn run() {
             commands::git::status::git_ignored_paths,
             commands::git::watch::git_watch_root,
             commands::git::watch::git_unwatch_root,
+            commands::git::diff::git_file_diff,
             commands::git::diff::git_file_diff_hunks,
+            commands::git::diff::git_file_diff_stat,
             commands::git::diff::git_show_head,
             commands::git::diff::git_diff_stat,
             commands::git::worktrees::git_worktrees,
@@ -468,6 +470,23 @@ mod tests {
             src.contains("commands::git::status::git_fetch_all"),
             "git_fetch_all must be registered in the invoke_handler list",
         );
+    }
+
+    #[test]
+    fn git_diff_commands_are_wired_to_handler() {
+        let src = include_str!("lib.rs");
+        for command in [
+            "commands::git::diff::git_file_diff",
+            "commands::git::diff::git_file_diff_hunks",
+            "commands::git::diff::git_file_diff_stat",
+            "commands::git::diff::git_diff_stat",
+            "commands::git::diff::git_show_head",
+        ] {
+            assert!(
+                src.contains(command),
+                "{command} must stay registered in the invoke_handler list",
+            );
+        }
     }
 
     #[test]

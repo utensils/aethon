@@ -33,8 +33,9 @@ pub struct UiConfig {
     pub thinking_visibility: Option<String>,
     /// Global default visibility for tool-call cards in the transcript.
     /// Allowed: `"show"`, `"group-turn"`, `"group-run"`, `"group-block"`
-    /// (default when the key is missing), `"hide"`. Unknown values fall back
-    /// to `"show"` so a typo cannot silently hide content.
+    /// (legacy grouped modes), `"hide"` (default when the key is missing).
+    /// Unknown values fall back to `"show"` so a typo cannot silently hide
+    /// content.
     pub tool_calls_visibility: Option<String>,
 }
 
@@ -238,7 +239,7 @@ pub fn normalize_visibility(input: Option<&str>) -> &'static str {
 /// `"collapse"` value (written by PR #204) maps to `group-turn` so existing
 /// configs adopt the natural per-turn grouping. Unknown values fall back to
 /// `"show"` so a typo can't silently hide content; missing config keys are
-/// handled by `parse_config_toml` and default to `"group-block"`.
+/// handled by `parse_config_toml` and default to `"hide"`.
 pub fn normalize_tool_visibility(input: Option<&str>) -> &'static str {
     match input {
         Some("group-turn") => "group-turn",
@@ -390,7 +391,7 @@ pub fn parse_config_toml(input: &str) -> serde_json::Value {
         .tool_calls_visibility
         .as_deref()
         .map(|value| normalize_tool_visibility(Some(value)))
-        .unwrap_or("group-block");
+        .unwrap_or("hide");
     let thinking_level = normalize_thinking_level(cfg.agent.thinking_level.as_deref());
     let provider_timeout_seconds =
         normalize_optional_timeout_seconds(cfg.agent.provider_timeout_seconds);
@@ -1035,10 +1036,10 @@ enabled = "never"
     }
 
     #[test]
-    fn parse_config_toml_visibility_defaults_to_hidden_thinking_and_grouped_tools() {
+    fn parse_config_toml_visibility_defaults_to_hidden_thinking_and_tools() {
         let v = parse_config_toml("");
         assert_eq!(v["ui"]["thinkingVisibility"], "hide");
-        assert_eq!(v["ui"]["toolCallsVisibility"], "group-block");
+        assert_eq!(v["ui"]["toolCallsVisibility"], "hide");
     }
 
     #[test]

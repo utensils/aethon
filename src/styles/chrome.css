@@ -9567,7 +9567,7 @@ button.ae-vcs-chip:focus-visible {
   }
 }
 
-/* ── Composer visibility pills (tri-state Thinking / Tool calls) ──────── */
+/* ── Composer visibility pills (on/off Thinking / Tool calls) ─────────── */
 .ae-composer-area {
   min-width: 0;
 }
@@ -9609,12 +9609,6 @@ button.ae-vcs-chip:focus-visible {
   background: var(--accent);
   flex: none;
 }
-.ae-vis-pill[data-mode="collapse"] .ae-vis-pill-dot,
-.ae-vis-pill[data-mode="group-turn"] .ae-vis-pill-dot,
-.ae-vis-pill[data-mode="group-run"] .ae-vis-pill-dot,
-.ae-vis-pill[data-mode="group-block"] .ae-vis-pill-dot {
-  background: color-mix(in oklab, var(--accent) 45%, transparent);
-}
 /* Per-session override marker — a small accent tag after the state text. */
 .ae-vis-pill[data-scope="session"] {
   border-color: color-mix(in oklab, var(--accent) 55%, var(--border));
@@ -9628,10 +9622,18 @@ button.ae-vcs-chip:focus-visible {
   background: color-mix(in oklab, var(--accent) 20%, transparent);
   color: var(--accent);
 }
-.ae-vis-pill[data-mode="hide"] {
+.ae-vis-pill[data-mode="hide"],
+.ae-vis-pill[data-mode="collapse"],
+.ae-vis-pill[data-mode="group-turn"],
+.ae-vis-pill[data-mode="group-run"],
+.ae-vis-pill[data-mode="group-block"] {
   color: color-mix(in oklab, var(--text-dim) 70%, transparent);
 }
-.ae-vis-pill[data-mode="hide"] .ae-vis-pill-dot {
+.ae-vis-pill[data-mode="hide"] .ae-vis-pill-dot,
+.ae-vis-pill[data-mode="collapse"] .ae-vis-pill-dot,
+.ae-vis-pill[data-mode="group-turn"] .ae-vis-pill-dot,
+.ae-vis-pill[data-mode="group-run"] .ae-vis-pill-dot,
+.ae-vis-pill[data-mode="group-block"] .ae-vis-pill-dot {
   background: transparent;
   border: 1px solid var(--border-strong);
 }
@@ -9975,7 +9977,8 @@ button.ae-vcs-chip:focus-visible {
   overflow: hidden;
   border: 1px solid var(--border);
   border-radius: 8px;
-  background: color-mix(in oklab, var(--bg-elev) 72%, transparent);
+  background: color-mix(in oklab, var(--bg-elev) 82%, transparent);
+  box-shadow: 0 1px 0 color-mix(in oklab, var(--text) 6%, transparent);
 }
 
 .ae-file-activity-head {
@@ -10021,7 +10024,6 @@ button.ae-vcs-chip:focus-visible {
 }
 
 .ae-file-activity-list .ae-tool-activity-file-item {
-  padding: 7px 12px;
   border-top: 1px solid color-mix(in oklab, var(--border) 60%, transparent);
 }
 
@@ -10038,11 +10040,13 @@ button.ae-vcs-chip:focus-visible {
   align-items: center;
   min-width: 0;
   gap: 8px;
+  padding: 8px 12px;
 }
 
 .ae-tool-activity-file-open {
   display: inline-flex;
   align-items: center;
+  flex: 1 1 auto;
   min-width: 0;
   gap: 6px;
   padding: 0;
@@ -10080,31 +10084,64 @@ button.ae-vcs-chip:focus-visible {
 
 .ae-tool-activity-file-stat {
   display: inline-flex;
+  flex: 0 0 auto;
   gap: 5px;
+  font-family: var(--font-mono);
+  font-size: var(--chrome-text);
+  font-weight: 600;
 }
 
-.ae-tool-activity-file-diff {
+.ae-tool-activity-file-source,
+.ae-tool-activity-file-preview-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   flex: 0 0 auto;
-  padding: 0;
-  border: 0;
+  height: 30px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--text-dim);
   cursor: pointer;
   font: inherit;
-  transition:
-    color var(--motion-fast) var(--ease-out),
-    transform var(--motion-fast) var(--ease-out);
+  transition: color var(--motion-fast) var(--ease-out);
 }
 
-.ae-tool-activity-file-diff:hover {
+.ae-tool-activity-file-source {
+  padding: 0 8px;
+  font-size: var(--chrome-text-compact);
+}
+
+.ae-tool-activity-file-preview-toggle {
+  width: 34px;
+  line-height: 1;
+}
+
+.ae-tool-activity-file-preview-toggle svg {
+  display: block;
+  width: 18px;
+  height: 18px;
+  stroke-width: 1.9;
+}
+
+.ae-tool-activity-file-source:hover,
+.ae-tool-activity-file-preview-toggle:hover {
+  border-color: var(--border);
+  background: var(--bg-hover);
   color: var(--text);
-  transform: translateY(-1px);
 }
 
 .ae-tool-activity-file-preview {
-  margin-top: 7px;
+  margin: 0;
   max-height: 220px;
   border-top: 1px solid color-mix(in oklab, var(--border) 55%, transparent);
+}
+
+.ae-tool-activity-file-preview-empty {
+  padding: 10px 14px;
+  border-top: 1px solid color-mix(in oklab, var(--border) 55%, transparent);
+  color: var(--text-dim);
+  font-size: var(--chrome-text-compact);
 }
 
 .ae-turn-block-caret {
@@ -10350,29 +10387,39 @@ button.ae-vcs-chip:focus-visible {
  * Per-message rollback / fork hover toolbar (chat + canvas transcripts).
  * ------------------------------------------------------------------------ */
 .ae-msg-branch-actions {
+  position: absolute;
+  z-index: 2;
   justify-content: flex-start;
   align-items: center;
   display: flex;
   gap: 4px;
-  min-height: 24px;
-  margin-top: 5px;
+  min-height: 0;
+  margin-top: 0;
   opacity: 0;
   transform: translateY(0);
   transition:
     opacity var(--motion-fast) var(--ease-out),
     color var(--motion-fast) var(--ease-out);
-  pointer-events: auto;
+  pointer-events: none;
   flex-wrap: nowrap;
   white-space: nowrap;
 }
 .a2ui-chat-message.user .ae-msg-branch-actions,
 .a2ui-canvas-message.user .ae-msg-branch-actions {
+  right: calc(100% + 8px);
+  bottom: 8px;
   justify-content: flex-end;
+}
+.a2ui-chat-message.agent .ae-msg-branch-actions,
+.a2ui-canvas-message.agent .ae-msg-branch-actions {
+  left: 4px;
+  top: calc(100% + 4px);
 }
 .a2ui-chat-message:hover .ae-msg-branch-actions,
 .a2ui-canvas-message:hover .ae-msg-branch-actions,
 .ae-msg-branch-actions:focus-within {
   opacity: 1;
+  pointer-events: auto;
 }
 .ae-msg-branch-btn {
   display: inline-flex;

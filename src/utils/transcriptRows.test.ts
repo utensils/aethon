@@ -94,7 +94,7 @@ describe("buildTranscriptRows", () => {
     ).toEqual(["t1", "t2"]);
   });
 
-  it("hides tool messages in hide mode while keeping answer/progress structure", () => {
+  it("keeps hidden tool metadata in hide mode while preserving answer/progress structure", () => {
     const model = buildTranscriptRows(
       [
         text("u1", "user"),
@@ -110,9 +110,10 @@ describe("buildTranscriptRows", () => {
     expect(turn.messages.map((message) => message.id)).toEqual([
       "u1",
       "a1",
+      "t1",
       "a2",
     ]);
-    expect(turn.toolMessages).toEqual([]);
+    expect(turn.toolMessages.map((message) => message.id)).toEqual(["t1"]);
     expect(turn.progressMessages.map((message) => message.id)).toEqual(["a1"]);
     expect(turn.finalMessage?.id).toBe("a2");
   });

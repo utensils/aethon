@@ -120,6 +120,14 @@ function sidebarModelsRef(state: Record<string, unknown>): unknown {
     : undefined;
 }
 
+function tabIsRunning(state: Record<string, unknown>, tabId?: string): boolean {
+  if (state.waiting === true) return true;
+  if (!tabId) return false;
+  const runningTabs = state.agentRunningTabs;
+  if (!runningTabs || typeof runningTabs !== "object") return false;
+  return Boolean((runningTabs as Record<string, unknown>)[tabId]);
+}
+
 function deliveryLabel(delivery: ChatMessage["delivery"]): string | null {
   switch (delivery) {
     case "queued":
@@ -244,8 +252,10 @@ export const ChatMessageRow = memo(
     // Rollback / fork are offered on real user/assistant turns that carry a pi
     // entry id (tool-card and system rows are not branch targets). Thinking-only
     // turns count too — they're valid branch points.
+    const sessionWaiting = tabIsRunning(state, tabId);
     const canBranch =
       Boolean(message.entryId) &&
+      !sessionWaiting &&
       (message.role === "user" || message.role === "agent") &&
       (Boolean(displayMessage.text) || Boolean(displayMessage.thinking)) &&
       Boolean(onEvent);
@@ -413,6 +423,8 @@ export const ChatMessageRow = memo(
       !next.isLatest ||
       prev.state.waiting === next.state.waiting) &&
     (!next.message.text || prev.isLatest === next.isLatest) &&
+    tabIsRunning(prev.state, prev.tabId) ===
+      tabIsRunning(next.state, next.tabId) &&
     (next.message.role !== "agent" ||
       (prev.state.model === next.state.model &&
         sidebarModelsRef(prev.state) === sidebarModelsRef(next.state))) &&

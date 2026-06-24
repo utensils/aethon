@@ -8,8 +8,8 @@ import { readUiScale } from "./layout";
 /**
  * Composer-bar visibility pills (chrome composite). Two pills — Thinking and
  * Tool calls — toggle the active session's transcript visibility on click.
- * Thinking is on/off; tool calls are either shown as lightweight activity rows
- * or collapsed into one quiet turn summary.
+ * Thinking and tool calls are both on/off; file-change artifacts remain visible
+ * with tool calls off.
  * A "More options" caret opens a popover that explains scope (this session vs.
  * all sessions), offers a reset, and the per-session project-root guardrail.
  *
@@ -32,19 +32,19 @@ const THINKING_TITLE: Record<VisibilityMode, string> = {
 };
 
 const TOOL_LABEL: Record<ToolCallsMode, string> = {
-  show: "shown",
-  "group-turn": "collapsed",
-  "group-run": "collapsed",
-  "group-block": "collapsed",
-  hide: "collapsed",
+  show: "on",
+  "group-turn": "off",
+  "group-run": "off",
+  "group-block": "off",
+  hide: "off",
 };
 
 const TOOL_TITLE: Record<ToolCallsMode, string> = {
-  show: "shown as activity rows",
-  "group-turn": "collapsed into turn summaries",
-  "group-run": "collapsed into turn summaries",
-  "group-block": "collapsed into turn summaries",
-  hide: "collapsed into turn summaries",
+  show: "on",
+  "group-turn": "off",
+  "group-run": "off",
+  "group-block": "off",
+  hide: "off",
 };
 
 /** Effective hard-guardrail state: per-tab override wins; else the global

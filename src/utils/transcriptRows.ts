@@ -137,10 +137,7 @@ function buildConversationTurn(
   const userMessage = visibleMessages.find(
     (message) => message.role === "user",
   );
-  const toolMessages =
-    mode === "hide"
-      ? []
-      : visibleMessages.filter((message) => isToolCardMessage(message));
+  const toolMessages = messages.filter((message) => isToolCardMessage(message));
   const systemMessages = visibleMessages.filter(
     (message) => message.role === "system",
   );
@@ -158,7 +155,7 @@ function buildConversationTurn(
     : agentMessages;
   return {
     id: userMessage?.id ?? visibleMessages[0]?.id ?? `turn-${index}`,
-    messages: visibleMessages,
+    messages,
     ...(userMessage ? { userMessage } : {}),
     agentMessages,
     progressMessages,

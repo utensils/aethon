@@ -10,8 +10,8 @@ import { SHARE_MODES } from "./utils/shareMode";
 export type VisibilityMode = "show" | "collapse" | "hide";
 
 /** Tool-call visibility. `show` renders lightweight activity rows and `hide`
- *  removes tool calls from the transcript. The middle is split into three
- *  chronological *grouping* styles the composer pill cycles through:
+ *  removes generic tool calls from the transcript while preserving extracted
+ *  file-change artifacts. The middle values are legacy grouping styles:
  *    - `group-turn`  — one collapsed cluster per agent turn (all of a turn's
  *                      tool calls gathered into one group);
  *    - `group-run`   — one collapsed cluster per consecutive run of tool calls;
@@ -45,10 +45,8 @@ export interface AethonConfig {
     /** Global default visibility for the model's thinking blocks. Per-tab
      *  overridable via the composer pills; `hide` by default. */
     thinkingVisibility: VisibilityMode;
-    /** Global default visibility for tool-call activity. The grouped values
-     *  (`group-turn` / `group-run` / `group-block`) fold activity into
-     *  collapsed clusters; `group-block` by default. Per-tab overridable via the
-     *  composer pills. */
+    /** Global default visibility for tool-call activity. New configs default
+     *  to `hide`; explicit legacy grouped values are still honored. */
     toolCallsVisibility: ToolCallsMode;
   };
   agent: {
@@ -139,7 +137,7 @@ export interface AethonConfig {
 export const DEFAULT_AGENT_TIMEOUT_SECONDS = 300;
 export const MAX_AGENT_TIMEOUT_SECONDS = 24 * 60 * 60;
 export const DEFAULT_THINKING_VISIBILITY: VisibilityMode = "hide";
-export const DEFAULT_TOOL_CALLS_VISIBILITY: ToolCallsMode = "group-block";
+export const DEFAULT_TOOL_CALLS_VISIBILITY: ToolCallsMode = "hide";
 
 const DEFAULTS: AethonConfig = {
   ui: {

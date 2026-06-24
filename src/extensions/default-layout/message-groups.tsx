@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import type { A2UIComponent, ChatMessage } from "../../types/a2ui";
 import A2UIRenderer, {
   type BuiltinComponentProps,
 } from "../../components/A2UIRenderer";
 import { FileIcon } from "../../components/file-icon";
+import { Chevron } from "./sidebar/chevron";
 import {
   isRunningToolCard,
   summarizeToolMessages,
@@ -169,19 +171,63 @@ interface ToolFileChangeEntry {
   componentId?: string;
 }
 
+interface LineChangeStats {
+  additions: number;
+  deletions: number;
+}
+
+interface GitDiffStatResult {
+  insertions?: number;
+  deletions?: number;
+}
+
 function collectFileChangeEntries(
   messages: readonly ChatMessage[],
 ): ToolFileChangeEntry[] {
-  const entries: ToolFileChangeEntry[] = [];
+  const entries = new Map<string, ToolFileChangeEntry>();
   for (const message of messages) {
     const details = toolCardDetails(message);
     if (!details.fileChange?.path) continue;
-    entries.push({
-      change: details.fileChange,
-      ...(details.componentId ? { componentId: details.componentId } : {}),
+    const key = statsKey(details.fileChange.rootPath, details.fileChange.path);
+    const existing = entries.get(key);
+    if (!existing) {
+      entries.set(key, {
+        change: details.fileChange,
+        ...(details.componentId ? { componentId: details.componentId } : {}),
+      });
+      continue;
+    }
+    const prior = existing.change;
+    const priorPreview = looksLikeUnifiedDiff(prior.preview)
+      ? prior.preview
+      : "";
+    const nextPreview = looksLikeUnifiedDiff(details.fileChange.preview)
+      ? details.fileChange.preview
+      : "";
+    const additions =
+      (prior.additions ?? 0) + (details.fileChange.additions ?? 0);
+    const deletions =
+      (prior.deletions ?? 0) + (details.fileChange.deletions ?? 0);
+    entries.set(key, {
+      change: {
+        ...prior,
+        kind:
+          prior.kind === "created" || details.fileChange.kind === "created"
+            ? "created"
+            : "edited",
+        rootPath: prior.rootPath ?? details.fileChange.rootPath,
+        ...(priorPreview || nextPreview
+          ? {
+              preview: [priorPreview, nextPreview].filter(Boolean).join("\n\n"),
+            }
+          : {}),
+        ...(additions > 0 ? { additions } : {}),
+        ...(deletions > 0 ? { deletions } : {}),
+      },
+      componentId: details.componentId ?? existing.componentId,
     });
   }
-  return entries;
+  return Array.from(entries.values());
 }
 
 function hasFileChange(message: ChatMessage): boolean {
@@ -240,6 +286,75 @@ function previewLines(preview: string): string[] {
     .slice(0, 80);
 }
 
+function looksLikeUnifiedDiff(preview: string | undefined): preview is string {
+  if (!preview) return false;
+  return /(^|\n)(diff --git |@@ |--- |\+\+\+ )/.test(preview);
+}
+
+function statsKey(rootPath: string | undefined, filePath: string): string {
+  return `${rootPath ?? ""}\0${filePath}`;
+}
+
+function statsFromChange(change: ToolCardFileChange): LineChangeStats {
+  return {
+    additions: change.additions ?? 0,
+    deletions: change.deletions ?? 0,
+  };
+}
+
+function statsFromGit(value: GitDiffStatResult | null | undefined) {
+  if (!value) return null;
+  const additions =
+    typeof value.insertions === "number" && Number.isFinite(value.insertions)
+      ? value.insertions
+      : 0;
+  const deletions =
+    typeof value.deletions === "number" && Number.isFinite(value.deletions)
+      ? value.deletions
+      : 0;
+  return { additions, deletions };
+}
+
+function hasStats(stat: LineChangeStats | undefined): stat is LineChangeStats {
+  return Boolean(stat && (stat.additions > 0 || stat.deletions > 0));
+}
+
+function effectiveStats(
+  change: ToolCardFileChange,
+  fetched: LineChangeStats | undefined,
+): LineChangeStats {
+  const captured = statsFromChange(change);
+  return hasStats(captured) ? captured : (fetched ?? captured);
+}
+
+function summaryWithFileEntries(
+  summary: ToolMessageSummary,
+  entries: readonly ToolFileChangeEntry[],
+): ToolMessageSummary {
+  if (entries.length === 0) return summary;
+  let created = 0;
+  let edited = 0;
+  let additions = 0;
+  let deletions = 0;
+  for (const { change } of entries) {
+    if (change.kind === "created") created += 1;
+    else edited += 1;
+    const stats = statsFromChange(change);
+    additions += stats.additions;
+    deletions += stats.deletions;
+  }
+  return {
+    ...summary,
+    fileChanges: {
+      total: entries.length,
+      created,
+      edited,
+      additions,
+      deletions,
+    },
+  };
+}
+
 function lineTone(line: string): "add" | "del" | "hunk" | "meta" | "ctx" {
   if (line.startsWith("+") && !line.startsWith("+++")) return "add";
   if (line.startsWith("-") && !line.startsWith("---")) return "del";
@@ -275,30 +390,59 @@ function ToolFileChangeRow({
   change,
   onEvent,
   componentId,
-  showPreview = false,
+  diffStat,
 }: {
   change: ToolCardFileChange;
   onEvent?: BuiltinComponentProps["onEvent"];
   componentId?: string;
-  showPreview?: boolean;
+  diffStat?: LineChangeStats;
 }) {
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [fetchedDiff, setFetchedDiff] = useState<string | null>(null);
+  const [diffLoading, setDiffLoading] = useState(false);
+  const [diffError, setDiffError] = useState<string | null>(null);
   const filePath = change.path ?? "";
   if (!filePath) return null;
   const eventPayload = {
     filePath,
     ...(change.rootPath ? { rootPath: change.rootPath } : {}),
   };
-  const additions = change.additions ?? 0;
-  const deletions = change.deletions ?? 0;
+  const { additions, deletions } = effectiveStats(change, diffStat);
   const dir = parentPath(filePath);
+  const capturedDiff = looksLikeUnifiedDiff(change.preview)
+    ? change.preview
+    : "";
+  const previewText = capturedDiff || fetchedDiff || "";
+  const hasPreview = Boolean(capturedDiff || change.rootPath);
+  const fetchDiff = async () => {
+    if (capturedDiff || fetchedDiff || !change.rootPath || diffLoading) return;
+    setDiffLoading(true);
+    setDiffError(null);
+    try {
+      const diff = await invoke<string | null>("git_file_diff", {
+        root: change.rootPath,
+        path: filePath,
+      });
+      setFetchedDiff(looksLikeUnifiedDiff(diff ?? "") ? diff : "");
+    } catch (error) {
+      setDiffError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setDiffLoading(false);
+    }
+  };
+  const togglePreview = () => {
+    const nextOpen = !previewOpen;
+    setPreviewOpen(nextOpen);
+    if (nextOpen) void fetchDiff();
+  };
   return (
     <div className="ae-tool-activity-file-item">
       <div className="ae-tool-activity-file">
         <button
           type="button"
           className="ae-tool-activity-file-open"
-          title={`Open ${filePath}`}
-          onClick={() => onEvent?.("tool-file-open", eventPayload, componentId)}
+          title={`Open diff for ${filePath}`}
+          onClick={() => onEvent?.("tool-file-diff", eventPayload, componentId)}
         >
           <FileIcon
             path={filePath}
@@ -327,18 +471,30 @@ function ToolFileChangeRow({
         )}
         <button
           type="button"
-          className="ae-tool-activity-file-diff"
-          title={`Open diff for ${filePath}`}
-          aria-label={`Open diff for ${basename(filePath)}`}
-          onClick={() => onEvent?.("tool-file-diff", eventPayload, componentId)}
+          className="ae-tool-activity-file-source"
+          title={`Open ${filePath}`}
+          aria-label={`Open ${basename(filePath)}`}
+          onClick={() => onEvent?.("tool-file-open", eventPayload, componentId)}
         >
-          ⧉
+          Open
         </button>
+        {hasPreview ? (
+          <button
+            type="button"
+            className="ae-tool-activity-file-preview-toggle"
+            title={`${previewOpen ? "Hide" : "Show"} inline diff for ${filePath}`}
+            aria-label={`${previewOpen ? "Hide" : "Show"} inline diff for ${basename(filePath)}`}
+            aria-expanded={previewOpen}
+            onClick={togglePreview}
+          >
+            <Chevron expanded={previewOpen} />
+          </button>
+        ) : null}
       </div>
-      {showPreview && change.preview ? (
+      {previewOpen && previewText ? (
         <pre className="ae-tool-file-diff-preview ae-tool-activity-file-preview">
           <code>
-            {previewLines(change.preview).map((line, index) => (
+            {previewLines(previewText).map((line, index) => (
               <span
                 key={`${index}-${line}`}
                 className={`ae-tool-file-diff-line is-${lineTone(line)}`}
@@ -349,6 +505,14 @@ function ToolFileChangeRow({
             ))}
           </code>
         </pre>
+      ) : previewOpen ? (
+        <div className="ae-tool-activity-file-preview-empty">
+          {diffLoading
+            ? "Loading diff..."
+            : diffError
+              ? "Diff unavailable. Open Monaco diff to review this file."
+              : "No working-tree diff available for this file."}
+        </div>
       ) : null}
     </div>
   );
@@ -363,9 +527,73 @@ function ToolFileChangesCard({
   summary: ToolMessageSummary;
   onEvent?: BuiltinComponentProps["onEvent"];
 }) {
-  if (entries.length === 0) return null;
+  const [fetchedStats, setFetchedStats] = useState<
+    Record<string, LineChangeStats>
+  >({});
   const label = fileChangeLabel(summary);
-  const statLabel = fileChangeStatsLabel(summary);
+  const statTargetsSignature = entries
+    .filter(({ change }) => Boolean(change.rootPath && change.path))
+    .map(({ change }) => statsKey(change.rootPath, change.path ?? ""))
+    .join("\n");
+  const lastStatsSignatureRef = useRef<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    if (lastStatsSignatureRef.current === statTargetsSignature) return;
+    lastStatsSignatureRef.current = statTargetsSignature;
+    const statTargets = statTargetsSignature
+      .split("\n")
+      .filter(Boolean)
+      .map((target) => {
+        const [rootPath = "", path = ""] = target.split("\0");
+        return { rootPath, path };
+      });
+    if (statTargets.length === 0) return;
+    void Promise.all(
+      statTargets.map(async ({ rootPath, path }) => {
+        try {
+          const stat = await invoke<GitDiffStatResult | null>(
+            "git_file_diff_stat",
+            {
+              root: rootPath,
+              path,
+            },
+          );
+          return [statsKey(rootPath, path), statsFromGit(stat)] as const;
+        } catch {
+          return [statsKey(rootPath, path), null] as const;
+        }
+      }),
+    ).then((results) => {
+      if (cancelled) return;
+      const next: Record<string, LineChangeStats> = {};
+      for (const [key, stat] of results) {
+        if (stat) next[key] = stat;
+      }
+      setFetchedStats(next);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [statTargetsSignature]);
+  if (entries.length === 0) return null;
+  const displaySummary: ToolMessageSummary = {
+    ...summary,
+    fileChanges: {
+      ...summary.fileChanges,
+      total: entries.length,
+      created: entries.filter(({ change }) => change.kind === "created").length,
+      edited: entries.filter(({ change }) => change.kind !== "created").length,
+      additions: entries.reduce((total, { change }) => {
+        const key = statsKey(change.rootPath, change.path ?? "");
+        return total + effectiveStats(change, fetchedStats[key]).additions;
+      }, 0),
+      deletions: entries.reduce((total, { change }) => {
+        const key = statsKey(change.rootPath, change.path ?? "");
+        return total + effectiveStats(change, fetchedStats[key]).deletions;
+      }, 0),
+    },
+  };
+  const statLabel = fileChangeStatsLabel(displaySummary);
   return (
     <div className="ae-file-activity-card" role="group" aria-label={statLabel}>
       <div className="ae-file-activity-head">
@@ -373,7 +601,7 @@ function ToolFileChangesCard({
           ✎
         </span>
         <span className="ae-file-activity-title">{label}</span>
-        <FileChangeStats summary={summary} hideLabel />
+        <FileChangeStats summary={displaySummary} hideLabel />
       </div>
       <div className="ae-file-activity-list">
         {entries.map(({ change, componentId }) => (
@@ -382,7 +610,12 @@ function ToolFileChangesCard({
             change={change}
             onEvent={onEvent}
             componentId={componentId}
-            showPreview
+            diffStat={
+              change.path
+                ? (fetchedStats[statsKey(change.rootPath, change.path)] ??
+                  undefined)
+                : undefined
+            }
           />
         ))}
       </div>
@@ -477,25 +710,52 @@ function TurnActivity({
 }) {
   const [closingBodyRetained, setClosingBodyRetained] = useState(false);
   const closingTimerRef = useRef<number | null>(null);
+  const [manualOpen, setManualOpen] = useState<boolean | null>(null);
   const progressMessages =
     live || forceOpen
       ? []
       : turn.progressMessages.filter(
-          (message) => !visibleAgentMessageIds?.has(message.id),
+          (message) =>
+            !visibleAgentMessageIds?.has(message.id) &&
+            hasDisplayableAgentContent(message, thinkingVisibility),
         );
-  const toolMessages = toolCallsVisibility === "hide" ? [] : turn.toolMessages;
-  const summary = summarizeToolMessages(toolMessages);
-  const runningTools = toolMessages.filter(isRunningToolCard);
-  const detailsOpen = forceOpen || expanded || toolCallsVisibility === "show";
+  const allToolMessages = turn.toolMessages;
+  const showGenericTools = toolCallsVisibility !== "hide";
+  const summarizedToolMessages = showGenericTools
+    ? allToolMessages
+    : allToolMessages.filter(hasFileChange);
+  const allFileChangeEntries = collectFileChangeEntries(summarizedToolMessages);
+  const summary = summaryWithFileEntries(
+    summarizeToolMessages(summarizedToolMessages),
+    allFileChangeEntries,
+  );
+  const runningTools = showGenericTools
+    ? allToolMessages.filter(isRunningToolCard)
+    : [];
+  const completedFileActivity =
+    !live &&
+    summary.fileChanges.total > 0 &&
+    summary.running === 0 &&
+    summary.failed === 0 &&
+    summary.cancelled === 0;
+  const defaultDetailsOpen =
+    expanded || toolCallsVisibility === "show" || completedFileActivity;
+  const detailsOpen = forceOpen || (manualOpen ?? defaultDetailsOpen);
   const detailsBodyVisible = detailsOpen || closingBodyRetained;
   const detailsBodyState = detailsOpen ? "open" : "closing";
   const showOriginalToolCards =
-    forceOpen && !live && (visibleAgentMessageIds?.size ?? 0) === 0;
-  const visibleTools = detailsOpen ? toolMessages : runningTools;
-  const detailTools = detailsBodyVisible ? toolMessages : [];
+    showGenericTools &&
+    forceOpen &&
+    !live &&
+    (visibleAgentMessageIds?.size ?? 0) === 0;
+  const detailTools = detailsBodyVisible ? allToolMessages : [];
   const originalToolCardIds = new Set(
     detailTools
-      .filter((message) => showOriginalToolCards || hasToolCardChildren(message))
+      .filter(
+        (message) =>
+          showOriginalToolCards ||
+          (showGenericTools && hasToolCardChildren(message)),
+      )
       .map((message) => message.id),
   );
   const fileChangeEntries =
@@ -506,7 +766,7 @@ function TurnActivity({
           ),
         )
       : [];
-  const detailToolRows = showOriginalToolCards
+  const detailToolRows = showOriginalToolCards || !showGenericTools
     ? []
     : detailTools.filter(
         (message) =>
@@ -514,8 +774,9 @@ function TurnActivity({
       );
   const hasActivity =
     progressMessages.length > 0 ||
-    toolMessages.length > 0 ||
-    visibleTools.length > 0;
+    summary.fileChanges.total > 0 ||
+    (showGenericTools && allToolMessages.length > 0) ||
+    runningTools.length > 0;
 
   useEffect(
     () => () => {
@@ -563,6 +824,7 @@ function TurnActivity({
     } else {
       setClosingBodyRetained(false);
     }
+    setManualOpen(!detailsOpen);
     onToggle();
   };
 

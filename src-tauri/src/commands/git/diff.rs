@@ -1,11 +1,14 @@
 //! Per-file Git diff commands backing the editor's gutter dirty-diff
 //! indicators and the side-by-side diff view.
 //!
-//! Two commands:
+//! Per-file commands:
 //!   - `git_file_diff_hunks` — working-tree-vs-HEAD hunks for one file,
 //!     parsed from `git diff -U0` headers into line ranges the frontend
 //!     paints in Monaco's gutter (VS Code-style added/modified/deleted
 //!     bars).
+//!   - `git_file_diff` — unified working-tree-vs-HEAD diff text for one
+//!     file, used by compact chat file-change cards.
+//!   - `git_file_diff_stat` — insertion/deletion counts for one file.
 //!   - `git_show_head` — the file's content at HEAD, the "original" side
 //!     of the diff editor. `None` for untracked / never-committed files.
 //!
@@ -86,6 +89,34 @@ pub async fn git_file_diff_hunks(
     Ok(Some(parse_diff_hunks(&output.stdout)))
 }
 
+/// Return a unified working-tree-vs-HEAD diff for a single file. `None` when
+/// the directory isn't a git worktree; `Some(empty)` when the file is clean,
+/// untracked, or the path can't be resolved.
+#[tauri::command]
+pub async fn git_file_diff(root: String, path: String) -> Result<Option<String>, String> {
+    let dir = PathBuf::from(&root);
+    if !dir.is_dir() {
+        return Ok(None);
+    }
+    let Some((_repo_root, active_root)) = resolve_repo_and_active_root(&dir)? else {
+        return Ok(None);
+    };
+    fail_if_index_locked(&active_root)?;
+    let Some(rel) = rel_to_active(&active_root, &path) else {
+        return Ok(Some(String::new()));
+    };
+    let output = read_only_git_command()
+        .arg("-C")
+        .arg(&active_root)
+        .args(["diff", "--no-color", "HEAD", "--", &rel])
+        .output()
+        .map_err(|e| format!("git diff: {e}"))?;
+    if !output.status.success() {
+        return Ok(Some(String::new()));
+    }
+    Ok(Some(String::from_utf8_lossy(&output.stdout).to_string()))
+}
+
 /// Aggregate insertion/deletion line counts for the active root vs HEAD —
 /// the `+N -M` stat shown in the Source Control header. `None` when the
 /// directory isn't a git worktree.
@@ -113,6 +144,32 @@ pub async fn git_diff_stat(root: String) -> Result<Option<DiffStat>, String> {
         .arg("-C")
         .arg(&active_root)
         .args(["diff", "--no-color", "--numstat", "HEAD", "--", "."])
+        .output()
+        .map_err(|e| format!("git diff --numstat: {e}"))?;
+    if !output.status.success() {
+        return Ok(Some(DiffStat::default()));
+    }
+    Ok(Some(parse_numstat(&output.stdout)))
+}
+
+/// Insertion/deletion line counts for a single file relative to HEAD.
+#[tauri::command]
+pub async fn git_file_diff_stat(root: String, path: String) -> Result<Option<DiffStat>, String> {
+    let dir = PathBuf::from(&root);
+    if !dir.is_dir() {
+        return Ok(None);
+    }
+    let Some((_repo_root, active_root)) = resolve_repo_and_active_root(&dir)? else {
+        return Ok(None);
+    };
+    fail_if_index_locked(&active_root)?;
+    let Some(rel) = rel_to_active(&active_root, &path) else {
+        return Ok(Some(DiffStat::default()));
+    };
+    let output = read_only_git_command()
+        .arg("-C")
+        .arg(&active_root)
+        .args(["diff", "--no-color", "--numstat", "HEAD", "--", &rel])
         .output()
         .map_err(|e| format!("git diff --numstat: {e}"))?;
     if !output.status.success() {

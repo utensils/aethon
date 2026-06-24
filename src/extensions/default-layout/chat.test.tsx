@@ -199,6 +199,9 @@ class ResizeObserverMock implements ResizeObserver {
 
 beforeEach(() => {
   vi.stubGlobal("ResizeObserver", ResizeObserverMock);
+  invokeMock.mockImplementation(() =>
+    Promise.reject(new Error("invoke not mocked")),
+  );
   resizeObserverMockState.callbacks = [];
   openUrl.mockResolvedValue(undefined);
   virtuosoMockState.followOutput = undefined;
@@ -686,7 +689,6 @@ describe("ChatInput", () => {
       </ExtensionRegistryProvider>,
     );
 
-    fireEvent.click(screen.getByText("Edited 1 file"));
     fireEvent.click(screen.getByTitle("Open src/App.tsx"));
 
     expect(onEvent).toHaveBeenCalledWith(
@@ -2262,12 +2264,8 @@ describe("ChatHistory turn activity feed (mocked Virtuoso renders rows)", () => 
           },
         },
       ],
-      transcriptVisibility: { toolCalls: "group-block" },
+      transcriptVisibility: { toolCalls: "hide" },
     });
-
-    expect(screen.queryByText("+new title")).toBeNull();
-
-    fireEvent.click(screen.getByRole("button", { name: /Edited 2 files/ }));
 
     expect(screen.getAllByText("Edited 2 files").length).toBeGreaterThan(1);
     const summary = screen.getByRole("button", { name: /Edited 2 files/ });
@@ -2277,10 +2275,90 @@ describe("ChatHistory turn activity feed (mocked Virtuoso renders rows)", () => 
     expect(screen.getByText("message-groups.tsx")).toBeTruthy();
     expect(screen.getAllByText("+13").length).toBeGreaterThan(0);
     expect(screen.getAllByText("-3").length).toBeGreaterThan(0);
+    expect(screen.queryByText("@@ -1 +1 @@")).toBeNull();
+
+    const inlineDiffButton = screen.getByRole("button", {
+      name: "Show inline diff for App.tsx",
+    });
+    expect(inlineDiffButton.querySelector("svg")).toBeTruthy();
+
+    fireEvent.click(inlineDiffButton);
     expect(screen.getByText("+new title")).toBeTruthy();
     expect(screen.getByText("-old title")).toBeTruthy();
     expect(screen.getByText("@@ -1 +1 @@")).toBeTruthy();
     expect(screen.queryByText("Completed in 0.0s")).toBeNull();
+  });
+
+  it("aggregates repeated edit tools into one row per file with historical counts", () => {
+    renderGroupedHistory({
+      messages: [
+        { id: "u1", role: "user", text: "change files" },
+        {
+          id: "t1",
+          role: "agent",
+          a2ui: {
+            components: [
+              {
+                id: "tool-edit-1",
+                type: "tool-card",
+                props: {
+                  title: "edit",
+                  startedAt: 1,
+                  endedAt: 2,
+                  fileChange: {
+                    kind: "edited",
+                    path: "src/App.tsx",
+                    preview:
+                      "diff --git a/src/App.tsx b/src/App.tsx\n@@ -1 +1 @@\n-old\n+new",
+                    additions: 1,
+                    deletions: 1,
+                  },
+                },
+              },
+            ],
+          },
+        },
+        {
+          id: "t2",
+          role: "agent",
+          a2ui: {
+            components: [
+              {
+                id: "tool-edit-2",
+                type: "tool-card",
+                props: {
+                  title: "edit",
+                  startedAt: 3,
+                  endedAt: 4,
+                  fileChange: {
+                    kind: "edited",
+                    path: "src/App.tsx",
+                    preview:
+                      "diff --git a/src/App.tsx b/src/App.tsx\n@@ -8 +8 @@\n-before\n+after",
+                    additions: 1,
+                    deletions: 1,
+                  },
+                },
+              },
+            ],
+          },
+        },
+      ],
+      transcriptVisibility: { toolCalls: "hide" },
+    });
+
+    const summary = screen.getByRole("button", { name: /Edited 1 file/ });
+    expect(summary.textContent).toContain("Edited 1 file · +2 -2");
+    expect(screen.getAllByText("App.tsx")).toHaveLength(1);
+    expect(screen.getAllByText("+2").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("-2").length).toBeGreaterThan(0);
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Show inline diff for App.tsx" }),
+    );
+
+    expect(screen.getByText("+new")).toBeTruthy();
+    expect(screen.getByText("+after")).toBeTruthy();
   });
 
   it("forwards compact edit artifact file actions with the originating tool id", () => {
@@ -2321,22 +2399,339 @@ describe("ChatHistory turn activity feed (mocked Virtuoso renders rows)", () => 
       ),
     );
 
-    fireEvent.click(screen.getByRole("button", { name: /Edited 1 file/ }));
+    fireEvent.click(screen.getByTitle("Open diff for src/App.tsx"));
+    expect(onEvent).toHaveBeenCalledWith(
+      "tool-file-diff",
+      { filePath: "src/App.tsx", rootPath: "/repo/aethon" },
+      "tool-edit-1",
+    );
+
     fireEvent.click(screen.getByTitle("Open src/App.tsx"));
     expect(onEvent).toHaveBeenCalledWith(
       "tool-file-open",
       { filePath: "src/App.tsx", rootPath: "/repo/aethon" },
       "tool-edit-1",
     );
+  });
+
+  it("keeps tool-call-off edit expansion focused on file review", () => {
+    renderGroupedHistory({
+      messages: [
+        { id: "u1", role: "user", text: "change files" },
+        {
+          id: "t1",
+          role: "agent",
+          a2ui: {
+            components: [
+              {
+                id: "tool-bash",
+                type: "tool-card",
+                props: {
+                  title: "bash",
+                  startedAt: 1,
+                  endedAt: 2,
+                },
+                children: [
+                  {
+                    id: "out",
+                    type: "code",
+                    props: { content: "very noisy tool output" },
+                  },
+                ],
+              },
+            ],
+          },
+        },
+        {
+          id: "t2",
+          role: "agent",
+          a2ui: {
+            components: [
+              {
+                id: "tool-edit",
+                type: "tool-card",
+                props: {
+                  title: "edit",
+                  startedAt: 3,
+                  endedAt: 4,
+                  fileChange: {
+                    kind: "edited",
+                    path: "src/App.tsx",
+                    preview: "@@ -1 +1 @@\n-old\n+new",
+                    additions: 1,
+                    deletions: 1,
+                  },
+                },
+              },
+            ],
+          },
+        },
+      ],
+      transcriptVisibility: { toolCalls: "hide" },
+    });
+
+    const summary = screen.getByRole("button", { name: /Edited 1 file/ });
+    expect(summary.textContent).toContain("Edited 1 file");
+    expect(summary.textContent).not.toContain("tool");
+
+    expect(screen.getByText("App.tsx")).toBeTruthy();
+    expect(screen.queryByText("bash")).toBeNull();
+    expect(screen.queryByText("very noisy tool output")).toBeNull();
+    expect(screen.queryByText("@@ -1 +1 @@")).toBeNull();
 
     fireEvent.click(
-      screen.getByRole("button", { name: "Open diff for App.tsx" }),
+      screen.getByRole("button", { name: "Show inline diff for App.tsx" }),
     );
-    expect(onEvent).toHaveBeenCalledWith(
-      "tool-file-diff",
-      { filePath: "src/App.tsx", rootPath: "/repo/aethon" },
-      "tool-edit-1",
+    expect(screen.getByText("@@ -1 +1 @@")).toBeTruthy();
+  });
+
+  it("does not reserve empty progress rows for hidden thinking in edit artifacts", () => {
+    const { container } = renderGroupedHistory({
+      messages: [
+        { id: "u1", role: "user", text: "change files" },
+        {
+          id: "thinking-1",
+          role: "agent",
+          model: "openai-codex/gpt-5.5",
+          thinking: "private reasoning only",
+        },
+        {
+          id: "thinking-2",
+          role: "agent",
+          model: "openai-codex/gpt-5.5",
+          thinking: "more private reasoning only",
+        },
+        {
+          id: "t1",
+          role: "agent",
+          a2ui: {
+            components: [
+              {
+                id: "tool-edit",
+                type: "tool-card",
+                props: {
+                  title: "edit",
+                  startedAt: 1,
+                  endedAt: 2,
+                  fileChange: {
+                    kind: "edited",
+                    path: "src/App.tsx",
+                    preview: "@@ -1 +1 @@\n-old\n+new",
+                    additions: 1,
+                    deletions: 1,
+                  },
+                },
+              },
+            ],
+          },
+        },
+      ],
+      transcriptVisibility: { thinking: "hide", toolCalls: "hide" },
+    });
+
+    const summary = screen.getByRole("button", { name: /Edited 1 file/ });
+    if (summary.getAttribute("aria-expanded") !== "true") {
+      fireEvent.click(summary);
+    }
+
+    expect(screen.queryByText("GPT-5.5")).toBeNull();
+    expect(screen.queryByText("private reasoning only")).toBeNull();
+    expect(
+      container.querySelectorAll(".ae-turn-progress-message").length,
+    ).toBe(0);
+    expect(container.querySelectorAll(".ae-file-activity-card").length).toBe(1);
+  });
+
+  it("auto-expands completed edit artifacts at the end of a turn", async () => {
+    renderGroupedHistory({
+      messages: [
+        { id: "u1", role: "user", text: "change files" },
+        {
+          id: "t1",
+          role: "agent",
+          a2ui: {
+            components: [
+              {
+                id: "tool-edit",
+                type: "tool-card",
+                props: {
+                  title: "edit",
+                  startedAt: 1,
+                  endedAt: 2,
+                  fileChange: {
+                    kind: "edited",
+                    path: "src/App.tsx",
+                    additions: 1,
+                  },
+                },
+              },
+            ],
+          },
+        },
+      ],
+      waiting: false,
+      transcriptVisibility: { toolCalls: "hide" },
+    });
+
+    const summary = screen.getByRole("button", { name: /Edited 1 file/ });
+    expect(summary.getAttribute("aria-expanded")).toBe("true");
+    expect(screen.getByText("App.tsx")).toBeTruthy();
+
+    fireEvent.click(summary);
+
+    expect(summary.getAttribute("aria-expanded")).toBe("false");
+    await waitFor(() => expect(screen.queryByText("App.tsx")).toBeNull());
+  });
+
+  it("backfills compact edit artifact stats from the working tree", async () => {
+    invokeMock.mockImplementation((cmd: string) =>
+      cmd === "git_file_diff_stat"
+        ? Promise.resolve({ insertions: 5, deletions: 2 })
+        : Promise.reject(new Error(`invoke not mocked: ${cmd}`)),
     );
+
+    renderGroupedHistory({
+      messages: [
+        { id: "u1", role: "user", text: "change files" },
+        {
+          id: "t1",
+          role: "agent",
+          a2ui: {
+            components: [
+              {
+                id: "tool-edit",
+                type: "tool-card",
+                props: {
+                  title: "edit",
+                  startedAt: 1,
+                  endedAt: 2,
+                  fileChange: {
+                    kind: "edited",
+                    path: "src/App.tsx",
+                    rootPath: "/repo/aethon",
+                  },
+                },
+              },
+            ],
+          },
+        },
+      ],
+      transcriptVisibility: { toolCalls: "hide" },
+    });
+
+    await waitFor(() =>
+      expect(invokeMock).toHaveBeenCalledWith("git_file_diff_stat", {
+        root: "/repo/aethon",
+        path: "src/App.tsx",
+      }),
+    );
+    await screen.findAllByText("+5");
+    expect(screen.getAllByText("-2").length).toBeGreaterThan(0);
+  });
+
+  it("fetches a real inline diff instead of showing non-diff edit status text", async () => {
+    invokeMock.mockImplementation((cmd: string) =>
+      cmd === "git_file_diff_stat"
+        ? Promise.resolve({ insertions: 1, deletions: 1 })
+        : cmd === "git_file_diff"
+          ? Promise.resolve(
+              "diff --git a/src/App.tsx b/src/App.tsx\n@@ -1 +1 @@\n-old title\n+new title\n",
+            )
+          : Promise.reject(new Error(`invoke not mocked: ${cmd}`)),
+    );
+
+    renderGroupedHistory({
+      messages: [
+        { id: "u1", role: "user", text: "change files" },
+        {
+          id: "t1",
+          role: "agent",
+          a2ui: {
+            components: [
+              {
+                id: "tool-edit",
+                type: "tool-card",
+                props: {
+                  title: "edit",
+                  startedAt: 1,
+                  endedAt: 2,
+                  fileChange: {
+                    kind: "edited",
+                    path: "src/App.tsx",
+                    rootPath: "/repo/aethon",
+                    preview: "Successfully replaced 1 block(s)",
+                  },
+                },
+              },
+            ],
+          },
+        },
+      ],
+      transcriptVisibility: { toolCalls: "hide" },
+    });
+
+    expect(screen.queryByText("Successfully replaced 1 block(s)")).toBeNull();
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Show inline diff for App.tsx" }),
+    );
+
+    expect(await screen.findByText("+new title")).toBeTruthy();
+    expect(screen.getByText("-old title")).toBeTruthy();
+    expect(screen.queryByText("Successfully replaced 1 block(s)")).toBeNull();
+    expect(invokeMock).toHaveBeenCalledWith("git_file_diff", {
+      root: "/repo/aethon",
+      path: "src/App.tsx",
+    });
+  });
+
+  it("keeps stopped generic tool output hidden when tool calls are off", () => {
+    renderGroupedHistory({
+      messages: [
+        { id: "u1", role: "user", text: "Review this implementation" },
+        {
+          id: "a1",
+          role: "agent",
+          text: "I’ll inspect the branch diff and relevant files.",
+          model: "openai-codex/gpt-5.5",
+        },
+        {
+          id: "t1",
+          role: "agent",
+          a2ui: {
+            components: [
+              {
+                id: "c1",
+                type: "tool-card",
+                props: { title: "bash", startedAt: 1, endedAt: 2 },
+                children: [
+                  {
+                    id: "out",
+                    type: "code",
+                    props: { content: "mixed stop command output" },
+                  },
+                ],
+              },
+            ],
+          },
+        },
+        {
+          id: "stop",
+          role: "system",
+          text: "Agent stopped.",
+          createdAt: 2,
+        },
+      ],
+      waiting: false,
+      transcriptVisibility: { toolCalls: "hide" },
+    });
+
+    expect(
+      screen.getByText("I’ll inspect the branch diff and relevant files."),
+    ).toBeTruthy();
+    expect(screen.queryByText("bash")).toBeNull();
+    expect(screen.queryByText("mixed stop command output")).toBeNull();
+    expect(screen.queryByRole("button", { name: /1 tool call/ })).toBeNull();
   });
 
   it("keeps stopped assistant progress visible and expanded when there is no final answer", () => {

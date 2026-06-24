@@ -153,21 +153,19 @@ export function SettingsPanel({ state, onEvent }: BuiltinComponentProps) {
                   value={
                     eff.ui.toolCallsVisibility === "show"
                       ? "show"
-                      : "group-block"
+                      : "hide"
                   }
                   onChange={(e) =>
                     update({
                       ui: {
                         ...eff.ui,
-                        toolCallsVisibility: e.target.value as
-                          | "show"
-                          | "group-block",
+                        toolCallsVisibility: e.target.value as "show" | "hide",
                       },
                     })
                   }
                 >
-                  <option value="show">Shown</option>
-                  <option value="group-block">Collapsed</option>
+                  <option value="show">On</option>
+                  <option value="hide">Off</option>
                 </select>
               </Field>
             </Section>

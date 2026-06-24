@@ -403,6 +403,45 @@ describe("toolCardPayload", () => {
     });
   });
 
+  it("preserves edit stats from arguments when the tool result is status text", () => {
+    const payload = toolCardPayload({
+      id: "tool-c1",
+      toolName: "edit",
+      argsSummary: "src/App.tsx",
+      args: {
+        path: "src/App.tsx",
+        oldString: "old line\nsecond old line",
+        newString: "new line\nsecond new line\nthird new line",
+      },
+      rootPath: "/repo",
+      result: "Successfully replaced 1 block(s)",
+    });
+
+    expect(payload).toMatchObject({
+      components: [
+        {
+          props: {
+            fileChange: {
+              kind: "edited",
+              path: "src/App.tsx",
+              rootPath: "/repo",
+              preview: expect.stringContaining("@@ replacement @@"),
+              additions: 3,
+              deletions: 2,
+            },
+          },
+        },
+      ],
+    });
+    const root = payload.components[0] as {
+      props: { fileChange: { preview: string } };
+    };
+    expect(root.props.fileChange.preview).toContain("-old line");
+    expect(root.props.fileChange.preview).toContain("-second old line");
+    expect(root.props.fileChange.preview).toContain("+new line");
+    expect(root.props.fileChange.preview).toContain("+third new line");
+  });
+
   it("classifies write tools as created when the result says a file was created", () => {
     const payload = toolCardPayload({
       id: "tool-c1",

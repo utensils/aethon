@@ -4,14 +4,14 @@ import type { ToolCallsMode, VisibilityMode } from "../config";
 import type { Tab } from "../types/tab";
 
 // The UI intentionally exposes only the two decisions users make in the chat:
-// thinking on/off and tool activity shown/collapsed. Older persisted grouped
-// modes still resolve, but the button no longer walks users through them.
+// thinking on/off and tool calls on/off. Older persisted grouped modes still
+// resolve, but the button no longer walks users through them.
 function nextThinking(current: VisibilityMode): VisibilityMode {
   return current === "show" ? "hide" : "show";
 }
 
 function nextToolCalls(current: ToolCallsMode): ToolCallsMode {
-  return current === "show" ? "group-block" : "show";
+  return current === "show" ? "hide" : "show";
 }
 
 function simplifiedThinkingDefault(current: VisibilityMode): VisibilityMode {
@@ -19,7 +19,7 @@ function simplifiedThinkingDefault(current: VisibilityMode): VisibilityMode {
 }
 
 function simplifiedToolCallsDefault(current: ToolCallsMode): ToolCallsMode {
-  return current === "show" ? "show" : "group-block";
+  return current;
 }
 
 const GROUPING_MODES: readonly ToolCallsMode[] = [
@@ -32,7 +32,7 @@ const GROUPING_MODES: readonly ToolCallsMode[] = [
  * Composer visibility pills (`type:composer-visibility-pills`):
  *   - `cycle`            — toggle the active session's override for one
  *                          category. Thinking: show ↔ hide. Tool calls:
- *                          show ↔ collapsed (`group-block`).
+ *                          show ↔ hide.
  *   - `set-tool-grouping`— jump the active session's tool-call mode straight to
  *                          a specific grouping style (popover radios).
  *   - `reset-to-global`  — drop the session's per-tab overrides so it follows
