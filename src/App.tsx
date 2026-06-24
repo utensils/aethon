@@ -5,6 +5,8 @@ import { defaultLayoutExtension } from "./extensions/default-layout";
 import { AppRoot } from "./app/AppRoot";
 import { BOOT_LAYOUT, hangWarnNotifId } from "./app/bootConstants";
 import { useAppForwardRefs } from "./app/useAppForwardRefs";
+import { useAppInteractions } from "./app/useAppInteractions";
+import { useAppRuntimeSurfaces } from "./app/useAppRuntimeSurfaces";
 import type { A2UIPayload } from "./types/a2ui";
 import type { Tab } from "./types/tab";
 import { useZoomAndTheme } from "./hooks/useZoomAndTheme";
@@ -21,8 +23,6 @@ import { useTabNavigation } from "./hooks/useTabNavigation";
 import { useTabs } from "./hooks/useTabs";
 import { useRestoreShellTabs } from "./hooks/useRestoreShellTabs";
 import { useExtensionsHydration } from "./hooks/useExtensionsHydration";
-import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
-import { useWindowApi } from "./runtime/windowApi";
 import { useBootConfig } from "./hooks/useBootConfig";
 import { useNotifications } from "./hooks/useNotifications";
 import { useWorkspacePrompts } from "./hooks/useWorkspacePrompts";
@@ -30,15 +30,12 @@ import { useFocus } from "./hooks/useFocus";
 import { useChat } from "./hooks/useChat";
 import { useQueuedDispatch } from "./hooks/useQueuedDispatch";
 import { useControlRequests } from "./hooks/useControlRequests";
-import { useFrontendStateMirror } from "./hooks/useFrontendStateMirror";
-import { usePersistEditorTabs } from "./hooks/usePersistEditorTabs";
 import { useUiOverlays } from "./hooks/useUiOverlays";
 import { useUpdater } from "./hooks/useUpdater";
 import { useWorkspaceStartup } from "./hooks/useWorkspaceStartup";
 import { UpdateBanner } from "./components/UpdateBanner";
 import { useProjectOps } from "./hooks/useProjectOps";
 import type { TabBucket } from "./hooks/projectOps/types";
-import { useOsEdges } from "./hooks/useOsEdges";
 import {
   buildInitialAppStore,
   useSessionPersistence,
@@ -50,7 +47,6 @@ import {
   findTabAcrossBuckets,
   updateTabAcrossBuckets,
 } from "./hooks/tabRouting";
-import { useAppEventRouting } from "./hooks/useAppEventRouting";
 import { useAppStateRefs } from "./hooks/useAppStateRefs";
 import { useProjectModelRecorder } from "./hooks/useProjectModelRecorder";
 import { useProjectSyncEffects } from "./hooks/useProjectSyncEffects";
@@ -805,127 +801,11 @@ export default function App() {
     markStartupChromeReady: () => setStartupChromeReady(true),
   });
 
-  // Global keyboard shortcuts. Lives in useKeyboardShortcuts which
-  // binds a document-level keydown listener with useCapture so we run
-  // before xterm sees the keystroke.
-  useKeyboardShortcuts({
+  // Keyboard shortcuts + A2UI event routing.
+  const onEvent = useAppInteractions({
     stateRef,
     extensionKeybindingsRef,
-    toggleTerminalAndFocus,
-    toggleSidebar,
-    toggleFilesSidebar,
-    toggleEditorPreview,
-    clearChat,
-    stopPrompt,
-    newTab,
-    newShellTab,
-    nextTab,
-    nextShellSubTab,
-    moveActiveTab,
-    moveActiveShellSubTab,
-    jumpToTab,
-    jumpToShellSubTab,
-    reopenLastClosedTab,
-    closeTab,
-    toggleSessionSearch,
-    openPalette,
-    closePalette,
-    togglePlanMode,
-    adjustZoom,
-    resetZoom,
-    toggleFocusComposerTerminal,
-    toggleSettings,
-    closeSettings,
-    openScheduledTasks,
-    closeScheduledTasks,
-    focusActiveContextInput,
-    exportActiveChatMarkdown,
-    pushNotification,
-    toggleAccounts,
-  });
-
-  // window.aethon runtime API + dev-only __AETHON_* debug hooks.
-  // Lives in src/runtime/windowApi.ts; mounts via useWindowApi.
-  useWindowApi({
-    layout,
-    bootLayout: BOOT_LAYOUT,
-    setLayout,
     setState,
-    stateRef,
-    registry,
-    layoutCatalogueRef,
-    projectsRef,
-    newTab,
-    closeTab,
-    setActiveTab,
-    activateLayoutById,
-    openProjectFromPicker,
-    openProjectByPath,
-    setActiveProjectById,
-    clearActiveProject,
-    removeProjectById,
-  });
-
-  // Mirror an allowlisted set of frontend state slices back to the bridge
-  // so extensions can introspect them. Debounced at 16 ms so a flurry of
-  // state changes (typing into the composer) coalesces into a single
-  // patch per slice.
-  useFrontendStateMirror({ state });
-
-  // Persist open editor tabs (debounced) so they restore on next launch.
-  usePersistEditorTabs({
-    stateRef,
-    projectsRef,
-    projectsLoadedRef,
-    tabsSignal: state.tabs,
-    activeTabId: state.activeTabId,
-  });
-
-  // OS-edge event listeners — PTY streams, agent supervisor signals,
-  // native menu, drag-drop file paths, clipboard image paste. Bridge
-  // response IPC stays in useBridgeMessages; this hook only owns
-  // listeners that aren't routed through the bridge response stream.
-  useOsEdges({
-    bootLayout: BOOT_LAYOUT,
-    setState,
-    stateRef,
-    activeResponseIdRef,
-    hangWarnTimersRef,
-    hangWarnActiveRef,
-    hangWarnNotifId,
-    autoRestartAgentRef,
-    shellInheritEnvRef,
-    updateTab,
-    newTab,
-    newShellTab,
-    closeTab,
-    nextTab,
-    appendMessage,
-    persistLocalChatMessage,
-    appendSystem,
-    setStatusFlags,
-    clearChat,
-    stopPrompt,
-    toggleTerminal,
-    toggleFilesSidebar,
-    togglePlanMode,
-    openSettings,
-    openScheduledTasks,
-    pushNotification,
-    dismissNotification,
-    checkForUpdates,
-  });
-
-  // Intercept events from layout-level components before they reach
-  // the agent. The layout speaks A2UI, but a few interactions need to
-  // drive native APIs (Tauri IPC for chat send, model picker) — the
-  // dispatcher lives in `src/eventRoutes/` and is wired here. Three
-  // precedence layers, in order: shell-consent reserved prefixes
-  // (security boundary), extension event-routes (extensibility),
-  // built-in route table.
-  const onEvent = useAppEventRouting({
-    setState,
-    stateRef,
     extensionEventRoutesRef,
     extensionEventRoutingModeRef,
     allDiscoveredSessionsRef,
@@ -1009,6 +889,76 @@ export default function App() {
     sortProjectWorkspacesNewest,
     invoke,
     writeState,
+    toggleTerminalAndFocus,
+    toggleSidebar,
+    toggleFilesSidebar,
+    nextTab,
+    nextShellSubTab,
+    moveActiveTab,
+    moveActiveShellSubTab,
+    jumpToTab,
+    jumpToShellSubTab,
+    reopenLastClosedTab,
+    toggleSessionSearch,
+    openPalette,
+    togglePlanMode,
+    adjustZoom,
+    resetZoom,
+    toggleFocusComposerTerminal,
+    toggleSettings,
+    openScheduledTasks,
+    closeScheduledTasks,
+    focusActiveContextInput,
+    exportActiveChatMarkdown,
+    toggleAccounts,
+  });
+
+  // Runtime API, bridge mirror, editor-tab persistence, and OS-edge listeners.
+  useAppRuntimeSurfaces({
+    layout,
+    bootLayout: BOOT_LAYOUT,
+    setLayout,
+    setState,
+    stateRef,
+    registry,
+    layoutCatalogueRef,
+    projectsRef,
+    newTab,
+    closeTab,
+    setActiveTab,
+    activateLayoutById,
+    openProjectFromPicker,
+    openProjectByPath,
+    setActiveProjectById,
+    clearActiveProject,
+    removeProjectById,
+    projectsLoadedRef,
+    tabsSignal: state.tabs,
+    activeTabId: state.activeTabId,
+    state,
+    activeResponseIdRef,
+    hangWarnTimersRef,
+    hangWarnActiveRef,
+    hangWarnNotifId,
+    autoRestartAgentRef,
+    shellInheritEnvRef,
+    updateTab,
+    newShellTab,
+    nextTab,
+    appendMessage,
+    persistLocalChatMessage,
+    appendSystem,
+    setStatusFlags,
+    clearChat,
+    stopPrompt,
+    toggleTerminal,
+    toggleFilesSidebar,
+    togglePlanMode,
+    openSettings,
+    openScheduledTasks,
+    pushNotification,
+    dismissNotification,
+    checkForUpdates,
   });
 
   const {
