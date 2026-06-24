@@ -313,7 +313,7 @@ fn apply_worker_devshell_env(app: &AppHandle, command: &mut Command, worker: Opt
         return;
     };
     let cwd = std::path::PathBuf::from(cwd);
-    let (enabled, configured_mode) = crate::commands::devshell::effective_config(app, &cwd);
+    let (enabled, configured_mode) = crate::devshell::effective_config(app, &cwd).into_parts();
     if enabled == "never" {
         return;
     }

@@ -675,7 +675,7 @@ async fn prepare_devshell_env(
     cache: &Arc<DevshellCache>,
     root: &Path,
 ) -> Result<BTreeMap<String, String>, String> {
-    let (enabled, configured_mode) = crate::commands::devshell::effective_config(app, root);
+    let (enabled, configured_mode) = crate::devshell::effective_config(app, root).into_parts();
     if enabled == "never" {
         return Ok(BTreeMap::new());
     }
