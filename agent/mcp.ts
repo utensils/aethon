@@ -449,6 +449,7 @@ type PiLike = {
 
 export function buildAethonMcpExtension(state: {
   userDir: string;
+  cwd?: string;
 }): ExtensionFactory {
   const storage = new AsyncLocalStorage<{ configPath: string }>();
   return async (pi: PiLike) => {
@@ -457,6 +458,11 @@ export function buildAethonMcpExtension(state: {
       "~/.aethon/config.toml",
     );
     if (host.enabled === false) return;
+    let currentConfigPath = resolveAethonMcpConfig({
+      userDir: state.userDir,
+      cwd: state.cwd ?? process.cwd(),
+      write: true,
+    }).generatedPath;
 
     const originalGetFlag = pi.getFlag?.bind(pi);
     const originalOn = pi.on?.bind(pi);
@@ -465,7 +471,7 @@ export function buildAethonMcpExtension(state: {
         if (prop === "getFlag") {
           return (name: string) => {
             if (name === "mcp-config") {
-              return storage.getStore()?.configPath;
+              return storage.getStore()?.configPath ?? currentConfigPath;
             }
             return originalGetFlag?.(name);
           };
@@ -487,6 +493,7 @@ export function buildAethonMcpExtension(state: {
                 cwd: rawCwd,
                 write: true,
               });
+              currentConfigPath = resolved.generatedPath;
               const safeCtx = isRecord(ctx)
                 ? { ...ctx, cwd: resolved.adapterCwd }
                 : ctx;
@@ -505,13 +512,28 @@ export function buildAethonMcpExtension(state: {
     });
 
     const previousDirectTools = process.env.MCP_DIRECT_TOOLS;
+    const argvCleanup = pushMcpConfigArg(currentConfigPath);
     process.env.MCP_DIRECT_TOOLS = "__none__";
     try {
       const imported = await import("pi-mcp-adapter/index.ts");
       imported.default?.(wrappedPi);
     } finally {
+      argvCleanup();
       if (previousDirectTools === undefined) delete process.env.MCP_DIRECT_TOOLS;
       else process.env.MCP_DIRECT_TOOLS = previousDirectTools;
     }
+  };
+}
+
+function pushMcpConfigArg(configPath: string): () => void {
+  const previous = process.argv.slice();
+  const existing = process.argv.indexOf("--mcp-config");
+  if (existing >= 0) {
+    process.argv[existing + 1] = configPath;
+  } else {
+    process.argv.push("--mcp-config", configPath);
+  }
+  return () => {
+    process.argv.splice(0, process.argv.length, ...previous);
   };
 }

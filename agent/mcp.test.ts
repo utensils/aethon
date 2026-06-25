@@ -3,14 +3,16 @@ import {
   mkdtempSync,
   mkdirSync,
   readFileSync,
+  realpathSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import {
   approveAethonMcpProjectConfig,
+  buildAethonMcpExtension,
   resolveAethonMcpConfig,
 } from "./mcp";
 
@@ -269,5 +271,73 @@ url = "https://host.example/mcp"
 
     expect(generated).toEqual(resolved.config);
     expect(resolved.adapterCwd).toContain(join(userDir, "mcp", "adapter-cwd"));
+  });
+
+  it("writes generated adapter config before pi adapter install completes", async () => {
+    const root = tempRoot();
+    const userDir = join(root, "user");
+    const project = join(root, "project");
+    mkdirSync(project, { recursive: true });
+    write(
+      join(userDir, "config.toml"),
+      `
+[mcp]
+enabled = true
+project_configs = "require-approval"
+`,
+    );
+    write(
+      join(project, ".mcp.json"),
+      JSON.stringify({
+        mcpServers: {
+          query: { command: "node", args: ["query-mcp.js"] },
+        },
+      }),
+    );
+    approveAethonMcpProjectConfig(userDir, project);
+
+    const previousArgv = process.argv.slice();
+    const previousDirectTools = process.env.MCP_DIRECT_TOOLS;
+    const registered = {
+      flags: [] as string[],
+      tools: [] as string[],
+      commands: [] as string[],
+    };
+    try {
+      await buildAethonMcpExtension({ userDir, cwd: project })({
+        registerFlag: (name: string) => {
+          registered.flags.push(name);
+        },
+        registerTool: (tool: { name: string }) => {
+          registered.tools.push(tool.name);
+        },
+        registerCommand: (name: string) => {
+          registered.commands.push(name);
+        },
+        getAllTools: () => [],
+        getFlag: () => undefined,
+        on: () => {},
+      });
+    } finally {
+      process.argv.splice(0, process.argv.length, ...previousArgv);
+      if (previousDirectTools === undefined) delete process.env.MCP_DIRECT_TOOLS;
+      else process.env.MCP_DIRECT_TOOLS = previousDirectTools;
+    }
+
+    const generated = join(userDir, "mcp", "generated", "generated.json");
+    expect(JSON.parse(readFileSync(generated, "utf8")).mcpServers.query).toEqual(
+      {
+        command: "node",
+        args: ["query-mcp.js"],
+        cwd: realpathSync(resolve(project)),
+      },
+    );
+    expect(registered.flags).toContain("mcp-config");
+    expect(registered.tools).toContain("mcp");
+    expect(registered.commands).toEqual(
+      expect.arrayContaining(["mcp", "mcp-auth"]),
+    );
+    expect(process.argv).toEqual(previousArgv);
+    expect(process.env.MCP_DIRECT_TOOLS).toBe(previousDirectTools);
   });
 });

@@ -285,7 +285,13 @@ async function main(): Promise<void> {
     cwd: process.cwd(),
     agentDir: getAgentDir(),
     settingsManager: state.settingsManager,
-    extensionFactories: [buildAethonMcpExtension(state), workingContextExtension],
+    extensionFactories: [
+      buildAethonMcpExtension({
+        userDir: state.userDir,
+        cwd: workerCwd ?? projectRoot ?? process.cwd(),
+      }),
+      workingContextExtension,
+    ],
     appendSystemPromptOverride: (base) => [
       ...base,
       ...resolveAethonSystemPrompt(getRuntimeSnapshot(state)),
