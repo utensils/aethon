@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { ExtensionRegistry } from "./extensions/ExtensionRegistry";
 import { defaultLayoutExtension } from "./extensions/default-layout";
@@ -43,10 +43,7 @@ import {
 import { useDerivedRenderState } from "./hooks/useDerivedRenderState";
 import { useTabBucketHydration } from "./hooks/useTabBucketHydration";
 import { useTaskLauncher } from "./hooks/useTaskLauncher";
-import {
-  findTabAcrossBuckets,
-  updateTabAcrossBuckets,
-} from "./hooks/tabRouting";
+import { useRoutedTabHelpers } from "./hooks/useRoutedTabHelpers";
 import { useAppStateRefs } from "./hooks/useAppStateRefs";
 import { useProjectModelRecorder } from "./hooks/useProjectModelRecorder";
 import { useProjectSyncEffects } from "./hooks/useProjectSyncEffects";
@@ -58,10 +55,6 @@ import { useRootChromeActions } from "./hooks/useRootChromeActions";
 import { useActivateTabAnywhere } from "./hooks/useActivateTabAnywhere";
 import { useUpdaterConfigBridge } from "./hooks/useUpdaterConfigBridge";
 import { closeAllWorkspaceSessions } from "./hooks/tabOps/closeWorkspaceSessions";
-import {
-  clearClosedIssueLinks,
-  clearClosedIssueLinksInBuckets,
-} from "./extensions/default-layout/dashboard/issue-sessions";
 import type { NativeCanvasWindowRecord } from "./nativeWindows";
 import { writeState } from "./persist";
 import { useAppState } from "./state/appStore";
@@ -451,20 +444,11 @@ export default function App() {
   // last-active tab rather than the empty landing card.
   useTabBucketHydration(state.persistedTabBuckets, tabBucketsRef);
 
-  const updateTabRouted = useCallback(
-    (tabId: string, mutator: (tab: Tab) => Tab) => {
-      updateTabAcrossBuckets(
-        { setState, stateRef, projectsRef, tabBucketsRef },
-        tabId,
-        mutator,
-      );
-    },
-    [projectsRef, setState, stateRef, tabBucketsRef],
-  );
-  const findTabRouted = useCallback(
-    (tabId: string) => findTabAcrossBuckets(stateRef, tabBucketsRef, tabId),
-    [stateRef, tabBucketsRef],
-  );
+  const {
+    updateTabRouted,
+    findTabRouted,
+    clearClosedIssueLinksForProject,
+  } = useRoutedTabHelpers({ setState, stateRef, projectsRef, tabBucketsRef });
 
   // ---------------------------------------------------------------------
   // Toast stack + OS completion notification. Owned by useNotifications.
@@ -653,20 +637,6 @@ export default function App() {
     clearActiveProject,
     activateWorkspace,
   });
-
-  const clearClosedIssueLinksForProject = useCallback(
-    (projectId: string, openIssueNumbers: ReadonlySet<number>) => {
-      clearClosedIssueLinksInBuckets(
-        tabBucketsRef.current,
-        projectId,
-        openIssueNumbers,
-      );
-      setState((prev) =>
-        clearClosedIssueLinks(prev, projectId, openIssueNumbers),
-      );
-    },
-    [setState, tabBucketsRef],
-  );
 
   // Updater (Cmd menu / tray "Check for Updates" + agent-driven path).
   // The hook reads the persisted channel + auto-check toggle from
