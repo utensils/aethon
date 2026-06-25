@@ -215,7 +215,7 @@ API:
   creates or updates a native window. Ids must match `/^[A-Za-z][\w-]*$/`.
   Size defaults to `900x650`; windows restore on app relaunch unless
   `restoreOnLaunch: false`.
-- `openTerminal({ id?, title?, cwd?, command?, args?, width?, height?, x?, y?, focus? })`
+- `openTerminal({ id?, title?, cwd?, command?, args?, width?, height?, x?, y?, focus?, shellTabId?, activateShell? })`
   creates a private PTY shell and opens an interactive native terminal window
   backed by the built-in `shell-canvas` component. Terminal windows are
   non-restoring so app relaunches never reopen a terminal without a backing PTY.
@@ -288,7 +288,7 @@ Wire clicks via `onEvent` (see below).
 
 Add a slash command to the chat-input picker. `name` must match
 `/^[A-Za-z][\w-]*$/` and may not collide with built-ins (`clear`, `help`,
-`theme`, `model`, `init`, `config`, `mcp`, `mcp-auth`, `login`, `reset`, `reload`, `rename`, `context`,
+`theme`, `model`, `init`, `config`, `mcp`, `mcp-auth`, `login`, `reset`, `reload`, `rename`, `memory`, `context`,
 `session`, `compact`, `name`, `export`, `terminal`, `extensions`,
 `sidebar`, `files`, `layout`, `project`).
 
@@ -555,22 +555,32 @@ built-in behavior. Built-ins without an override are:
 | --------------------------- | ------------------------------------ |
 | `Cmd+P`                     | Quick-open file (fuzzy search)       |
 | `Cmd+Shift+P`               | Open command palette (commands mode) |
+| `Cmd+Shift+F`               | Cross-session search                 |
 | `Cmd+T`                     | New tab (focus-aware)                |
 | `Cmd+Shift+T`               | New shell sub-tab                    |
 | `Cmd+W`                     | Close active tab                     |
+| `Cmd+Opt+T`                 | Reopen last closed tab               |
 | `Cmd+Shift+]`               | Next tab                             |
 | `Cmd+Shift+[`               | Previous tab                         |
 | `Cmd+Opt+]` / `Cmd+Opt+[`   | Move active tab right / left         |
-| `Cmd+\``                    | Toggle terminal                      |
+| `Cmd+1`..`Cmd+9`            | Jump to tab (9 = last)               |
+| `Ctrl+\``                   | Toggle terminal                      |
 | `Cmd+B` / `Cmd+D` / `Cmd+J` | Toggle sidebars / file tree          |
+| `Cmd+L`                     | Focus active tab input               |
 | `Cmd+K`                     | Clear chat                           |
 | `Cmd+.`                     | Stop current prompt                  |
 | `Shift+Tab`                 | Toggle Plan mode                     |
+| `Cmd+Shift+V`               | Toggle markdown preview              |
 | `Cmd+Shift+M`               | Toggle voice input                   |
+| `Cmd+Shift+A`               | Toggle Accounts                      |
+| `Cmd+Shift+S`               | Export chat as Markdown              |
+| `Cmd+,`                     | Open Settings                        |
 | `Cmd+Shift+L`               | Open Scheduled Tasks                 |
 | `Cmd+=` / `Cmd+-`           | UI zoom controls                     |
 | `Cmd+0`                     | Toggle composer / terminal focus     |
 | `Cmd+Shift+0`               | Reset zoom                           |
+| `Cmd+Ctrl+F` / `F11`        | Toggle fullscreen                    |
+| `F12`                       | Toggle DevTools (debug builds)       |
 
 ```ts
 globalThis.aethon.registerKeybinding({

@@ -16,11 +16,10 @@ common setup. The full keys-and-defaults schema lives in
 [ui]
 theme = "ember"
 font_size = 14
-restore_tabs = true
 notify_on_completion = true
 notify_min_duration_seconds = 8
-thinking_visibility = "show"
-tool_calls_visibility = "show"
+thinking_visibility = "hide"
+tool_calls_visibility = "hide"
 
 [agent]
 model = "anthropic/claude-sonnet-4-6"
@@ -28,6 +27,8 @@ model = "anthropic/claude-sonnet-4-6"
 bash_timeout_floor_seconds = 300
 subagent_timeout_seconds = 300
 idle_retire_minutes = 15
+# thinking_level = "medium"        # off|minimal|low|medium|high|xhigh; unset = provider default
+codex_fast_mode = false
 
 [shell]
 default_share_mode = "private"
@@ -37,12 +38,19 @@ default_args = []
 inherit_env = true
 prompt_before_close = true
 
-[shortcuts]
-new_tab_kind = "agent"
-
 [voice]
 toggle_hotkey = "mod+shift+m"
 # hold_hotkey defaults to "AltRight" on macOS and unset elsewhere.
+speak_agent_replies = false
+speak_max_chars = 600
+conversation_continuous = false
+
+[mcp]
+enabled = true
+project_configs = "require-approval"  # auto-load | require-approval | never
+
+[startup]
+auto_approve = false
 
 [extensions]
 state_warn_kb = 64
@@ -128,9 +136,10 @@ thinking_visibility = "collapse"      # show | collapse | hide
 tool_calls_visibility = "group-turn"  # show | group-turn | group-run | group-block | hide
 ```
 
-Both are per-tab overridable at runtime via the composer visibility pills;
-these keys only set the global default for new tabs. The full grouping
-enum is in the [config reference](/reference/config-reference#ui).
+Both default to `hide` when unset, so a fresh install opens with a clean
+transcript. Both are per-tab overridable at runtime via the composer
+visibility pills; these keys only set the global default for new tabs. The
+full grouping enum is in the [config reference](/reference/config-reference#ui).
 
 ## Set a default model for new tabs
 
@@ -213,16 +222,33 @@ overrides the spawned program; empty or omitted falls back to `$SHELL`.
 [Shells & share modes](/guide/shells-and-share-modes) for share-mode
 semantics.
 
-## Make `Cmd+T` always open a shell
+## Tab shortcuts (`Cmd+T` is focus-aware)
+
+`Cmd+T` is **strictly focus-aware** and is not configurable: it opens an
+agent tab when focus is outside the bottom terminal panel, and a shell
+sub-tab when focus is inside it. `Cmd+Shift+T` always opens a shell
+sub-tab. See [Agent tabs](/guide/agent-tabs) and
+[Shells & share modes](/guide/shells-and-share-modes).
+
+::: warning Deprecated
+`[shortcuts] new_tab_kind` is a vestigial no-op. It is still parsed for
+back-compat but has no runtime effect — nothing reads it. Remove it from
+your config; the focus-aware routing above is the only behavior.
+:::
+
+## Set the default reasoning effort
 
 ```toml
-[shortcuts]
-new_tab_kind = "shell"
+[agent]
+thinking_level = "medium"   # off | minimal | low | medium | high | xhigh
+codex_fast_mode = false     # Codex models: trade reasoning depth for speed
 ```
 
-`"agent"` (the default) keeps the focus-aware behavior: `Cmd+T` opens an
-agent tab unless focus is in the bottom terminal panel. `"shell"` makes
-`Cmd+T` always open a shell sub-tab.
+`thinking_level` is the default reasoning effort for new tabs; leave it
+unset to use each provider's own default. A tab can override it per session
+from the model picker's reasoning selector (see
+[Agents](/guide/agents#reasoning-effort)). `codex_fast_mode` only affects
+Codex-family models.
 
 ## Enable or tune the Nix devshell wrap
 
@@ -313,10 +339,21 @@ the backstop. Both apply on the next agent spawn.
 [voice]
 toggle_hotkey = "mod+shift+m"   # mod = Cmd on macOS, Ctrl elsewhere
 # hold_hotkey = "AltRight"      # optional push-to-talk physical key
+speak_agent_replies = false     # read agent replies aloud (LFM2-Audio TTS)
+speak_max_chars = 600           # cap spoken reply length, in characters
+conversation_continuous = false # hands-free: auto-listen after each spoken reply
 ```
 
 `mod` maps to Cmd on macOS and Ctrl on Linux/Windows. `hold_hotkey` is an
 optional hold-to-record key (default `AltRight` / Option on macOS only).
+
+The last three keys drive the LFM2-Audio speak-aloud / hands-free
+conversation mode: `speak_agent_replies` reads replies back to you,
+`speak_max_chars` caps how much of a long reply is spoken, and
+`conversation_continuous` re-arms the mic after each reply for a hands-free
+loop. Auto-listen is also a runtime toggle in the conversation HUD (off by
+default). Push-to-talk is `Cmd+Shift+M` (the `toggle_hotkey` above); the
+optional `hold_hotkey` is a press-and-hold-to-record physical key.
 
 ::: warning
 Voice requires the `voice` build feature. On a build without it these keys
@@ -324,13 +361,55 @@ are inert and the voice commands return the error `voice support not built
 into this binary`.
 :::
 
+## MCP servers
+
+Aethon can connect to [Model Context Protocol](https://modelcontextprotocol.io)
+servers and expose their tools to the agent.
+
+```toml
+[mcp]
+enabled = true                        # host-level MCP support
+project_configs = "require-approval"  # auto-load | require-approval | never
+```
+
+`enabled` turns MCP support on or off at the host level. `project_configs`
+is the trust policy for repo-owned MCP files (`<project>/.aethon/mcp.toml`
+or `.mcp.json`):
+
+- `require-approval` (default) — load repo MCP files only after you approve them.
+- `auto-load` — trust and load repo MCP files automatically.
+- `never` — ignore repo MCP files entirely.
+
+Use `/mcp status` to inspect connections, `/mcp setup` to add a server, and
+`/mcp-auth [server]` to run a server's auth flow. See
+[Slash commands](/reference/slash-commands).
+
+## Workspace startup commands
+
+A workspace can declare startup commands that run when it becomes active,
+defined per project in `<project>/.aethon/startup.toml`. The host gate
+controls whether those commands run without a prompt:
+
+```toml
+[startup]
+auto_approve = false   # true = run workspace startup commands without confirming
+```
+
+Leave `auto_approve = false` to be asked before a workspace's startup
+commands run; set it to `true` to trust them globally.
+
 ## Per-project configuration
 
-Only `[devshell]` supports a per-project override today, via
-`<project-root>/.aethon/devshell.toml` (see
+Only `[devshell]` supports a per-project override of a `config.toml`
+section, via `<project-root>/.aethon/devshell.toml` (see
 [the devshell section above](#enable-or-tune-the-nix-devshell-wrap)).
 Every other section is global to `~/.aethon/config.toml`; there is no
 per-project variant for `[ui]`, `[agent]`, `[shell]`, and the rest.
+
+Separately, a repo can ship its own definitions in `.aethon/`:
+`mcp.toml` / `.mcp.json` (MCP servers, gated by `[mcp] project_configs`)
+and `startup.toml` (workspace startup commands, gated by `[startup]
+auto_approve`). Those are repo-owned files, not `config.toml` overrides.
 
 ## Hot-reload
 
@@ -343,8 +422,7 @@ Most fields take effect on the next render. A few need a spawn or restart:
 - **Next agent spawn** (env-wired): the `[agent]` timeout/idle keys and
   the `[guardrails]` keys flow through `apply_user_env`, so they apply when
   the worker next starts.
-- **Next launch**: `restore_tabs`, `auto_restart_agent`,
-  `[server] enabled`.
+- **Next launch**: `auto_restart_agent`, `[server] enabled`.
 - **Devshell refresh / next spawn**: `[devshell]` fields, plus the
   explicit "Refresh now" button in Settings.
 

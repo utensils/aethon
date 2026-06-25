@@ -43,6 +43,71 @@ auto_approve = true
 
 Project-level trust is available from the project overview tab, but it is stored in Aethon's user-owned startup approval store. Project-local `.aethon/startup.toml` is repo-controlled and cannot approve its own commands to run.
 
+## MCP servers
+
+Aethon loads MCP servers through the bundled `pi-mcp-adapter` extension. Host-level policy and servers live in `~/.aethon/config.toml`; project-level Aethon-owned servers live in `<project>/.aethon/mcp.toml`. Aethon also reads Claude Code / Pi compatibility files: `<project>/.mcp.json` and `<project>/.pi/mcp.json`.
+
+Aethon detects `.mcp.json`, `.pi/mcp.json`, and `.aethon/mcp.toml`, but it does not create host or project config files during detection. Run `/mcp` or `/config` in a project-backed tab to approve the current project fingerprint, keep `.mcp.json` as the source of truth, import it into `.aethon/mcp.toml`, or create the host `[mcp]` policy explicitly. Host config can opt into approval-gated project loading with `project_configs = "require-approval"` or ignore project MCP files with `project_configs = "never"`.
+
+```toml
+# ~/.aethon/config.toml
+[mcp]
+enabled = true
+project_configs = "require-approval"
+imports = ["claude-code"]
+tool_prefix = "server"
+idle_timeout_minutes = 10
+auto_auth = false
+
+[mcp.servers.context7]
+command = "npx"
+args = ["-y", "@context7/mcp"]
+env = { CONTEXT7_API_KEY = "$CONTEXT7_API_KEY" }
+lifecycle = "lazy"
+```
+
+```toml
+# <project>/.aethon/mcp.toml
+[mcp.servers.local-docs]
+command = "bun"
+args = ["run", "scripts/mcp-docs.ts"]
+lifecycle = "lazy"
+```
+
+The JSON compatibility files use the standard MCP shape:
+
+```json
+{
+  "mcpServers": {
+    "local-docs": {
+      "command": "bun",
+      "args": ["run", "scripts/mcp-docs.ts"]
+    }
+  }
+}
+```
+
+### MCP fields
+
+The top-level `[mcp]` table supports:
+
+- `enabled` — set to `false` to disable the bundled MCP adapter. Defaults to `true`.
+- `project_configs` — `require-approval`, `auto-load`, or `never`. Defaults to `require-approval`.
+- `imports` — adapter import sources such as `claude-code`, `claude-desktop`, `cursor`, `vscode`, `windsurf`, or `codex`.
+- `tool_prefix` — prefix used by adapter search/descriptions for server-scoped tools.
+- `idle_timeout_minutes` — default MCP server idle timeout.
+- `auto_auth` — whether the adapter should try OAuth automatically when a server needs auth.
+- `sampling_auto_approve` — whether adapter sampling requests may be approved automatically.
+
+Each `[mcp.servers.<name>]` entry supports:
+
+- `command` plus optional `args`, `env`, and `cwd` for stdio servers.
+- `url`, `headers`, `auth`, `oauth`, `bearer_token`, and `bearer_token_env` for remote servers.
+- `lifecycle` — `lazy`, `session`, or `persistent`.
+- `idle_timeout_minutes`, `expose_resources`, `exclude_tools`, and `debug`.
+
+Aethon deliberately runs the adapter in compact proxy mode for now. `direct_tools` / `directTools` keys in host, project, or compatibility config are ignored so large MCP servers do not expand the base tool list.
+
 ## Issue-to-agent templates
 
 The project dashboard's **Open issues** section reads optional templates from `<project>/.aethon/issues.toml`.

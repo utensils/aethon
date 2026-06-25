@@ -24,9 +24,13 @@ we ship). The signed `.app.tar.gz` updater bundle is what
 release X.Y.Z`. It bumps `package.json`, `package-lock.json`, and
    `CHANGELOG.md`.
 3. A follow-up job in the same workflow runs `bun run version:sync`
-   on the PR branch and force-pushes the synced `tauri.conf.json` +
-   `src-tauri/Cargo.toml` + `src-tauri/Cargo.lock` to that branch, so
-   `bun run version:check` passes on the PR's CI.
+   on the PR branch and pushes a new `chore: sync version files` commit
+   to it (`git push origin HEAD:<branch>` — a normal push, not a
+   force-push), so `bun run version:check` passes on the PR's CI.
+   `version:sync` (`scripts/sync-version.mjs`) syncs `tauri.conf.json`,
+   `src-tauri/Cargo.toml`, and `src-tauri/Cargo.lock` from
+   `package.json` (it also rewrites `package-lock.json`, but
+   release-please already owns and bumps that file).
 4. Merge the release PR. release-please creates the `vX.Y.Z` tag +
    GitHub Release (immediately marked draft).
 5. The embedded reusable CI (`_ci.yml`) runs against the release ref
@@ -191,6 +195,33 @@ quarantine it).
    Keep the `.cer` in Keychain Access on at least one Mac (and back
    it up via Keychain export to encrypted storage) — that's your
    only copy.
+
+### release-please GitHub App (already done on this repo)
+
+release-please opens the `chore(main): release X.Y.Z` PR, and the
+version-sync job pushes a commit to it. Both must act as a real,
+non-bot identity. GitHub's recursion guard means events triggered by
+the default `GITHUB_TOKEN` (and bot identities like
+`github-actions[bot]`) do **not** start new workflow runs — so if the
+release PR were authored, or its HEAD commit pushed, with
+`GITHUB_TOKEN`, the `pull_request` / `pull_request: synchronize` events
+would never fire, CI would never report status on the PR, and branch
+protection's required checks would sit in "Expected — waiting for
+status" forever, blocking the merge.
+
+The workflow avoids that by minting a short-lived token from a GitHub
+App (`aethon-release-bot`) in **both** the release job and the
+version-sync job. Required status checks bind to the PR HEAD SHA, so the
+sync commit that becomes the new HEAD must also be pushed by the App —
+not just the initial PR.
+
+| Secret                           | What it is                                                        |
+| -------------------------------- | ----------------------------------------------------------------- |
+| `RELEASE_PLEASE_APP_ID`          | The `aethon-release-bot` GitHub App's App ID                      |
+| `RELEASE_PLEASE_APP_PRIVATE_KEY` | The App's private key (full `.pem` contents, BEGIN/END lines too) |
+
+Both are required. Without them, CI never runs on the release PR and
+branch protection blocks the merge.
 
 ### Other secrets
 

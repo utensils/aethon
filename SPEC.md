@@ -3,7 +3,7 @@
 > Pi with a face. A native desktop shell where the agent decides what you see.
 
 Status legend: `[x]` done · `[~]` partial / in progress · `[ ]` not started.
-Last reviewed: 2026-05-28 (doc-sync pass: **M7 — Voice Input & Multi-Account Auth** added below to record shipped voice-to-text dictation, multi-account auth profiles, and the `env.rs` command-PATH resolver; README / website / `docs/aethon-agent` / CLAUDE.md / AGENTS.md brought into sync). Previous review: 2026-05-24 (workstation/project polish: git worktrees are first-class sidebar/project-dashboard entries, issue "Send to agent" launches fresh workspaces with metadata-aware branch names, frontend code HMR reloads the app shell after persisting state, and `package.json` is the app-version source of truth mirrored into Tauri/Cargo by `scripts/sync-version.mjs`). Previous review: 2026-04-29 (forward-looking audit pass: M1–M5 complete; **M6 — Interactive Terminals & Workspace Polish** added below to scope real PTY-backed user shell tabs, an opt-in agent-sharing model, hotkey expansion, a graphical settings panel, drag-and-drop into the composer, OS notifications, bridge crash recovery, and a handful of polish items uncovered by the audit). Recent additions: native A2UI canvas windows for separate restorable OS-window workpads, viewport-compensated UI zoom (`--app-ui-scale` + measured viewport tokens), project/git status badges in sidebar and palette, Cmd/Ctrl+K clear-chat and Cmd/Ctrl+. stop-prompt wiring, project-local `.aethon/extensions/` discovery from cwd to git root, in-app `/extensions install <npm-package|git-url>` extension-package installation, layout-slot contract (`slots.json` + canonical area names + `slotMap`), generic `extension_lifecycle` feedback channel, extension-deletion state pruning via `extensionStateKeys`, cargo + vitest unit-test scaffolding, ESLint with react-hooks rules wired into `check`, a Nix distribution package + overlay, tag-driven GitHub release publishing for v0.2.0, and Windows x64 NSIS release bundles.
+Last reviewed: 2026-06-25 (full doc-sync pass at **v0.10.2**: README / website / `docs/aethon-agent` / CLAUDE.md / AGENTS.md / RELEASING.md brought back into sync with the shipped surface; the release pipeline has narrowed to **macOS Apple Silicon only via release-please** — see `RELEASING.md`; **M8 — Workspaces, MCP, Subagents & Scheduling** added below to record the features shipped since M7). Previous review: 2026-05-28 (doc-sync pass: **M7 — Voice Input & Multi-Account Auth** added below to record shipped voice-to-text dictation, multi-account auth profiles, and the `env.rs` command-PATH resolver; README / website / `docs/aethon-agent` / CLAUDE.md / AGENTS.md brought into sync). Previous review: 2026-05-24 (workstation/project polish: git worktrees are first-class sidebar/project-dashboard entries, issue "Send to agent" launches fresh workspaces with metadata-aware branch names, frontend code HMR reloads the app shell after persisting state, and `package.json` is the app-version source of truth mirrored into Tauri/Cargo by `scripts/sync-version.mjs`). Previous review: 2026-04-29 (forward-looking audit pass: M1–M5 complete; **M6 — Interactive Terminals & Workspace Polish** added below to scope real PTY-backed user shell tabs, an opt-in agent-sharing model, hotkey expansion, a graphical settings panel, drag-and-drop into the composer, OS notifications, bridge crash recovery, and a handful of polish items uncovered by the audit). Recent additions: native A2UI canvas windows for separate restorable OS-window workpads, viewport-compensated UI zoom (`--app-ui-scale` + measured viewport tokens), project/git status badges in sidebar and palette, Cmd/Ctrl+K clear-chat and Cmd/Ctrl+. stop-prompt wiring, project-local `.aethon/extensions/` discovery from cwd to git root, in-app `/extensions install <npm-package|git-url>` extension-package installation, layout-slot contract (`slots.json` + canonical area names + `slotMap`), generic `extension_lifecycle` feedback channel, extension-deletion state pruning via `extensionStateKeys`, cargo + vitest unit-test scaffolding, ESLint with react-hooks rules wired into `check`, a Nix distribution package + overlay, tag-driven GitHub release publishing for v0.2.0, and Windows x64 NSIS release bundles.
 
 ---
 
@@ -22,7 +22,7 @@ Helios's sun chariot. The blazing one that shapes what you see.
 
 | Decision              | Choice                                                                | Rationale                                                                                                                         |
 | --------------------- | --------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| Agent runtime         | Pi SDK (embedded)                                                     | Direct `createAgentSession()`, no subprocess bridge for agent logic                                                               |
+| Agent runtime         | Pi SDK (embedded)                                                     | Pi runs in a `bun` subprocess bridge (JSON-lines over stdio); `createAgentSession()` lives in the bridge, not the Rust shell      |
 | Primary language      | TypeScript (agent + UI) / Rust (OS shim)                              | Native pi integration, single language for extensions                                                                             |
 | Desktop framework     | Tauri 2                                                               | Native binary, ~5MB shell, system webview                                                                                         |
 | UI protocol           | A2UI v0.9 (full spec)                                                 | Agent-generated declarative UI, framework-agnostic                                                                                |
@@ -187,7 +187,7 @@ not a persisted `~/.aethon/layouts/default.a2ui.json` file.
 - [x] Brand mark — `assets/brand/aethon-logo.svg` (cream Bodoni Æ + orange π badge on dark tile) and `aethon-brand-marks.svg` (6-format reference sheet). Rasterized into every Tauri target via `bun tauri icon`. In-app header shows the logo alongside "Aethon" via Vite `?url` import + `$ref`-bound state.
 - [x] macOS About dialog metadata — `bundle.{publisher,homepage,copyright,category,shortDescription,longDescription}` + `bundle.macOS.minimumSystemVersion` populate `Info.plist` (`NSHumanReadableCopyright`, `LSApplicationCategoryType`, etc.). Shows the proper icon + version + "Copyright © 2026 James Brink. MIT License." attribution. Dev binary still shows the generic icon (it's a raw Mach-O without a `.app` wrapper).
 - [x] Nix flake overlay for distribution — `flake.nix` now exports `packages.aethon`, `packages.default`, and `overlays.default` (`pkgs.aethon`). The package follows nixpkgs' Tauri packaging path with `cargo-tauri.hook`, the pinned Rust 1.92 toolchain, `fetchNpmDeps` backed by `package-lock.json`, Linux WebKitGTK build inputs, and a macOS `$out/bin/aethon` wrapper around the generated `.app`. Nix builds disable updater artifact generation inside the build copy so distribution packages don't require release signing secrets.
-- [x] First public release — `CHANGELOG.md` now has dated `0.1.0` and `0.2.0` sections, and `.github/workflows/release.yml` publishes public GitHub releases from `v*.*.*` tags. The workflow builds signed macOS Apple Silicon + Intel DMGs with updater tarballs/signatures/`latest.json`, Linux x86_64 `.deb` and `.rpm` installers, Windows x64 NSIS setup executables, and the `aethon` Rust crate on crates.io using `CARGO_REGISTRY_TOKEN`. Linux AppImage/updater artifacts are intentionally omitted until `linuxdeploy` is reliable in CI; the Linux installer bundles and Windows NSIS bundle are verified green.
+- [x] First public release — `CHANGELOG.md` carries dated release sections (`0.1.0` onward). The early `0.1.0`/`0.2.0` releases shipped a multi-platform matrix, but the pipeline has since moved to **release-please** (`.github/workflows/release-please.yml`, triggered on merge to `main` rather than a `v*` tag) and currently builds **macOS Apple Silicon only** — `app` + `dmg` + updater `latest.json`, signed via `TAURI_SIGNING_PRIVATE_KEY`. The release PR is authored with the `aethon-release-bot` GitHub App token so CI fires on it. The `aethon` crate still publishes to crates.io via `CARGO_REGISTRY_TOKEN`. `cargo tauri build` itself can still produce Linux `.deb`/`.rpm` and Windows NSIS bundles locally; they are simply not in the release matrix today. See `RELEASING.md`.
 - [x] Version source-of-truth guard — `package.json` owns the app version shown in the sidebar via direct JSON import, and `scripts/sync-version.mjs` mirrors it into `package-lock.json`, `tauri.conf.json`, `Cargo.toml`, and `Cargo.lock`. CI/release run `bun run version:check`.
 
 ### M5 — Agent Control Surface (the "no hardcoded chrome" gap)
@@ -398,6 +398,59 @@ pick which one each tab speaks as.
 - [x] **Docs synced** — README feature list, `website/` (voice config,
       keyboard reference, `/login`), `docs/aethon-agent/api.md`, CLAUDE.md, and
       AGENTS.md updated alongside the shipped surface.
+
+### M8 — Workspaces, MCP, Subagents & Scheduling
+
+Shipped across the `0.3.0`–`0.10.2` line (see `CHANGELOG.md` for the
+per-release detail). Recorded here so the checklist tracks the current
+surface.
+
+- [x] **First-class workspaces** (BREAKING, `#259`) — a project has one or
+      more workspaces (the main checkout `isMain: true` or a git worktree),
+      each with its own tabs, agent sessions, git state, and devshell. The
+      sidebar tree is host → project → workspace; tabs bucket per workspace;
+      git-status polling is tiered (hot/warm/cold). `projects.json` is
+      schemaVersion 5 (older schemas migrate on read). Concept-level copy says
+      "workspace"; "worktree" survives only at the git-mechanics layer.
+- [x] **MCP setup + config flows** (`#407`) — Model Context Protocol support
+      with `/mcp [status|setup]` and `/mcp-auth [server]`, host policy
+      (`[mcp] enabled` / `project_configs`), and repo-owned config import from
+      `.aethon/mcp.toml` / `.mcp.json` behind an approval gate.
+- [x] **Subagents + parallel background delegation** (`#208`, `#299`) —
+      configurable multi-model subagents, session rollback/fork, and parallel
+      background task delegation through the task tool.
+- [x] **Native scheduler — loops & scheduled tasks** — `/loop`, `/tasks`
+      (`Cmd+Shift+L`), and a native loop scheduler for recurring agent runs.
+- [x] **GitHub issue → session linking** (`fc869bf4`) — sending an issue to
+      the agent targets a new or the current workspace and re-opens an
+      existing linked session instead of forking; per-repo `.aethon/issues.toml`
+      handoff templates and inferred branch names.
+- [x] **Workspace startup commands** — per-project `.aethon/startup.toml`
+      commands gated by `[startup] auto_approve` (opt-in execution boundary).
+- [x] **Native A2UI canvas windows** (`#318`) — separate restorable OS
+      windows rendering bare A2UI canvas content with window-local state.
+- [x] **Multi-account auth** (`#323`) — multiple accounts per provider with
+      usage stats, isolation, switching, and auto-switch; `/login [list | use
+    <account> | default <account>]`.
+- [x] **Voice — LFM2-Audio third mode + auto-listen** (`#289`, `#293`, `#294`)
+      — push-to-talk (`Cmd+Shift+M`) and hold-to-record dictation plus an
+      end-to-end ASR+TTS conversational mode (speak-aloud replies, hands-free
+      auto-listen, off by default).
+- [x] **Enforced plan mode + reasoning controls** (`929c9cc`, `#319`,
+      `8eaab89`) — `/plan` / `Shift+Tab` planning-only mode the agent
+      enforces, a compact plan-mode toggle, and Codex reasoning-effort
+      controls (`[agent] thinking_level`).
+- [x] **Memory** (`#270`) — `/memory`; per-user and resolved-project memory
+      the agent can read and write.
+- [x] **Editor + dashboards** (`#71`, `db89c19`) — Monaco editor, file tree,
+      and media/text viewers; project/host dashboards with a host-level task
+      launcher.
+- [x] **Always-on VCS surface** — consolidated working-tree/branch/PR/CI
+      status (`/vcs`), `.git` watching, periodic remote fetch; `@file`
+      completion picker, clickable terminal URLs, markdown-preview parity.
+- [x] **Window-state persistence** (`#69`) and **mDNS networked discovery**
+      (`#74`) — position/size/multi-monitor restore; LAN host advertise/browse
+      gated by `[server] enabled`.
 
 ### Cross-cutting
 
@@ -613,33 +666,45 @@ aethon/
 
 ### Distribution
 
-- macOS: `.dmg` (Apple Silicon + Intel universal)
-- Linux: AppImage (x86_64 + aarch64)
-- Windows: `.msi` (x86_64 + ARM64)
+- macOS: `.dmg` (Apple Silicon) + updater tarball/`latest.json` — the only target the release CI builds today
+- Linux: `.deb` / `.rpm` via local `cargo tauri build` (not in the release matrix today)
+- Windows: NSIS via local `cargo tauri build` (not in the release matrix today)
 - Nix: Flake with `packages.aethon`, `packages.default`, and `overlays.default` (`pkgs.aethon`)
 
 ---
 
 ## Configuration
 
-**Currently parsed schema** (see `src-tauri/src/lib.rs:read_config` and
-`src/config.ts`):
+The canonical schema, defaults, and clamps live in
+`src-tauri/src/helpers/config.rs` (`parse_config_toml`) and `src/config.ts`;
+the full per-key reference is `website/reference/config-reference.md`.
+Parsed sections: `[ui]`, `[agent]`, `[shell]`, `[shortcuts]`, `[voice]`,
+`[extensions]`, `[updates]`, `[devshell]`, `[server]`, `[startup]`, `[mcp]`,
+`[guardrails]`.
 
 ```toml
 # ~/.aethon/config.toml
 
 [ui]
-theme = "ember"          # built-ins: "ember" | "paper" | "aether"
-                         # legacy aliases: "signature" -> "aether",
-                         # "dark" -> "ember", "light" -> "paper"
-                         # extension/loose-file themes are accepted once
-                         # they are registered during boot
-font_size = 13           # clamps to 10-24 and writes --app-font-size
-restore_tabs = false     # true auto-opens discovered per-tab sessions on launch
+theme = "ember"          # built-ins: ember | paper | aether | brink |
+                         # daylight | mist | nocturne ("signature" is a
+                         # back-compat alias for aether); extension/
+                         # loose-file themes are accepted once registered
+font_size = 14           # clamps to 10-24 and writes --app-font-size
+# thinking_visibility / tool_calls_visibility default to "hide" when unset
+# restore_tabs is a deprecated no-op compat key (session restore is per-workspace)
 
 [agent]
 model = "anthropic/claude-sonnet-4-6"   # seeds the picker/default display
-                                        # when no per-session model is saved
+thinking_level = "medium"               # off|minimal|low|medium|high|xhigh
+# codex_fast_mode, provider/bash/subagent timeouts, idle_retire_minutes
+
+[mcp]
+enabled = true                  # host-level Model Context Protocol support
+project_configs = "require-approval"   # auto-load | require-approval | never
+
+[startup]
+auto_approve = false            # trust per-project .aethon/startup.toml commands
 
 [devshell]
 enabled = "auto"                # "auto" | "always" | "never"
@@ -648,19 +713,11 @@ cache_ttl_hours = 720           # GC ceiling for on-disk snapshots; 0 disables
 refresh_on_lockfile_change = true
 ```
 
-Per-project override at `<project>/.aethon/devshell.toml` (same shape; merges over the global section). Used to mark one repo as `enabled = "never"` while keeping devshell on globally.
+Per-project override at `<project>/.aethon/devshell.toml` (same shape; merges over the global section). Used to mark one repo as `enabled = "never"` while keeping devshell on globally. `[mcp]` and `[startup]` also read per-project files (`.aethon/mcp.toml`, `.aethon/startup.toml`).
 
 Pi settings (`~/.pi/agent/settings.json`) drive provider/auth, model
 discovery, and `enabledModels` filtering for the picker. Aethon's
 config layers on top, not a replacement.
-
-**Planned for M6**: `[shell]` (default command/args, env passthrough,
-default share mode, prompt-before-close, login-PATH override),
-`[shortcuts] new_tab_kind` (Cmd+T migration opt-out), and
-`[ui] notify_on_completion` + `notify_min_duration_seconds`.
-
-**Backlog**: `[updater]` (endpoint, channel) deferred to M7 alongside the
-multi-channel release pipeline.
 
 ---
 

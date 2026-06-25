@@ -40,8 +40,13 @@ Aethon persists each tab to `~/.aethon/state.json`:
   bottom panel's "Agent bash" sub-tab.
 - **Pi session id** — pointer into `~/.aethon/sessions/<tabId>/`.
 
-If you set `[ui] restore_tabs = true` (the default), all of this comes
-back on next launch.
+All of this is persisted and comes back on next launch — tabs and their
+sessions are restored per workspace.
+
+::: tip
+The legacy `[ui] restore_tabs` key is vestigial: it is still parsed but
+has no runtime effect, so there is no toggle to turn restoration on or off.
+:::
 
 ## Composing messages
 
@@ -60,11 +65,19 @@ If you press Enter while a turn is already running, Aethon queues the
 message as a follow-up. `Cmd+Enter` / `Ctrl+Enter` steers the active
 turn instead.
 
-Slash commands like `/clear`, `/help`, `/theme`, `/model`, `/login`,
-`/reset`, `/reload`, `/terminal`, `/extensions`, `/sidebar`, `/files`,
-`/layout`, and `/project` are recognised when typed at the start of the
-composer. Unknown `/<word>` falls through to the model — useful when pi
-or an extension owns the command.
+Slash commands are recognised when typed at the start of the composer.
+A non-exhaustive sampling:
+
+- **Session**: `/clear`, `/compact`, `/context`, `/session`, `/name`,
+  `/rename`, `/export`, `/memory`, `/reset`.
+- **Agent behavior**: `/model`, `/plan`, `/login`, `/init`, `/config`.
+- **MCP**: `/mcp`, `/mcp-auth`.
+- **Scheduled tasks**: `/loop`, `/tasks`.
+- **UI / project**: `/theme`, `/layout`, `/terminal`, `/sidebar`,
+  `/files`, `/extensions`, `/reload`, `/project`, `/help`.
+
+Unknown `/<word>` falls through to the model — useful when pi or an
+extension owns the command.
 
 See the full [slash command reference](/reference/slash-commands).
 
@@ -74,6 +87,15 @@ If you type and send while the agent is mid-turn, the message is queued.
 The status bar shows `queued: N`. The next turn starts immediately after
 the current one ends. To cancel a queue, clear the composer or
 `Cmd+.` to stop and discard.
+
+## Scheduled tasks (loops)
+
+A tab can run a prompt on a recurring schedule. `Cmd+Shift+L` opens the
+**Scheduled Tasks** panel; from the composer, `/loop [interval] [prompt]`
+starts a loop (omit the interval to let the agent self-pace, or
+`/loop reuse <id>` to adopt an existing one), and `/tasks
+[list|run|pause|resume|cancel|delete <id>]` manages them. See the
+[slash command reference](/reference/slash-commands).
 
 ## Switching models
 

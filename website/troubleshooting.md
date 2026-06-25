@@ -38,7 +38,7 @@ A tab whose agent hasn't run any bash yet shows the placeholder text.
 
 If a tab _has_ run bash and the panel is still blank:
 
-- Toggle the panel (`Cmd+\``) to force a re-render.
+- Toggle the panel (`Ctrl+\``) to force a re-render.
 - Confirm the agent process is healthy — `/extensions` should list
   at least the default-layout extension.
 - Check stderr for bridge errors.
