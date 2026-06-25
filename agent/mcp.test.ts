@@ -613,94 +613,105 @@ project_configs = "require-approval"
   it(
     "refreshes the pi adapter config for the executing session cwd",
     async () => {
-      const root = tempRoot();
-      const userDir = join(root, "user");
-      const projectA = join(root, "project-a");
-      const projectB = join(root, "project-b");
-      mkdirSync(projectA, { recursive: true });
-      mkdirSync(projectB, { recursive: true });
-      write(
-        join(userDir, "config.toml"),
-        `
+      vi.doMock("pi-mcp-adapter/index.ts", () => ({
+        default: (pi: { registerTool: (tool: Record<string, unknown>) => void }) => {
+          pi.registerTool({
+            name: "mcp",
+            execute: () => "ok",
+          });
+        },
+      }));
+      try {
+        const root = tempRoot();
+        const userDir = join(root, "user");
+        const projectA = join(root, "project-a");
+        const projectB = join(root, "project-b");
+        mkdirSync(projectA, { recursive: true });
+        mkdirSync(projectB, { recursive: true });
+        write(
+          join(userDir, "config.toml"),
+          `
 [mcp]
 project_configs = "auto-load"
 `,
-      );
-      write(
-        join(projectA, ".mcp.json"),
-        JSON.stringify({ mcpServers: { alpha: { command: "node" } } }),
-      );
-      write(
-        join(projectB, ".mcp.json"),
-        JSON.stringify({ mcpServers: { beta: { command: "node" } } }),
-      );
+        );
+        write(
+          join(projectA, ".mcp.json"),
+          JSON.stringify({ mcpServers: { alpha: { command: "node" } } }),
+        );
+        write(
+          join(projectB, ".mcp.json"),
+          JSON.stringify({ mcpServers: { beta: { command: "node" } } }),
+        );
 
-      const tools: Record<string, Record<string, unknown>> = {};
-      await buildAethonMcpExtension({ userDir, cwd: projectA })({
-        registerFlag: () => {},
-        registerTool: (tool: { name: string } & Record<string, unknown>) => {
-          tools[tool.name] = tool;
-        },
-        registerCommand: () => {},
-        getAllTools: () => [],
-        getFlag: () => undefined,
-        on: () => {},
-      });
+        const tools: Record<string, Record<string, unknown>> = {};
+        await buildAethonMcpExtension({ userDir, cwd: projectA })({
+          registerFlag: () => {},
+          registerTool: (tool: { name: string } & Record<string, unknown>) => {
+            tools[tool.name] = tool;
+          },
+          registerCommand: () => {},
+          getAllTools: () => [],
+          getFlag: () => undefined,
+          on: () => {},
+        });
 
-      const execute = tools.mcp.execute as (
-        id: string,
-        params: Record<string, unknown>,
-        signal: AbortSignal | undefined,
-        onUpdate: unknown,
-        ctx: Record<string, unknown>,
-      ) => Promise<unknown>;
+        const execute = tools.mcp.execute as (
+          id: string,
+          params: Record<string, unknown>,
+          signal: AbortSignal | undefined,
+          onUpdate: unknown,
+          ctx: Record<string, unknown>,
+        ) => Promise<unknown>;
 
-      await execute(
-        "call-a",
-        {},
-        undefined,
-        undefined,
-        fakeExtensionContext(projectA),
-      );
-      expect(
-        Object.keys(
-          JSON.parse(
-            readFileSync(resolvedGeneratedPath(userDir, projectA), "utf8"),
-          ).mcpServers,
-        ),
-      ).toEqual(["alpha"]);
+        await execute(
+          "call-a",
+          {},
+          undefined,
+          undefined,
+          fakeExtensionContext(projectA),
+        );
+        expect(
+          Object.keys(
+            JSON.parse(
+              readFileSync(resolvedGeneratedPath(userDir, projectA), "utf8"),
+            ).mcpServers,
+          ),
+        ).toEqual(["alpha"]);
 
-      await execute(
-        "call-b",
-        {},
-        undefined,
-        undefined,
-        fakeExtensionContext(projectB),
-      );
-      expect(
-        Object.keys(
-          JSON.parse(
-            readFileSync(resolvedGeneratedPath(userDir, projectB), "utf8"),
-          ).mcpServers,
-        ),
-      ).toEqual(["beta"]);
+        await execute(
+          "call-b",
+          {},
+          undefined,
+          undefined,
+          fakeExtensionContext(projectB),
+        );
+        expect(
+          Object.keys(
+            JSON.parse(
+              readFileSync(resolvedGeneratedPath(userDir, projectB), "utf8"),
+            ).mcpServers,
+          ),
+        ).toEqual(["beta"]);
 
-      await execute(
-        "call-a2",
-        {},
-        undefined,
-        undefined,
-        fakeExtensionContext(projectA),
-      );
-      expect(
-        Object.keys(
-          JSON.parse(
-            readFileSync(resolvedGeneratedPath(userDir, projectA), "utf8"),
-          ).mcpServers,
-        ),
-      ).toEqual(["alpha"]);
+        await execute(
+          "call-a2",
+          {},
+          undefined,
+          undefined,
+          fakeExtensionContext(projectA),
+        );
+        expect(
+          Object.keys(
+            JSON.parse(
+              readFileSync(resolvedGeneratedPath(userDir, projectA), "utf8"),
+            ).mcpServers,
+          ),
+        ).toEqual(["alpha"]);
+      } finally {
+        vi.doUnmock("pi-mcp-adapter/index.ts");
+      }
     },
-    15_000,
   );
 
   it("keeps MCP servers alive when the executing config is unchanged", async () => {
