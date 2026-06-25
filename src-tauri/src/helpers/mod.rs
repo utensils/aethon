@@ -24,9 +24,10 @@ pub mod paths;
 pub use config::{
     AGENT_TIMEOUT_SECONDS_DEFAULT, FONT_SIZE_MAX, FONT_SIZE_MIN, clamp_font_size,
     normalize_default_share_mode, normalize_devshell_enabled, normalize_devshell_mode,
-    normalize_new_tab_kind, normalize_optional_timeout_seconds, normalize_thinking_level,
-    normalize_timeout_seconds, normalize_tool_visibility, normalize_update_channel,
-    normalize_visibility, parse_config_toml, parse_host_startup_auto_approve,
+    normalize_mcp_project_configs, normalize_new_tab_kind, normalize_optional_timeout_seconds,
+    normalize_thinking_level, normalize_timeout_seconds, normalize_tool_visibility,
+    normalize_update_channel, normalize_visibility, parse_config_toml,
+    parse_host_startup_auto_approve,
 };
 pub use names::{sanitize_filename_segment, validate_state_name};
 pub use paths::{aethon_dir, resolve_inside_root};

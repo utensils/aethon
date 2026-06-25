@@ -15,6 +15,9 @@ export function buildHydratedSlashCommands(
     usage?: string;
   }) => SlashCommand,
 ): SlashCommand[] {
+  const visiblePiCommands = piCommands.filter(
+    (command) => !isHiddenPiMcpCommand(command.name),
+  );
   const builtinNames = new Set(builtins.map((c) => c.name));
   const dispatched = extensionCommands
     .filter((c) => !builtinNames.has(c.name))
@@ -23,7 +26,7 @@ export function buildHydratedSlashCommands(
     ...builtins.map((c) => c.name),
     ...dispatched.map((c) => c.name),
   ]);
-  const piPassthroughCommands: SlashCommand[] = piCommands
+  const piPassthroughCommands: SlashCommand[] = visiblePiCommands
     .filter((s) => !reservedNames.has(s.name))
     .map((s) => ({
       name: s.name,
@@ -33,6 +36,10 @@ export function buildHydratedSlashCommands(
       run: () => {},
     }));
   return [...builtins, ...dispatched, ...piPassthroughCommands];
+}
+
+function isHiddenPiMcpCommand(name: string): boolean {
+  return /^mcp(?:-auth)?(?::\d+)?$/.test(name);
 }
 
 export interface SlashCommandsDeps {

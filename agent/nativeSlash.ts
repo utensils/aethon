@@ -125,6 +125,22 @@ export function formatSessionStatsMessage(
   return lines.join("\n");
 }
 
+function tryRunExtensionSlashCommand(
+  tab: Awaited<ReturnType<typeof ensureTab>>,
+  command: string,
+  args: unknown,
+): Promise<boolean> {
+  const runExtensionCommand = (
+    tab.session as {
+      _tryExecuteExtensionCommand?: (text: string) => Promise<boolean>;
+    }
+  )._tryExecuteExtensionCommand;
+  if (typeof runExtensionCommand !== "function") return Promise.resolve(false);
+  const rawArgs = typeof args === "string" ? args.trim() : "";
+  const text = rawArgs ? `/${command} ${rawArgs}` : `/${command}`;
+  return Promise.resolve(runExtensionCommand.call(tab.session, text));
+}
+
 export async function handleNativeSlashCommand(
   state: AethonAgentState,
   deps: DispatcherDeps,
@@ -297,7 +313,10 @@ export async function handleNativeSlashCommand(
       }
       return;
     }
-    default:
+    default: {
+      if (await tryRunExtensionSlashCommand(tab, command, msg.args)) {
+        return;
+      }
       deps.send({
         type: "native_slash_result",
         tabId,
@@ -305,5 +324,6 @@ export async function handleNativeSlashCommand(
         kind: "error",
         message: `Unknown native slash command: /${name}`,
       });
+    }
   }
 }

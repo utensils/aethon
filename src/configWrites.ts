@@ -11,6 +11,7 @@ export const CONFIG_WRITE_SECTIONS = [
   "updates",
   "devshell",
   "startup",
+  "mcp",
   "guardrails",
 ] as const satisfies readonly (keyof AethonConfig)[];
 

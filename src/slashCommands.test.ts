@@ -1,9 +1,15 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   buildBuiltinSlashCommands,
   parseSlashCommand,
   type SlashCommandContext,
 } from "./slashCommands";
+
+const invokeMock = vi.hoisted(() => vi.fn());
+
+vi.mock("@tauri-apps/api/core", () => ({
+  invoke: invokeMock,
+}));
 
 function makeSlashContext(
   overrides: Partial<SlashCommandContext> = {},
@@ -42,6 +48,61 @@ function makeSlashContext(
     ...overrides,
   };
 }
+
+function mockApprovedMcpProject(): void {
+  invokeMock.mockImplementation((command: string) => {
+    if (command === "aethon_setup_status") {
+      return Promise.resolve({
+        root: "/repo",
+        agents: { exists: true, path: "/repo/AGENTS.md", managedBlock: true },
+        startup: { exists: false, path: "/repo/.aethon/startup.toml" },
+        mcpToml: { exists: false, path: "/repo/.aethon/mcp.toml" },
+        claudeMcpJson: { exists: true, path: "/repo/.mcp.json" },
+      });
+    }
+    if (command === "mcp_config_status") {
+      return Promise.resolve({
+        root: "/repo",
+        fingerprint: "fingerprint",
+        state: "approved",
+        required: true,
+        approved: true,
+        enabled: true,
+        projectConfigMode: "require-approval",
+        sources: [
+          {
+            kind: "claude-json",
+            relativePath: ".mcp.json",
+            path: "/repo/.mcp.json",
+          },
+        ],
+        servers: [
+          {
+            name: "query",
+            sourceKind: "claude-json",
+            sourcePath: ".mcp.json",
+            transport: "stdio",
+            command: "nix",
+          },
+        ],
+      });
+    }
+    if (command === "aethon_setup_import_mcp_json") {
+      return Promise.resolve({ path: "/repo/.aethon/mcp.toml" });
+    }
+    if (
+      command === "aethon_setup_set_host_mcp_policy" ||
+      command === "mcp_config_approve"
+    ) {
+      return Promise.resolve(undefined);
+    }
+    return Promise.reject(new Error(`unexpected invoke: ${command}`));
+  });
+}
+
+beforeEach(() => {
+  invokeMock.mockReset();
+});
 
 describe("parseSlashCommand", () => {
   it("returns null for plain text", () => {
@@ -98,6 +159,17 @@ describe("parseSlashCommand", () => {
       args: "file.ts",
     });
   });
+
+  it("normalizes numbered MCP adapter commands to Aethon's local MCP command", () => {
+    expect(parseSlashCommand("/mcp:1")).toEqual({
+      name: "mcp",
+      args: "1",
+    });
+    expect(parseSlashCommand("/mcp-auth:2 login")).toEqual({
+      name: "mcp-auth",
+      args: "2 login",
+    });
+  });
 });
 
 describe("buildBuiltinSlashCommands", () => {
@@ -109,6 +181,10 @@ describe("buildBuiltinSlashCommands", () => {
       "theme",
       "model",
       "plan",
+      "init",
+      "config",
+      "mcp",
+      "mcp-auth",
       "login",
       "context",
       "session",
@@ -379,6 +455,186 @@ describe("buildBuiltinSlashCommands", () => {
     await reload.run("", ctx);
     expect(reloadCalls).toBe(1);
     expect(titles).toContain("Reloading agent…");
+  });
+
+  it("/mcp-auth forwards a server name to the native MCP auth command", async () => {
+    const calls: Array<{ name: string; args: string }> = [];
+    const ctx = makeSlashContext({
+      runNativeCommand: (name, args) => {
+        calls.push({ name, args });
+        return Promise.resolve();
+      },
+    });
+    const auth = buildBuiltinSlashCommands().find(
+      (c) => c.name === "mcp-auth",
+    )!;
+
+    await auth.run("linear", ctx);
+
+    expect(calls).toEqual([{ name: "mcp-auth", args: "linear" }]);
+    expect(invokeMock).not.toHaveBeenCalled();
+  });
+
+  it("/mcp-auth without a server opens the guided MCP setup flow", async () => {
+    mockApprovedMcpProject();
+    const questions: string[] = [];
+    const ctx = makeSlashContext({
+      activeProjectRoot: () => "/repo",
+      askUser: (input) => {
+        questions.push(input.title ?? "");
+        return Promise.resolve({
+          questionId: "test-question",
+          choiceId: "status",
+          label: "Show status",
+        });
+      },
+    });
+    const auth = buildBuiltinSlashCommands().find(
+      (c) => c.name === "mcp-auth",
+    )!;
+
+    await auth.run("", ctx);
+
+    expect(questions).toEqual(["MCP setup"]);
+    expect(invokeMock).toHaveBeenCalledWith("mcp_config_status", {
+      root: "/repo",
+    });
+  });
+
+  it("/mcp lists visible MCP servers", async () => {
+    mockApprovedMcpProject();
+    const askUser = vi.fn();
+    const system: string[] = [];
+    const mcp = buildBuiltinSlashCommands().find((c) => c.name === "mcp")!;
+
+    await mcp.run(
+      "",
+      makeSlashContext({
+        activeProjectRoot: () => "/repo",
+        appendSystem: (text) => system.push(text),
+        askUser,
+      }),
+    );
+
+    expect(askUser).not.toHaveBeenCalled();
+    expect(system).toEqual([
+      "## MCP servers\n- `query` (stdio) from `.mcp.json` — nix",
+    ]);
+  });
+
+  it("/mcp setup opens the guided setup flow after project approval", async () => {
+    mockApprovedMcpProject();
+    const asked: string[] = [];
+    const system: string[] = [];
+    const mcp = buildBuiltinSlashCommands().find((c) => c.name === "mcp")!;
+
+    await mcp.run(
+      "setup",
+      makeSlashContext({
+        activeProjectRoot: () => "/repo",
+        appendSystem: (text) => system.push(text),
+        askUser: (input) => {
+          asked.push(input.title ?? "");
+          expect(input.prompt).toContain("State: approved");
+          expect(input.choices.map((choice) => choice.id)).toContain("status");
+          return Promise.resolve({
+            questionId: "question-1",
+            choiceId: "status",
+            label: "Show status",
+          });
+        },
+      }),
+    );
+
+    expect(asked).toEqual(["MCP setup"]);
+    expect(system).toHaveLength(1);
+    expect(system[0]).toContain("## MCP");
+    expect(system[0]).toContain("Sources: `.mcp.json`");
+  });
+
+  it("/mcp setup creates Aethon MCP config from .mcp.json when selected", async () => {
+    mockApprovedMcpProject();
+    const system: string[] = [];
+    const notifications: string[] = [];
+    const mcp = buildBuiltinSlashCommands().find((c) => c.name === "mcp")!;
+
+    await mcp.run(
+      "setup",
+      makeSlashContext({
+        activeProjectRoot: () => "/repo",
+        appendSystem: (text) => system.push(text),
+        notify: (input) => notifications.push(input.title),
+        askUser: (input) => {
+          expect(input.choices).toContainEqual(
+            expect.objectContaining({
+              id: "import",
+              label: "Create Aethon MCP config",
+            }),
+          );
+          return Promise.resolve({
+            questionId: "question-1",
+            choiceId: "import",
+            label: "Create Aethon MCP config",
+          });
+        },
+      }),
+    );
+
+    expect(invokeMock).toHaveBeenCalledWith("aethon_setup_import_mcp_json", {
+      root: "/repo",
+    });
+    expect(invokeMock).toHaveBeenCalledWith(
+      "mcp_config_approve",
+      expect.objectContaining({ root: "/repo", fingerprint: "fingerprint" }),
+    );
+    expect(notifications).toContain("MCP imported");
+    expect(system[0]).toContain(
+      "Created MCP config at `/repo/.aethon/mcp.toml`",
+    );
+  });
+
+  it("/mcp status prints status without opening the guided setup flow", async () => {
+    mockApprovedMcpProject();
+    const askUser = vi.fn();
+    const system: string[] = [];
+    const mcp = buildBuiltinSlashCommands().find((c) => c.name === "mcp")!;
+
+    await mcp.run(
+      "status",
+      makeSlashContext({
+        activeProjectRoot: () => "/repo",
+        appendSystem: (text) => system.push(text),
+        askUser,
+      }),
+    );
+
+    expect(askUser).not.toHaveBeenCalled();
+    expect(system).toHaveLength(1);
+    expect(system[0]).toContain("## MCP");
+    expect(system[0]).toContain("State: approved");
+  });
+
+  it("/mcp forwards adapter subcommands to the native MCP command", async () => {
+    mockApprovedMcpProject();
+    const notifications: string[] = [];
+    const nativeCalls: Array<{ name: string; args: string }> = [];
+    const mcp = buildBuiltinSlashCommands().find((c) => c.name === "mcp")!;
+
+    await mcp.run(
+      "reconnect linear",
+      makeSlashContext({
+        activeProjectRoot: () => "/repo",
+        notify: (input) =>
+          notifications.push(`${input.title}\n${input.message ?? ""}`),
+        runNativeCommand: (name, args) => {
+          nativeCalls.push({ name, args: args ?? "" });
+          return Promise.resolve();
+        },
+      }),
+    );
+
+    expect(notifications).toEqual([]);
+    expect(nativeCalls).toEqual([{ name: "mcp", args: "reconnect linear" }]);
   });
 
   it("/loop without args opens scheduled tasks without creating a default loop", async () => {

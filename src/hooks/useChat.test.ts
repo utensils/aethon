@@ -62,6 +62,7 @@ const fullConfig: AethonConfig = {
     refreshOnLockfileChange: false,
   },
   startup: { autoApprove: true },
+  mcp: { enabled: true, projectConfigs: "require-approval" },
   guardrails: {
     softPromptAnchor: "stay inside the repo",
     hardEnforceProjectRoot: true,
@@ -475,6 +476,76 @@ describe("useChat setModel", () => {
       role: "user",
       text: "/clear",
     });
+  });
+
+  it("runs active-tab MCP setup as a local slash command instead of sending it to the agent", async () => {
+    const run = vi.fn();
+    const { ctx, stateRef } = buildContext();
+    ctx.slashCommandsRef.current = [
+      {
+        name: "mcp",
+        description: "Show or configure MCP servers",
+        usage: "[setup]",
+        run,
+      },
+      {
+        name: "mcp:1",
+        description: "Pi MCP passthrough duplicate",
+        passthroughToAgent: true,
+        run: vi.fn(),
+      },
+    ];
+    const { result } = renderHook(() => useChat(ctx));
+
+    await act(async () => {
+      await result.current.sendChat("/mcp setup");
+    });
+
+    expect(run).toHaveBeenCalledWith("setup", expect.any(Object));
+    expect(invoke).not.toHaveBeenCalledWith("send_message", expect.any(Object));
+    const tab = (stateRef.current.tabs as Tab[]).find((t) => t.id === "tab-1");
+    expect(tab?.messages.at(-1)).toMatchObject({
+      role: "user",
+      text: "/mcp setup",
+    });
+    expect(tab?.draft).toBe("");
+  });
+
+  it("builds local slash context after the echoed user command timestamp", async () => {
+    const seen: Array<{ afterCreatedAt?: number; tabId?: string }> = [];
+    const run = vi.fn();
+    const { ctx, stateRef } = buildContext();
+    ctx.slashContext = (options) => {
+      seen.push({
+        afterCreatedAt: options?.afterCreatedAt,
+        tabId: options?.tabId,
+      });
+      return {
+        appendSystem: vi.fn(),
+        notify: vi.fn(),
+        clearChat: vi.fn(),
+        setTheme: vi.fn(),
+        setModel: vi.fn(),
+      } as unknown as ReturnType<UseChatContext["slashContext"]>;
+    };
+    ctx.slashCommandsRef.current = [
+      {
+        name: "mcp",
+        description: "MCP servers",
+        run,
+      },
+    ];
+    const { result } = renderHook(() => useChat(ctx));
+
+    await act(async () => {
+      await result.current.sendChat("/mcp status");
+    });
+
+    const tab = (stateRef.current.tabs as Tab[]).find((t) => t.id === "tab-1");
+    expect(seen).toEqual([
+      { afterCreatedAt: tab?.messages.at(-1)?.createdAt, tabId: "tab-1" },
+    ]);
+    expect(run).toHaveBeenCalledWith("status", expect.any(Object));
   });
 
   it("steerQueuedMessage pops the entry, flips the spinner id, and ships it as steer", async () => {

@@ -19,8 +19,9 @@ If the two ever diverge, the bundled docs win.
 
 ## Quick map
 
-The extension API is exposed under a single global, `aethon` (alias of
-`globalThis.aethon`):
+Agent-side extension APIs are exposed under a single global, `aethon`
+(alias of `globalThis.aethon`). Frontend runtime APIs are exposed on
+`window.aethon` inside the webview.
 
 ### Mutation
 
@@ -45,6 +46,15 @@ separately via `aethon.onEvent({ componentType, descendantId }, handler)`
 | `aethon.setState(path, value)` | Mutate a JSON-Pointer-addressed slice of app state. |
 | `aethon.patchLayout(patch)` | Apply a partial layout patch. |
 | `aethon.openProject(path)` | Register and activate a project. |
+
+### Frontend Runtime
+
+These calls are available to frontend extension modules and the dev webview
+runtime as `window.aethon`.
+
+| Call | Purpose |
+|---|---|
+| `window.aethon.askUser({ title?, prompt, choices, allowText? })` | Ask an inline question in chat and resolve with the selected answer. |
 
 ### Introspection
 

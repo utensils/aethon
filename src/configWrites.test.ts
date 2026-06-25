@@ -57,6 +57,7 @@ const liveConfig: AethonConfig = {
     refreshOnLockfileChange: true,
   },
   startup: { autoApprove: true },
+  mcp: { enabled: true, projectConfigs: "require-approval" },
   guardrails: { softPromptAnchor: "stay inside repo", hardEnforceProjectRoot: true },
 };
 
@@ -87,6 +88,7 @@ describe("config write payload helpers", () => {
       updates: liveConfig.updates,
       devshell: liveConfig.devshell,
       startup: liveConfig.startup,
+      mcp: liveConfig.mcp,
       guardrails: liveConfig.guardrails,
     });
   });
@@ -110,6 +112,7 @@ describe("config write payload helpers", () => {
     expect(Object.keys(payload)).toEqual([...CONFIG_WRITE_SECTIONS]);
     expect(payload.startup).toEqual({ autoApprove: false });
     expect(payload.ui).toEqual({});
+    expect(payload.mcp).toEqual({});
     expect(payload.guardrails).toEqual({});
   });
 

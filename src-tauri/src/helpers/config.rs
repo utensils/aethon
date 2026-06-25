@@ -147,6 +147,15 @@ pub struct StartupHostConfig {
 }
 
 #[derive(Default, Deserialize)]
+pub struct McpHostConfig {
+    /// Enable MCP support at the host level. Default true so installing a
+    /// project config plus explicit approval is sufficient.
+    pub enabled: Option<bool>,
+    /// How Aethon handles repo-owned MCP files. Default requires approval.
+    pub project_configs: Option<String>,
+}
+
+#[derive(Default, Deserialize)]
 pub struct DevshellConfig {
     /// Whether to detect + apply a Nix devshell on shell + agent
     /// spawn. Accepted values: `"auto"` (default — detect via marker
@@ -224,6 +233,8 @@ pub struct AethonConfig {
     #[serde(default)]
     pub startup: StartupHostConfig,
     #[serde(default)]
+    pub mcp: McpHostConfig,
+    #[serde(default)]
     pub guardrails: GuardrailsConfig,
 }
 
@@ -260,6 +271,14 @@ pub fn normalize_tool_visibility(input: Option<&str>) -> &'static str {
         Some("collapse") => "group-turn",
         // Includes Some("show"), Some(<unknown>), and None.
         _ => "show",
+    }
+}
+
+pub fn normalize_mcp_project_configs(input: Option<&str>) -> &'static str {
+    match input {
+        Some("auto-load" | "auto_load" | "always") => "auto-load",
+        Some("never" | "disabled") => "never",
+        _ => "require-approval",
     }
 }
 
@@ -497,6 +516,10 @@ pub fn parse_config_toml(input: &str) -> serde_json::Value {
         },
         "startup": {
             "autoApprove": cfg.startup.auto_approve.unwrap_or(false),
+        },
+        "mcp": {
+            "enabled": cfg.mcp.enabled.unwrap_or(true),
+            "projectConfigs": normalize_mcp_project_configs(cfg.mcp.project_configs.as_deref()),
         },
         "guardrails": {
             "softPromptAnchor": soft_prompt_anchor,
@@ -838,6 +861,7 @@ prompt_before_close = false
             assert!(v["agent"].is_object());
             assert!(v["extensions"].is_object());
             assert!(v["startup"].is_object());
+            assert!(v["mcp"].is_object());
             assert!(v["ui"].as_object().unwrap().contains_key("theme"));
             assert!(v["ui"].as_object().unwrap().contains_key("fontSize"));
             assert!(v["ui"].as_object().unwrap().contains_key("restoreTabs"));
@@ -884,6 +908,8 @@ prompt_before_close = false
                     .unwrap()
                     .contains_key("autoApprove")
             );
+            assert!(v["mcp"].as_object().unwrap().contains_key("enabled"));
+            assert!(v["mcp"].as_object().unwrap().contains_key("projectConfigs"));
         }
     }
 
