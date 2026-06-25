@@ -149,7 +149,12 @@ export function useAppSlashCommandContext({
       appendSystem: (text: string) => {
         const tabId =
           (stateRef.current.activeTabId as string | undefined) ?? "default";
-        const msg = { id: crypto.randomUUID(), role: "system" as const, text };
+        const msg = {
+          id: crypto.randomUUID(),
+          role: "system" as const,
+          text,
+          createdAt: Date.now(),
+        };
         appendMessage(msg, tabId);
         persistLocalChatMessage(msg, tabId);
       },

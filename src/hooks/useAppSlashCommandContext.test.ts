@@ -80,6 +80,7 @@ describe("useAppSlashCommandContext", () => {
       expect.objectContaining({
         role: "system",
         text: "Theme set to Paper.",
+        createdAt: expect.any(Number),
       }),
       "tab-1",
     );
@@ -90,6 +91,7 @@ describe("useAppSlashCommandContext", () => {
       payload: {
         role: "system",
         text: "Theme set to Paper.",
+        createdAt: expect.any(Number),
       },
     });
   });

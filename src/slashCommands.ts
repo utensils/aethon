@@ -300,9 +300,19 @@ async function runMcpCommand(
   if (!root) return;
   const setup = await readSetupStatus(root);
   const status = await readMcpStatus(root);
-  const wantsSetup = args.trim().toLowerCase() === "setup";
-  if (!wantsSetup && status.state === "approved") {
+  const subcommand = args.trim().toLowerCase();
+  const wantsStatus = subcommand === "status";
+  const wantsSetup = subcommand === "" || subcommand === "setup";
+  if (wantsStatus) {
     ctx.appendSystem(`## MCP\n${mcpStatusText(status)}`);
+    return;
+  }
+  if (!wantsSetup) {
+    ctx.notify({
+      title: `Unknown MCP command: ${args.trim()}`,
+      message: "Usage: /mcp [status|setup]",
+      kind: "error",
+    });
     return;
   }
   const choices = [
@@ -600,8 +610,8 @@ export function buildBuiltinSlashCommands(): SlashCommand[] {
     },
     {
       name: "mcp",
-      description: "Show or configure MCP servers for the active project",
-      usage: "[setup]",
+      description: "Configure MCP servers for the active project",
+      usage: "[status|setup]",
       run: async (args, ctx) => runMcpCommand(ctx, args),
     },
     {

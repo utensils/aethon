@@ -1,9 +1,15 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   buildBuiltinSlashCommands,
   parseSlashCommand,
   type SlashCommandContext,
 } from "./slashCommands";
+
+const invokeMock = vi.hoisted(() => vi.fn());
+
+vi.mock("@tauri-apps/api/core", () => ({
+  invoke: invokeMock,
+}));
 
 function makeSlashContext(
   overrides: Partial<SlashCommandContext> = {},
@@ -42,6 +48,43 @@ function makeSlashContext(
     ...overrides,
   };
 }
+
+function mockApprovedMcpProject(): void {
+  invokeMock.mockImplementation((command: string) => {
+    if (command === "aethon_setup_status") {
+      return Promise.resolve({
+        root: "/repo",
+        agents: { exists: true, path: "/repo/AGENTS.md", managedBlock: true },
+        startup: { exists: false, path: "/repo/.aethon/startup.toml" },
+        mcpToml: { exists: false, path: "/repo/.aethon/mcp.toml" },
+        claudeMcpJson: { exists: true, path: "/repo/.mcp.json" },
+      });
+    }
+    if (command === "mcp_config_status") {
+      return Promise.resolve({
+        root: "/repo",
+        fingerprint: "fingerprint",
+        state: "approved",
+        required: true,
+        approved: true,
+        enabled: true,
+        projectConfigMode: "require-approval",
+        sources: [
+          {
+            kind: "claude-json",
+            relativePath: ".mcp.json",
+            path: "/repo/.mcp.json",
+          },
+        ],
+      });
+    }
+    return Promise.reject(new Error(`unexpected invoke: ${command}`));
+  });
+}
+
+beforeEach(() => {
+  invokeMock.mockReset();
+});
 
 describe("parseSlashCommand", () => {
   it("returns null for plain text", () => {
@@ -394,6 +437,76 @@ describe("buildBuiltinSlashCommands", () => {
     await reload.run("", ctx);
     expect(reloadCalls).toBe(1);
     expect(titles).toContain("Reloading agent…");
+  });
+
+  it("/mcp opens the guided setup flow even after project approval", async () => {
+    mockApprovedMcpProject();
+    const asked: string[] = [];
+    const system: string[] = [];
+    const mcp = buildBuiltinSlashCommands().find((c) => c.name === "mcp")!;
+
+    await mcp.run(
+      "",
+      makeSlashContext({
+        activeProjectRoot: () => "/repo",
+        appendSystem: (text) => system.push(text),
+        askUser: (input) => {
+          asked.push(input.title ?? "");
+          expect(input.prompt).toContain("State: approved");
+          expect(input.choices.map((choice) => choice.id)).toContain("status");
+          return Promise.resolve({
+            questionId: "question-1",
+            choiceId: "status",
+            label: "Show status",
+          });
+        },
+      }),
+    );
+
+    expect(asked).toEqual(["MCP setup"]);
+    expect(system).toHaveLength(1);
+    expect(system[0]).toContain("## MCP");
+    expect(system[0]).toContain("Sources: `.mcp.json`");
+  });
+
+  it("/mcp status prints status without opening the guided setup flow", async () => {
+    mockApprovedMcpProject();
+    const askUser = vi.fn();
+    const system: string[] = [];
+    const mcp = buildBuiltinSlashCommands().find((c) => c.name === "mcp")!;
+
+    await mcp.run(
+      "status",
+      makeSlashContext({
+        activeProjectRoot: () => "/repo",
+        appendSystem: (text) => system.push(text),
+        askUser,
+      }),
+    );
+
+    expect(askUser).not.toHaveBeenCalled();
+    expect(system).toHaveLength(1);
+    expect(system[0]).toContain("## MCP");
+    expect(system[0]).toContain("State: approved");
+  });
+
+  it("/mcp rejects unknown subcommands with the explicit usage", async () => {
+    mockApprovedMcpProject();
+    const notifications: string[] = [];
+    const mcp = buildBuiltinSlashCommands().find((c) => c.name === "mcp")!;
+
+    await mcp.run(
+      "wat",
+      makeSlashContext({
+        activeProjectRoot: () => "/repo",
+        notify: (input) =>
+          notifications.push(`${input.title}\n${input.message ?? ""}`),
+      }),
+    );
+
+    expect(notifications).toEqual([
+      "Unknown MCP command: wat\nUsage: /mcp [status|setup]",
+    ]);
   });
 
   it("/loop without args opens scheduled tasks without creating a default loop", async () => {
