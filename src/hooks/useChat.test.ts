@@ -502,16 +502,45 @@ describe("useChat setModel", () => {
     });
 
     expect(run).toHaveBeenCalledWith("setup", expect.any(Object));
-    expect(invoke).not.toHaveBeenCalledWith(
-      "send_message",
-      expect.any(Object),
-    );
+    expect(invoke).not.toHaveBeenCalledWith("send_message", expect.any(Object));
     const tab = (stateRef.current.tabs as Tab[]).find((t) => t.id === "tab-1");
     expect(tab?.messages.at(-1)).toMatchObject({
       role: "user",
       text: "/mcp setup",
     });
     expect(tab?.draft).toBe("");
+  });
+
+  it("builds local slash context after the echoed user command timestamp", async () => {
+    const seen: Array<number | undefined> = [];
+    const run = vi.fn();
+    const { ctx, stateRef } = buildContext();
+    ctx.slashContext = (options) => {
+      seen.push(options?.afterCreatedAt);
+      return {
+        appendSystem: vi.fn(),
+        notify: vi.fn(),
+        clearChat: vi.fn(),
+        setTheme: vi.fn(),
+        setModel: vi.fn(),
+      } as unknown as ReturnType<UseChatContext["slashContext"]>;
+    };
+    ctx.slashCommandsRef.current = [
+      {
+        name: "mcp",
+        description: "MCP servers",
+        run,
+      },
+    ];
+    const { result } = renderHook(() => useChat(ctx));
+
+    await act(async () => {
+      await result.current.sendChat("/mcp status");
+    });
+
+    const tab = (stateRef.current.tabs as Tab[]).find((t) => t.id === "tab-1");
+    expect(seen).toEqual([tab?.messages.at(-1)?.createdAt]);
+    expect(run).toHaveBeenCalledWith("status", expect.any(Object));
   });
 
   it("steerQueuedMessage pops the entry, flips the spinner id, and ships it as steer", async () => {

@@ -31,6 +31,17 @@ pub struct McpProjectSource {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct McpServerSummary {
+    pub name: String,
+    pub source_kind: String,
+    pub source_path: String,
+    pub transport: String,
+    pub command: Option<String>,
+    pub url: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct McpConfigStatus {
     pub root: String,
     pub fingerprint: Option<String>,
@@ -40,6 +51,7 @@ pub struct McpConfigStatus {
     pub enabled: bool,
     pub project_config_mode: String,
     pub sources: Vec<McpProjectSource>,
+    pub servers: Vec<McpServerSummary>,
     pub warning: Option<String>,
 }
 
@@ -55,6 +67,16 @@ struct ProjectSource {
     relative_path: &'static str,
     path: PathBuf,
     text: String,
+}
+
+#[derive(Debug, Clone)]
+struct DiscoveredServer {
+    name: String,
+    source_kind: String,
+    source_path: String,
+    transport: String,
+    command: Option<String>,
+    url: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -92,9 +114,10 @@ impl Default for HostMcpPolicy {
 #[tauri::command]
 pub fn mcp_config_status(root: String, app: AppHandle) -> Result<McpConfigStatus, String> {
     let root = canonicalize_root(Path::new(&root));
-    let host_policy = read_host_mcp_policy(&app)?;
+    let host_text = read_host_mcp_text(&app)?;
+    let host_policy = parse_host_mcp_policy(&host_text);
     let store = read_approval_store(&app)?;
-    Ok(status_for_root(&root, &host_policy, &store))
+    Ok(status_for_root(&root, &host_policy, &store, &host_text))
 }
 
 #[tauri::command]
@@ -104,11 +127,14 @@ pub fn mcp_config_approve(
     app: AppHandle,
 ) -> Result<McpConfigStatus, String> {
     let root = canonicalize_root(Path::new(&root));
-    let host_policy = read_host_mcp_policy(&app)?;
+    let host_text = read_host_mcp_text(&app)?;
+    let host_policy = parse_host_mcp_policy(&host_text);
     let sources = discover_project_sources(&root);
     let current = project_fingerprint(&root, &sources);
     if current.as_deref() != Some(fingerprint.as_str()) {
-        return Err("MCP project config changed; review the current config before approving".into());
+        return Err(
+            "MCP project config changed; review the current config before approving".into(),
+        );
     }
 
     let mut store = read_approval_store(&app)?;
@@ -118,13 +144,14 @@ pub fn mcp_config_approve(
             .insert(root.display().to_string(), current.to_string());
     }
     write_approval_store(&app, &store)?;
-    Ok(status_for_root(&root, &host_policy, &store))
+    Ok(status_for_root(&root, &host_policy, &store, &host_text))
 }
 
 fn status_for_root(
     root: &Path,
     host_policy: &HostMcpPolicy,
     store: &ApprovalStore,
+    host_text: &str,
 ) -> McpConfigStatus {
     let sources = discover_project_sources(root);
     let fingerprint = project_fingerprint(root, &sources);
@@ -149,6 +176,7 @@ fn status_for_root(
     } else {
         "approval_required"
     };
+    let servers = effective_servers(host_policy, approved, host_text, &sources);
 
     McpConfigStatus {
         root: key,
@@ -166,18 +194,28 @@ fn status_for_root(
                 path: source.path.display().to_string(),
             })
             .collect(),
+        servers: servers
+            .into_iter()
+            .map(|server| McpServerSummary {
+                name: server.name,
+                source_kind: server.source_kind,
+                source_path: server.source_path,
+                transport: server.transport,
+                command: server.command,
+                url: server.url,
+            })
+            .collect(),
         warning: None,
     }
 }
 
-fn read_host_mcp_policy(app: &AppHandle) -> Result<HostMcpPolicy, String> {
+fn read_host_mcp_text(app: &AppHandle) -> Result<String, String> {
     let path = crate::commands::config::aethon_state_path(app, "config.toml")?;
-    let text = match std::fs::read_to_string(&path) {
-        Ok(text) => truncate_utf8(text, MCP_CONFIG_MAX_BYTES),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
-        Err(e) => return Err(format!("read {}: {e}", path.display())),
-    };
-    Ok(parse_host_mcp_policy(&text))
+    match std::fs::read_to_string(&path) {
+        Ok(text) => Ok(truncate_utf8(text, MCP_CONFIG_MAX_BYTES)),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(String::new()),
+        Err(e) => Err(format!("read {}: {e}", path.display())),
+    }
 }
 
 fn parse_host_mcp_policy(input: &str) -> HostMcpPolicy {
@@ -228,6 +266,110 @@ fn discover_project_sources(root: &Path) -> Vec<ProjectSource> {
             })
         })
         .collect()
+}
+
+fn effective_servers(
+    host_policy: &HostMcpPolicy,
+    project_approved: bool,
+    host_text: &str,
+    sources: &[ProjectSource],
+) -> Vec<DiscoveredServer> {
+    if !host_policy.enabled {
+        return Vec::new();
+    }
+    let mut servers: BTreeMap<String, DiscoveredServer> = BTreeMap::new();
+    for server in parse_toml_servers(host_text, "host-toml", "~/.aethon/config.toml") {
+        servers.insert(server.name.clone(), server);
+    }
+    if host_policy.project_config_mode != ProjectConfigMode::Never && project_approved {
+        for source in sources {
+            let discovered = if source.kind == "aethon-toml" {
+                parse_toml_servers(&source.text, source.kind, source.relative_path)
+            } else {
+                parse_json_servers(&source.text, source.kind, source.relative_path)
+            };
+            for server in discovered {
+                servers.insert(server.name.clone(), server);
+            }
+        }
+    }
+    servers.into_values().collect()
+}
+
+fn parse_toml_servers(text: &str, source_kind: &str, source_path: &str) -> Vec<DiscoveredServer> {
+    let Ok(parsed) = text.parse::<toml::Value>() else {
+        return Vec::new();
+    };
+    let Some(raw_root) = parsed.as_table() else {
+        return Vec::new();
+    };
+    let raw_mcp = parsed
+        .get("mcp")
+        .and_then(toml::Value::as_table)
+        .unwrap_or(raw_root);
+    let Some(servers) = raw_mcp.get("servers").and_then(toml::Value::as_table) else {
+        return Vec::new();
+    };
+    servers
+        .iter()
+        .filter_map(|(name, raw)| {
+            let table = raw.as_table()?;
+            summarize_server(
+                name,
+                source_kind,
+                source_path,
+                table.get("command").and_then(toml::Value::as_str),
+                table.get("url").and_then(toml::Value::as_str),
+            )
+        })
+        .collect()
+}
+
+fn parse_json_servers(text: &str, source_kind: &str, source_path: &str) -> Vec<DiscoveredServer> {
+    let Ok(parsed) = serde_json::from_str::<serde_json::Value>(text) else {
+        return Vec::new();
+    };
+    let Some(servers) = parsed
+        .get("mcpServers")
+        .and_then(serde_json::Value::as_object)
+    else {
+        return Vec::new();
+    };
+    servers
+        .iter()
+        .filter_map(|(name, raw)| {
+            let table = raw.as_object()?;
+            summarize_server(
+                name,
+                source_kind,
+                source_path,
+                table.get("command").and_then(serde_json::Value::as_str),
+                table.get("url").and_then(serde_json::Value::as_str),
+            )
+        })
+        .collect()
+}
+
+fn summarize_server(
+    name: &str,
+    source_kind: &str,
+    source_path: &str,
+    command: Option<&str>,
+    url: Option<&str>,
+) -> Option<DiscoveredServer> {
+    let command = command.filter(|value| !value.trim().is_empty());
+    let url = url.filter(|value| !value.trim().is_empty());
+    if command.is_none() && url.is_none() {
+        return None;
+    }
+    Some(DiscoveredServer {
+        name: name.to_string(),
+        source_kind: source_kind.to_string(),
+        source_path: source_path.to_string(),
+        transport: if url.is_some() { "http" } else { "stdio" }.to_string(),
+        command: command.map(ToString::to_string),
+        url: url.map(ToString::to_string),
+    })
 }
 
 fn project_fingerprint(root: &Path, sources: &[ProjectSource]) -> Option<String> {
@@ -331,10 +473,58 @@ mod tests {
         store
             .approvals
             .insert(root.display().to_string(), fingerprint.clone());
-        let status = status_for_root(root, &HostMcpPolicy::default(), &store);
+        let status = status_for_root(root, &HostMcpPolicy::default(), &store, "");
 
         assert_eq!(status.state, "no_config");
         assert!(!status.required);
         assert!(!status.approved);
+    }
+
+    #[test]
+    fn status_lists_effective_servers_after_project_approval() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let root = dir.path();
+        std::fs::write(
+            root.join(".mcp.json"),
+            r#"{"mcpServers":{"query":{"command":"nix","args":["run"]}}}"#,
+        )
+        .expect("write .mcp.json");
+        std::fs::create_dir_all(root.join(".aethon")).expect("mkdir .aethon");
+        std::fs::write(
+            root.join(".aethon/mcp.toml"),
+            "[mcp.servers.remote]\nurl = \"https://mcp.example.test\"\n",
+        )
+        .expect("write mcp.toml");
+        let sources = discover_project_sources(root);
+        let fingerprint = project_fingerprint(root, &sources).expect("fingerprint");
+        let mut store = ApprovalStore::default();
+        store
+            .approvals
+            .insert(root.display().to_string(), fingerprint);
+
+        let status = status_for_root(
+            root,
+            &HostMcpPolicy::default(),
+            &store,
+            "[mcp.servers.host]\ncommand = \"host-mcp\"\n",
+        );
+
+        assert_eq!(status.state, "approved");
+        assert_eq!(
+            status
+                .servers
+                .iter()
+                .map(|server| (
+                    server.name.as_str(),
+                    server.transport.as_str(),
+                    server.source_path.as_str()
+                ))
+                .collect::<Vec<_>>(),
+            vec![
+                ("host", "stdio", "~/.aethon/config.toml"),
+                ("query", "stdio", ".mcp.json"),
+                ("remote", "http", ".aethon/mcp.toml"),
+            ]
+        );
     }
 }

@@ -6,8 +6,7 @@ describe("createQuestionMessage", () => {
     const message = createQuestionMessage(
       {
         title: "MCP setup",
-        prompt:
-          "Project: `/repo/app`\nState: approved\nSources: `.mcp.json`",
+        prompt: "Project: `/repo/app`\nState: approved\nSources: `.mcp.json`",
         choices: [{ id: "status", label: "Show status" }],
       },
       "mcp-setup",

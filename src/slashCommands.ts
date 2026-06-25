@@ -174,6 +174,14 @@ interface McpStatus {
   enabled: boolean;
   projectConfigMode: string;
   sources: { kind: string; relativePath: string; path: string }[];
+  servers?: Array<{
+    name: string;
+    sourceKind: string;
+    sourcePath: string;
+    transport: string;
+    command?: string | null;
+    url?: string | null;
+  }>;
 }
 
 interface SetupStatus {
@@ -239,6 +247,31 @@ function mcpStatusText(status: McpStatus): string {
   ].join("\n");
 }
 
+function mcpServersText(status: McpStatus): string {
+  const servers = status.servers ?? [];
+  const lines = ["## MCP servers"];
+  if (servers.length === 0) {
+    lines.push(
+      "No MCP servers are currently visible to Aethon.",
+      "",
+      "Run `/mcp setup` to create or approve project MCP config.",
+    );
+    return lines.join("\n");
+  }
+  for (const server of servers) {
+    const endpoint =
+      server.url && server.url.trim().length > 0
+        ? server.url
+        : server.command && server.command.trim().length > 0
+          ? server.command
+          : server.transport;
+    lines.push(
+      `- \`${server.name}\` (${server.transport}) from \`${server.sourcePath}\` — ${endpoint}`,
+    );
+  }
+  return lines.join("\n");
+}
+
 async function readMcpStatus(root: string): Promise<McpStatus> {
   return await invoke<McpStatus>("mcp_config_status", { root });
 }
@@ -284,7 +317,10 @@ async function ensureMcpHostPolicy(): Promise<void> {
   });
 }
 
-async function approveMcpProject(root: string, status: McpStatus): Promise<void> {
+async function approveMcpProject(
+  root: string,
+  status: McpStatus,
+): Promise<void> {
   if (!status.fingerprint) return;
   await invoke("mcp_config_approve", {
     root,
@@ -301,8 +337,13 @@ async function runMcpCommand(
   const setup = await readSetupStatus(root);
   const status = await readMcpStatus(root);
   const subcommand = args.trim().toLowerCase();
+  const wantsList = subcommand === "";
   const wantsStatus = subcommand === "status";
-  const wantsSetup = subcommand === "" || subcommand === "setup";
+  const wantsSetup = subcommand === "setup";
+  if (wantsList) {
+    ctx.appendSystem(mcpServersText(status));
+    return;
+  }
   if (wantsStatus) {
     ctx.appendSystem(`## MCP\n${mcpStatusText(status)}`);
     return;
@@ -329,14 +370,12 @@ async function runMcpCommand(
     ...(setup.claudeMcpJson.exists
       ? [
           {
-            id: "use-json",
-            label: "Use .mcp.json directly",
-            description: "Keep Claude Code format as the project source of truth.",
-          },
-          {
             id: "import",
-            label: "Import to Aethon TOML",
-            description: "Copy supported servers into `.aethon/mcp.toml`.",
+            label: setup.mcpToml.exists
+              ? "Sync .mcp.json"
+              : "Create Aethon MCP config",
+            description:
+              "Copy supported servers into `.aethon/mcp.toml` and approve the project config.",
           },
         ]
       : []),
@@ -364,16 +403,6 @@ async function runMcpCommand(
       );
       return;
     }
-    case "use-json": {
-      await ensureMcpHostPolicy();
-      const next = await readMcpStatus(root);
-      await approveMcpProject(root, next);
-      ctx.notify({ title: "Using .mcp.json", kind: "success" });
-      ctx.appendSystem(
-        "Aethon will use `.mcp.json` directly for this project. Run `/reload` to reload the agent bridge.",
-      );
-      return;
-    }
     case "import": {
       await ensureMcpHostPolicy();
       const result = await invoke<{ path: string }>(
@@ -388,7 +417,7 @@ async function runMcpCommand(
         kind: "success",
       });
       ctx.appendSystem(
-        `Imported MCP servers to \`${result.path}\`. Run \`/reload\` to reload the agent bridge.`,
+        `Created MCP config at \`${result.path}\` and approved it. Run \`/reload\` to reload the agent bridge.`,
       );
       return;
     }
@@ -790,7 +819,10 @@ export function buildBuiltinSlashCommands(): SlashCommand[] {
             if (!ctx.listScheduledTasks || !ctx.reuseScheduledTask) {
               throw new Error("Scheduled tasks are unavailable.");
             }
-            const task = matchTask(await ctx.listScheduledTasks(), rest[0] ?? "");
+            const task = matchTask(
+              await ctx.listScheduledTasks(),
+              rest[0] ?? "",
+            );
             if (!task) {
               ctx.notify({
                 title: "Unknown loop",

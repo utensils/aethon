@@ -76,7 +76,25 @@ function mockApprovedMcpProject(): void {
             path: "/repo/.mcp.json",
           },
         ],
+        servers: [
+          {
+            name: "query",
+            sourceKind: "claude-json",
+            sourcePath: ".mcp.json",
+            transport: "stdio",
+            command: "nix",
+          },
+        ],
       });
+    }
+    if (command === "aethon_setup_import_mcp_json") {
+      return Promise.resolve({ path: "/repo/.aethon/mcp.toml" });
+    }
+    if (
+      command === "aethon_setup_set_host_mcp_policy" ||
+      command === "mcp_config_approve"
+    ) {
+      return Promise.resolve(undefined);
     }
     return Promise.reject(new Error(`unexpected invoke: ${command}`));
   });
@@ -439,14 +457,35 @@ describe("buildBuiltinSlashCommands", () => {
     expect(titles).toContain("Reloading agent…");
   });
 
-  it("/mcp opens the guided setup flow even after project approval", async () => {
+  it("/mcp lists visible MCP servers", async () => {
+    mockApprovedMcpProject();
+    const askUser = vi.fn();
+    const system: string[] = [];
+    const mcp = buildBuiltinSlashCommands().find((c) => c.name === "mcp")!;
+
+    await mcp.run(
+      "",
+      makeSlashContext({
+        activeProjectRoot: () => "/repo",
+        appendSystem: (text) => system.push(text),
+        askUser,
+      }),
+    );
+
+    expect(askUser).not.toHaveBeenCalled();
+    expect(system).toEqual([
+      "## MCP servers\n- `query` (stdio) from `.mcp.json` — nix",
+    ]);
+  });
+
+  it("/mcp setup opens the guided setup flow after project approval", async () => {
     mockApprovedMcpProject();
     const asked: string[] = [];
     const system: string[] = [];
     const mcp = buildBuiltinSlashCommands().find((c) => c.name === "mcp")!;
 
     await mcp.run(
-      "",
+      "setup",
       makeSlashContext({
         activeProjectRoot: () => "/repo",
         appendSystem: (text) => system.push(text),
@@ -467,6 +506,47 @@ describe("buildBuiltinSlashCommands", () => {
     expect(system).toHaveLength(1);
     expect(system[0]).toContain("## MCP");
     expect(system[0]).toContain("Sources: `.mcp.json`");
+  });
+
+  it("/mcp setup creates Aethon MCP config from .mcp.json when selected", async () => {
+    mockApprovedMcpProject();
+    const system: string[] = [];
+    const notifications: string[] = [];
+    const mcp = buildBuiltinSlashCommands().find((c) => c.name === "mcp")!;
+
+    await mcp.run(
+      "setup",
+      makeSlashContext({
+        activeProjectRoot: () => "/repo",
+        appendSystem: (text) => system.push(text),
+        notify: (input) => notifications.push(input.title),
+        askUser: (input) => {
+          expect(input.choices).toContainEqual(
+            expect.objectContaining({
+              id: "import",
+              label: "Create Aethon MCP config",
+            }),
+          );
+          return Promise.resolve({
+            questionId: "question-1",
+            choiceId: "import",
+            label: "Create Aethon MCP config",
+          });
+        },
+      }),
+    );
+
+    expect(invokeMock).toHaveBeenCalledWith("aethon_setup_import_mcp_json", {
+      root: "/repo",
+    });
+    expect(invokeMock).toHaveBeenCalledWith(
+      "mcp_config_approve",
+      expect.objectContaining({ root: "/repo", fingerprint: "fingerprint" }),
+    );
+    expect(notifications).toContain("MCP imported");
+    expect(system[0]).toContain(
+      "Created MCP config at `/repo/.aethon/mcp.toml`",
+    );
   });
 
   it("/mcp status prints status without opening the guided setup flow", async () => {

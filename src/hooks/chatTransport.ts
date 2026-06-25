@@ -175,7 +175,10 @@ export function createChatTransportController(
           draftAttachments: [],
         }));
         try {
-          await cmd.run(parsed.args, slashContext());
+          await cmd.run(
+            parsed.args,
+            slashContext({ afterCreatedAt: slashUserMessage.createdAt }),
+          );
         } catch (err) {
           appendSystem(`Slash command \`/${parsed.name}\` failed: ${err}`);
         }

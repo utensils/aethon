@@ -65,11 +65,15 @@ export interface UseAppSlashCommandContextOptions {
 }
 
 export interface AppSlashCommandContextResult {
-  slashContext: () => SlashCommandContext;
+  slashContext: (options?: SlashContextOptions) => SlashCommandContext;
   persistLocalChatMessage: (
     msg: ChatMessage,
     tabId: string,
   ) => Promise<boolean>;
+}
+
+export interface SlashContextOptions {
+  afterCreatedAt?: number;
 }
 
 export function useAppSlashCommandContext({
@@ -145,322 +149,341 @@ export function useAppSlashCommandContext({
   );
 
   const slashContext = useCallback(
-    (): SlashCommandContext => ({
-      appendSystem: (text: string) => {
-        const tabId =
-          (stateRef.current.activeTabId as string | undefined) ?? "default";
-        const msg = {
-          id: crypto.randomUUID(),
-          role: "system" as const,
-          text,
-          createdAt: Date.now(),
-        };
-        appendMessage(msg, tabId);
-        persistLocalChatMessage(msg, tabId);
-      },
-      notify: (input) => {
-        pushNotification(input);
-      },
-      askUser: (input: AskUserInput): Promise<AskUserAnswer> => {
-        const tabId =
-          (stateRef.current.activeTabId as string | undefined) ?? "default";
-        return askUserWithChat({
-          input,
-          tabId,
-          appendMessage,
-          persistLocalChatMessage,
-        });
-      },
-      activeProjectRoot: () => {
-        const activeId = stateRef.current.activeTabId;
-        const tabs = (stateRef.current.tabs as Tab[] | undefined) ?? [];
-        const activeTab = tabs.find((tab) => tab.id === activeId);
-        if (activeTab?.kind === "agent" && activeTab.cwd) return activeTab.cwd;
-        return activeProject(projectsRef.current)?.path ?? null;
-      },
-      clearChat,
-      setTheme,
-      listThemes,
-      setModel,
-      setPlanMode: (enabled: boolean) => {
-        const activeId = stateRef.current.activeTabId;
-        if (typeof activeId !== "string" || activeId.length === 0) return;
-        setState((prev) => {
-          const tabs = (prev.tabs as Tab[] | undefined) ?? [];
-          const idx = tabs.findIndex((t) => t.id === activeId);
-          if (idx < 0 || tabs[idx].kind !== "agent") return prev;
-          const next = [...tabs];
-          next[idx] = { ...next[idx], planMode: enabled };
-          return {
-            ...prev,
-            tabs: next,
-            ...(prev.activeTabId === activeId ? { planMode: enabled } : {}),
+    (options?: SlashContextOptions): SlashCommandContext => {
+      let lastCreatedAt =
+        typeof options?.afterCreatedAt === "number" &&
+        Number.isFinite(options.afterCreatedAt)
+          ? options.afterCreatedAt
+          : 0;
+      const nextCreatedAt = () => {
+        const createdAt = Math.max(Date.now(), lastCreatedAt + 1);
+        lastCreatedAt = createdAt;
+        return createdAt;
+      };
+      return {
+        appendSystem: (text: string) => {
+          const tabId =
+            (stateRef.current.activeTabId as string | undefined) ?? "default";
+          const msg = {
+            id: crypto.randomUUID(),
+            role: "system" as const,
+            text,
+            createdAt: nextCreatedAt(),
           };
-        });
-      },
-      getPlanMode: () => {
-        const activeId = stateRef.current.activeTabId;
-        const tabs = (stateRef.current.tabs as Tab[] | undefined) ?? [];
-        const tab = tabs.find((t) => t.id === activeId);
-        return tab?.kind === "agent" ? tab.planMode === true : false;
-      },
-      resetLayout: () => setLayout(bootLayout),
-      listExtensions: () => registry.list().map((s) => s.name),
-      installExtension: async (spec: string) => {
-        return await invoke<string>("install_aethon_extension", { spec });
-      },
-      listModels: () => {
-        const sidebar =
-          (stateRef.current.sidebar as Record<string, unknown>) ?? {};
-        return (
-          (sidebar.models as {
-            id: string;
-            label: string;
-            active?: boolean;
-          }[]) ?? []
-        );
-      },
-      openLogin: () => {
-        setState((prev) => ({
-          ...prev,
-          authProfiles: {
-            profiles: [],
-            defaultByProvider: {},
-            providers: [],
-            activeByTab: {},
-            ...(prev.authProfiles ?? {}),
-            modal: { open: true },
-          },
-        }));
-        void invoke("agent_command", {
-          payload: JSON.stringify({ type: "auth_profiles_list" }),
-        });
-      },
-      listAuthProfiles: () => {
-        const auth =
-          (stateRef.current.authProfiles as AuthProfilesUiState | undefined) ??
-          undefined;
-        const activeId = stateRef.current.activeTabId as string | undefined;
-        return (auth?.profiles ?? []).map((p) => ({
-          id: p.id,
-          label: p.label,
-          providerId: p.providerId,
-          kind: p.kind,
-          active: !!activeId && auth?.activeByTab?.[activeId] === p.id,
-          default: auth?.defaultByProvider?.[p.providerId] === p.id,
-        }));
-      },
-      useAuthProfile: async (idOrLabel: string) => {
-        const auth =
-          (stateRef.current.authProfiles as AuthProfilesUiState | undefined) ??
-          undefined;
-        const profile = (auth?.profiles ?? []).find(
-          (p) => p.id === idOrLabel || p.label === idOrLabel,
-        );
-        if (!profile) throw new Error(`Unknown account: ${idOrLabel}`);
-        const activeId =
-          typeof stateRef.current.activeTabId === "string"
-            ? stateRef.current.activeTabId
-            : undefined;
-        // Route through the shared switch so a non-default (worker) tab also
-        // gets the tab-scoped `auth_profile_apply` — `auth_profile_use_for_tab`
-        // alone updates only the global mapping, leaving the worker on the old
-        // account for its next prompt.
-        const target = resolveAccountSwitchTarget(
-          (stateRef.current.tabs as Tab[] | undefined) ?? [],
-          activeId,
-        );
-        if (target.busy) {
-          throw new Error("Stop the current prompt before switching accounts");
-        }
-        await switchAccountForTab(target.tabId, profile.id, {
-          cwd: target.cwd,
-          model: target.model,
-        });
-      },
-      setDefaultAuthProfile: async (idOrLabel: string) => {
-        const auth =
-          (stateRef.current.authProfiles as AuthProfilesUiState | undefined) ??
-          undefined;
-        const profile = (auth?.profiles ?? []).find(
-          (p) => p.id === idOrLabel || p.label === idOrLabel,
-        );
-        if (!profile) throw new Error(`Unknown account: ${idOrLabel}`);
-        await invoke("agent_command", {
-          payload: JSON.stringify({
-            type: "auth_profile_set_default",
-            profileId: profile.id,
-          }),
-        });
-      },
-      toggleTerminal,
-      toggleSidebar,
-      toggleFilesSidebar,
-      activateLayout: activateLayoutById,
-      listLayouts: () =>
-        layoutCatalogueRef.current.map((l) => ({
-          id: l.id,
-          name: l.name,
-          description: l.description,
-        })),
-      pickProject: openProjectFromPicker,
-      openProject: (path: string, label?: string) =>
-        openProjectByPath(path, label),
-      setActiveProject: setActiveProjectById,
-      clearProject: clearActiveProject,
-      removeProject: removeProjectById,
-      listProjects: () =>
-        projectsRef.current.projects.map((p) => ({
-          id: p.id,
-          label: p.label,
-          path: p.path,
-        })),
-      reloadAgent: async () => {
-        await invoke("reload_agent");
-      },
-      runNativeCommand: async (name: string, args: string) => {
-        const activeId = stateRef.current.activeTabId;
-        const tabId =
-          typeof activeId === "string" && activeId.length > 0
-            ? activeId
-            : "default";
-        await invoke("agent_command", {
-          payload: JSON.stringify({
-            type: "native_slash_command",
+          appendMessage(msg, tabId);
+          persistLocalChatMessage(msg, tabId);
+        },
+        notify: (input) => {
+          pushNotification(input);
+        },
+        askUser: (input: AskUserInput): Promise<AskUserAnswer> => {
+          const tabId =
+            (stateRef.current.activeTabId as string | undefined) ?? "default";
+          return askUserWithChat({
+            input,
             tabId,
-            name,
-            args,
-          }),
-        });
-      },
-      renameSession: async (tabId: string, label: string) => {
-        setState((prev) => {
-          const tabs = (prev.tabs as Tab[] | undefined) ?? [];
-          const idx = tabs.findIndex((t) => t.id === tabId);
-          if (idx < 0) return prev;
-          const trimmed = label.trim();
-          const fallback = `Tab ${idx + 1}`;
-          const nextLabel = trimmed.length > 0 ? trimmed : fallback;
-          if (tabs[idx].label === nextLabel) return prev;
-          const next = [...tabs];
-          next[idx] = { ...next[idx], label: nextLabel };
-          return { ...prev, tabs: next };
-        });
-        await invoke("agent_command", {
-          payload: JSON.stringify({
-            type: "set_session_label",
-            tabId,
-            label,
-          }),
-        });
-      },
-      openScheduledTasks: () => {
-        setState((prev) => ({
-          ...prev,
-          scheduledTasks: {
-            ...(prev.scheduledTasks ?? {}),
-            open: true,
-          },
-        }));
-      },
-      createScheduledTask: async (input: {
-        mode: ScheduledTaskMode;
-        schedule: ScheduledTaskSchedule;
-        prompt: string;
-        label?: string;
-        promptSource?: string;
-      }): Promise<ScheduledTaskRecord> => {
-        const tabs = (stateRef.current.tabs as Tab[] | undefined) ?? [];
-        const activeId = stateRef.current.activeTabId;
-        const tab = tabs.find((t) => t.id === activeId);
-        if (!tab || tab.kind !== "agent") {
-          throw new Error(
-            "Open an agent tab before creating a scheduled task.",
+            appendMessage,
+            persistLocalChatMessage,
+            createdAt: nextCreatedAt(),
+          });
+        },
+        activeProjectRoot: () => {
+          const activeId = stateRef.current.activeTabId;
+          const tabs = (stateRef.current.tabs as Tab[] | undefined) ?? [];
+          const activeTab = tabs.find((tab) => tab.id === activeId);
+          if (activeTab?.kind === "agent" && activeTab.cwd)
+            return activeTab.cwd;
+          return activeProject(projectsRef.current)?.path ?? null;
+        },
+        clearChat,
+        setTheme,
+        listThemes,
+        setModel,
+        setPlanMode: (enabled: boolean) => {
+          const activeId = stateRef.current.activeTabId;
+          if (typeof activeId !== "string" || activeId.length === 0) return;
+          setState((prev) => {
+            const tabs = (prev.tabs as Tab[] | undefined) ?? [];
+            const idx = tabs.findIndex((t) => t.id === activeId);
+            if (idx < 0 || tabs[idx].kind !== "agent") return prev;
+            const next = [...tabs];
+            next[idx] = { ...next[idx], planMode: enabled };
+            return {
+              ...prev,
+              tabs: next,
+              ...(prev.activeTabId === activeId ? { planMode: enabled } : {}),
+            };
+          });
+        },
+        getPlanMode: () => {
+          const activeId = stateRef.current.activeTabId;
+          const tabs = (stateRef.current.tabs as Tab[] | undefined) ?? [];
+          const tab = tabs.find((t) => t.id === activeId);
+          return tab?.kind === "agent" ? tab.planMode === true : false;
+        },
+        resetLayout: () => setLayout(bootLayout),
+        listExtensions: () => registry.list().map((s) => s.name),
+        installExtension: async (spec: string) => {
+          return await invoke<string>("install_aethon_extension", { spec });
+        },
+        listModels: () => {
+          const sidebar =
+            (stateRef.current.sidebar as Record<string, unknown>) ?? {};
+          return (
+            (sidebar.models as {
+              id: string;
+              label: string;
+              active?: boolean;
+            }[]) ?? []
           );
-        }
-        const project = activeProject(projectsRef.current);
-        const cwd =
-          tab.cwd ??
-          project?.path ??
-          (await invoke<string>("aethon_home_dir").catch(() => ""));
-        if (!cwd) throw new Error("Could not resolve a working directory.");
-        let prompt = input.prompt.trim();
-        let promptSource = input.promptSource ?? "inline";
-        if (!prompt) {
-          const resolved = await resolveLoopPrompt(cwd);
-          prompt = resolved.prompt;
-          promptSource = resolved.source;
-        }
-        const created = await createScheduledTask({
-          tabId: tab.id,
-          cwd,
-          model: tab.model || null,
-          thinkingLevel: tab.thinkingLevel ?? null,
-          hardEnforce: tab.hardEnforceProjectRoot ?? null,
-          authProfileId: tab.authProfileId ?? null,
-          label: input.label ?? null,
-          prompt,
-          visiblePrompt: prompt,
-          promptSource,
-          mode: input.mode,
-          schedule: input.schedule,
-        });
-        setState((prev) => {
-          const cur =
-            (prev.scheduledTasks as
-              | { tasks?: ScheduledTaskRecord[] }
-              | undefined) ?? {};
-          return {
+        },
+        openLogin: () => {
+          setState((prev) => ({
+            ...prev,
+            authProfiles: {
+              profiles: [],
+              defaultByProvider: {},
+              providers: [],
+              activeByTab: {},
+              ...(prev.authProfiles ?? {}),
+              modal: { open: true },
+            },
+          }));
+          void invoke("agent_command", {
+            payload: JSON.stringify({ type: "auth_profiles_list" }),
+          });
+        },
+        listAuthProfiles: () => {
+          const auth =
+            (stateRef.current.authProfiles as
+              | AuthProfilesUiState
+              | undefined) ?? undefined;
+          const activeId = stateRef.current.activeTabId as string | undefined;
+          return (auth?.profiles ?? []).map((p) => ({
+            id: p.id,
+            label: p.label,
+            providerId: p.providerId,
+            kind: p.kind,
+            active: !!activeId && auth?.activeByTab?.[activeId] === p.id,
+            default: auth?.defaultByProvider?.[p.providerId] === p.id,
+          }));
+        },
+        useAuthProfile: async (idOrLabel: string) => {
+          const auth =
+            (stateRef.current.authProfiles as
+              | AuthProfilesUiState
+              | undefined) ?? undefined;
+          const profile = (auth?.profiles ?? []).find(
+            (p) => p.id === idOrLabel || p.label === idOrLabel,
+          );
+          if (!profile) throw new Error(`Unknown account: ${idOrLabel}`);
+          const activeId =
+            typeof stateRef.current.activeTabId === "string"
+              ? stateRef.current.activeTabId
+              : undefined;
+          // Route through the shared switch so a non-default (worker) tab also
+          // gets the tab-scoped `auth_profile_apply` — `auth_profile_use_for_tab`
+          // alone updates only the global mapping, leaving the worker on the old
+          // account for its next prompt.
+          const target = resolveAccountSwitchTarget(
+            (stateRef.current.tabs as Tab[] | undefined) ?? [],
+            activeId,
+          );
+          if (target.busy) {
+            throw new Error(
+              "Stop the current prompt before switching accounts",
+            );
+          }
+          await switchAccountForTab(target.tabId, profile.id, {
+            cwd: target.cwd,
+            model: target.model,
+          });
+        },
+        setDefaultAuthProfile: async (idOrLabel: string) => {
+          const auth =
+            (stateRef.current.authProfiles as
+              | AuthProfilesUiState
+              | undefined) ?? undefined;
+          const profile = (auth?.profiles ?? []).find(
+            (p) => p.id === idOrLabel || p.label === idOrLabel,
+          );
+          if (!profile) throw new Error(`Unknown account: ${idOrLabel}`);
+          await invoke("agent_command", {
+            payload: JSON.stringify({
+              type: "auth_profile_set_default",
+              profileId: profile.id,
+            }),
+          });
+        },
+        toggleTerminal,
+        toggleSidebar,
+        toggleFilesSidebar,
+        activateLayout: activateLayoutById,
+        listLayouts: () =>
+          layoutCatalogueRef.current.map((l) => ({
+            id: l.id,
+            name: l.name,
+            description: l.description,
+          })),
+        pickProject: openProjectFromPicker,
+        openProject: (path: string, label?: string) =>
+          openProjectByPath(path, label),
+        setActiveProject: setActiveProjectById,
+        clearProject: clearActiveProject,
+        removeProject: removeProjectById,
+        listProjects: () =>
+          projectsRef.current.projects.map((p) => ({
+            id: p.id,
+            label: p.label,
+            path: p.path,
+          })),
+        reloadAgent: async () => {
+          await invoke("reload_agent");
+        },
+        runNativeCommand: async (name: string, args: string) => {
+          const activeId = stateRef.current.activeTabId;
+          const tabId =
+            typeof activeId === "string" && activeId.length > 0
+              ? activeId
+              : "default";
+          await invoke("agent_command", {
+            payload: JSON.stringify({
+              type: "native_slash_command",
+              tabId,
+              name,
+              args,
+            }),
+          });
+        },
+        renameSession: async (tabId: string, label: string) => {
+          setState((prev) => {
+            const tabs = (prev.tabs as Tab[] | undefined) ?? [];
+            const idx = tabs.findIndex((t) => t.id === tabId);
+            if (idx < 0) return prev;
+            const trimmed = label.trim();
+            const fallback = `Tab ${idx + 1}`;
+            const nextLabel = trimmed.length > 0 ? trimmed : fallback;
+            if (tabs[idx].label === nextLabel) return prev;
+            const next = [...tabs];
+            next[idx] = { ...next[idx], label: nextLabel };
+            return { ...prev, tabs: next };
+          });
+          await invoke("agent_command", {
+            payload: JSON.stringify({
+              type: "set_session_label",
+              tabId,
+              label,
+            }),
+          });
+        },
+        openScheduledTasks: () => {
+          setState((prev) => ({
             ...prev,
             scheduledTasks: {
-              ...cur,
-              tasks: [
-                created,
-                ...(cur.tasks ?? []).filter((task) => task.id !== created.id),
-              ],
+              ...(prev.scheduledTasks ?? {}),
+              open: true,
             },
-          };
-        });
-        return created;
-      },
-      listScheduledTasks,
-      runScheduledTask: runScheduledTaskNow,
-      pauseScheduledTask,
-      resumeScheduledTask,
-      reuseScheduledTask: async (id: string) => {
-        const tabs = (stateRef.current.tabs as Tab[] | undefined) ?? [];
-        const activeId = stateRef.current.activeTabId;
-        const tab = tabs.find((t) => t.id === activeId);
-        if (!tab || tab.kind !== "agent") {
-          throw new Error("Open an agent tab before reusing a loop.");
-        }
-        const project = activeProject(projectsRef.current);
-        const cwd =
-          tab.cwd ??
-          project?.path ??
-          (await invoke<string>("aethon_home_dir").catch(() => ""));
-        if (!cwd) throw new Error("Could not resolve a working directory.");
-        return await reuseScheduledTask({
-          taskId: id,
-          tabId: tab.id,
-          cwd,
-          model: tab.model || null,
-          thinkingLevel: tab.thinkingLevel ?? null,
-          hardEnforce: tab.hardEnforceProjectRoot ?? null,
-          authProfileId: tab.authProfileId ?? null,
-        });
-      },
-      cancelScheduledTask,
-      deleteScheduledTask,
-      activeTabId: () => {
-        const id = stateRef.current.activeTabId;
-        return typeof id === "string" && id.length > 0 ? id : null;
-      },
-      activeProject: () => {
-        const a = activeProject(projectsRef.current);
-        return a ? { id: a.id, label: a.label, path: a.path } : null;
-      },
-    }),
+          }));
+        },
+        createScheduledTask: async (input: {
+          mode: ScheduledTaskMode;
+          schedule: ScheduledTaskSchedule;
+          prompt: string;
+          label?: string;
+          promptSource?: string;
+        }): Promise<ScheduledTaskRecord> => {
+          const tabs = (stateRef.current.tabs as Tab[] | undefined) ?? [];
+          const activeId = stateRef.current.activeTabId;
+          const tab = tabs.find((t) => t.id === activeId);
+          if (!tab || tab.kind !== "agent") {
+            throw new Error(
+              "Open an agent tab before creating a scheduled task.",
+            );
+          }
+          const project = activeProject(projectsRef.current);
+          const cwd =
+            tab.cwd ??
+            project?.path ??
+            (await invoke<string>("aethon_home_dir").catch(() => ""));
+          if (!cwd) throw new Error("Could not resolve a working directory.");
+          let prompt = input.prompt.trim();
+          let promptSource = input.promptSource ?? "inline";
+          if (!prompt) {
+            const resolved = await resolveLoopPrompt(cwd);
+            prompt = resolved.prompt;
+            promptSource = resolved.source;
+          }
+          const created = await createScheduledTask({
+            tabId: tab.id,
+            cwd,
+            model: tab.model || null,
+            thinkingLevel: tab.thinkingLevel ?? null,
+            hardEnforce: tab.hardEnforceProjectRoot ?? null,
+            authProfileId: tab.authProfileId ?? null,
+            label: input.label ?? null,
+            prompt,
+            visiblePrompt: prompt,
+            promptSource,
+            mode: input.mode,
+            schedule: input.schedule,
+          });
+          setState((prev) => {
+            const cur =
+              (prev.scheduledTasks as
+                | { tasks?: ScheduledTaskRecord[] }
+                | undefined) ?? {};
+            return {
+              ...prev,
+              scheduledTasks: {
+                ...cur,
+                tasks: [
+                  created,
+                  ...(cur.tasks ?? []).filter((task) => task.id !== created.id),
+                ],
+              },
+            };
+          });
+          return created;
+        },
+        listScheduledTasks,
+        runScheduledTask: runScheduledTaskNow,
+        pauseScheduledTask,
+        resumeScheduledTask,
+        reuseScheduledTask: async (id: string) => {
+          const tabs = (stateRef.current.tabs as Tab[] | undefined) ?? [];
+          const activeId = stateRef.current.activeTabId;
+          const tab = tabs.find((t) => t.id === activeId);
+          if (!tab || tab.kind !== "agent") {
+            throw new Error("Open an agent tab before reusing a loop.");
+          }
+          const project = activeProject(projectsRef.current);
+          const cwd =
+            tab.cwd ??
+            project?.path ??
+            (await invoke<string>("aethon_home_dir").catch(() => ""));
+          if (!cwd) throw new Error("Could not resolve a working directory.");
+          return await reuseScheduledTask({
+            taskId: id,
+            tabId: tab.id,
+            cwd,
+            model: tab.model || null,
+            thinkingLevel: tab.thinkingLevel ?? null,
+            hardEnforce: tab.hardEnforceProjectRoot ?? null,
+            authProfileId: tab.authProfileId ?? null,
+          });
+        },
+        cancelScheduledTask,
+        deleteScheduledTask,
+        activeTabId: () => {
+          const id = stateRef.current.activeTabId;
+          return typeof id === "string" && id.length > 0 ? id : null;
+        },
+        activeProject: () => {
+          const a = activeProject(projectsRef.current);
+          return a ? { id: a.id, label: a.label, path: a.path } : null;
+        },
+      };
+    },
     [
       activateLayoutById,
       appendMessage,

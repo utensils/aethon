@@ -10,7 +10,10 @@ import type { Tab } from "../types/tab";
 import type { SlashCommand, SlashCommandContext } from "../slashCommands";
 import type { NotificationInput } from "./useNotifications";
 import { useChatMessageController } from "./chatMessages";
-import { createChatTransportController, type SendChatOptions } from "./chatTransport";
+import {
+  createChatTransportController,
+  type SendChatOptions,
+} from "./chatTransport";
 import { useChatModelSelectionController } from "./chatModelSelection";
 import { createStopPromptController } from "./stopPrompt";
 import { createChatExportController } from "./chatExport";
@@ -34,7 +37,7 @@ export interface UseChatContext {
   /** Build the live SlashCommandContext for `cmd.run()`. Built per
    *  invocation so handlers see fresh state without re-creating the
    *  command registry. */
-  slashContext: () => SlashCommandContext;
+  slashContext: (options?: { afterCreatedAt?: number }) => SlashCommandContext;
   persistLocalChatMessage: (
     msg: ChatMessage,
     tabId: string,

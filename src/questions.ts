@@ -25,7 +25,11 @@ export interface AskUserChatOptions {
   input: AskUserInput;
   tabId: string;
   appendMessage: (msg: ChatMessage, tabId?: string) => void;
-  persistLocalChatMessage?: (msg: ChatMessage, tabId: string) => Promise<boolean>;
+  persistLocalChatMessage?: (
+    msg: ChatMessage,
+    tabId: string,
+  ) => Promise<boolean>;
+  createdAt?: number;
 }
 
 const QUESTION_EVENT = "aethon-question-answer";
@@ -66,6 +70,7 @@ export function createQuestionMessage(
   questionId: string,
   messageId: string,
   answer?: AskUserAnswer,
+  createdAt = Date.now(),
 ): ChatMessage {
   const title = input.title ?? "Aethon setup";
   const answerLine = answer ? `\nSelected: ${answer.label}` : "";
@@ -74,7 +79,7 @@ export function createQuestionMessage(
     role: "system",
     text: `## ${title}\n${input.prompt}${answerLine}`,
     a2ui: questionPayload(input, questionId, answer),
-    createdAt: Date.now(),
+    createdAt,
   };
 }
 
@@ -83,10 +88,17 @@ export function askUserWithChat({
   tabId,
   appendMessage,
   persistLocalChatMessage,
+  createdAt,
 }: AskUserChatOptions): Promise<AskUserAnswer> {
   const questionId = input.id ?? crypto.randomUUID();
   const messageId = `question-message-${questionId}`;
-  const pending = createQuestionMessage(input, questionId, messageId);
+  const pending = createQuestionMessage(
+    input,
+    questionId,
+    messageId,
+    undefined,
+    createdAt,
+  );
   appendMessage(pending, tabId);
   void persistLocalChatMessage?.(pending, tabId);
 
@@ -95,7 +107,13 @@ export function askUserWithChat({
       const detail = (event as CustomEvent<AskUserAnswer>).detail;
       if (!detail || detail.questionId !== questionId) return;
       window.removeEventListener(QUESTION_EVENT, handler);
-      const answered = createQuestionMessage(input, questionId, messageId, detail);
+      const answered = createQuestionMessage(
+        input,
+        questionId,
+        messageId,
+        detail,
+        pending.createdAt,
+      );
       appendMessage(answered, tabId);
       void persistLocalChatMessage?.(answered, tabId);
       resolve(detail);
