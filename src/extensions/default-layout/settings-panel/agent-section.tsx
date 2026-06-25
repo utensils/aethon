@@ -33,7 +33,7 @@ export function AgentSection({
         </button>
       </Field>
       <Field label="Codex Fast mode (supported GPT-5.5 / GPT-5.4 only)">
-        <label className="ae-settings-checkbox-row">
+        <span className="ae-settings-checkbox-row">
           <input
             type="checkbox"
             checked={config.agent.codexFastMode}
@@ -47,7 +47,7 @@ export function AgentSection({
             }
           />
           <span>Use the higher-cost priority service tier when available.</span>
-        </label>
+        </span>
       </Field>
       <Field label="Provider request timeout (seconds)">
         <input

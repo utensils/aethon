@@ -1,14 +1,14 @@
 import type { ReactNode } from "react";
 
 import type { AethonConfig } from "../../../config";
-import type { readSettingsState } from "./state";
+import type { SettingsState } from "./state";
 
 export type SettingsUpdate = (patch: Partial<AethonConfig>) => void;
 
 export function SaveState({
   settings,
 }: {
-  settings: ReturnType<typeof readSettingsState>;
+  settings: SettingsState;
 }) {
   if (settings.saveStatus === "idle") return null;
   const label =
