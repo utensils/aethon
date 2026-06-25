@@ -100,23 +100,10 @@ function resourceLoaderForTab(
   };
 }
 
-function extensionUiContextForTab(
+export function extensionUiContextForTab(
   deps: TabLifecycleDeps,
   tabId: string,
 ): ExtensionUIContext {
-  const sendResult = (
-    message: string,
-    kind: "info" | "warning" | "error" = "info",
-  ) => {
-    if (!message.trim()) return;
-    deps.send({
-      type: "native_slash_result",
-      tabId,
-      command: "extension",
-      kind: kind === "error" ? "error" : "info",
-      message,
-    });
-  };
   const passthroughTheme = {
     fg: (_color: string, text: string) => text,
     bg: (_color: string, text: string) => text,
@@ -135,11 +122,9 @@ function extensionUiContextForTab(
     select: () => Promise.resolve(undefined),
     confirm: () => Promise.resolve(false),
     input: () => Promise.resolve(undefined),
-    notify: sendResult,
+    notify: () => {},
     onTerminalInput: () => () => {},
-    setStatus: (_key, text) => {
-      if (text) sendResult(text);
-    },
+    setStatus: () => {},
     setWorkingMessage: () => {},
     setWorkingVisible: () => {},
     setWorkingIndicator: () => {},
