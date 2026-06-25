@@ -118,9 +118,28 @@ export function ConversationTurnRow({
       ? new Set(visibleAgentMessages.map((message) => message.id))
       : undefined;
   const branchTarget = branchTargetForTurn(turn, visibleAgentMessages);
+  const userIndex = turn.userMessage
+    ? turn.messages.findIndex((message) => message.id === turn.userMessage?.id)
+    : -1;
+  const preUserSystemMessages =
+    userIndex >= 0
+      ? turn.systemMessages.filter(
+          (message) =>
+            turn.messages.findIndex((item) => item.id === message.id) <
+            userIndex,
+        )
+      : turn.systemMessages;
+  const postUserSystemMessages =
+    userIndex >= 0
+      ? turn.systemMessages.filter(
+          (message) =>
+            turn.messages.findIndex((item) => item.id === message.id) >
+            userIndex,
+        )
+      : [];
   return (
     <div className="ae-conversation-turn">
-      {turn.systemMessages.map((message) => (
+      {preUserSystemMessages.map((message) => (
         <ChatMessageRow
           key={message.id}
           message={message}
@@ -171,6 +190,17 @@ export function ConversationTurnRow({
         }
         visibleAgentMessageIds={visibleAgentMessageIds}
       />
+      {postUserSystemMessages.map((message) => (
+        <ChatMessageRow
+          key={message.id}
+          message={message}
+          state={state}
+          tabId={tabId}
+          className={rowClassName}
+          onEvent={onEvent}
+          thinkingVisibility={thinkingVisibility}
+        />
+      ))}
       <TurnBranchActions
         target={branchTarget}
         state={state}

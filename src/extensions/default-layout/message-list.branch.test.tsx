@@ -131,6 +131,20 @@ describe("conversation turn rollback/fork affordance", () => {
     });
   });
 
+  it("renders post-user system output below the user prompt", () => {
+    turn([
+      { id: "u1", role: "user", text: "/mcp" },
+      { id: "s1", role: "system", text: "## MCP servers\n- `nixos`" },
+    ]);
+
+    const user = screen.getByText("/mcp");
+    const system = screen.getByText("MCP servers");
+
+    expect(
+      user.compareDocumentPosition(system) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
   it("hides the affordance when the turn has no branchable entry", () => {
     turn([{ id: "1", role: "agent", text: "hello" }]);
     expect(
