@@ -100,10 +100,7 @@ function resourceLoaderForTab(
   };
 }
 
-export function extensionUiContextForTab(
-  deps: TabLifecycleDeps,
-  tabId: string,
-): ExtensionUIContext {
+export function extensionUiContextForTab(): ExtensionUIContext {
   const passthroughTheme = {
     fg: (_color: string, text: string) => text,
     bg: (_color: string, text: string) => text,
@@ -346,7 +343,7 @@ export async function ensureTab(
   });
   emitContextUsage(state, deps, tabId, rec);
   await session.bindExtensions({
-    uiContext: extensionUiContextForTab(deps, tabId),
+    uiContext: extensionUiContextForTab(),
     onError: (error) => {
       lifecycleLog.warn(
         `pi extension error tabId=${tabId} event=${error.event}: ${error.error}`,

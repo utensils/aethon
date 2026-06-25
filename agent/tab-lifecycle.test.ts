@@ -635,10 +635,7 @@ describe("resolveTabCwd", () => {
 describe("extensionUiContextForTab", () => {
   it("does not turn transient Pi status lines into chat output", () => {
     const sent: Record<string, unknown>[] = [];
-    const ui = extensionUiContextForTab(
-      { send: (m) => sent.push(m) },
-      "tab-1",
-    );
+    const ui = extensionUiContextForTab();
 
     ui.setStatus("jazz-bat", "bat:100%");
     ui.setStatus("jazz-load", "load:20%");
@@ -651,10 +648,7 @@ describe("extensionUiContextForTab", () => {
 
   it("does not surface generic Pi UI notifications as app notifications", () => {
     const sent: Record<string, unknown>[] = [];
-    const ui = extensionUiContextForTab(
-      { send: (m) => sent.push(m) },
-      "tab-1",
-    );
+    const ui = extensionUiContextForTab();
 
     ui.notify("MCP connected", "info");
     ui.notify("OpenAI service tier: priority", "info");
