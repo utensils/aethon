@@ -1,0 +1,3 @@
+# Aethon's root AGENTS.md is intentionally larger than Codex's 32 KiB default.
+# Keep the full project guide available when this trusted project loads.
+project_doc_max_bytes = 98304
