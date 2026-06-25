@@ -221,6 +221,28 @@ args = ["toml.ts"]
     });
   });
 
+  it("reports the host project config mode when approving a project", () => {
+    const root = tempRoot();
+    const userDir = join(root, "user");
+    const project = join(root, "project");
+    mkdirSync(project, { recursive: true });
+    write(
+      join(userDir, "config.toml"),
+      `
+[mcp]
+project_configs = "auto-load"
+`,
+    );
+    write(
+      join(project, ".mcp.json"),
+      JSON.stringify({ mcpServers: { local: { command: "node" } } }),
+    );
+
+    const approved = approveAethonMcpProjectConfig(userDir, project);
+
+    expect(approved.mode).toBe("auto-load");
+  });
+
   it("resolves explicit relative project server cwd from the project root", () => {
     const root = tempRoot();
     const userDir = join(root, "user");

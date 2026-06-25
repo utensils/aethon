@@ -85,6 +85,7 @@ export function QuestionCard({ component }: BuiltinComponentProps) {
             value={customText}
             onChange={(event) => setCustomText(event.currentTarget.value)}
             placeholder="Custom answer"
+            aria-label="Custom answer"
           />
           <button type="submit" disabled={!customText.trim()}>
             Send

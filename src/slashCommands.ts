@@ -221,7 +221,7 @@ async function askInline(
 }
 
 function defaultAgentsBody(root: string): string {
-  const name = root.split("/").filter(Boolean).at(-1) ?? "this project";
+  const name = root.split(/[\\/]/).filter(Boolean).at(-1) ?? "this project";
   return [
     "# Aethon Project Notes",
     "",

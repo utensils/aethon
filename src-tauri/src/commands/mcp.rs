@@ -432,7 +432,7 @@ fn effective_servers(
         }
         for server in project_imports
             .into_iter()
-            .flat_map(|name| read_import_servers(&name, root, home_dir))
+            .flat_map(|name| read_project_import_servers(&name, root, home_dir))
         {
             servers.entry(server.name.clone()).or_insert(server);
         }
@@ -447,6 +447,9 @@ fn effective_servers(
 }
 
 fn is_project_import(import_name: &str, root: &Path, home_dir: Option<&Path>) -> bool {
+    if import_name == "vscode" || import_name.starts_with("./") || import_name.starts_with("../") {
+        return true;
+    }
     let canonical_root = std::fs::canonicalize(root).unwrap_or_else(|_| root.to_path_buf());
     import_paths(import_name, root, home_dir)
         .into_iter()
@@ -529,6 +532,39 @@ fn read_import_servers(
             let source_kind = format!("import:{import_name}");
             let source_path = display_source_path(&read_path, root);
             let servers = if read_path.extension().is_some_and(|ext| ext == "toml") {
+                parse_toml_servers(&text, &source_kind, &source_path)
+            } else {
+                parse_json_servers(&text, &source_kind, &source_path)
+            };
+            Some(servers)
+        })
+        .unwrap_or_default()
+}
+
+fn read_project_import_servers(
+    import_name: &str,
+    root: &Path,
+    home_dir: Option<&Path>,
+) -> Vec<DiscoveredServer> {
+    import_paths(import_name, root, home_dir)
+        .into_iter()
+        .filter_map(|path| safe_project_file_path(root, &path))
+        .find_map(|path| {
+            let text = match read_limited_text(&path) {
+                Ok(Some(text)) => text,
+                Ok(None) => return None,
+                Err(e) => {
+                    tracing::warn!(
+                        target: "aethon::mcp",
+                        "read {} failed: {e}; skipping project MCP import",
+                        path.display()
+                    );
+                    return None;
+                }
+            };
+            let source_kind = format!("import:{import_name}");
+            let source_path = display_source_path(&path, root);
+            let servers = if path.extension().is_some_and(|ext| ext == "toml") {
                 parse_toml_servers(&text, &source_kind, &source_path)
             } else {
                 parse_json_servers(&text, &source_kind, &source_path)
@@ -1015,6 +1051,31 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![("local", "tools/mcp.toml")]
         );
+    }
+
+    #[test]
+    fn status_rejects_relative_project_imports_that_escape_root() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let root = dir.path().join("project");
+        std::fs::create_dir_all(&root).expect("mkdir project");
+        std::fs::write(root.join(".mcp.json"), r#"{"imports":["../outside.json"]}"#)
+            .expect("write .mcp.json");
+        std::fs::write(
+            dir.path().join("outside.json"),
+            r#"{"mcpServers":{"escaped":{"command":"node"}}}"#,
+        )
+        .expect("write outside import");
+        let sources = discover_project_sources(&root);
+        let fingerprint = project_fingerprint(&root, &sources, &[], None).expect("fingerprint");
+        let mut store = ApprovalStore::default();
+        store
+            .approvals
+            .insert(root.display().to_string(), fingerprint);
+
+        let status = status_for_root(&root, &HostMcpPolicy::default(), &store, "", None);
+
+        assert_eq!(status.state, "approved");
+        assert!(status.servers.is_empty());
     }
 
     #[test]

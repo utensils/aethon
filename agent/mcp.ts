@@ -669,7 +669,7 @@ export function approveAethonMcpProjectConfig(
     root,
     fingerprint,
     sources: projectApprovalSourcePaths(root, sources, hostProjectImports),
-    mode: "require-approval",
+    mode: host.projectConfigMode,
   };
 }
 
