@@ -266,6 +266,8 @@ pub fn run() {
             commands::git::issues::gh_issue_view,
             commands::git::picker::pick_project_directory,
             commands::host::host_info,
+            commands::mcp::mcp_config_status,
+            commands::mcp::mcp_config_approve,
             commands::native_windows::native_window_open_canvas,
             commands::native_windows::native_window_save_canvas,
             commands::native_windows::native_window_get_canvas,

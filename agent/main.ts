@@ -98,6 +98,7 @@ import { resolveMemoryContext, readMemoryPath } from "./memory/resolver";
 import { renderMemoryPromptSection } from "./memory/renderer";
 import { captureProjectExtensionBaseline, runDispatcher } from "./dispatcher";
 import { withWorkerOrigin } from "./origin-gate";
+import { buildAethonMcpExtension } from "./mcp";
 
 function rawSend(obj: Record<string, unknown>): void {
   process.stdout.write(JSON.stringify(obj) + "\n");
@@ -284,7 +285,7 @@ async function main(): Promise<void> {
     cwd: process.cwd(),
     agentDir: getAgentDir(),
     settingsManager: state.settingsManager,
-    extensionFactories: [workingContextExtension],
+    extensionFactories: [buildAethonMcpExtension(state), workingContextExtension],
     appendSystemPromptOverride: (base) => [
       ...base,
       ...resolveAethonSystemPrompt(getRuntimeSnapshot(state)),
