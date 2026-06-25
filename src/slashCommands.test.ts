@@ -457,6 +457,50 @@ describe("buildBuiltinSlashCommands", () => {
     expect(titles).toContain("Reloading agent…");
   });
 
+  it("/mcp-auth forwards a server name to the native MCP auth command", async () => {
+    const calls: Array<{ name: string; args: string }> = [];
+    const ctx = makeSlashContext({
+      runNativeCommand: (name, args) => {
+        calls.push({ name, args });
+        return Promise.resolve();
+      },
+    });
+    const auth = buildBuiltinSlashCommands().find(
+      (c) => c.name === "mcp-auth",
+    )!;
+
+    await auth.run("linear", ctx);
+
+    expect(calls).toEqual([{ name: "mcp-auth", args: "linear" }]);
+    expect(invokeMock).not.toHaveBeenCalled();
+  });
+
+  it("/mcp-auth without a server opens the guided MCP setup flow", async () => {
+    mockApprovedMcpProject();
+    const questions: string[] = [];
+    const ctx = makeSlashContext({
+      activeProjectRoot: () => "/repo",
+      askUser: (input) => {
+        questions.push(input.title ?? "");
+        return Promise.resolve({
+          questionId: "test-question",
+          choiceId: "status",
+          label: "Show status",
+        });
+      },
+    });
+    const auth = buildBuiltinSlashCommands().find(
+      (c) => c.name === "mcp-auth",
+    )!;
+
+    await auth.run("", ctx);
+
+    expect(questions).toEqual(["MCP setup"]);
+    expect(invokeMock).toHaveBeenCalledWith("mcp_config_status", {
+      root: "/repo",
+    });
+  });
+
   it("/mcp lists visible MCP servers", async () => {
     mockApprovedMcpProject();
     const askUser = vi.fn();
@@ -570,23 +614,27 @@ describe("buildBuiltinSlashCommands", () => {
     expect(system[0]).toContain("State: approved");
   });
 
-  it("/mcp rejects unknown subcommands with the explicit usage", async () => {
+  it("/mcp forwards adapter subcommands to the native MCP command", async () => {
     mockApprovedMcpProject();
     const notifications: string[] = [];
+    const nativeCalls: Array<{ name: string; args: string }> = [];
     const mcp = buildBuiltinSlashCommands().find((c) => c.name === "mcp")!;
 
     await mcp.run(
-      "wat",
+      "reconnect linear",
       makeSlashContext({
         activeProjectRoot: () => "/repo",
         notify: (input) =>
           notifications.push(`${input.title}\n${input.message ?? ""}`),
+        runNativeCommand: (name, args) => {
+          nativeCalls.push({ name, args: args ?? "" });
+          return Promise.resolve();
+        },
       }),
     );
 
-    expect(notifications).toEqual([
-      "Unknown MCP command: wat\nUsage: /mcp [status|setup]",
-    ]);
+    expect(notifications).toEqual([]);
+    expect(nativeCalls).toEqual([{ name: "mcp", args: "reconnect linear" }]);
   });
 
   it("/loop without args opens scheduled tasks without creating a default loop", async () => {

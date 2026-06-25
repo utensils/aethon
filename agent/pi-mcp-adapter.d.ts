@@ -4,4 +4,3 @@ declare module "pi-mcp-adapter/index.ts" {
   const extension: ExtensionFactory;
   export default extension;
 }
-

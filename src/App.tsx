@@ -444,11 +444,8 @@ export default function App() {
   // last-active tab rather than the empty landing card.
   useTabBucketHydration(state.persistedTabBuckets, tabBucketsRef);
 
-  const {
-    updateTabRouted,
-    findTabRouted,
-    clearClosedIssueLinksForProject,
-  } = useRoutedTabHelpers({ setState, stateRef, projectsRef, tabBucketsRef });
+  const { updateTabRouted, findTabRouted, clearClosedIssueLinksForProject } =
+    useRoutedTabHelpers({ setState, stateRef, projectsRef, tabBucketsRef });
 
   // ---------------------------------------------------------------------
   // Toast stack + OS completion notification. Owned by useNotifications.
@@ -555,7 +552,7 @@ export default function App() {
     pendingTabOpens,
     slashCommandsRef,
     pushNotification,
-    slashContext: () => slashContext(),
+    slashContext: (options) => slashContext(options),
     persistLocalChatMessage,
     recordProjectModel,
     piDefaultModelRef,

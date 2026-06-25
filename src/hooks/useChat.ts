@@ -37,7 +37,10 @@ export interface UseChatContext {
   /** Build the live SlashCommandContext for `cmd.run()`. Built per
    *  invocation so handlers see fresh state without re-creating the
    *  command registry. */
-  slashContext: (options?: { afterCreatedAt?: number }) => SlashCommandContext;
+  slashContext: (options?: {
+    afterCreatedAt?: number;
+    tabId?: string;
+  }) => SlashCommandContext;
   persistLocalChatMessage: (
     msg: ChatMessage,
     tabId: string,

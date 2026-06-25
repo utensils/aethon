@@ -14,6 +14,7 @@ import { mkdirSync } from "node:fs";
 import {
   SessionManager,
   createAgentSession,
+  type ExtensionUIContext,
 } from "@mariozechner/pi-coding-agent";
 import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
 import type { Api, Model } from "@mariozechner/pi-ai";
@@ -45,6 +46,7 @@ import {
   findSessionFileMatchingCwd,
   repairDanglingSubagentToolResults,
 } from "../session-history";
+import { emitGlobalReady } from "../dispatcherTypes";
 import type { AethonAgentState, TabRecord } from "../state";
 import { contextUsageSnapshot, emitContextUsage } from "../context-usage";
 import { handleSessionEvent } from "./events";
@@ -95,6 +97,71 @@ function resourceLoaderForTab(
         );
       }
     },
+  };
+}
+
+function extensionUiContextForTab(
+  deps: TabLifecycleDeps,
+  tabId: string,
+): ExtensionUIContext {
+  const sendResult = (
+    message: string,
+    kind: "info" | "warning" | "error" = "info",
+  ) => {
+    if (!message.trim()) return;
+    deps.send({
+      type: "native_slash_result",
+      tabId,
+      command: "extension",
+      kind: kind === "error" ? "error" : "info",
+      message,
+    });
+  };
+  const passthroughTheme = {
+    fg: (_color: string, text: string) => text,
+    bg: (_color: string, text: string) => text,
+    bold: (text: string) => text,
+    italic: (text: string) => text,
+    underline: (text: string) => text,
+    inverse: (text: string) => text,
+    strikethrough: (text: string) => text,
+    getFgAnsi: () => "",
+    getBgAnsi: () => "",
+    getColorMode: () => "truecolor",
+    getThinkingBorderColor: () => (text: string) => text,
+    getBashModeBorderColor: () => (text: string) => text,
+  } as ExtensionUIContext["theme"];
+  return {
+    select: () => Promise.resolve(undefined),
+    confirm: () => Promise.resolve(false),
+    input: () => Promise.resolve(undefined),
+    notify: sendResult,
+    onTerminalInput: () => () => {},
+    setStatus: (_key, text) => {
+      if (text) sendResult(text);
+    },
+    setWorkingMessage: () => {},
+    setWorkingVisible: () => {},
+    setWorkingIndicator: () => {},
+    setHiddenThinkingLabel: () => {},
+    setWidget: () => {},
+    setFooter: () => {},
+    setHeader: () => {},
+    setTitle: () => {},
+    custom: <T>() => Promise.resolve(undefined as T),
+    pasteToEditor: () => {},
+    setEditorText: () => {},
+    getEditorText: () => "",
+    editor: () => Promise.resolve(undefined),
+    addAutocompleteProvider: () => {},
+    setEditorComponent: () => {},
+    getEditorComponent: () => undefined,
+    theme: passthroughTheme,
+    getAllThemes: () => [],
+    getTheme: () => undefined,
+    setTheme: () => ({ success: false, error: "Aethon bridge UI is read-only" }),
+    getToolsExpanded: () => false,
+    setToolsExpanded: () => {},
   };
 }
 
@@ -294,12 +361,18 @@ export async function ensureTab(
   });
   emitContextUsage(state, deps, tabId, rec);
   await session.bindExtensions({
+    uiContext: extensionUiContextForTab(deps, tabId),
     onError: (error) => {
       lifecycleLog.warn(
         `pi extension error tabId=${tabId} event=${error.event}: ${error.error}`,
       );
     },
   });
+  const previousSlashCommands = JSON.stringify(state.piSlashCommands);
+  refreshPiSlashCommands(state, session);
+  if (JSON.stringify(state.piSlashCommands) !== previousSlashCommands) {
+    await emitGlobalReady(state, deps);
+  }
 
   return rec;
 }

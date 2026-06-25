@@ -243,6 +243,40 @@ describe("dispatchInboundMessage", () => {
     });
   });
 
+  it("dispatches registered pi extension slash commands", async () => {
+    const f = makeFixture();
+    const runExtensionCommand = vi.fn(() => Promise.resolve(true));
+    f.state.tabs.set(
+      "tab-1",
+      fakeTabRecord({
+        session: {
+          _tryExecuteExtensionCommand: runExtensionCommand,
+        } as unknown as TabRecord["session"],
+      }),
+    );
+
+    await dispatchInboundMessage(
+      f.state,
+      f.deps,
+      fakeAethonApi(),
+      fakeExtensionApi,
+      {
+        type: "native_slash_command",
+        name: "mcp-auth",
+        args: "linear",
+        tabId: "tab-1",
+      },
+    );
+
+    expect(runExtensionCommand).toHaveBeenCalledWith("/mcp-auth linear");
+    expect(f.sent).not.toContainEqual(
+      expect.objectContaining({
+        type: "native_slash_result",
+        kind: "error",
+      }),
+    );
+  });
+
   it("contains handler failures and reports them as bridge errors", async () => {
     const f = makeFixture();
     const api = fakeAethonApi({

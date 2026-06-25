@@ -74,6 +74,7 @@ export interface AppSlashCommandContextResult {
 
 export interface SlashContextOptions {
   afterCreatedAt?: number;
+  tabId?: string;
 }
 
 export function useAppSlashCommandContext({
@@ -155,6 +156,22 @@ export function useAppSlashCommandContext({
         Number.isFinite(options.afterCreatedAt)
           ? options.afterCreatedAt
           : 0;
+      const requestedTabId =
+        typeof options?.tabId === "string" && options.tabId.length > 0
+          ? options.tabId
+          : null;
+      const activeTabId =
+        typeof stateRef.current.activeTabId === "string" &&
+        stateRef.current.activeTabId.length > 0
+          ? stateRef.current.activeTabId
+          : null;
+      const invocationTabId = requestedTabId ?? activeTabId;
+      const persistenceTabId = invocationTabId ?? "default";
+      const invocationTab = () => {
+        if (!invocationTabId) return undefined;
+        const tabs = (stateRef.current.tabs as Tab[] | undefined) ?? [];
+        return tabs.find((tab) => tab.id === invocationTabId);
+      };
       const nextCreatedAt = () => {
         const createdAt = Math.max(Date.now(), lastCreatedAt + 1);
         lastCreatedAt = createdAt;
@@ -162,37 +179,30 @@ export function useAppSlashCommandContext({
       };
       return {
         appendSystem: (text: string) => {
-          const tabId =
-            (stateRef.current.activeTabId as string | undefined) ?? "default";
           const msg = {
             id: crypto.randomUUID(),
             role: "system" as const,
             text,
             createdAt: nextCreatedAt(),
           };
-          appendMessage(msg, tabId);
-          persistLocalChatMessage(msg, tabId);
+          appendMessage(msg, persistenceTabId);
+          persistLocalChatMessage(msg, persistenceTabId);
         },
         notify: (input) => {
           pushNotification(input);
         },
         askUser: (input: AskUserInput): Promise<AskUserAnswer> => {
-          const tabId =
-            (stateRef.current.activeTabId as string | undefined) ?? "default";
           return askUserWithChat({
             input,
-            tabId,
+            tabId: persistenceTabId,
             appendMessage,
             persistLocalChatMessage,
             createdAt: nextCreatedAt(),
           });
         },
         activeProjectRoot: () => {
-          const activeId = stateRef.current.activeTabId;
-          const tabs = (stateRef.current.tabs as Tab[] | undefined) ?? [];
-          const activeTab = tabs.find((tab) => tab.id === activeId);
-          if (activeTab?.kind === "agent" && activeTab.cwd)
-            return activeTab.cwd;
+          const tab = invocationTab();
+          if (tab?.kind === "agent" && tab.cwd) return tab.cwd;
           return activeProject(projectsRef.current)?.path ?? null;
         },
         clearChat,
@@ -200,25 +210,24 @@ export function useAppSlashCommandContext({
         listThemes,
         setModel,
         setPlanMode: (enabled: boolean) => {
-          const activeId = stateRef.current.activeTabId;
-          if (typeof activeId !== "string" || activeId.length === 0) return;
+          if (!invocationTabId) return;
           setState((prev) => {
             const tabs = (prev.tabs as Tab[] | undefined) ?? [];
-            const idx = tabs.findIndex((t) => t.id === activeId);
+            const idx = tabs.findIndex((t) => t.id === invocationTabId);
             if (idx < 0 || tabs[idx].kind !== "agent") return prev;
             const next = [...tabs];
             next[idx] = { ...next[idx], planMode: enabled };
             return {
               ...prev,
               tabs: next,
-              ...(prev.activeTabId === activeId ? { planMode: enabled } : {}),
+              ...(prev.activeTabId === invocationTabId
+                ? { planMode: enabled }
+                : {}),
             };
           });
         },
         getPlanMode: () => {
-          const activeId = stateRef.current.activeTabId;
-          const tabs = (stateRef.current.tabs as Tab[] | undefined) ?? [];
-          const tab = tabs.find((t) => t.id === activeId);
+          const tab = invocationTab();
           return tab?.kind === "agent" ? tab.planMode === true : false;
         },
         resetLayout: () => setLayout(bootLayout),
@@ -258,13 +267,14 @@ export function useAppSlashCommandContext({
             (stateRef.current.authProfiles as
               | AuthProfilesUiState
               | undefined) ?? undefined;
-          const activeId = stateRef.current.activeTabId as string | undefined;
           return (auth?.profiles ?? []).map((p) => ({
             id: p.id,
             label: p.label,
             providerId: p.providerId,
             kind: p.kind,
-            active: !!activeId && auth?.activeByTab?.[activeId] === p.id,
+            active:
+              !!invocationTabId &&
+              auth?.activeByTab?.[invocationTabId] === p.id,
             default: auth?.defaultByProvider?.[p.providerId] === p.id,
           }));
         },
@@ -277,17 +287,13 @@ export function useAppSlashCommandContext({
             (p) => p.id === idOrLabel || p.label === idOrLabel,
           );
           if (!profile) throw new Error(`Unknown account: ${idOrLabel}`);
-          const activeId =
-            typeof stateRef.current.activeTabId === "string"
-              ? stateRef.current.activeTabId
-              : undefined;
           // Route through the shared switch so a non-default (worker) tab also
           // gets the tab-scoped `auth_profile_apply` — `auth_profile_use_for_tab`
           // alone updates only the global mapping, leaving the worker on the old
           // account for its next prompt.
           const target = resolveAccountSwitchTarget(
             (stateRef.current.tabs as Tab[] | undefined) ?? [],
-            activeId,
+            invocationTabId ?? undefined,
           );
           if (target.busy) {
             throw new Error(
@@ -341,15 +347,10 @@ export function useAppSlashCommandContext({
           await invoke("reload_agent");
         },
         runNativeCommand: async (name: string, args: string) => {
-          const activeId = stateRef.current.activeTabId;
-          const tabId =
-            typeof activeId === "string" && activeId.length > 0
-              ? activeId
-              : "default";
           await invoke("agent_command", {
             payload: JSON.stringify({
               type: "native_slash_command",
-              tabId,
+              tabId: persistenceTabId,
               name,
               args,
             }),
@@ -392,9 +393,7 @@ export function useAppSlashCommandContext({
           label?: string;
           promptSource?: string;
         }): Promise<ScheduledTaskRecord> => {
-          const tabs = (stateRef.current.tabs as Tab[] | undefined) ?? [];
-          const activeId = stateRef.current.activeTabId;
-          const tab = tabs.find((t) => t.id === activeId);
+          const tab = invocationTab();
           if (!tab || tab.kind !== "agent") {
             throw new Error(
               "Open an agent tab before creating a scheduled task.",
@@ -450,9 +449,7 @@ export function useAppSlashCommandContext({
         pauseScheduledTask,
         resumeScheduledTask,
         reuseScheduledTask: async (id: string) => {
-          const tabs = (stateRef.current.tabs as Tab[] | undefined) ?? [];
-          const activeId = stateRef.current.activeTabId;
-          const tab = tabs.find((t) => t.id === activeId);
+          const tab = invocationTab();
           if (!tab || tab.kind !== "agent") {
             throw new Error("Open an agent tab before reusing a loop.");
           }
@@ -474,10 +471,7 @@ export function useAppSlashCommandContext({
         },
         cancelScheduledTask,
         deleteScheduledTask,
-        activeTabId: () => {
-          const id = stateRef.current.activeTabId;
-          return typeof id === "string" && id.length > 0 ? id : null;
-        },
+        activeTabId: () => invocationTabId,
         activeProject: () => {
           const a = activeProject(projectsRef.current);
           return a ? { id: a.id, label: a.label, path: a.path } : null;

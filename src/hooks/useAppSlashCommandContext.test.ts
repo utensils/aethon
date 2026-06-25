@@ -96,6 +96,63 @@ describe("useAppSlashCommandContext", () => {
     });
   });
 
+  it("keeps slash command follow-up output on the invoking tab", () => {
+    const appendMessage = vi.fn();
+    const stateRef = ref({
+      activeTabId: "tab-1",
+      tabs: [
+        { id: "tab-1", kind: "agent", label: "One" },
+        { id: "tab-2", kind: "agent", label: "Two" },
+      ],
+    });
+    const { result } = renderHook(() =>
+      useAppSlashCommandContext({
+        bootLayout: { components: [] },
+        setState: vi.fn(),
+        setLayout: vi.fn(),
+        stateRef,
+        projectsRef: ref(makeProjects()),
+        layoutCatalogueRef: ref([]),
+        registry: new ExtensionRegistry(),
+        appendMessage,
+        pushNotification: vi.fn(() => "toast-1"),
+        clearChat: vi.fn(),
+        setTheme: vi.fn(),
+        listThemes: vi.fn(() => []),
+        setModel: vi.fn(() => Promise.resolve()),
+        toggleTerminal: vi.fn(),
+        toggleSidebar: vi.fn(),
+        toggleFilesSidebar: vi.fn(),
+        activateLayoutById: vi.fn(() => true),
+        openProjectFromPicker: vi.fn(() => Promise.resolve(null)),
+        openProjectByPath: vi.fn((path: string) => path),
+        setActiveProjectById: vi.fn(() => true),
+        clearActiveProject: vi.fn(),
+        removeProjectById: vi.fn(() => true),
+      }),
+    );
+
+    const ctx = result.current.slashContext({ tabId: "tab-1" });
+    stateRef.current.activeTabId = "tab-2";
+
+    act(() => {
+      ctx.appendSystem("MCP servers");
+    });
+
+    expect(appendMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        role: "system",
+        text: "MCP servers",
+      }),
+      "tab-1",
+    );
+    const payload = JSON.parse(invokeMock.mock.calls[0]?.[1]?.payload);
+    expect(payload).toMatchObject({
+      type: "local_chat_message",
+      tabId: "tab-1",
+    });
+  });
+
   it("does not persist empty local chat messages", () => {
     const { result } = renderHook(() =>
       useAppSlashCommandContext({

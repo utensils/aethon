@@ -17,6 +17,10 @@ vi.mock("@mariozechner/pi-coding-agent", async (importOriginal) => {
   return {
     ...actual,
     createAgentSession: mocks.createAgentSession,
+    theme: {
+      fg: (_color: string, text: string) => text,
+      bg: (_color: string, text: string) => text,
+    },
   };
 });
 
@@ -92,8 +96,21 @@ describe("ensureTab extension binding", () => {
     state.resourceLoader = resourceLoader as never;
 
     const session = makeSession();
+    const registeredCommands: Array<{
+      invocationName: string;
+      description: string;
+    }> = [];
+    Object.assign(session, {
+      _extensionRunner: {
+        getRegisteredCommands: () => registeredCommands,
+      },
+    });
     mocks.createAgentSession.mockImplementation((config) => {
       session.bindExtensions.mockImplementationOnce(() => {
+        registeredCommands.push({
+          invocationName: "mcp-auth",
+          description: "Authenticate MCP server",
+        });
         config.resourceLoader.extendResources({
           skillPaths: [
             {
@@ -114,10 +131,23 @@ describe("ensureTab extension binding", () => {
 
     expect(mocks.createAgentSession).toHaveBeenCalledOnce();
     expect(session.bindExtensions).toHaveBeenCalledWith({
+      uiContext: expect.objectContaining({
+        notify: expect.any(Function),
+        setStatus: expect.any(Function),
+      }),
       onError: expect.any(Function),
     });
     expect(session.subscribe).toHaveBeenCalledBefore(session.bindExtensions);
     expect(resourceLoader.extendResources).not.toHaveBeenCalled();
+    expect(state.piSlashCommands).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "mcp-auth",
+          description: "Authenticate MCP server",
+          source: "extension",
+        }),
+      ]),
+    );
     expect(state.tabs.get("tab-1")?.session).toBe(session);
   });
 });

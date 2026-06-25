@@ -349,11 +349,7 @@ async function runMcpCommand(
     return;
   }
   if (!wantsSetup) {
-    ctx.notify({
-      title: `Unknown MCP command: ${args.trim()}`,
-      message: "Usage: /mcp [status|setup]",
-      kind: "error",
-    });
+    await ctx.runNativeCommand("mcp", args.trim());
     return;
   }
   const choices = [
@@ -430,6 +426,18 @@ async function runMcpCommand(
     default:
       ctx.appendSystem(`## MCP\n${mcpStatusText(status)}`);
   }
+}
+
+async function runMcpAuthCommand(
+  ctx: SlashCommandContext,
+  args: string,
+): Promise<void> {
+  const server = args.trim();
+  if (!server) {
+    await runMcpCommand(ctx, "setup");
+    return;
+  }
+  await ctx.runNativeCommand("mcp-auth", server);
 }
 
 async function runStartupSetup(ctx: SlashCommandContext): Promise<void> {
@@ -646,7 +654,8 @@ export function buildBuiltinSlashCommands(): SlashCommand[] {
     {
       name: "mcp-auth",
       description: "Configure MCP authentication for the active project",
-      run: async (_args, ctx) => runMcpCommand(ctx, "setup"),
+      usage: "[server]",
+      run: async (args, ctx) => runMcpAuthCommand(ctx, args),
     },
     {
       name: "login",

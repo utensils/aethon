@@ -4,6 +4,8 @@
 //! project files or explicit host policy keys after a frontend setup flow has
 //! asked the user. Detection can happen automatically; mutation should not.
 
+use std::fs::File;
+use std::io::Read;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
@@ -61,23 +63,28 @@ pub struct WriteResult {
 const AGENTS_BEGIN: &str = "<!-- AETHON:BEGIN -->";
 const AGENTS_END: &str = "<!-- AETHON:END -->";
 const DEFAULT_STARTUP_TIMEOUT_SECONDS: u64 = 600;
+const MCP_CONFIG_MAX_BYTES: usize = 256 * 1024;
 
 #[tauri::command]
 pub fn aethon_setup_status(root: String) -> Result<ProjectSetupStatus, String> {
     let root = canonicalize_existing_dir(&root)?;
     Ok(ProjectSetupStatus {
         root: root.display().to_string(),
-        agents: file_status(&root.join("AGENTS.md"), Some((AGENTS_BEGIN, AGENTS_END))),
-        startup: file_status(&root.join(".aethon").join("startup.toml"), None),
-        mcp_toml: file_status(&root.join(".aethon").join("mcp.toml"), None),
-        claude_mcp_json: file_status(&root.join(".mcp.json"), None),
+        agents: file_status(
+            &root,
+            &root.join("AGENTS.md"),
+            Some((AGENTS_BEGIN, AGENTS_END)),
+        ),
+        startup: file_status(&root, &root.join(".aethon").join("startup.toml"), None),
+        mcp_toml: file_status(&root, &root.join(".aethon").join("mcp.toml"), None),
+        claude_mcp_json: file_status(&root, &root.join(".mcp.json"), None),
     })
 }
 
 #[tauri::command]
 pub fn aethon_setup_write_agents(args: WriteAgentsArgs) -> Result<WriteResult, String> {
     let root = canonicalize_existing_dir(&args.root)?;
-    let path = root.join("AGENTS.md");
+    let path = prepare_setup_write_target(&root, &root.join("AGENTS.md"))?;
     let existing = read_optional(&path)?;
     let block = format!(
         "{AGENTS_BEGIN}\n{}\n{AGENTS_END}",
@@ -113,20 +120,16 @@ pub fn aethon_setup_set_host_mcp_policy(
 #[tauri::command]
 pub fn aethon_setup_import_mcp_json(root: String) -> Result<WriteResult, String> {
     let root = canonicalize_existing_dir(&root)?;
-    let source = root.join(".mcp.json");
-    let text =
-        std::fs::read_to_string(&source).map_err(|e| format!("read {}: {e}", source.display()))?;
+    let source = validate_setup_target(&root, &root.join(".mcp.json"))
+        .and_then(|target| resolve_existing_safe_target(&root, target))?;
+    let text = read_required_limited_text(&source)?;
     let parsed: serde_json::Value =
         serde_json::from_str(&text).map_err(|e| format!("parse {}: {e}", source.display()))?;
     let servers = parsed
         .get("mcpServers")
         .and_then(serde_json::Value::as_object)
         .ok_or_else(|| ".mcp.json does not contain an mcpServers object".to_string())?;
-    let target = root.join(".aethon").join("mcp.toml");
-    if let Some(parent) = target.parent() {
-        std::fs::create_dir_all(parent)
-            .map_err(|e| format!("create_dir_all {}: {e}", parent.display()))?;
-    }
+    let target = prepare_setup_write_target(&root, &root.join(".aethon").join("mcp.toml"))?;
     let existing = read_optional(&target)?.unwrap_or_default();
     let mut doc = parse_toml_doc(&existing, &target)?;
     let mcp = ensure_table(&mut doc, "mcp");
@@ -195,11 +198,7 @@ pub fn aethon_setup_write_startup_command(
     args: WriteStartupCommandArgs,
 ) -> Result<WriteResult, String> {
     let root = canonicalize_existing_dir(&args.root)?;
-    let target = root.join(".aethon").join("startup.toml");
-    if let Some(parent) = target.parent() {
-        std::fs::create_dir_all(parent)
-            .map_err(|e| format!("create_dir_all {}: {e}", parent.display()))?;
-    }
+    let target = prepare_setup_write_target(&root, &root.join(".aethon").join("startup.toml"))?;
     let existing = read_optional(&target)?.unwrap_or_default();
     let mut doc = parse_toml_doc(&existing, &target)?;
     let startup = ensure_table(&mut doc, "startup");
@@ -233,8 +232,8 @@ pub fn aethon_setup_write_startup_command(
     })
 }
 
-fn file_status(path: &Path, markers: Option<(&str, &str)>) -> SetupFileStatus {
-    let text = read_optional(path).ok().flatten();
+fn file_status(root: &Path, path: &Path, markers: Option<(&str, &str)>) -> SetupFileStatus {
+    let text = safe_setup_read_optional(root, path).ok().flatten();
     let managed_block = markers
         .zip(text.as_deref())
         .is_some_and(|((begin, end), text)| text.contains(begin) && text.contains(end));
@@ -254,12 +253,72 @@ fn canonicalize_existing_dir(root: &str) -> Result<PathBuf, String> {
     Ok(canonical)
 }
 
+fn validate_setup_target(root: &Path, path: &Path) -> Result<PathBuf, String> {
+    let target = crate::helpers::resolve_inside_root(root, path)
+        .ok_or_else(|| format!("path outside root: {}", path.display()))?;
+    crate::commands::fs::ensure_symlink_safe(&target, root)?;
+    Ok(target)
+}
+
+fn resolve_existing_safe_target(root: &Path, target: PathBuf) -> Result<PathBuf, String> {
+    match std::fs::symlink_metadata(&target) {
+        Ok(meta) if meta.file_type().is_symlink() => {
+            let resolved = target
+                .canonicalize()
+                .map_err(|e| format!("resolve symlink {}: {e}", target.display()))?;
+            let resolved =
+                crate::helpers::resolve_inside_root(root, &resolved).ok_or_else(|| {
+                    format!(
+                        "symlink escapes root: {} -> {}",
+                        target.display(),
+                        resolved.display()
+                    )
+                })?;
+            crate::commands::fs::ensure_symlink_safe(&resolved, root)?;
+            Ok(resolved)
+        }
+        Ok(_) => Ok(target),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(target),
+        Err(e) => Err(format!("metadata {}: {e}", target.display())),
+    }
+}
+
+fn safe_setup_read_optional(root: &Path, path: &Path) -> Result<Option<String>, String> {
+    let target = validate_setup_target(root, path)?;
+    let target = resolve_existing_safe_target(root, target)?;
+    read_optional(&target)
+}
+
+fn prepare_setup_write_target(root: &Path, path: &Path) -> Result<PathBuf, String> {
+    let target = validate_setup_target(root, path)?;
+    if let Some(parent) = target.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| format!("create_dir_all {}: {e}", parent.display()))?;
+        crate::commands::fs::ensure_symlink_safe(parent, root)?;
+    }
+    let target = resolve_existing_safe_target(root, target)?;
+    crate::commands::fs::ensure_symlink_safe(&target, root)?;
+    Ok(target)
+}
+
 fn read_optional(path: &Path) -> Result<Option<String>, String> {
     match std::fs::read_to_string(path) {
         Ok(text) => Ok(Some(text)),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
         Err(e) => Err(format!("read {}: {e}", path.display())),
     }
+}
+
+fn read_required_limited_text(path: &Path) -> Result<String, String> {
+    let file = File::open(path).map_err(|e| format!("read {}: {e}", path.display()))?;
+    let mut bytes = Vec::with_capacity(MCP_CONFIG_MAX_BYTES);
+    file.take(MCP_CONFIG_MAX_BYTES as u64)
+        .read_to_end(&mut bytes)
+        .map_err(|e| format!("read {}: {e}", path.display()))?;
+    while std::str::from_utf8(&bytes).is_err() {
+        bytes.pop();
+    }
+    Ok(String::from_utf8(bytes).unwrap_or_default())
 }
 
 fn replace_managed_block(existing: &str, block: &str) -> String {
@@ -601,5 +660,90 @@ mod tests {
             parsed["mcp"]["servers"]["demo.server/name"]["command"].as_str(),
             Some("node")
         );
+    }
+
+    #[test]
+    fn import_mcp_json_reads_only_capped_prefix() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let mut text = r#"{"mcpServers":{"demo":{"command":"node"}}}"#.as_bytes().to_vec();
+        text.extend(std::iter::repeat_n(b' ', MCP_CONFIG_MAX_BYTES - text.len()));
+        text.extend_from_slice(b"not-read");
+        std::fs::write(dir.path().join(".mcp.json"), text).expect("write .mcp.json");
+
+        let result =
+            aethon_setup_import_mcp_json(dir.path().display().to_string()).expect("import");
+        let imported = std::fs::read_to_string(result.path).expect("read import");
+
+        assert!(imported.contains("[mcp.servers.demo]"));
+        assert!(imported.contains("command = \"node\""));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn write_agents_rejects_symlink_escape() {
+        use std::os::unix::fs::symlink;
+
+        let dir = tempfile::tempdir().expect("tempdir");
+        let root = dir.path().join("project");
+        let outside = dir.path().join("outside.md");
+        std::fs::create_dir_all(&root).expect("mkdir project");
+        std::fs::write(&outside, "outside").expect("write outside");
+        symlink(&outside, root.join("AGENTS.md")).expect("symlink agents");
+
+        let err = aethon_setup_write_agents(WriteAgentsArgs {
+            root: root.display().to_string(),
+            body: "managed".to_string(),
+        })
+        .expect_err("symlink escape rejected");
+
+        assert!(err.contains("symlink escapes root"));
+        assert_eq!(
+            std::fs::read_to_string(&outside).expect("read outside"),
+            "outside"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn import_mcp_json_rejects_symlinked_aethon_dir() {
+        use std::os::unix::fs::symlink;
+
+        let dir = tempfile::tempdir().expect("tempdir");
+        let root = dir.path().join("project");
+        let outside = dir.path().join("outside");
+        std::fs::create_dir_all(&root).expect("mkdir project");
+        std::fs::create_dir_all(&outside).expect("mkdir outside");
+        std::fs::write(
+            root.join(".mcp.json"),
+            r#"{"mcpServers":{"demo":{"command":"node"}}}"#,
+        )
+        .expect("write .mcp.json");
+        symlink(&outside, root.join(".aethon")).expect("symlink .aethon");
+
+        let err = aethon_setup_import_mcp_json(root.display().to_string())
+            .expect_err("symlink escape rejected");
+
+        assert!(err.contains("symlink escapes root"));
+        assert!(!outside.join("mcp.toml").exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn import_mcp_json_rejects_symlinked_source_escape() {
+        use std::os::unix::fs::symlink;
+
+        let dir = tempfile::tempdir().expect("tempdir");
+        let root = dir.path().join("project");
+        let outside = dir.path().join("outside.json");
+        std::fs::create_dir_all(&root).expect("mkdir project");
+        std::fs::write(&outside, r#"{"mcpServers":{"demo":{"command":"node"}}}"#)
+            .expect("write outside");
+        symlink(&outside, root.join(".mcp.json")).expect("symlink .mcp.json");
+
+        let err = aethon_setup_import_mcp_json(root.display().to_string())
+            .expect_err("symlink source rejected");
+
+        assert!(err.contains("symlink escapes root"));
+        assert!(!root.join(".aethon/mcp.toml").exists());
     }
 }

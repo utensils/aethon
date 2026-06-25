@@ -512,11 +512,14 @@ describe("useChat setModel", () => {
   });
 
   it("builds local slash context after the echoed user command timestamp", async () => {
-    const seen: Array<number | undefined> = [];
+    const seen: Array<{ afterCreatedAt?: number; tabId?: string }> = [];
     const run = vi.fn();
     const { ctx, stateRef } = buildContext();
     ctx.slashContext = (options) => {
-      seen.push(options?.afterCreatedAt);
+      seen.push({
+        afterCreatedAt: options?.afterCreatedAt,
+        tabId: options?.tabId,
+      });
       return {
         appendSystem: vi.fn(),
         notify: vi.fn(),
@@ -539,7 +542,9 @@ describe("useChat setModel", () => {
     });
 
     const tab = (stateRef.current.tabs as Tab[]).find((t) => t.id === "tab-1");
-    expect(seen).toEqual([tab?.messages.at(-1)?.createdAt]);
+    expect(seen).toEqual([
+      { afterCreatedAt: tab?.messages.at(-1)?.createdAt, tabId: "tab-1" },
+    ]);
     expect(run).toHaveBeenCalledWith("status", expect.any(Object));
   });
 
