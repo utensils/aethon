@@ -25,12 +25,15 @@ markdown preview, search results). The two need opposite defaults.
    - File-tree row label, project path under the empty state, branch
      name in the status-bar chip, tooltip-style metadata strings.
    - Add `data-selectable` to the element that wraps the copyable
-     text. Chrome.css scopes a `[data-selectable] { user-select: text }`
+     text. `chrome/base.css` scopes a `[data-selectable] { user-select: text }`
      rule so the opt-in works wherever the parent disables selection.
 
 ## Implementing the policy in CSS
 
-`src/styles/chrome.css` is the authoritative place. Roughly:
+`src/styles/chrome/` is the authoritative place. `src/styles/chrome.css` is
+now just an `@import` aggregator; the real rules live in the per-domain
+stylesheets it pulls in (e.g. `src/styles/chrome/base.css` carries the
+selection defaults). Roughly:
 
 ```css
 /* Chrome containers default to user-select: none */
@@ -65,4 +68,4 @@ viewer), confirm that the wrapping element is **not** inside a
 a more specific rule) so the user can copy.
 
 The policy is enforced by review; there's no lint rule for it. Search
-for `user-select` in chrome.css to see the current set of overrides.
+for `user-select` in `src/styles/chrome/` to see the current set of overrides.

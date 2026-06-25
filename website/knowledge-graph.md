@@ -17,7 +17,7 @@ Aethon ships an interactive **knowledge graph** of its own codebase — generate
 [understand-anything](https://github.com/Egonex-AI/Understand-Anything) — so you can explore the
 architecture visually instead of reading the source top to bottom.
 
-The graph maps **2,674 nodes** (files, functions, classes, configs, docs) and **5,903 edges**
+The graph maps **3,339 nodes** (files, functions, classes, configs, docs) and **7,740 edges**
 (imports, calls, contains, tested-by, …) across **10 architecture layers**, with a **14-step
 guided tour** that walks the three-layer design — Rust/Tauri shell → agent bridge → React
 frontend. A separate **domain view** groups the code into seven functional domains.

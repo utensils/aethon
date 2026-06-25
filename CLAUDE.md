@@ -383,7 +383,8 @@ Auto-update lives in three files:
     through the previous two tags. The downloaded `Update` is stashed in
     `UpdaterState::pending_update` until install fires (it isn't
     `Serialize` so it can't cross IPC).
-- `src-tauri/src/boot_probation.rs` — pre-install backup + post-launch
+- `src-tauri/src/boot_probation/` (`backup`, `detect`, `monitor`,
+  `report`, `rollback`, `schema`) — pre-install backup + post-launch
   rollback timer. `install_pending_update` calls `prepare_for_update`
   inside `spawn_blocking` to copy the current `.app` to
   `~/.aethon/updates/previous/<version>/`. `setup()` reads the
@@ -447,19 +448,27 @@ to see resolver timing.
 
 ### Voice-to-text input
 
-Composer dictation lives Rust-side. `src-tauri/src/voice.rs` runs a local
+Composer dictation lives Rust-side in the `src-tauri/src/voice/` module
+(`mod`, `audio`, `inference`, `lfm2`, `mel`, `playback`, `providers`,
+`registry`, `catalog`, `download`, `settings`, `types`). It runs a local
 Whisper model (`candle-transformers`) as one provider; `voice/audio.rs`
-is the `cpal` recorder (level-metering task + WAV capture). The other
-providers are native OS recognizers behind `platform_speech.rs`'s
-`PlatformSpeechEngine` trait — macOS `SFSpeechRecognizer`/`SpeechAnalyzer`
-(driven by a small Swift static lib compiled in `build.rs`), Windows
-SAPI 5.4 via COM (`windows` crate, no .NET/PowerShell), Linux a stub.
-All providers consume the same `CapturedAudio` PCM buffer, so `voice.rs`
-holds a `&dyn PlatformSpeechEngine` and needs no per-OS branching.
+is the `cpal` recorder (level-metering task + WAV capture). Other
+providers are native OS recognizers behind the
+`src-tauri/src/platform_speech/` module's (`mod`, `macos`,
+`windows_speech`) `PlatformSpeechEngine` trait — macOS
+`SFSpeechRecognizer`/`SpeechAnalyzer` (driven by a small Swift static lib
+compiled in `build.rs`), Windows SAPI 5.4 via COM (`windows` crate, no
+.NET/PowerShell), Linux a stub. A third, end-to-end conversational mode
+is **LFM2-Audio** (`voice/lfm2.rs`) — an ASR+TTS llama.cpp GGUF runner
+that drives hands-free conversation and speak-aloud replies. All providers
+consume the same `CapturedAudio` PCM buffer, so the voice facade holds a
+`&dyn PlatformSpeechEngine` and needs no per-OS branching.
 `commands/voice.rs` exposes the IPC surface: provider
-list/select/enable, model `prepare`/`remove` (Whisper weights are
-downloaded on demand), and `start_recording` /
-`stop_and_transcribe` / `cancel_recording`.
+list/select/enable, model `prepare`/`remove` (weights downloaded on
+demand), and `start_recording` / `stop_and_transcribe` /
+`cancel_recording`. Speak-aloud and auto-listen are configured via
+`[voice] speak_agent_replies` / `speak_max_chars` /
+`conversation_continuous` (see Settings → Voice).
 
 ### Auth profiles (multi-account login)
 

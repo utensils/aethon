@@ -1,0 +1,4 @@
+interface:
+  display_name: "Aethon Understand"
+  short_description: "Use Aethon's architecture graph"
+  default_prompt: "Use $aethon-understand to answer an Aethon architecture question from the existing knowledge graph."

@@ -87,11 +87,36 @@ right-click the project and choose **Set workspace base...**. Leaving it blank
 restores the default. The task launcher inherits the project default, but its
 base-branch chip can override it for one launch.
 
-When a GitHub issue row is sent to the agent, Aethon always creates a fresh
-workspace first. The generated branch name uses the issue number and title, with
-the prefix inferred from conventional issue titles such as `feat(admin): ...`
-or labels such as `bug`, `enhancement`, `docs`, `performance`, and
-`dependencies`. Unknown issue work falls back to `fix/`.
+When a GitHub issue row is sent to the agent, you choose where it lands.
+The issue context menu offers two actions:
+
+- **Send to agent (new workspace)** — creates a fresh workspace for the issue.
+- **Send to agent (current workspace/branch)** — runs it in the active workspace.
+
+If a session is already linked to that issue, both routes instead **re-open
+the existing session** rather than forking a new one. When a new workspace
+is created, its branch name uses the issue number and title, with the prefix
+inferred from conventional issue titles such as `feat(admin): ...` or labels
+such as `bug`, `enhancement`, `docs`, `performance`, and `dependencies`.
+Unknown issue work falls back to `fix/`.
+
+## Workspace startup commands
+
+A project can ship startup commands that run when a workspace becomes
+active, defined in `<project>/.aethon/startup.toml`. By default Aethon
+asks before running them; set `[startup] auto_approve = true` in
+`~/.aethon/config.toml` to trust them globally. See
+[Configuration](/guide/configuration#workspace-startup-commands).
+
+## Repo-owned MCP servers
+
+Alongside project-local extensions, a repo can declare
+[MCP](https://modelcontextprotocol.io) servers in
+`<project>/.aethon/mcp.toml` (or `.mcp.json`). Whether those load is
+governed by the host policy `[mcp] project_configs`
+(`require-approval` by default). Use `/mcp setup` to add a server and
+`/mcp status` to inspect connections. See
+[Configuration](/guide/configuration#mcp-servers).
 
 ## Removing a project
 

@@ -43,8 +43,8 @@ applied when a new tab is created.
 
 ## 4 — Open a shell
 
-The bottom panel hosts a tabbed terminal. Toggle it with **`Cmd+\``**
-(backtick).
+The bottom panel hosts a tabbed terminal. Toggle it with **`Ctrl+\``**
+(backtick, all platforms).
 
 Two kinds of sub-tabs live there:
 

@@ -15,20 +15,24 @@ additional commands via
 | `/help` | List all registered slash commands (built-in + extension) with their descriptions. |
 | `/theme [<id>]` | Open the theme picker (no argument) or activate a specific theme directly (`/theme paper`). |
 | `/model [<name>]` | Open the model picker or activate a specific model directly (`/model anthropic/claude-sonnet-4-6`). |
+| `/plan [on\|off\|toggle\|status]` | Toggle planning-only mode for the active session (also bound to `Shift+Tab`). |
 | `/init` | Create or update the Aethon managed block in the active project's `AGENTS.md`. |
 | `/config` | Open guided project setup for MCP servers, startup commands, and project instructions. |
-| `/mcp [setup]` | Show or configure MCP servers for the active project, including `.mcp.json` approval/import. |
-| `/mcp-auth` | Open the guided MCP setup/authentication flow for the active project. |
+| `/mcp [status\|setup]` | Show or configure MCP servers for the active project, including `.mcp.json` approval/import. No argument lists servers; `status` shows host/policy state; `setup` opens the guided flow. |
+| `/mcp-auth [server]` | Open the guided MCP setup/authentication flow for the active project. With a `server` name, runs authentication for that server. |
 | `/login [list\|use <account>\|default <account>]` | Open provider login, list stored accounts, switch the active tab's account, or set the default account. |
 | `/reset` | Reset the active layout to the default `workstation` payload. |
 | `/reload` | Reload the agent bridge and re-discover extensions, themes, slash commands, and disabled-extension state. |
 | `/rename [new label]` | Rename the active session. Empty input restores the auto-derived label. |
+| `/memory` | Show Aethon's user memory and resolved-project memory. |
 | `/context` | Run pi's native context-window usage command for the active tab. |
 | `/session` | Run pi's native session-stats command for the active tab. |
 | `/compact [instructions]` | Run pi's compaction flow for older context. |
 | `/name [name]` | Show or set the pi session display name. |
 | `/export [path.html\|path.jsonl]` | Export the pi session as HTML, or JSONL when the path ends in `.jsonl`. |
-| `/terminal` | Toggle the bottom terminal panel. Equivalent to `Cmd+\``. |
+| `/loop [interval] [prompt] \| reuse <id>` | Run a repeated scheduled task in this session. |
+| `/tasks [list\|run\|pause\|resume\|cancel\|delete <id>]` | Open or control Scheduled Tasks. |
+| `/terminal` | Toggle the bottom terminal panel. Equivalent to `Ctrl+\``. |
 | `/extensions` | List every loaded extension. With `install <npm-package\|git-url>` (or `add`), runs `npm install --prefix ~/.aethon/extensions` and reloads the agent so the new package is picked up. |
 | `/sidebar` | Toggle the sidebar. Equivalent to `Cmd+B`. |
 | `/files` | Toggle the right-hand files sidebar. |
@@ -70,8 +74,13 @@ or fire LLM turns.
 
 Built-in command names are reserved (`clear`, `help`, `theme`, `model`,
 `init`, `config`, `mcp`, `mcp-auth`, `login`, `reset`, `reload`, `rename`,
-`context`, `session`, `compact`, `name`, `export`, `terminal`, `sidebar`,
-`files`, `layout`, `extensions`, `project`); registering one is rejected with a notice.
+`memory`, `context`, `session`, `compact`, `name`, `export`, `terminal`,
+`sidebar`, `files`, `layout`, `extensions`, `project`); registering one is
+rejected with a notice. `plan`, `loop`, and `tasks` are frontend-only
+commands that aren't in the bridge's reserved set, so the bridge won't
+reject them — but the frontend hydration layer drops any extension command
+whose name collides with a built-in, so registering `plan`/`loop`/`tasks`
+has no effect either. Treat them as effectively reserved too.
 
 ## Installing extensions
 

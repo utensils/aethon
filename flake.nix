@@ -407,9 +407,7 @@
                 help = "Start the VitePress docs site on 0.0.0.0 with hot-reload (default http://localhost:5173)";
                 command = ''
                   set -euo pipefail
-                  cd website
-                  [ -d node_modules ] || bun install --frozen-lockfile
-                  exec bun run dev --host 0.0.0.0 "$@"
+                  exec ./scripts/docs-dev.sh "$@"
                 '';
               }
               {

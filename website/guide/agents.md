@@ -72,6 +72,42 @@ for OAuth and per-account credentials. Changing an environment variable
 requires a restart to take effect.
 :::
 
+## Reasoning effort
+
+Models that expose reasoning effort can be tuned per session. When the
+active model supports it, the model picker shows a **reasoning selector**
+(Reasoning level) next to the model name; the choice is stored per tab.
+
+The default reasoning effort for new tabs comes from `[agent] thinking_level`
+in `~/.aethon/config.toml`:
+
+```toml
+[agent]
+thinking_level = "medium"   # off | minimal | low | medium | high | xhigh
+```
+
+Leave it unset to use each provider's own default. Codex-family models also
+honour `[agent] codex_fast_mode` (trade reasoning depth for a faster, higher
+service tier). See
+[config.toml reference](/reference/config-reference) for both fields.
+
+## Plan mode
+
+Plan mode makes a session **plan before it acts**: the agent inspects
+read-only context and proposes an implementation plan with risks and tests,
+but does not edit files, run shell commands, start tasks, commit, or push
+until you switch back.
+
+| Toggle | How |
+|---|---|
+| Slash command | `/plan [on\|off\|toggle\|status]` |
+| Keyboard | `Shift+Tab` (toggles plan mode for the active agent session) |
+
+Enforcement is **agent-side**: the bridge's source guard blocks the
+mutating tools while plan mode is on, so the restriction holds even if the
+model tries to act anyway. Read-only tools stay available. Switch back to
+implementation mode (or `/plan off`) to let the agent make changes.
+
 ## Auth profiles (multiple accounts)
 
 Auth profiles let different tabs authenticate as different accounts: a

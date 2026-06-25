@@ -684,7 +684,7 @@ in the workstation layout (M6 restructure).
 
 Active sub-tab is tracked at `/terminalPanel/activeSubId` (defaults to
 `"agent-bash"`). Extensions can drive sub-tab selection via setState; the
-default user wiring is the `Cmd+\`` toggle, the `+`button to spawn a
+default user wiring is the `Ctrl+\`` toggle, the `+`button to spawn a
 new shell sub-tab, and`Cmd+1..9` to jump between sub-tabs when focus
 is in the panel.
 

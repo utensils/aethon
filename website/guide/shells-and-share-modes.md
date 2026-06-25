@@ -1,6 +1,6 @@
 # Shells & share modes
 
-The **bottom terminal panel** (toggle `Cmd+\``) is a tabbed surface
+The **bottom terminal panel** (toggle `Ctrl+\``) is a tabbed surface
 hosting **two kinds of sub-tabs**:
 
 | Sub-tab | What it is |
@@ -26,7 +26,7 @@ Both being theme-aware xterm.js surfaces under the hood.
 
 | Action | Shortcut | Notes |
 |---|---|---|
-| Toggle the panel | `Cmd+\`` | Backtick. Same as iTerm2. |
+| Toggle the panel | `Ctrl+\`` | Backtick, all platforms (`Cmd+\`` is reserved by macOS). |
 | New shell sub-tab | `Cmd+Shift+T` | Auto-opens the panel. |
 | New shell sub-tab (focus-aware) | `Cmd+T` | When focus is in the panel, `Cmd+T` opens a shell. |
 | Close active sub-tab | `Cmd+W` | Prompts before killing a running job (configurable). |
@@ -35,7 +35,9 @@ Both being theme-aware xterm.js surfaces under the hood.
 - Focus inside the bottom panel → opens a **shell** sub-tab.
 - Focus elsewhere → opens an **agent** tab.
 
-To make `Cmd+T` *always* open a shell, set `[shortcuts] new_tab_kind = "shell"`.
+The routing is fixed — use `Cmd+Shift+T` to *always* open a shell sub-tab,
+regardless of focus. (The old `[shortcuts] new_tab_kind` key is a
+deprecated no-op and no longer changes this.)
 :::
 
 ## Capabilities

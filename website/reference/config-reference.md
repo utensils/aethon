@@ -31,28 +31,30 @@ how it tolerates bad input:
 [ui]
 theme = "ember"
 font_size = 14
-restore_tabs = true
+restore_tabs = false                 # deprecated / no-op compatibility field
 notify_on_completion = true
 notify_min_duration_seconds = 8
-thinking_visibility = "show"
-tool_calls_visibility = "show"
+thinking_visibility = "hide"         # default when unset: hide
+tool_calls_visibility = "hide"       # default when unset: hide
 ```
 
 | Key | Type | Default | Notes |
 |---|---|---|---|
 | `theme` | string | `"ember"` | One of the registered theme ids. Built-ins: `ember`, `paper`, `aether`, `brink`, `daylight`, `mist`, `nocturne`. `signature` is a back-compat alias for `aether`. Custom theme ids registered by extensions are valid here too. Unknown ids fall back to `ember`. |
 | `font_size` | integer | `14` | Terminal and editor font size in pixels. Clamped to 10-24; values outside that range are clamped (with a warning logged) to protect layout integrity. |
-| `restore_tabs` | boolean | `true` | Re-open all tabs from the previous session on launch. |
+| `restore_tabs` | boolean | `false` | **Deprecated / no-op compatibility field.** Parsed and round-tripped through Settings for older configs, but no runtime code consumes it — tab and session restoration currently happens per workspace regardless. The effective default is `false`. |
 | `notify_on_completion` | boolean | `true` | Notify when an agent turn ends and you are not watching that tab: an in-app toast if the Aethon window is focused but another tab is active, or a native OS notification if the window is unfocused. Nothing fires if the finishing tab is already active. |
 | `notify_min_duration_seconds` | integer | `8` | Minimum turn length (seconds) to trigger the completion notification. Sub-second turns skip notification. Clamped to 0-3600. |
-| `thinking_visibility` | `"show" \| "collapse" \| "hide"` | `"show"` | Global default visibility for the model's thinking blocks in the transcript. Per-tab overridable at runtime via the composer visibility pills. |
-| `tool_calls_visibility` | `"show" \| "group-turn" \| "group-run" \| "group-block" \| "hide"` | `"show"` | Global default visibility and grouping for tool-call cards. The legacy value `collapse` migrates to `group-turn`. Per-tab overridable at runtime via the composer visibility pills. |
+| `thinking_visibility` | `"show" \| "collapse" \| "hide"` | `"hide"` | Global default visibility for the model's thinking blocks in the transcript. The unset default is `"hide"` (clean transcript); an *unknown explicit* value falls back to `"show"` so a typo can't silently hide content. Per-tab overridable at runtime via the composer visibility pills. |
+| `tool_calls_visibility` | `"show" \| "group-turn" \| "group-run" \| "group-block" \| "hide"` | `"hide"` | Global default visibility and grouping for tool-call cards. The unset default is `"hide"`; an *unknown explicit* value falls back to `"show"`. The legacy value `collapse` migrates to `group-turn`. Per-tab overridable at runtime via the composer visibility pills. |
 
 ## `[agent]`
 
 ```toml
 [agent]
 model = "anthropic/claude-sonnet-4-6"
+# thinking_level = "medium"          # optional; omit to leave the model default
+# codex_fast_mode = false
 # provider_timeout_seconds = 120     # optional; omit to keep pi's default
 bash_timeout_floor_seconds = 300
 subagent_timeout_seconds = 300
@@ -62,6 +64,8 @@ idle_retire_minutes = 15
 | Key | Type | Default | Notes |
 |---|---|---|---|
 | `model` | string | provider default | The default model for new agent tabs. Format depends on the provider: `anthropic/claude-sonnet-4-6`, `openai/gpt-4o`, etc. The `/model` slash command updates *the active tab's* model and persists the choice for new tabs. |
+| `thinking_level` | `"off" \| "minimal" \| "low" \| "medium" \| "high" \| "xhigh"` | unset | Default reasoning effort for new agent sessions on models that expose it. Unknown values are ignored (treated as unset). Per-session overridable via the model-picker reasoning selector. |
+| `codex_fast_mode` | boolean | `false` | Request Codex Fast mode (priority service tier) for supported `openai-codex` models. Wired through `AETHON_CODEX_FAST_MODE`. |
 | `provider_timeout_seconds` | integer | unset | Aethon-owned override for the provider/SDK request timeout, in seconds. Omit (or set `0`) to leave pi's own `retry.provider.timeoutMs` behavior unchanged. Clamped to 1-86400. Wired through `AETHON_PROVIDER_TIMEOUT_SECONDS`. |
 | `bash_timeout_floor_seconds` | integer | `300` | Floor applied to model-supplied bash tool timeouts, in seconds. A missing or invalid (`0`) value uses the historical 5-minute default. Clamped to 1-86400. Wired through `AETHON_BASH_TIMEOUT_FLOOR_SECONDS`. |
 | `subagent_timeout_seconds` | integer | `300` | Default inline subagent wall-clock ceiling, in seconds. Individual subagent frontmatter may override this per invocation (see [Agents](/guide/agents)). A missing or invalid (`0`) value uses the 5-minute default. Clamped to 1-86400. Wired through `AETHON_SUBAGENT_TIMEOUT_SECONDS`. |
@@ -103,7 +107,7 @@ new_tab_kind = "agent"
 
 | Key | Type | Default | Notes |
 |---|---|---|---|
-| `new_tab_kind` | `"agent" \| "shell"` | `"agent"` | What `Cmd+T` opens when focus is *outside* the bottom terminal panel. `"agent"` keeps the focus-aware default; `"shell"` makes `Cmd+T` always open a shell sub-tab. Anything else falls back to `"agent"`. |
+| `new_tab_kind` | `"agent" \| "shell"` | `"agent"` | **Deprecated compatibility key.** Parsed and round-tripped for older configs, but no longer affects `Cmd+T` — that shortcut is now strictly focus-aware (agent tab when focus is outside the bottom panel, shell sub-tab when inside) and ignores this key. Unknown values fall back to `"agent"`. |
 
 ## `[voice]`
 
@@ -111,12 +115,18 @@ new_tab_kind = "agent"
 [voice]
 toggle_hotkey = "mod+shift+m"
 # hold_hotkey = "AltRight" # macOS default; unset elsewhere.
+speak_agent_replies = false
+speak_max_chars = 600
+conversation_continuous = false
 ```
 
 | Key | Type | Default | Notes |
 |---|---|---|---|
 | `toggle_hotkey` | string | `"mod+shift+m"` | Global hotkey to toggle voice input on and off. `mod` maps to Cmd on macOS and Ctrl on Linux/Windows. |
 | `hold_hotkey` | string or unset | `"AltRight"` on macOS, unset elsewhere | Optional hold-to-record physical key. Platform-dependent default (AltRight / Option on macOS only). |
+| `speak_agent_replies` | boolean | `false` | Speak the agent's reply aloud (via the LFM2-Audio provider's text-to-speech) when a turn completes on the active tab. |
+| `speak_max_chars` | integer | `600` | Maximum characters of a reply to speak aloud. |
+| `conversation_continuous` | boolean | `false` | Hands-free auto-listen: after a spoken reply, automatically re-open the mic for the next turn. Opt-in (push-to-talk drives each turn by default). |
 
 ::: warning
 All `[voice]` behavior requires the `voice` build feature. On a build
@@ -220,6 +230,30 @@ mDNS advertiser; the HTTP server and the read-only discovery browser keep
 running.
 :::
 
+## `[startup]`
+
+```toml
+[startup]
+auto_approve = false
+```
+
+| Key | Type | Default | Notes |
+|---|---|---|---|
+| `auto_approve` | boolean | `false` | Globally trust configured per-project workspace startup commands. Default `false` because project startup commands are an execution boundary and should stay visible until you explicitly opt in. Per-project startup commands live in `.aethon/startup.toml`. |
+
+## `[mcp]`
+
+```toml
+[mcp]
+enabled = true
+project_configs = "require-approval"
+```
+
+| Key | Type | Default | Notes |
+|---|---|---|---|
+| `enabled` | boolean | `true` | Enable Model Context Protocol (MCP) support at the host level. With it on, installing a project MCP config plus explicit approval is sufficient to load servers. |
+| `project_configs` | `"auto-load" \| "require-approval" \| "never"` | `"require-approval"` | How Aethon handles repo-owned MCP config files (`.aethon/mcp.toml`, `.mcp.json`). `auto-load` (aliases `always` / `auto_load`) loads them automatically; `require-approval` prompts first (default); `never` (alias `disabled`) ignores them. See the `/mcp` and `/mcp-auth` slash commands. |
+
 ## `[guardrails]`
 
 ```toml
@@ -260,7 +294,11 @@ erroring.
 
 Enum fall-backs: `theme` to `ember`, `default_share_mode` to `private`,
 `new_tab_kind` to `agent`, `updates.channel` to `stable`,
-`devshell.enabled` / `devshell.mode` to `auto`.
+`devshell.enabled` / `devshell.mode` to `auto`,
+`mcp.project_configs` to `require-approval`. `agent.thinking_level` is
+enum-validated too — an unknown value is treated as unset, not clamped.
+
+`voice.speak_max_chars` has no clamp; it is used as written.
 
 ## Environment variable wiring
 
@@ -271,6 +309,7 @@ effect on the **next agent spawn**, not the next render.
 
 | Config key | Env var | Effect |
 |---|---|---|
+| `agent.codex_fast_mode` | `AETHON_CODEX_FAST_MODE` | Codex Fast (priority service tier) request flag (emitted `0` / `1`). |
 | `agent.provider_timeout_seconds` | `AETHON_PROVIDER_TIMEOUT_SECONDS` | Provider/SDK request timeout (omitted when unset/`0`). |
 | `agent.bash_timeout_floor_seconds` | `AETHON_BASH_TIMEOUT_FLOOR_SECONDS` | Floor for bash tool timeouts. |
 | `agent.subagent_timeout_seconds` | `AETHON_SUBAGENT_TIMEOUT_SECONDS` | Default inline subagent ceiling. |

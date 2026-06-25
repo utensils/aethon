@@ -23,6 +23,12 @@ Agent-side extension APIs are exposed under a single global, `aethon`
 (alias of `globalThis.aethon`). Frontend runtime APIs are exposed on
 `window.aethon` inside the webview.
 
+The tables below cover the most-used calls. The agent-side
+`globalThis.aethon` additionally exposes `windows.*`, `sessions.*`,
+`canvas.*`, `dashboard.*`, `tasks.*`, `shells.*`, `notify`,
+`registerHighlightGrammar`, and the introspection helpers — see
+[`api.md`][api-docs] for the full surface.
+
 ### Mutation
 
 Most `register*` calls record **metadata** only. The action is wired
@@ -41,11 +47,8 @@ separately via `aethon.onEvent({ componentType, descendantId }, handler)`
 | `aethon.registerEventRoute({ componentId?, eventType? })` / `unregisterEventRoute(...)` / `listEventRoutes()` / `setEventRoutingMode("builtin" \| "extension")` | Intercept App-dispatched events. |
 | `aethon.onEvent(match, handler)` | Wire a handler. `match` is `{ componentType?, componentId?, descendantId?, eventType?, templateRootType? }` — omitted fields wildcard. |
 | `aethon.setLayout(payload)` | Replace the active layout payload. |
-| `aethon.activateLayout(id)` | Switch to a registered layout by id. |
-| `aethon.resetLayout()` | Restore the default-layout boot payload. |
 | `aethon.setState(path, value)` | Mutate a JSON-Pointer-addressed slice of app state. |
-| `aethon.patchLayout(patch)` | Apply a partial layout patch. |
-| `aethon.openProject(path)` | Register and activate a project. |
+| `aethon.patchLayout(path, value)` | Apply a partial layout patch at a JSON Pointer path. |
 
 ### Frontend Runtime
 
@@ -55,6 +58,9 @@ runtime as `window.aethon`.
 | Call | Purpose |
 |---|---|
 | `window.aethon.askUser({ title?, prompt, choices, allowText? })` | Ask an inline question in chat and resolve with the selected answer. |
+| `window.aethon.activateLayout(id)` | Switch to a registered layout by id. **Frontend-only** — not on the agent-side `aethon`. |
+| `window.aethon.resetLayout()` | Restore the default-layout boot payload. **Frontend-only.** |
+| `window.aethon.openProject(path)` | Register and activate a project. **Frontend-only.** |
 
 ### Introspection
 
@@ -72,6 +78,7 @@ runtime as `window.aethon`.
 | Call | Purpose |
 |---|---|
 | `aethon.shells.list()` | Enumerate shells the user has explicitly shared (anything not `private`). |
+| `aethon.shells.create({ tabId?, cwd?, command?, args?, activate?, inheritEnv? })` | Open a new shell sub-tab (all fields optional). |
 | `aethon.shells.read({ tabId, sinceTotal?, maxBytes? })` | Forward-paging read of scrollback bytes. The first call (`sinceTotal` omitted) returns the latest bytes. |
 | `aethon.shells.write({ tabId, text })` | Inject keystrokes. In `read-write` mode this pops an Allow/Deny prompt; in `read-write-trusted` it proceeds without one. |
 
@@ -85,7 +92,7 @@ runtime as `window.aethon`.
 
 | Call | Purpose |
 |---|---|
-| `aethon.tasks.start({ projectPath, prompt, newWorkspace?, branch?, baseBranch?, model?, activate?, label? })` | Start a dashboard task: optionally create a workspace, open an agent tab at the target cwd, and send the first prompt. Set `activate: false` to launch without focusing/switching. |
+| `aethon.tasks.start({ projectPath, prompt, model, newWorkspace?, branch?, baseBranch?, bridgePrompt?, activate?, label? })` | Start a dashboard task: optionally create a workspace, open an agent tab at the target cwd, and send the first prompt. **`model` is required for agent-side launches** so a session can't inherit the wrong dashboard/default model. `bridgePrompt` sets a hidden bridge prompt while `prompt` stays the visible tab text. Set `activate: false` to launch without focusing/switching. |
 | `aethon.dashboard.getRepoOverview({ projectPath })` | Read the cached GitHub/repo overview used by the project dashboard. |
 | `aethon.dashboard.refresh({ projectPath? })` | Refresh dashboard data. |
 | `aethon.dashboard.listIssues({ projectPath, limit? })` | Return cached open issues for a project. |

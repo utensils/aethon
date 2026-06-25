@@ -7,14 +7,16 @@ extension handlers run first, so user-installed bindings win.
 
 ::: tip
 This table reads `Cmd` for the OS modifier. Linux and Windows users get
-the same combos under `Ctrl` (`Cmd+T` ≡ `Ctrl+T`).
+the same combos under `Ctrl` (`Cmd+T` ≡ `Ctrl+T`). The one documented
+exception is the bottom terminal-panel toggle, which is always `Ctrl+\``
+(even on macOS) so it never collides with the macOS window switcher.
 :::
 
 ## Tabs and panel
 
 | Combo                         | Action                                                                                                                                                                                                   |
 | ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Cmd+T`                       | New tab — **focus-aware**. Agent tab if focus is outside the bottom panel; shell sub-tab if inside. `[shortcuts] new_tab_kind = "shell"` makes this always open shells.                                  |
+| `Cmd+T`                       | New tab — **focus-aware**. Agent tab if focus is outside the bottom panel; shell sub-tab if inside. (The legacy `[shortcuts] new_tab_kind` key is deprecated and no longer affects this.)                  |
 | `Cmd+Shift+T`                 | New shell sub-tab (always — auto-opens the panel).                                                                                                                                                       |
 | `Cmd+W`                       | Close active tab. Shell tabs prompt before killing a running job (disable via `[shell] prompt_before_close = false`).                                                                                    |
 | `Cmd+Opt+T`                   | Reopen most-recently-closed tab.                                                                                                                                                                         |
@@ -42,7 +44,7 @@ the same combos under `Ctrl` (`Cmd+T` ≡ `Ctrl+T`).
 | ------------- | --------------------------------------------------------------------------------------------------------- |
 | `Cmd+P`       | Quick-open file fuzzy search for the active project. `>` and `?` still pivot to commands and keybindings. |
 | `Cmd+Shift+P` | **Command palette** — commands mode (slash commands, keybindings first).                                  |
-| `Cmd+\``      | Toggle bottom terminal panel (Agent bash + each shell as a sub-tab).                                      |
+| `Ctrl+\``     | Toggle bottom terminal panel (Agent bash + each shell as a sub-tab). Always `Ctrl`, even on macOS.        |
 | `Cmd+B`       | Toggle sidebar.                                                                                           |
 | `Cmd+D`       | Toggle the right-hand files sidebar.                                                                      |
 | `Cmd+J`       | Toggle the sidebar's file-tree panel.                                                                     |
@@ -95,6 +97,7 @@ Two ways to change the bindings:
    Extension bindings run first; built-ins still execute unless you
    return a sentinel value. See [Runtime API](/reference/runtime-api).
 
-2. **`[shortcuts] new_tab_kind`** in `config.toml` — controls only
-   `Cmd+T`'s focus-aware behaviour. Set to `"shell"` to make `Cmd+T`
-   always open a shell sub-tab.
+2. **`config.toml`** — historically `[shortcuts] new_tab_kind` adjusted
+   `Cmd+T`. That key is now a deprecated no-op: `Cmd+T` is strictly
+   focus-aware regardless of its value. Use an extension binding (above)
+   to change its behaviour.

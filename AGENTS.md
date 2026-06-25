@@ -1,6 +1,6 @@
 # AGENTS.md
 
-This file provides guidance to Codex (Codex.ai/code) when working with code in this repository.
+This file provides guidance to OpenAI Codex when working with code in this repository.
 
 ## Project
 
@@ -51,16 +51,18 @@ are not app regressions.
 
 The devshell exposes these helpers (defined in `flake.nix`):
 
-| Command     | What it does                                                                  |
-| ----------- | ----------------------------------------------------------------------------- |
-| `dev`       | `scripts/dev.sh` → `cargo tauri dev` with port auto-increment                 |
-| `docs`      | `vitepress dev` from `website/` bound to `0.0.0.0` (LAN-reachable; :5173)     |
-| `build-app` | `cargo tauri build` — release bundle                                          |
-| `check`     | Full CI gate: clippy + tsc + ESLint + cargo test + vitest                     |
-| `lint`      | ESLint frontend + agent (no auto-fix)                                         |
-| `test`      | Run Rust + TS tests (cargo test --lib + vitest run)                           |
-| `coverage`  | TS coverage report under `coverage/` (vitest v8)                              |
-| `fmt`       | `treefmt` (rustfmt + nixfmt + prettier for JSON/MD/YAML/CSS + taplo for TOML) |
+| Command                | What it does                                                                                                                        |
+| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `dev`                  | `scripts/dev.sh` → `cargo tauri dev` with port auto-increment                                                                       |
+| `docs`                 | `vitepress dev` from `website/` bound to `0.0.0.0` (LAN-reachable; :5173)                                                           |
+| `build-app`            | `cargo tauri build` — release bundle                                                                                                |
+| `understand-dashboard` | `scripts/understand-dashboard.sh` → Vite dashboard for `.understand-anything/knowledge-graph.json` (open the printed `?token=` URL) |
+| `check`                | Full CI gate: clippy + tsc + ESLint + cargo test + vitest                                                                           |
+| `lint`                 | ESLint frontend + agent (no auto-fix)                                                                                               |
+| `test`                 | Run Rust + TS tests (cargo test --lib + vitest run)                                                                                 |
+| `coverage`             | TS coverage report under `coverage/` (vitest v8)                                                                                    |
+| `fmt`                  | `treefmt` (rustfmt + nixfmt + prettier for JSON/MD/YAML/CSS + taplo for TOML)                                                       |
+| `clean`                | `scripts/dev.sh --clean` — wipe the `${TMPDIR}/aethon-dev/` sandbox                                                                 |
 
 `bun tauri dev` and `bun tauri build` also work (they go through the JS-side
 `@tauri-apps/cli` wrapper). One-time after pulling: `bun install`.
@@ -102,10 +104,12 @@ new warnings as acceptable without addressing or justifying them.
    builder + plugin/state registration; the agent supervisor lives in
    `src-tauri/src/agent_process/` (`AgentProcesses` managed state, plus
    `spawn`/`readers`/`sidecar`); concern-grouped IPC commands live under
-   `src-tauri/src/commands/`: `boot.rs`, `config.rs`, `extensions/`,
-   `fs/`, `git/`, `host.rs`, `server.rs`, `session.rs`, `updater.rs`,
+   `src-tauri/src/commands/`: `boot.rs`, `config.rs`, `devshell.rs`,
+   `extensions/`, `fs/`, `git/`, `host.rs`, `mcp.rs`,
+   `native_windows.rs`, `scheduler/`, `server.rs`, `session.rs`,
+   `setup.rs`, `startup/`, `subagents.rs`, `updater.rs`, `voice.rs`,
    `window.rs`; shell-tab PTY logic under `src-tauri/src/shell/`
-   (`lifecycle.rs`, `scrollback.rs`, `sharemode.rs`); native window
+   (`lifecycle/`, `scrollback.rs`, `sharemode.rs`); native window
    geometry persistence in `window_state/` (`schema`, `restore`, `save`,
    `monitor_matching`, `migration`, `persistence`); pure helpers in
    `helpers/` (`paths`, `names`, `config`); HTTP + mDNS discovery in
@@ -125,7 +129,7 @@ new warnings as acceptable without addressing or justifying them.
    truncation/invalid split — don't replace this with per-chunk
    `from_utf8_lossy`, multi-byte sequences will corrupt.
 2. **Agent bridge** (`agent/main.ts` is a thin entry-point — env wiring
-   - boot order; the readline loop and 14-case dispatcher live in
+   - boot order; the readline loop and 28-case dispatcher live in
      `agent/dispatcher.ts`) — JSON-lines over stdio. Reads
      `{type:"chat", content}` or `{type:"a2ui_event", event}`, replies
      with `{type:"response"|"a2ui"|"error", ...}`. Provider config comes
@@ -178,6 +182,25 @@ new warnings as acceptable without addressing or justifying them.
    `src/runtime/windowApi.ts` builds the `window.aethon` runtime API.
    Listens for `agent-response` events, parses each line, and routes it
    into the chat history or canvas.
+
+### Agent process model + workspace concurrency
+
+The supervisor (`src-tauri/src/agent_process/`) runs one **global bridge**
+(`GLOBAL_AGENT_KEY`) plus one **worker bridge per non-default tab**
+(`tab:<id>`). Tab-scoped message types with a non-default `tabId` route to
+that tab's worker (`route_payload_key`); everything else — including
+`set_project`, `report`, and the default tab — goes to the global bridge.
+Workers spawn lazily on first write, respawn when their cwd changes, and
+idle-retire after `[agent] idle_retire_minutes` (15 min default), reconciled
+against the frontend's live tab set.
+
+**The global bridge is the sole owner of the frontend extension surface.**
+Workers also load project extensions for their own cwd (tools + event
+handlers must work in-process), but their registry-replacing messages are
+origin-stamped (`agent/origin-gate.ts`) with `originTabId`; the frontend
+rejects hydrates whose origin tab isn't in the active workspace bucket. This
+stops a background workspace's worker respawn from clobbering the active
+workspace's components/themes/keybindings.
 
 ### Frontend model — three things to know
 
@@ -250,34 +273,34 @@ console) can swap chrome at runtime:
 
 ### Keyboard shortcuts (current set)
 
-| Combo                         | Action                                                                                                                                                                                                       |
-| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `Cmd+T`                       | New tab — **focus-aware**: agent tab when outside the bottom terminal panel, shell sub-tab when focus is inside the panel. `[shortcuts] new_tab_kind = "shell"` flips this to "always shell".                |
-| `Cmd+Shift+T`                 | New shell sub-tab (always — auto-opens the bottom panel)                                                                                                                                                     |
-| `Cmd+W`                       | Close active tab. Shell tabs prompt before killing a running job (disable via `[shell] prompt_before_close = false`).                                                                                        |
-| `Cmd+Opt+T`                   | Reopen most-recently-closed tab                                                                                                                                                                              |
-| `Cmd+Shift+]` / `Cmd+Shift+[` | Next / previous _agent_ tab (top strip; shells are filtered). When focus is inside the bottom panel, cycles between sub-tabs (agent-bash + each shell) instead. Matches the iTerm / Terminal.app convention. |
-| `Cmd+Opt+]` / `Cmd+Opt+[`     | Move active agent tab right / left. When focus is inside the bottom panel, reorders shell sub-tabs instead.                                                                                                  |
-| `Cmd+1`..`Cmd+8`              | Jump to agent tab N. When focus is inside the bottom panel, jumps between sub-tabs instead (1 = agent-bash).                                                                                                 |
-| `Cmd+9`                       | Jump to last agent tab (or last shell sub-tab when focus is in panel).                                                                                                                                       |
-| `Cmd+P` / `Cmd+Shift+P`       | Command palette (switcher / commands)                                                                                                                                                                        |
-| `Ctrl+\``                     | Toggle bottom terminal panel (Agent bash sub-tab + each user shell as a sub-tab)                                                                                                                             |
-| `Cmd+B`                       | Toggle sidebar                                                                                                                                                                                               |
-| `Cmd+K`                       | Clear chat                                                                                                                                                                                                   |
-| `Cmd+.`                       | Stop current prompt                                                                                                                                                                                          |
-| `Shift+Tab`                   | Toggle Plan mode for the active agent session                                                                                                                                                                |
-| `Cmd+Shift+M`                 | Toggle voice input (push-to-talk dictation into the composer). Hold-to-record key + toggle combo configurable via `[voice]` in `config.toml`.                                                                |
-| `Cmd+=` / `Cmd+-`             | Zoom in / out                                                                                                                                                                                                |
-| `Cmd+0`                       | Toggle focus between composer and terminal panel                                                                                                                                                             |
-| `Cmd+Shift+0`                 | Reset zoom                                                                                                                                                                                                   |
-| `Cmd+L`                       | Focus active tab's primary input (composer for agent tabs, terminal for shell tabs)                                                                                                                          |
-| `Cmd+,`                       | Open Settings panel                                                                                                                                                                                          |
-| `Cmd+Shift+F`                 | Cross-session search overlay                                                                                                                                                                                 |
-| `Cmd+Shift+L`                 | Open Scheduled Tasks                                                                                                                                                                                         |
-| `Cmd+Shift+S`                 | Export active chat as Markdown to `~/Downloads/` (agent tabs only)                                                                                                                                           |
-| `Cmd+Ctrl+F` (mac) / `F11`    | Toggle fullscreen                                                                                                                                                                                            |
-| `F12`                         | Toggle WebKit DevTools (debug builds)                                                                                                                                                                        |
-| `Esc`                         | Close palette / settings / search overlay (when open)                                                                                                                                                        |
+| Combo                         | Action                                                                                                                                                                                                                        |
+| ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Cmd+T`                       | New tab — **focus-aware**: agent tab when outside the bottom terminal panel, shell sub-tab when focus is inside the panel. (The old `[shortcuts] new_tab_kind` key is deprecated / a no-op; `Cmd+T` is strictly focus-aware.) |
+| `Cmd+Shift+T`                 | New shell sub-tab (always — auto-opens the bottom panel)                                                                                                                                                                      |
+| `Cmd+W`                       | Close active tab. Shell tabs prompt before killing a running job (disable via `[shell] prompt_before_close = false`).                                                                                                         |
+| `Cmd+Opt+T`                   | Reopen most-recently-closed tab                                                                                                                                                                                               |
+| `Cmd+Shift+]` / `Cmd+Shift+[` | Next / previous _agent_ tab (top strip; shells are filtered). When focus is inside the bottom panel, cycles between sub-tabs (agent-bash + each shell) instead. Matches the iTerm / Terminal.app convention.                  |
+| `Cmd+Opt+]` / `Cmd+Opt+[`     | Move active agent tab right / left. When focus is inside the bottom panel, reorders shell sub-tabs instead.                                                                                                                   |
+| `Cmd+1`..`Cmd+8`              | Jump to agent tab N. When focus is inside the bottom panel, jumps between sub-tabs instead (1 = agent-bash).                                                                                                                  |
+| `Cmd+9`                       | Jump to last agent tab (or last shell sub-tab when focus is in panel).                                                                                                                                                        |
+| `Cmd+P` / `Cmd+Shift+P`       | Command palette (switcher / commands)                                                                                                                                                                                         |
+| `Ctrl+\``                     | Toggle bottom terminal panel (Agent bash sub-tab + each user shell as a sub-tab)                                                                                                                                              |
+| `Cmd+B`                       | Toggle sidebar                                                                                                                                                                                                                |
+| `Cmd+K`                       | Clear chat                                                                                                                                                                                                                    |
+| `Cmd+.`                       | Stop current prompt                                                                                                                                                                                                           |
+| `Shift+Tab`                   | Toggle Plan mode for the active agent session                                                                                                                                                                                 |
+| `Cmd+Shift+M`                 | Toggle voice input (push-to-talk dictation into the composer). Hold-to-record key + toggle combo configurable via `[voice]` in `config.toml`.                                                                                 |
+| `Cmd+=` / `Cmd+-`             | Zoom in / out                                                                                                                                                                                                                 |
+| `Cmd+0`                       | Toggle focus between composer and terminal panel                                                                                                                                                                              |
+| `Cmd+Shift+0`                 | Reset zoom                                                                                                                                                                                                                    |
+| `Cmd+L`                       | Focus active tab's primary input (composer for agent tabs, terminal for shell tabs)                                                                                                                                           |
+| `Cmd+,`                       | Open Settings panel                                                                                                                                                                                                           |
+| `Cmd+Shift+F`                 | Cross-session search overlay                                                                                                                                                                                                  |
+| `Cmd+Shift+L`                 | Open Scheduled Tasks                                                                                                                                                                                                          |
+| `Cmd+Shift+S`                 | Export active chat as Markdown to `~/Downloads/` (agent tabs only)                                                                                                                                                            |
+| `Cmd+Ctrl+F` (mac) / `F11`    | Toggle fullscreen                                                                                                                                                                                                             |
+| `F12`                         | Toggle WebKit DevTools (debug builds)                                                                                                                                                                                         |
+| `Esc`                         | Close palette / settings / search overlay (when open)                                                                                                                                                                         |
 
 `metaKey || ctrlKey` for cross-platform — Linux/Windows users get the
 same set under Ctrl. Native menu accelerators in `src-tauri/src/lib.rs`
@@ -320,8 +343,9 @@ surface.
 `shell: ShellMeta` payload (`cwd`, `command`, `args`, `shareMode`,
 `shellState`, `exitCode?`). Share-mode UI helpers live in
 `src/utils/shareMode.ts` (`cycleShareMode`, `shareModeLabel`,
-`shareModeTooltip`); the security boundary is enforced Rust-side in
-`shell.rs` (`ShareState` + `Scrollback`). The bridge surface is `aethon.shells.{list, read, write}` — round-trips
+`shareModeTooltip`); the security boundary is enforced Rust-side in the
+`src-tauri/src/shell/` module (`sharemode.rs`, backed by `scrollback.rs`).
+The bridge surface is `aethon.shells.{list, read, write}` — round-trips
 through the mutation-ack channel as `shell_query` ops with
 `MutationResult.data` populated. **Do not add an agent-driven
 `setShareMode`** — discoverable tab ids in `/tabs` plus a setter would
@@ -391,14 +415,30 @@ capture-phase keydown handler keyed off a `navRef` so focus theft and
 content swaps don't strand the selection — see the comments in
 `command-palette.tsx` before refactoring.
 
-### Projects
+### Projects + workspaces
+
+**A project has one or more workspaces; a workspace is the main checkout
+(`isMain: true`) or a git worktree.** Each workspace runs independently —
+its own tabs, agent sessions, git state, and devshell. Workspaces attach
+via `src/workspaces.ts` (Rust commands in `commands/git/`); the active
+workspace is mirrored to `/activeWorkspaceId` so the file tree and new tabs
+follow the sidebar selection.
 
 Pi sessions are scoped to a working directory. `src/projects.ts` persists
-the project list at `~/.aethon/projects.json` (max 16, MRU-ordered) and
-the active project's path is passed as `cwd` on `tab_open`. **Existing
-tabs keep the cwd they were created with** — switching the active project
-only affects new tabs. When updating tab/session code, treat the per-tab
-cwd as immutable.
+the project list at `~/.aethon/projects.json` (max 16, MRU-ordered,
+schemaVersion 5; older schemas — including v4's `activeWorktreeId` /
+`worktreesByProject` spellings — migrate on read). The active project's
+path is passed as `cwd` on `tab_open`. **Existing tabs keep the cwd they
+were created with** — switching the active project only affects new tabs.
+When updating tab/session code, treat the per-tab cwd as immutable.
+
+The sidebar tree is **host → project → workspace**
+(`src/extensions/default-layout/sidebar/`). Tabs bucket per workspace
+(`src/projectOps/tabBuckets.ts`, key separator `"::workspace::"`; pre-rename
+`"::worktree::"` snapshot keys migrate on load). Git-status polling is
+tiered (`src/hooks/statusPollScheduler.ts`): hot = active workspace
+(20 s + `git-state-changed` events), warm = last 4 activated workspace roots
+(60 s), cold = other projects (5 min).
 
 ### Monaco editor + file tree
 
@@ -449,26 +489,35 @@ port in TXT, the other **browses** and emits Tauri events
 auth, no TLS** — this is explicit scaffolding for an upcoming pairing
 PR; do not lean on it for trusted IPC. `commands/server.rs` exposes
 `server_start` / `server_stop`; `commands/host.rs` surfaces discovered
-peers to the frontend. **No config gate today** — `boot()` spawns both
-HTTP and mDNS unconditionally during Tauri `setup()`; a `[server]
-enabled` toml flag is planned alongside the pairing PR but not wired
-yet. The browser keeps running with the advertiser off — discovery is
-read-only and useful in isolation.
+peers to the frontend. The mDNS **advertiser** is gated on `[server]
+enabled` (default true) via `server_advertise_enabled()` in
+`server/mod.rs`; `boot()` reads it during Tauri `setup()` and skips the
+announcement when it's `false`. The HTTP server and the mDNS **browser**
+are NOT gated — they always run, so peer discovery stays read-only and
+useful even with the advertiser off. An explicit `server_start` IPC
+always advertises regardless of the flag.
 
 ### Voice-to-text input
 
-Composer dictation is Rust-side. `src-tauri/src/voice.rs` runs a local
-Whisper model (`candle-transformers`) as one provider; `voice/audio.rs`
-is the `cpal` recorder (level metering + WAV capture). Other providers are
-native OS recognizers behind `platform_speech.rs`'s `PlatformSpeechEngine`
-trait — macOS `SFSpeechRecognizer`/`SpeechAnalyzer` (small Swift static lib
-built in `build.rs`), Windows SAPI 5.4 via COM (`windows` crate), Linux a
-stub. All consume the same `CapturedAudio` PCM buffer, so `voice.rs` holds a
-`&dyn PlatformSpeechEngine` with no per-OS branching. `commands/voice.rs`
-exposes the IPC: provider list/select/enable, model `prepare`/`remove`
-(Whisper weights download on demand), and `start_recording` /
-`stop_and_transcribe` / `cancel_recording`. Toggle is `Cmd+Shift+M`;
-`[voice]` config carries `toggle_hotkey` + optional `hold_hotkey`.
+Composer dictation is Rust-side. The `src-tauri/src/voice/` module
+(`mod.rs`) runs a local Whisper model (`candle-transformers`) as one
+provider; `voice/audio.rs` is the `cpal` recorder (level metering + WAV
+capture). Other providers are native OS recognizers behind the top-level
+`src-tauri/src/platform_speech/` module's (`mod`, `macos`,
+`windows_speech`) `PlatformSpeechEngine` trait — macOS
+`SFSpeechRecognizer`/`SpeechAnalyzer` (small Swift static lib built in
+`build.rs`), Windows SAPI 5.4 via COM (`windows` crate), Linux a stub. All
+consume the same `CapturedAudio` PCM buffer, so the module holds a
+`&dyn PlatformSpeechEngine` with no per-OS branching. A third mode,
+**LFM2-Audio**, is an end-to-end ASR+TTS conversational voice path (a
+llama.cpp GGUF runner) supporting hands-free conversation and speak-aloud
+replies, not just one-shot dictation. `commands/voice.rs` exposes the IPC:
+provider list/select/enable, model `prepare`/`remove` (Whisper weights
+download on demand), and `start_recording` / `stop_and_transcribe` /
+`cancel_recording`. Toggle is `Cmd+Shift+M`; `[voice]` config carries
+`toggle_hotkey` + optional hold-to-record `hold_hotkey`, plus the
+conversational keys `speak_agent_replies`, `speak_max_chars`, and
+`conversation_continuous`.
 
 ### Auth profiles (multi-account login)
 
@@ -526,14 +575,22 @@ summary, tabs). The snapshot is rebuilt every time
 extensions load **before** the default tab is created so its session prompt
 sees them.
 
-### globalThis.aethon (bridge side, in agent/main.ts)
+### globalThis.aethon (bridge side, built in agent/aethon-api.ts)
 
-Mutation: `registerComponent`, `setState`, `setLayout`, `patchLayout`,
-`registerSidebarSection`, `registerTheme`, `onEvent`. Introspection:
-`listExtensions`, `listComponents`, `listThemes`, `getLayout`,
-`getRuntimeSnapshot` — these let the agent answer "what's loaded?"
-without scraping the filesystem. The same data is also written to
+Mutation: `registerComponent`, `setState`, `setLayout`,
+`patchLayout(path, value)`, `registerSidebarSection`, `registerTheme`,
+`registerLayout`, `registerHighlightGrammar`, `onEvent`, `onUnload`,
+`notify`, `dismissNotification`. Subnamespaces:
+`shells.{list, read, write, create}`, `tasks.{start, …}`, `dashboard.*`,
+`windows.*` (`openCanvas` / `openTerminal` / `list` / `get` / `focus` /
+`close` / `emitCanvas` …), `sessions.*`, and
+`canvas.{emit, append, clear, patch}`. Introspection: `listExtensions`,
+`listComponents`, `listThemes`, `getLayout`, `getRuntimeSnapshot`,
+`getFrontendState`, `getLayoutSlots` — these let the agent answer "what's
+loaded?" without scraping the filesystem. The same data is also written to
 `$AETHON_STATE_FILE` so a `cat` works without an introspection round-trip.
+Note: `activateLayout` / `resetLayout` / `openProject` are **frontend-only**
+(`window.aethon`), not on `globalThis.aethon`.
 
 ### Event flow gotcha
 
@@ -556,7 +613,7 @@ custom-layout payloads with renamed instances stay routable. Use
 12 chrome composites (sidebar, command-palette, settings-panel,
 search-panel, notification-stack, chat-input, empty-state,
 terminal-panel, tab-strip, model-picker, appearance-menu,
-share-mode-badge, shell-canvas) all dispatch by type as of #N.
+share-mode-badge, shell-canvas) all dispatch by type.
 
 ### Hot-reload doesn't kill in-flight prompts
 
@@ -610,9 +667,21 @@ the toolchain or build inputs:
   flake sets these manually because numtide/devshell skips nixpkgs'
   pkg-config setup hook. `WEBKIT_DISABLE_DMABUF_RENDERER=1` is set to dodge
   a Mesa/Wayland crash in WebKitGTK's DMA-BUF renderer.
-- macOS uses Apple's `/usr/bin/cc` (not Nix's CC wrapper) due to SDK
-  mismatches with current nixpkgs unstable, and pulls libiconv via
-  `LIBRARY_PATH` + `NIX_LDFLAGS`.
+- macOS pins both `CC=/usr/bin/cc` _and_
+  `CARGO_TARGET_AARCH64_APPLE_DARWIN_LINKER=/usr/bin/cc`. The first steers
+  `cc-rs` build scripts to Apple's toolchain; the second overrides what
+  rustc invokes at the link step so it links against the active Xcode SDK.
+  Without the linker pin, rustc resolves bare `cc` through PATH and lands on
+  nix-darwin's wrapped GCC pointing at Nix's bundled `apple-sdk-14.4`, whose
+  `libSystem.tbd` is missing dozens of POSIX symbols (`_write`, `_waitpid`,
+  `__NSGetEnviron`, …), and ld errors out with "Undefined symbols for
+  architecture arm64". **Do not** re-add `pkgs.libiconv` to
+  `darwinBuildInputs` or point `LIBRARY_PATH` / `NIX_LDFLAGS` at it — that
+  bakes a `/nix/store` install_name into the bundle that dyld rejects on any
+  non-builder Mac (Team ID mismatch with our notarized signature).
+- `build-app` runs `scripts/verify-bundle.sh` after `cargo tauri build` as a
+  fail-loud safety net: it greps `otool -L` on the bundled binary for
+  `/nix/store` and aborts before the bundle can ship.
 
 ## Reference Projects
 
@@ -671,8 +740,9 @@ filters work (`aethon::agent_watch=debug,aethon::config=warn`).
 
 ## Driving the app from Codex (`aethon-debug` skill)
 
-`.Codex/skills/aethon-debug/` ships a slash-commandable skill for inspecting
-and driving the running dev app. In debug builds the Rust shell starts a TCP
+`.claude/skills/aethon-debug/` (mirrored under `.agents/skills/aethon-debug/`)
+ships a slash-commandable skill for inspecting and driving the running dev
+app. In debug builds the Rust shell starts a TCP
 eval server on `127.0.0.1:19433` (override with `AETHON_DEBUG_PORT`); the
 script `scripts/debug-eval.sh` ships JS to that server, which wraps it in
 an async IIFE, evals it inside the webview, and returns the stringified
@@ -693,35 +763,29 @@ launch a release build (the debug server is gated by `cfg(debug_assertions)`).
 
 ## Status — what is and isn't wired up
 
-The authoritative checklist is in `SPEC.md` ("Status Checklist" section,
-keyed against milestones M1–M5). Update both that checklist and any
-relevant notes here when capabilities land.
+The authoritative sources are `SPEC.md` (design vision + status checklist)
+and `CHANGELOG.md` (what actually shipped per version). Update those when
+capabilities land; treat this section as a snapshot, not the source of truth.
 
-**Quick highlights as of writing:** M1–M6 complete, plus post-M6 polish.
-M6 shipped: interactive PTY-backed user shell tabs (`portable-pty`,
-`Tab.kind` discriminator, theme-agnostic xterm), per-tab `ShareMode`
-4-value enum with privacy-floor guardrail,
-`aethon.shells.{list, read, write}` bridge API with per-write Allow/Deny
-user confirmation, pi-tool registration of
-`listShells`/`readShell`/`writeShell` (in `agent/shell-tools.ts`),
-Settings UI overlay, fullscreen, search overlay, drag-and-drop into
-composer, bridge crash recovery, OS notifications. Post-M6: Monaco
-editor + file tree + media viewers (`src/extensions/default-layout/editor/`,
-`src/monaco/`, `src-tauri/src/commands/fs/`), native window geometry
-persistence with multi-monitor restore (`src-tauri/src/window_state/`),
-pi native slash commands plumbed through to the composer autocomplete,
-left-edge sidebar resize, Brink theme palette.
-Tool execution surfaces as A2UI cards, multi-tab persistent
-sessions, light theme, system tray + native menu, slash command picker,
-real `~/.aethon/config.toml`, layout-slot contract (`canvas` +
-`composer` required, `slotMap` for non-canonical layouts), generic
-`extension_lifecycle` feedback channel, registerable slash commands /
-keybindings / menu items / event routes / layouts (workstation only in
-the built-in catalogue today; extensions can register more via
-`aethon.registerLayout`), mutation-feedback channel (every mutation
-returns `Promise<MutationResult>`), command palette (Cmd+P switcher /
-Cmd+Shift+P commands), v0.2.0 GitHub release with macOS .dmg + Linux
-.deb/AppImage + Windows NSIS bundles via Nix overlay.
+**Quick highlights (version 0.10.2):** projects with multiple workspaces
+(main checkout + git worktrees, each with its own tabs / sessions / git
+state / devshell), MCP server setup + config flows, multi-model subagents
+with parallel background delegation, scheduled tasks / loops, native A2UI
+canvas windows (`windows.*` open/focus/close), multi-account auth profiles,
+voice input across Whisper / native-OS recognizers / LFM2-Audio (ASR+TTS
+conversational mode), plan mode, Nix devshell auto-wrap for shells + the
+agent bash tool, window-state persistence with multi-monitor restore, and a
+channel-aware auto-updater with boot probation + rollback. Earlier
+foundations still in place: interactive PTY shell tabs (`portable-pty`,
+`Tab.kind` discriminator) with per-tab `ShareMode` + privacy-floor
+guardrail, `aethon.shells.{list, read, write}` bridge API, Monaco editor +
+file tree + media viewers, tool execution as A2UI cards, command palette,
+slash-command picker, themes, system tray + native menu, and real
+`~/.aethon/config.toml`.
+
+Releases are macOS **Apple Silicon (aarch64) only**, cut via release-please
+(app + dmg + updater manifest). There are no Linux or Windows release
+artifacts today, even though the dev toolchain still builds on Linux.
 
 ## State persistence
 
@@ -736,10 +800,12 @@ components.
 ## Releases
 
 See `RELEASING.md` for the full release workflow: keypair generation,
-wiring the public key into `tauri.conf.json`, CI secrets, and how to cut a
-tag. Summary: push a `v*.*.*` tag → GitHub Actions builds signed macOS DMGs,
-Linux `.deb`/`.rpm`, and Windows NSIS, uploads `latest.json` for the
-in-app updater.
+wiring the public key into `tauri.conf.json`, CI secrets, and the
+release-please flow. Summary: releases are driven by **release-please** on
+merge to `main` (not a `v*.*.*` tag push). Merging the "chore: release" PR
+triggers `.github/workflows/release-please.yml`, which builds the signed
+macOS **aarch64** app + dmg and uploads `latest.json` to feed the in-app
+updater. No Linux or Windows release artifacts are produced.
 
 ## Test coverage + linting
 

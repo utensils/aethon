@@ -9,19 +9,22 @@ The Settings panel (`Cmd+,` on macOS, `Ctrl+,` elsewhere) is the GUI for
 `~/.aethon/config.toml`. Every key writable from `config.toml` has a
 field here.
 
-Sections:
+Sections, in order:
 
 - **Appearance** — theme, font size.
-- **Sessions** — restore-tabs toggle, completion notifications.
-- **Agent** — default model.
-- **Shell** — default share mode, shell program, args, inherit env, prompt-before-close.
-- **Shortcuts** — `Cmd+T` routing.
-- **Voice** — toggle and hold-to-record hotkeys.
+- **View** — global default visibility for thinking blocks and tool-call cards.
+- **Guardrails** — restrict agent tools to the project root, soft prompt anchor.
+- **Notifications** — completion notifications (when unfocused) and minimum turn duration.
+- **Agent** — system-prompt override, Codex Fast mode, and provider / bash / inline-subagent timeouts. (The default model is set from the header model picker, which persists `[agent] model`.)
+- **Shell** — default share mode, shell program, args, inherit env.
+- **Behavior** — confirm-before-close when a shell job is running.
+- **Voice** — toggle and hold-to-talk hotkeys, speak-replies-aloud, hands-free conversation, and recognition providers.
 - **Updater** — stable/nightly channel and background-check toggle.
 - **Nix devshell** — detection mode, cache lifetime, lockfile refresh, and manual refresh.
-- **Advanced** — extension state payload limits and layout reset.
+- **Extensions** — the list of loaded extensions and their sources.
+- **Advanced** — a pointer to edit `config.toml` directly for keys not surfaced here, plus two convenience buttons.
 
-Two convenience buttons live at the bottom:
+The two buttons in **Advanced**:
 
 - **Open `config.toml`** — opens `~/.aethon/config.toml` in Aethon's
   in-app Monaco editor for power-user edits.
