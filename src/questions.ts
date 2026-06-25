@@ -67,9 +67,12 @@ export function createQuestionMessage(
   messageId: string,
   answer?: AskUserAnswer,
 ): ChatMessage {
+  const title = input.title ?? "Aethon setup";
+  const answerLine = answer ? `\nSelected: ${answer.label}` : "";
   return {
     id: messageId,
     role: "system",
+    text: `## ${title}\n${input.prompt}${answerLine}`,
     a2ui: questionPayload(input, questionId, answer),
     createdAt: Date.now(),
   };
