@@ -100,23 +100,7 @@ function resourceLoaderForTab(
   };
 }
 
-function extensionUiContextForTab(
-  deps: TabLifecycleDeps,
-  tabId: string,
-): ExtensionUIContext {
-  const sendResult = (
-    message: string,
-    kind: "info" | "warning" | "error" = "info",
-  ) => {
-    if (!message.trim()) return;
-    deps.send({
-      type: "native_slash_result",
-      tabId,
-      command: "extension",
-      kind: kind === "error" ? "error" : "info",
-      message,
-    });
-  };
+export function extensionUiContextForTab(): ExtensionUIContext {
   const passthroughTheme = {
     fg: (_color: string, text: string) => text,
     bg: (_color: string, text: string) => text,
@@ -135,11 +119,9 @@ function extensionUiContextForTab(
     select: () => Promise.resolve(undefined),
     confirm: () => Promise.resolve(false),
     input: () => Promise.resolve(undefined),
-    notify: sendResult,
+    notify: () => {},
     onTerminalInput: () => () => {},
-    setStatus: (_key, text) => {
-      if (text) sendResult(text);
-    },
+    setStatus: () => {},
     setWorkingMessage: () => {},
     setWorkingVisible: () => {},
     setWorkingIndicator: () => {},
@@ -361,7 +343,7 @@ export async function ensureTab(
   });
   emitContextUsage(state, deps, tabId, rec);
   await session.bindExtensions({
-    uiContext: extensionUiContextForTab(deps, tabId),
+    uiContext: extensionUiContextForTab(),
     onError: (error) => {
       lifecycleLog.warn(
         `pi extension error tabId=${tabId} event=${error.event}: ${error.error}`,

@@ -15,6 +15,7 @@ import {
   collectPiSlashCommands,
   emitReady,
   emitBashResult,
+  extensionUiContextForTab,
   extractToolContent,
   handleSessionEvent,
   inferToolResultLanguage,
@@ -628,6 +629,31 @@ describe("resolveTabCwd", () => {
       ),
     ).toBe("/projects/active");
     expect(resolveTabCwd("fresh-tab", {}, base)).toBe("/home/u/.aethon");
+  });
+});
+
+describe("extensionUiContextForTab", () => {
+  it("does not turn transient Pi status lines into chat output", () => {
+    const sent: Record<string, unknown>[] = [];
+    const ui = extensionUiContextForTab();
+
+    ui.setStatus("jazz-bat", "bat:100%");
+    ui.setStatus("jazz-load", "load:20%");
+    ui.setStatus("jazz-git", "git:●1");
+    ui.setStatus("jazz-clock", "09:23");
+    ui.setStatus("jazz-bat", undefined);
+
+    expect(sent).toEqual([]);
+  });
+
+  it("does not surface generic Pi UI notifications as app notifications", () => {
+    const sent: Record<string, unknown>[] = [];
+    const ui = extensionUiContextForTab();
+
+    ui.notify("MCP connected", "info");
+    ui.notify("OpenAI service tier: priority", "info");
+
+    expect(sent).toEqual([]);
   });
 });
 

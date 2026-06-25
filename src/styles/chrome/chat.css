@@ -2682,9 +2682,9 @@ body.ae-resizing-composer * {
 }
 
 .a2ui-status-center {
-  text-align: center;
+  text-align: left;
   color: var(--text);
-  flex: 1 1 auto;
+  flex: 0 1 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2694,6 +2694,7 @@ body.ae-resizing-composer * {
 .a2ui-status-right {
   text-align: right;
   flex: 0 1 auto;
+  margin-left: auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
