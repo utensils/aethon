@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Capture a screenshot of the Aethon dev app window.
-# Auto-starts the dev build if it is not running, then focuses the window
-# via the debug server before capturing.
+# Capture a screenshot of the full display (the Aethon dev app window is
+# focused first, not cropped to). Auto-starts the dev build if it is not
+# running, then focuses the window via the debug server before capturing.
 #
 # Returns the path to the PNG on stdout.
 # Default save location: ${TMPDIR:-/tmp}/aethon-debug/aethon-<timestamp>.png

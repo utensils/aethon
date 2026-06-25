@@ -21,13 +21,13 @@ while [ "$#" -gt 0 ]; do
         echo "error: --port requires a value" >&2
         exit 2
       fi
+      # Capture as DOCS_PORT only; the exec line always appends
+      # `--port "$DOCS_PORT"`, so forwarding it here would duplicate the flag.
       DOCS_PORT="$2"
-      ARGS+=("$1" "$2")
       shift 2
       ;;
     --port=*)
       DOCS_PORT="${1#--port=}"
-      ARGS+=("$1")
       shift
       ;;
     -p)
@@ -36,7 +36,6 @@ while [ "$#" -gt 0 ]; do
         exit 2
       fi
       DOCS_PORT="$2"
-      ARGS+=("$1" "$2")
       shift 2
       ;;
     *)

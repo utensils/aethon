@@ -62,9 +62,12 @@ describe("docs dev helper", () => {
           },
         }),
       ).rejects.toMatchObject({
+        // `.rejects` is untyped (`any`), so the matcher's `any` return would
+        // trip @typescript-eslint/no-unsafe-assignment; type it as the string
+        // field it stands in for (runtime value is still the matcher).
         stderr: expect.stringContaining(
           "is shadowed by a loopback-only listener",
-        ),
+        ) as unknown as string,
       });
     } finally {
       await server.close();

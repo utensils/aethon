@@ -76,9 +76,11 @@ Built-in command names are reserved (`clear`, `help`, `theme`, `model`,
 `init`, `config`, `mcp`, `mcp-auth`, `login`, `reset`, `reload`, `rename`,
 `memory`, `context`, `session`, `compact`, `name`, `export`, `terminal`,
 `sidebar`, `files`, `layout`, `extensions`, `project`); registering one is
-rejected with a notice. Note that `plan`, `loop`, and `tasks` are
-frontend-only commands and are **not** in the reserved set — an extension
-may register those names.
+rejected with a notice. `plan`, `loop`, and `tasks` are frontend-only
+commands that aren't in the bridge's reserved set, so the bridge won't
+reject them — but the frontend hydration layer drops any extension command
+whose name collides with a built-in, so registering `plan`/`loop`/`tasks`
+has no effect either. Treat them as effectively reserved too.
 
 ## Installing extensions
 
