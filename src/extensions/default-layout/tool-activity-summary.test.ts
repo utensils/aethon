@@ -1,0 +1,116 @@
+import { describe, expect, it } from "vitest";
+import type { ChatMessage } from "../../types/a2ui";
+import { summarizeToolMessages } from "../../utils/toolCardGrouping";
+import {
+  collectFileChangeEntries,
+  compactDuration,
+  fileChangeLabel,
+  lineTone,
+  previewLines,
+  summaryWithFileEntries,
+} from "./tool-activity-summary";
+
+function toolMessage(
+  id: string,
+  fileChange: Record<string, unknown>,
+): ChatMessage {
+  return {
+    id,
+    role: "agent",
+    a2ui: {
+      components: [
+        {
+          id: `tool-${id}`,
+          type: "tool-card",
+          props: {
+            title: "edit",
+            status: "completed",
+            startedAt: 1000,
+            endedAt: 2000,
+            fileChange,
+          },
+        },
+      ],
+    },
+  };
+}
+
+describe("tool activity summary helpers", () => {
+  it("formats compact durations", () => {
+    expect(compactDuration(0)).toBe("");
+    expect(compactDuration(400)).toBe("1s");
+    expect(compactDuration(59_000)).toBe("59s");
+    expect(compactDuration(61_000)).toBe("1m 1s");
+    expect(compactDuration(3_600_000)).toBe("1h");
+    expect(compactDuration(7_260_000)).toBe("2h 1m");
+  });
+
+  it("combines repeated file changes without counting duplicate files", () => {
+    const messages = [
+      toolMessage("a", {
+        kind: "edited",
+        path: "src/message-groups.tsx",
+        rootPath: "/repo",
+        additions: 2,
+        deletions: 1,
+        preview:
+          "diff --git a/src/message-groups.tsx b/src/message-groups.tsx\n@@\n-old\n+new",
+      }),
+      toolMessage("b", {
+        kind: "edited",
+        path: "src/message-groups.tsx",
+        rootPath: "/repo",
+        additions: 3,
+        deletions: 4,
+        preview:
+          "diff --git a/src/message-groups.tsx b/src/message-groups.tsx\n@@\n-prev\n+next",
+      }),
+      toolMessage("c", {
+        kind: "created",
+        path: "src/turn-activity.tsx",
+        rootPath: "/repo",
+        additions: 10,
+      }),
+    ];
+
+    const entries = collectFileChangeEntries(messages);
+    expect(entries).toHaveLength(2);
+    expect(entries[0]?.change).toMatchObject({
+      kind: "edited",
+      path: "src/message-groups.tsx",
+      additions: 5,
+      deletions: 5,
+    });
+    expect(entries[0]?.change.preview).toContain("-old");
+    expect(entries[0]?.change.preview).toContain("+next");
+
+    const summary = summaryWithFileEntries(
+      summarizeToolMessages(messages),
+      entries,
+    );
+    expect(summary.fileChanges).toEqual({
+      total: 2,
+      created: 1,
+      edited: 1,
+      additions: 15,
+      deletions: 5,
+    });
+    expect(fileChangeLabel(summary)).toBe("Changed 2 files");
+  });
+
+  it("classifies and bounds diff preview lines", () => {
+    expect(lineTone("+added")).toBe("add");
+    expect(lineTone("+++ b/file.ts")).toBe("meta");
+    expect(lineTone("-removed")).toBe("del");
+    expect(lineTone("--- a/file.ts")).toBe("meta");
+    expect(lineTone("@@ -1 +1 @@")).toBe("hunk");
+    expect(lineTone(" context")).toBe("ctx");
+
+    const diff = Array.from(
+      { length: 100 },
+      (_, index) => `line ${index}`,
+    ).join("\n");
+    expect(previewLines(`${diff}\n`)).toHaveLength(80);
+    expect(previewLines(`${diff}\n`).at(-1)).toBe("line 79");
+  });
+});
