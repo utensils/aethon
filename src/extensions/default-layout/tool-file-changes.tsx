@@ -78,6 +78,12 @@ export function ToolFileChangeRow({
         }
       : {}),
   };
+  const statLabel = [
+    additions > 0 ? `+${additions}` : "",
+    deletions > 0 ? `-${deletions}` : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
   const togglePreview = () => {
     setPreviewOpen((open) => !open);
   };
@@ -105,7 +111,7 @@ export function ToolFileChangeRow({
         {(additions > 0 || deletions > 0) && (
           <span
             className="ae-tool-activity-file-stat"
-            aria-label="Line changes"
+            aria-label={`Line changes: ${statLabel}`}
           >
             {additions > 0 ? (
               <span className="ae-turn-block-add">+{additions}</span>
@@ -185,7 +191,7 @@ export function ToolFileChangesCard({
       <div className="ae-file-activity-list">
         {entries.map(({ change, componentId }) => (
           <ToolFileChangeRow
-            key={`${componentId ?? ""}:${change.path}`}
+            key={`${componentId ?? ""}:${change.rootPath ?? ""}:${change.path}`}
             change={change}
             onEvent={onEvent}
             componentId={componentId}
