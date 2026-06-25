@@ -186,12 +186,13 @@ export async function runInlineSubagent(
       },
     );
   } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
     emitProgress(deps, parentTabId, callId, details, {
       phase: "error",
-      error: (err as Error).message,
+      error: message,
     }, progress);
     throw new Error(
-      `subagent "${sub.name}" failed: ${(err as Error).message}`,
+      `subagent "${sub.name}" failed: ${message}`,
       {
         cause: err,
       },
@@ -205,9 +206,10 @@ export async function runInlineSubagent(
     try {
       session.dispose();
     } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
       logger
         .scope("subagent")
-        .warn(`dispose failed for "${sub.name}": ${(err as Error).message}`);
+        .warn(`dispose failed for "${sub.name}": ${message}`);
     }
   }
 
