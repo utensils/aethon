@@ -1,8 +1,19 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
+import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { SettingsPanel } from "./panel";
+import { listVoiceProviders } from "../../../services/voice";
+import type { VoiceDownloadProgress, VoiceProviderInfo } from "../../../types/voice";
 
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(),
@@ -60,6 +71,41 @@ vi.mock("../../../services/voice", () => ({
   setVoiceProviderEnabled: vi.fn(),
 }));
 
+const baseVoiceProvider: VoiceProviderInfo = {
+  id: "voice-lfm2",
+  name: "LFM2 Audio",
+  description: "Local transcription and speech",
+  kind: "local-model",
+  recordingMode: "native",
+  privacyLabel: "Offline",
+  offline: true,
+  downloadRequired: true,
+  modelSizeLabel: "1.2 GB",
+  cachePath: "/tmp/model.bin",
+  acceleratorLabel: "Metal",
+  status: "ready",
+  statusLabel: "Ready",
+  enabled: true,
+  selected: true,
+  setupRequired: true,
+  canRemoveModel: true,
+  error: null,
+};
+
+function renderSettings(state: Record<string, unknown> = {}) {
+  return render(
+    <SettingsPanel
+      component={{ id: "settings-panel", type: "settings-panel" }}
+      state={{
+        settings: { open: true, pending: null, saveStatus: "idle" },
+        sidebar: { models: [] },
+        ...state,
+      }}
+      onEvent={vi.fn()}
+    />,
+  );
+}
+
 describe("SettingsPanel", () => {
   beforeEach(() => {
     window.requestAnimationFrame = (callback: FrameRequestCallback) => {
@@ -67,9 +113,15 @@ describe("SettingsPanel", () => {
       return 0;
     };
     window.cancelAnimationFrame = vi.fn();
+    vi.mocked(listVoiceProviders).mockResolvedValue([]);
+    vi.mocked(listen).mockResolvedValue(() => {});
+    vi.mocked(invoke).mockResolvedValue(null);
   });
 
-  afterEach(() => cleanup());
+  afterEach(() => {
+    vi.clearAllMocks();
+    cleanup();
+  });
 
   it("routes Open config.toml through the settings event route", async () => {
     const onEvent = vi.fn();
@@ -117,5 +169,80 @@ describe("SettingsPanel", () => {
     expect(
       screen.getByText("Saved").classList.contains("ae-settings-save-state"),
     ).toBe(true);
+  });
+
+  it("renders voice provider loading and error states", async () => {
+    vi.mocked(listVoiceProviders).mockRejectedValueOnce(new Error("voice boom"));
+    renderSettings();
+
+    await waitFor(() => {
+      expect(screen.getByText("Loading voice providers...")).toBeTruthy();
+    });
+    await waitFor(() => {
+      expect(screen.getByText("Error: voice boom")).toBeTruthy();
+    });
+  });
+
+  it("renders voice provider download progress from Tauri events", async () => {
+    let progressHandler:
+      | ((event: { payload: VoiceDownloadProgress }) => void)
+      | undefined;
+    vi.mocked(listVoiceProviders).mockResolvedValue([baseVoiceProvider]);
+    vi.mocked(listen).mockImplementation((event, handler) => {
+      if (event === "voice-download-progress") {
+        progressHandler = handler as typeof progressHandler;
+      }
+      return Promise.resolve(() => {});
+    });
+
+    renderSettings();
+
+    await waitFor(() => {
+      expect(screen.getByText("LFM2 Audio")).toBeTruthy();
+    });
+
+    act(() => {
+      progressHandler?.({
+        payload: {
+          providerId: "voice-lfm2",
+          filename: "model.bin",
+          downloadedBytes: 50,
+          totalBytes: 100,
+          overallDownloadedBytes: 50,
+          overallTotalBytes: 100,
+          percent: 0.5,
+        },
+      });
+    });
+
+    expect(screen.getByText(/Downloading model\.bin:/)).toBeTruthy();
+    expect(screen.getByText(/50%/)).toBeTruthy();
+  });
+
+  it("renders devshell refresh status and invokes refresh for the active root", async () => {
+    renderSettings({
+      devshell: {
+        activeRoot: "/repo",
+        entries: {
+          "/repo": {
+            state: "ready",
+            kind: "nix",
+            detectedKind: "flake",
+            enabled: "auto",
+            mode: "auto",
+            varCount: 42,
+          },
+        },
+      },
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("Ready (nix, 42 vars)")).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByText("Refresh now"));
+    expect(invoke).toHaveBeenCalledWith("devshell_refresh", {
+      args: { root: "/repo" },
+    });
   });
 });
