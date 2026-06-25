@@ -41,6 +41,7 @@ export {
   ToolCard,
   formatToolDuration,
 } from "./chat";
+export { QuestionCard } from "./question-card";
 export { Terminal } from "./terminal";
 export { observeTerminalTheme, readTerminalTheme } from "./terminal-helpers";
 export { ShellCanvas, TabStrip, TerminalPanel } from "./shell";

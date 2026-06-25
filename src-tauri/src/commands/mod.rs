@@ -32,6 +32,7 @@ pub mod native_windows;
 pub mod scheduler;
 pub mod server;
 pub mod session;
+pub mod setup;
 pub mod startup;
 pub mod subagents;
 pub mod updater;

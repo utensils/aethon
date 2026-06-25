@@ -128,6 +128,13 @@ export interface AethonConfig {
      *  auto-approve can still be enabled per repo from the overview tab. */
     autoApprove: boolean;
   };
+  mcp: {
+    /** Enable MCP adapter support at the host level. Project files still
+     *  require explicit approval unless projectConfigs is auto-load. */
+    enabled: boolean;
+    /** Policy for repo-owned MCP files such as `.mcp.json`. */
+    projectConfigs: "require-approval" | "auto-load" | "never";
+  };
   guardrails: {
     /** Optional advisory text appended to the per-turn working-context the
      *  agent injects. Reminds the model of project rules; never enforces.
@@ -193,6 +200,10 @@ const DEFAULTS: AethonConfig = {
   },
   startup: {
     autoApprove: false,
+  },
+  mcp: {
+    enabled: true,
+    projectConfigs: "require-approval",
   },
   guardrails: {
     softPromptAnchor: null,
@@ -335,6 +346,11 @@ export function getConfig(): Promise<AethonConfig> {
         startup: {
           autoApprove: obj?.startup?.autoApprove === true,
         },
+        mcp: {
+          enabled:
+            typeof obj?.mcp?.enabled === "boolean" ? obj.mcp.enabled : true,
+          projectConfigs: normalizeMcpProjectConfigs(obj?.mcp?.projectConfigs),
+        },
         guardrails: {
           softPromptAnchor:
             typeof obj?.guardrails?.softPromptAnchor === "string" &&
@@ -351,6 +367,16 @@ export function getConfig(): Promise<AethonConfig> {
     }
   })();
   return inflight;
+}
+
+function normalizeMcpProjectConfigs(
+  value: unknown,
+): AethonConfig["mcp"]["projectConfigs"] {
+  if (value === "auto-load" || value === "auto_load" || value === "always") {
+    return "auto-load";
+  }
+  if (value === "never" || value === "disabled") return "never";
+  return "require-approval";
 }
 
 function normalizeTheme(t: unknown): string | null {

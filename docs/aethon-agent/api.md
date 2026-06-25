@@ -288,7 +288,7 @@ Wire clicks via `onEvent` (see below).
 
 Add a slash command to the chat-input picker. `name` must match
 `/^[A-Za-z][\w-]*$/` and may not collide with built-ins (`clear`, `help`,
-`theme`, `model`, `login`, `reset`, `reload`, `rename`, `context`,
+`theme`, `model`, `init`, `config`, `mcp`, `mcp-auth`, `login`, `reset`, `reload`, `rename`, `context`,
 `session`, `compact`, `name`, `export`, `terminal`, `extensions`,
 `sidebar`, `files`, `layout`, `project`).
 
@@ -321,6 +321,25 @@ globalThis.aethon.onEvent(
 The picker shows extension commands alongside the built-ins; users get
 the same `↑/↓/Tab/Enter` UX. Re-registering with the same `name`
 overwrites the previous metadata.
+
+### Frontend `window.aethon.askUser({ title?, prompt, choices, allowText? })`
+
+Ask a short inline question in the chat transcript and resolve with the
+selected answer. This is a **frontend runtime API** for app chrome and frontend
+extension modules, not an agent-side `globalThis.aethon` method. Use this for
+setup and configuration flows that need a clear user choice without opening a
+modal.
+
+```ts
+const answer = await window.aethon.askUser({
+  title: "Deploy target",
+  prompt: "Which environment should this task use?",
+  choices: [
+    { id: "staging", label: "Staging" },
+    { id: "prod", label: "Production" },
+  ],
+});
+```
 
 ### `registerEventRoute({ componentId?, eventType? })` / `unregisterEventRoute({ componentId?, eventType? })` / `listEventRoutes()` / `setEventRoutingMode(mode)`
 

@@ -15,6 +15,11 @@ import type { ExtensionRegistry } from "../extensions/ExtensionRegistry";
 import type { LayoutCatalogueEntry } from "../extensions/default-layout";
 import type { NotificationInput } from "./useNotifications";
 import {
+  askUserWithChat,
+  type AskUserAnswer,
+  type AskUserInput,
+} from "../questions";
+import {
   resolveAccountSwitchTarget,
   switchAccountForTab,
   type AuthProfilesUiState,
@@ -150,6 +155,23 @@ export function useAppSlashCommandContext({
       },
       notify: (input) => {
         pushNotification(input);
+      },
+      askUser: (input: AskUserInput): Promise<AskUserAnswer> => {
+        const tabId =
+          (stateRef.current.activeTabId as string | undefined) ?? "default";
+        return askUserWithChat({
+          input,
+          tabId,
+          appendMessage,
+          persistLocalChatMessage,
+        });
+      },
+      activeProjectRoot: () => {
+        const activeId = stateRef.current.activeTabId;
+        const tabs = (stateRef.current.tabs as Tab[] | undefined) ?? [];
+        const activeTab = tabs.find((tab) => tab.id === activeId);
+        if (activeTab?.kind === "agent" && activeTab.cwd) return activeTab.cwd;
+        return activeProject(projectsRef.current)?.path ?? null;
       },
       clearChat,
       setTheme,

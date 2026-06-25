@@ -5,6 +5,7 @@ import {
   type SetStateAction,
 } from "react";
 import type { A2UIPayload } from "../types/a2ui";
+import type { ChatMessage } from "../types/a2ui";
 import type { Tab } from "../types/tab";
 import type { ExtensionRegistry } from "../extensions/ExtensionRegistry";
 import type { A2UIExtension } from "../extensions/types";
@@ -25,6 +26,7 @@ import {
 } from "../monaco/theme";
 import { registerFileViewer as registerFileViewerImpl } from "../extensions/default-layout/editor";
 import type * as monaco from "monaco-editor";
+import { askUserWithChat, type AskUserInput } from "../questions";
 
 export interface UseWindowApiContext {
   layout: A2UIPayload;
@@ -48,6 +50,11 @@ export interface UseWindowApiContext {
   setActiveProjectById: (id: string) => boolean;
   clearActiveProject: () => void;
   removeProjectById: (id: string) => boolean;
+  appendMessage: (msg: ChatMessage, tabId?: string) => void;
+  persistLocalChatMessage?: (
+    msg: ChatMessage,
+    tabId: string,
+  ) => Promise<boolean>;
 }
 
 /**
@@ -83,6 +90,8 @@ export function useWindowApi(ctx: UseWindowApiContext): void {
     setActiveProjectById,
     clearActiveProject,
     removeProjectById,
+    appendMessage,
+    persistLocalChatMessage,
   } = ctx;
 
   useEffect(() => {
@@ -140,6 +149,16 @@ export function useWindowApi(ctx: UseWindowApiContext): void {
       removeProject: removeProjectById,
       listProjects: () => projectsRef.current.projects.slice(),
       activeProject: () => activeProject(projectsRef.current),
+      askUser: (input: AskUserInput) => {
+        const tabId =
+          (stateRef.current.activeTabId as string | undefined) ?? "default";
+        return askUserWithChat({
+          input,
+          tabId,
+          appendMessage,
+          persistLocalChatMessage,
+        });
+      },
       registerHighlightGrammar: (lang: string, grammar: unknown): boolean => {
         if (typeof lang !== "string" || lang.trim().length === 0) return false;
         if (!grammar || typeof grammar !== "object") return false;

@@ -140,7 +140,7 @@ command = "bun"
     expect(Object.keys(changed.config.mcpServers)).toEqual(["host"]);
   });
 
-  it("bootstraps host MCP config and loads existing project .mcp.json", () => {
+  it("does not bootstrap host MCP config for existing project .mcp.json", () => {
     const root = tempRoot();
     const userDir = join(root, "user");
     const project = join(root, "project");
@@ -160,16 +160,11 @@ command = "bun"
       write: true,
     });
 
-    expect(readFileSync(join(userDir, "config.toml"), "utf8")).toContain(
-      'project_configs = "auto-load"',
-    );
-    expect(resolved.projectApproval.approved).toBe(true);
-    expect(resolved.projectApproval.mode).toBe("auto-load");
-    expect(resolved.config.mcpServers.alreadyThere).toEqual({
-      command: "node",
-      args: ["mcp-server.js"],
-      cwd: resolved.projectApproval.root,
-    });
+    expect(existsSync(join(userDir, "config.toml"))).toBe(false);
+    expect(resolved.projectApproval.required).toBe(true);
+    expect(resolved.projectApproval.approved).toBe(false);
+    expect(resolved.projectApproval.mode).toBe("require-approval");
+    expect(resolved.config.mcpServers.alreadyThere).toBeUndefined();
   });
 
   it("does not create host MCP config when a project has no MCP files", () => {

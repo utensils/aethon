@@ -62,6 +62,7 @@ const fullConfig: AethonConfig = {
     refreshOnLockfileChange: false,
   },
   startup: { autoApprove: true },
+  mcp: { enabled: true, projectConfigs: "require-approval" },
   guardrails: {
     softPromptAnchor: "stay inside the repo",
     hardEnforceProjectRoot: true,

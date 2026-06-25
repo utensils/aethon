@@ -15,6 +15,10 @@ additional commands via
 | `/help` | List all registered slash commands (built-in + extension) with their descriptions. |
 | `/theme [<id>]` | Open the theme picker (no argument) or activate a specific theme directly (`/theme paper`). |
 | `/model [<name>]` | Open the model picker or activate a specific model directly (`/model anthropic/claude-sonnet-4-6`). |
+| `/init` | Create or update the Aethon managed block in the active project's `AGENTS.md`. |
+| `/config` | Open guided project setup for MCP servers, startup commands, and project instructions. |
+| `/mcp [setup]` | Show or configure MCP servers for the active project, including `.mcp.json` approval/import. |
+| `/mcp-auth` | Open the guided MCP setup/authentication flow for the active project. |
 | `/login [list\|use <account>\|default <account>]` | Open provider login, list stored accounts, switch the active tab's account, or set the default account. |
 | `/reset` | Reset the active layout to the default `workstation` payload. |
 | `/reload` | Reload the agent bridge and re-discover extensions, themes, slash commands, and disabled-extension state. |
@@ -65,9 +69,9 @@ command name. Use `ctx.pi.notify` / `ctx.pi.prompt` to push messages
 or fire LLM turns.
 
 Built-in command names are reserved (`clear`, `help`, `theme`, `model`,
-`login`, `reset`, `reload`, `rename`, `context`, `session`, `compact`,
-`name`, `export`, `terminal`, `sidebar`, `files`, `layout`,
-`extensions`, `project`); registering one is rejected with a notice.
+`init`, `config`, `mcp`, `mcp-auth`, `login`, `reset`, `reload`, `rename`,
+`context`, `session`, `compact`, `name`, `export`, `terminal`, `sidebar`,
+`files`, `layout`, `extensions`, `project`); registering one is rejected with a notice.
 
 ## Installing extensions
 

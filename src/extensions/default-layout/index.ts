@@ -20,6 +20,7 @@ import {
   MainCanvas,
   MarkdownPreview,
   QueuedMessagesPopover,
+  QuestionCard,
   ShellCanvas,
   Sidebar,
   StatusBar,
@@ -82,6 +83,7 @@ export const defaultLayoutExtension: A2UIExtension = {
     // on the next idle. Replaceable via
     // `aethon.registerComponent("queued-messages-popover", custom)`.
     "queued-messages-popover": QueuedMessagesPopover,
+    "question-card": QuestionCard,
     "status-bar": StatusBar,
     "tab-strip": TabStrip,
     terminal: Terminal,

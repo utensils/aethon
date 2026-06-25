@@ -98,6 +98,17 @@ describe("parseSlashCommand", () => {
       args: "file.ts",
     });
   });
+
+  it("normalizes numbered MCP adapter commands to Aethon's local MCP command", () => {
+    expect(parseSlashCommand("/mcp:1")).toEqual({
+      name: "mcp",
+      args: "1",
+    });
+    expect(parseSlashCommand("/mcp-auth:2 login")).toEqual({
+      name: "mcp-auth",
+      args: "2 login",
+    });
+  });
 });
 
 describe("buildBuiltinSlashCommands", () => {
@@ -109,6 +120,10 @@ describe("buildBuiltinSlashCommands", () => {
       "theme",
       "model",
       "plan",
+      "init",
+      "config",
+      "mcp",
+      "mcp-auth",
       "login",
       "context",
       "session",

@@ -338,4 +338,3 @@ mod tests {
         assert!(!status.approved);
     }
 }
-

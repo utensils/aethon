@@ -74,7 +74,7 @@ Aethon also understands Claude Code / Pi compatibility files:
 <project>/.pi/mcp.json
 ```
 
-If Aethon opens a project that already has `.mcp.json`, `.pi/mcp.json`, or `.aethon/mcp.toml` and `~/.aethon/config.toml` does not exist yet, Aethon creates a minimal host config and enables project MCP loading automatically. Existing host config is never overwritten. Host config can opt into approval-gated project loading with `project_configs = "require-approval"` or ignore project MCP files with `project_configs = "never"`.
+Aethon detects `.mcp.json`, `.pi/mcp.json`, and `.aethon/mcp.toml`, but it does not create host or project config files during detection. Run `/mcp` or `/config` in a project-backed tab to approve the current project fingerprint, keep `.mcp.json` as the source of truth, import it into `.aethon/mcp.toml`, or create the host `[mcp]` policy explicitly. Host config can opt into approval-gated project loading with `project_configs = "require-approval"` or ignore project MCP files with `project_configs = "never"`.
 
 ```toml
 # ~/.aethon/config.toml
@@ -119,7 +119,7 @@ The JSON compatibility files use the standard MCP shape:
 The top-level `[mcp]` table supports:
 
 - `enabled` — set to `false` to disable the bundled MCP adapter. Defaults to `true`.
-- `project_configs` — `require-approval`, `auto-load`, or `never`. Defaults to `require-approval` when a host config exists; first-run project MCP bootstrap writes `auto-load`.
+- `project_configs` — `require-approval`, `auto-load`, or `never`. Defaults to `require-approval`.
 - `imports` — adapter import sources such as `claude-code`, `claude-desktop`, `cursor`, `vscode`, `windsurf`, or `codex`.
 - `tool_prefix` — prefix used by adapter search/descriptions for server-scoped tools.
 - `idle_timeout_minutes` — default MCP server idle timeout.

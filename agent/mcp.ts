@@ -1,7 +1,6 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash } from "node:crypto";
 import {
-  existsSync,
   mkdirSync,
   readFileSync,
   realpathSync,
@@ -81,12 +80,6 @@ const PROJECT_CONFIGS: Array<Omit<ProjectSource, "path" | "text">> = [
 const APPROVALS_FILE = "mcp-approvals.json";
 const GENERATED_FILE = "generated.json";
 const MAX_CONFIG_BYTES = 256 * 1024;
-const BOOTSTRAP_HOST_CONFIG = `# ~/.aethon/config.toml - created by Aethon after detecting a project MCP config.
-
-[mcp]
-enabled = true
-project_configs = "auto-load"
-`;
 
 function emptyConfig(): AdapterConfig {
   return { settings: {}, imports: [], mcpServers: {} };
@@ -349,20 +342,6 @@ function readApprovalStore(userDir: string): Record<string, string> {
   }
 }
 
-function maybeBootstrapHostConfig(
-  userDir: string,
-  hostPath: string,
-  projectSources: ProjectSource[],
-  write: boolean | undefined,
-): string | null {
-  if (!write || projectSources.length === 0 || existsSync(hostPath)) {
-    return null;
-  }
-  mkdirSync(userDir, { recursive: true });
-  writeFileSync(hostPath, BOOTSTRAP_HOST_CONFIG);
-  return BOOTSTRAP_HOST_CONFIG;
-}
-
 function writeGeneratedConfig(userDir: string, config: AdapterConfig): string {
   const dir = join(userDir, "mcp", "generated");
   mkdirSync(dir, { recursive: true });
@@ -415,13 +394,7 @@ export function resolveAethonMcpConfig(options: {
 
   const hostPath = join(userDir, "config.toml");
   const sources = discoverProjectSources(projectRoot);
-  const bootstrappedHostText = maybeBootstrapHostConfig(
-    userDir,
-    hostPath,
-    sources,
-    options.write,
-  );
-  const hostText = bootstrappedHostText ?? readLimitedText(hostPath) ?? "";
+  const hostText = readLimitedText(hostPath) ?? "";
   const host = parseTomlConfig(hostText, "~/.aethon/config.toml");
   warnings.push(...host.warnings);
   mergeInto(config, host);

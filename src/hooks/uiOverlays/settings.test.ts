@@ -59,6 +59,7 @@ const baseConfig: AethonConfig = {
     refreshOnLockfileChange: true,
   },
   startup: { autoApprove: false },
+  mcp: { enabled: true, projectConfigs: "require-approval" },
   guardrails: { softPromptAnchor: null, hardEnforceProjectRoot: false },
 };
 

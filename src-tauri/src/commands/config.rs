@@ -298,6 +298,7 @@ pub fn write_config(config: serde_json::Value, app: AppHandle) -> Result<(), Str
     let updates = config.get("updates").and_then(|v| v.as_object());
     let devshell = config.get("devshell").and_then(|v| v.as_object());
     let startup = config.get("startup").and_then(|v| v.as_object());
+    let mcp = config.get("mcp").and_then(|v| v.as_object());
     let guardrails = config.get("guardrails").and_then(|v| v.as_object());
 
     let theme = ui
@@ -426,6 +427,11 @@ pub fn write_config(config: serde_json::Value, app: AppHandle) -> Result<(), Str
     let startup_auto_approve = startup
         .and_then(|m| m.get("autoApprove"))
         .and_then(|v| v.as_bool());
+    let mcp_enabled = mcp.and_then(|m| m.get("enabled")).and_then(|v| v.as_bool());
+    let mcp_project_configs = mcp
+        .and_then(|m| m.get("projectConfigs"))
+        .and_then(|v| v.as_str())
+        .map(|s| helpers::normalize_mcp_project_configs(Some(s)));
     let soft_prompt_anchor = guardrails
         .and_then(|m| m.get("softPromptAnchor"))
         .and_then(|v| v.as_str())
@@ -623,6 +629,13 @@ pub fn write_config(config: serde_json::Value, app: AppHandle) -> Result<(), Str
     {
         let startup_table = ensure_table(&mut doc, "startup");
         set_or_clear_bool(startup_table, "auto_approve", startup_auto_approve);
+    }
+
+    // ── [mcp] ──
+    {
+        let mcp_table = ensure_table(&mut doc, "mcp");
+        set_or_clear_bool(mcp_table, "enabled", mcp_enabled);
+        set_or_clear_str(mcp_table, "project_configs", mcp_project_configs);
     }
 
     // ── [guardrails] ──

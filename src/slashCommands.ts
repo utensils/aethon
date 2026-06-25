@@ -7,6 +7,7 @@
 // passthrough entries. Submitting one sends the original text to pi's prompt
 // router.
 
+import { invoke } from "@tauri-apps/api/core";
 import {
   formatTaskStatus,
   parseLoopArgs,
@@ -14,6 +15,7 @@ import {
   type ScheduledTaskRecord,
   type ScheduledTaskSchedule,
 } from "./scheduledTasks";
+import type { AskUserAnswer, AskUserInput } from "./questions";
 
 export interface SlashCommandContext {
   /** Append a chat-history bubble (system role). Use for output that
@@ -30,6 +32,12 @@ export interface SlashCommandContext {
     kind?: "info" | "success" | "warning" | "error";
     durationMs?: number | null;
   }) => void;
+  /** Ask the user an inline question in chat and resolve with the selected
+   *  answer. Setup flows use this instead of modal prompts. */
+  askUser?: (input: AskUserInput) => Promise<AskUserAnswer>;
+  /** Active agent tab project root; prefers the tab cwd over the sidebar's
+   *  active project so restored sessions operate on the right repo. */
+  activeProjectRoot?: () => string | null;
   clearChat: () => void;
   // Switch the active theme by id. The three built-in palettes
   // (`ember`, `paper`, `aether`) are always available; extension-registered
@@ -157,6 +165,312 @@ function matchTask(
   return matches.length === 1 ? matches[0] : null;
 }
 
+interface McpStatus {
+  root: string;
+  fingerprint?: string | null;
+  state: string;
+  required: boolean;
+  approved: boolean;
+  enabled: boolean;
+  projectConfigMode: string;
+  sources: { kind: string; relativePath: string; path: string }[];
+}
+
+interface SetupStatus {
+  root: string;
+  agents: { exists: boolean; path: string; managedBlock: boolean };
+  startup: { exists: boolean; path: string };
+  mcpToml: { exists: boolean; path: string };
+  claudeMcpJson: { exists: boolean; path: string };
+}
+
+function requireProjectRoot(ctx: SlashCommandContext): string | null {
+  const root = ctx.activeProjectRoot?.() ?? ctx.activeProject()?.path ?? null;
+  if (!root) {
+    ctx.notify({
+      title: "No project selected",
+      message: "Open a project or use a project-backed tab first.",
+      kind: "warning",
+    });
+    return null;
+  }
+  return root;
+}
+
+async function askInline(
+  ctx: SlashCommandContext,
+  input: AskUserInput,
+): Promise<AskUserAnswer | null> {
+  if (!ctx.askUser) {
+    ctx.notify({
+      title: "Questions unavailable",
+      message: "This command needs Aethon's inline question UI.",
+      kind: "error",
+    });
+    return null;
+  }
+  return await ctx.askUser(input);
+}
+
+function defaultAgentsBody(root: string): string {
+  const name = root.split("/").filter(Boolean).at(-1) ?? "this project";
+  return [
+    "# Aethon Project Notes",
+    "",
+    `This repository is opened in Aethon as \`${name}\`.`,
+    "",
+    "- Use the active project root as the working directory.",
+    "- Preserve existing user changes unless explicitly asked to replace them.",
+    "- Prefer focused checks that match the files you changed, then run the broader project gate when appropriate.",
+  ].join("\n");
+}
+
+function mcpStatusText(status: McpStatus): string {
+  const sources =
+    status.sources.length > 0
+      ? status.sources.map((s) => `\`${s.relativePath}\``).join(", ")
+      : "none";
+  return [
+    `Project: \`${status.root}\``,
+    `State: ${status.state}`,
+    `Host enabled: ${status.enabled ? "yes" : "no"}`,
+    `Project policy: ${status.projectConfigMode}`,
+    `Sources: ${sources}`,
+  ].join("\n");
+}
+
+async function readMcpStatus(root: string): Promise<McpStatus> {
+  return await invoke<McpStatus>("mcp_config_status", { root });
+}
+
+async function readSetupStatus(root: string): Promise<SetupStatus> {
+  return await invoke<SetupStatus>("aethon_setup_status", { root });
+}
+
+async function runInitCommand(ctx: SlashCommandContext): Promise<void> {
+  const root = requireProjectRoot(ctx);
+  if (!root) return;
+  const status = await readSetupStatus(root);
+  const answer = await askInline(ctx, {
+    title: "Initialize project",
+    prompt: status.agents.exists
+      ? "`AGENTS.md` already exists. Aethon can add or refresh only its managed block."
+      : "Create `AGENTS.md` with Aethon project guidance?",
+    choices: [
+      {
+        id: "write",
+        label: status.agents.exists ? "Update AGENTS.md" : "Create AGENTS.md",
+        description: "Preserves everything outside the Aethon managed block.",
+      },
+      { id: "cancel", label: "Cancel" },
+    ],
+  });
+  if (!answer) return;
+  if (answer.choiceId !== "write") return;
+  const result = await invoke<{ path: string }>("aethon_setup_write_agents", {
+    args: { root, body: defaultAgentsBody(root) },
+  });
+  ctx.notify({
+    title: "Project initialized",
+    message: result.path,
+    kind: "success",
+  });
+  ctx.appendSystem(`Updated \`${result.path}\`.`);
+}
+
+async function ensureMcpHostPolicy(): Promise<void> {
+  await invoke("aethon_setup_set_host_mcp_policy", {
+    args: { enabled: true, projectConfigs: "require-approval" },
+  });
+}
+
+async function approveMcpProject(root: string, status: McpStatus): Promise<void> {
+  if (!status.fingerprint) return;
+  await invoke("mcp_config_approve", {
+    root,
+    fingerprint: status.fingerprint,
+  });
+}
+
+async function runMcpCommand(
+  ctx: SlashCommandContext,
+  args: string,
+): Promise<void> {
+  const root = requireProjectRoot(ctx);
+  if (!root) return;
+  const setup = await readSetupStatus(root);
+  const status = await readMcpStatus(root);
+  const wantsSetup = args.trim().toLowerCase() === "setup";
+  if (!wantsSetup && status.state === "approved") {
+    ctx.appendSystem(`## MCP\n${mcpStatusText(status)}`);
+    return;
+  }
+  const choices = [
+    ...(status.state === "approval_required"
+      ? [
+          {
+            id: "approve",
+            label: "Approve current config",
+            description:
+              "Trust the detected project MCP files for this fingerprint.",
+          },
+        ]
+      : []),
+    ...(setup.claudeMcpJson.exists
+      ? [
+          {
+            id: "use-json",
+            label: "Use .mcp.json directly",
+            description: "Keep Claude Code format as the project source of truth.",
+          },
+          {
+            id: "import",
+            label: "Import to Aethon TOML",
+            description: "Copy supported servers into `.aethon/mcp.toml`.",
+          },
+        ]
+      : []),
+    {
+      id: "host-policy",
+      label: "Enable host MCP",
+      description:
+        "Create or update `~/.aethon/config.toml` with approval-required policy.",
+    },
+    { id: "status", label: "Show status" },
+  ];
+  const answer = await askInline(ctx, {
+    title: "MCP setup",
+    prompt: mcpStatusText(status),
+    choices,
+  });
+  if (!answer) return;
+  switch (answer.choiceId) {
+    case "approve": {
+      await ensureMcpHostPolicy();
+      await approveMcpProject(root, status);
+      ctx.notify({ title: "MCP config approved", kind: "success" });
+      ctx.appendSystem(
+        "MCP project config approved. Run `/reload` to reload the agent bridge.",
+      );
+      return;
+    }
+    case "use-json": {
+      await ensureMcpHostPolicy();
+      const next = await readMcpStatus(root);
+      await approveMcpProject(root, next);
+      ctx.notify({ title: "Using .mcp.json", kind: "success" });
+      ctx.appendSystem(
+        "Aethon will use `.mcp.json` directly for this project. Run `/reload` to reload the agent bridge.",
+      );
+      return;
+    }
+    case "import": {
+      await ensureMcpHostPolicy();
+      const result = await invoke<{ path: string }>(
+        "aethon_setup_import_mcp_json",
+        { root },
+      );
+      const next = await readMcpStatus(root);
+      await approveMcpProject(root, next);
+      ctx.notify({
+        title: "MCP imported",
+        message: result.path,
+        kind: "success",
+      });
+      ctx.appendSystem(
+        `Imported MCP servers to \`${result.path}\`. Run \`/reload\` to reload the agent bridge.`,
+      );
+      return;
+    }
+    case "host-policy": {
+      await ensureMcpHostPolicy();
+      ctx.notify({ title: "Host MCP enabled", kind: "success" });
+      ctx.appendSystem("Host MCP policy set to `require-approval`.");
+      return;
+    }
+    default:
+      ctx.appendSystem(`## MCP\n${mcpStatusText(status)}`);
+  }
+}
+
+async function runStartupSetup(ctx: SlashCommandContext): Promise<void> {
+  const root = requireProjectRoot(ctx);
+  if (!root) return;
+  const command = await askInline(ctx, {
+    title: "Startup command",
+    prompt: "Choose a startup command to add to `.aethon/startup.toml`.",
+    allowText: true,
+    choices: [
+      { id: "bun-install", label: "bun install" },
+      { id: "bun-dev", label: "bun run dev" },
+      { id: "none", label: "Cancel" },
+    ],
+  });
+  if (!command) return;
+  if (command.choiceId === "none") return;
+  const commandText =
+    command.text?.trim() ||
+    (command.choiceId === "bun-dev" ? "bun run dev" : "bun install");
+  const required = await askInline(ctx, {
+    title: "Startup command",
+    prompt: `Should \`${commandText}\` be required before opening new project sessions?`,
+    choices: [
+      { id: "required", label: "Required" },
+      { id: "optional", label: "Optional" },
+    ],
+  });
+  if (!required) return;
+  const result = await invoke<{ path: string }>(
+    "aethon_setup_write_startup_command",
+    {
+      args: {
+        root,
+        id: commandText.split(/\s+/).slice(0, 3).join("-"),
+        label: commandText,
+        command: commandText,
+        required: required.choiceId !== "optional",
+        timeoutSeconds: 600,
+      },
+    },
+  );
+  ctx.notify({
+    title: "Startup configured",
+    message: result.path,
+    kind: "success",
+  });
+  ctx.appendSystem(`Updated \`${result.path}\`.`);
+}
+
+async function runConfigCommand(ctx: SlashCommandContext): Promise<void> {
+  const answer = await askInline(ctx, {
+    title: "Aethon config",
+    prompt: "What would you like to configure for this project?",
+    choices: [
+      {
+        id: "mcp",
+        label: "MCP servers",
+        description:
+          "Use or import `.mcp.json`, approve project MCP, and enable host policy.",
+      },
+      {
+        id: "startup",
+        label: "Startup command",
+        description: "Create or update `.aethon/startup.toml`.",
+      },
+      {
+        id: "init",
+        label: "Project instructions",
+        description:
+          "Create or update the Aethon managed block in `AGENTS.md`.",
+      },
+    ],
+  });
+  if (!answer) return;
+  if (answer.choiceId === "mcp") return runMcpCommand(ctx, "setup");
+  if (answer.choiceId === "startup") return runStartupSetup(ctx);
+  if (answer.choiceId === "init") return runInitCommand(ctx);
+}
+
 export function buildBuiltinSlashCommands(): SlashCommand[] {
   const commands: SlashCommand[] = [
     {
@@ -273,6 +587,27 @@ export function buildBuiltinSlashCommands(): SlashCommand[] {
           kind: "error",
         });
       },
+    },
+    {
+      name: "init",
+      description: "Create or update project instructions for Aethon",
+      run: async (_args, ctx) => runInitCommand(ctx),
+    },
+    {
+      name: "config",
+      description: "Open guided project configuration",
+      run: async (_args, ctx) => runConfigCommand(ctx),
+    },
+    {
+      name: "mcp",
+      description: "Show or configure MCP servers for the active project",
+      usage: "[setup]",
+      run: async (args, ctx) => runMcpCommand(ctx, args),
+    },
+    {
+      name: "mcp-auth",
+      description: "Configure MCP authentication for the active project",
+      run: async (_args, ctx) => runMcpCommand(ctx, "setup"),
     },
     {
       name: "login",
@@ -783,5 +1118,14 @@ export function parseSlashCommand(input: string): ParsedSlashCommand | null {
     /^\/([A-Za-z][\w-]*(?::[A-Za-z0-9][\w-]*)?)\s*(.*)$/s,
   );
   if (!match) return null;
-  return { name: match[1], args: match[2] ?? "" };
+  const name = match[1];
+  const args = match[2] ?? "";
+  const numberedMcp = name.match(/^(mcp|mcp-auth):(\d+)$/);
+  if (numberedMcp) {
+    return {
+      name: numberedMcp[1],
+      args: [numberedMcp[2], args].filter(Boolean).join(" ").trim(),
+    };
+  }
+  return { name, args };
 }

@@ -46,6 +46,7 @@ export function useEffectiveConfig(
       updates: { ...snapshot.updates, ...(p.updates ?? {}) },
       devshell: { ...snapshot.devshell, ...(p.devshell ?? {}) },
       startup: { ...snapshot.startup, ...(p.startup ?? {}) },
+      mcp: { ...snapshot.mcp, ...(p.mcp ?? {}) },
       guardrails: { ...snapshot.guardrails, ...(p.guardrails ?? {}) },
     };
   }, [snapshot, pending]);
