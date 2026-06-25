@@ -501,6 +501,29 @@ describe("buildSubagentTaskTool", () => {
     expect(h.disposeSpy).toHaveBeenCalled();
   });
 
+  it("wraps a non-Error prompt rejection with a useful message", async () => {
+    h.promptImpl = () =>
+      ({
+        then(_resolve, reject) {
+          reject("boom");
+        },
+      }) as Promise<void>;
+    const { state } = makeState({ name: "reviewer", model: "ollama/llama3.3" });
+    const send = vi.fn();
+    const tool = buildSubagentTaskTool(state, { send }, "default");
+    await expect(
+      execOf(tool)("c", { subagent_type: "reviewer", prompt: "x" }),
+    ).rejects.toThrow(/failed: boom/);
+    expect(send).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "subagent_progress",
+        phase: "error",
+        error: "boom",
+      }),
+    );
+    expect(h.disposeSpy).toHaveBeenCalled();
+  });
+
   it("aborts the subagent session when the parent signal aborts", async () => {
     let release!: () => void;
     h.promptImpl = () => new Promise<void>((res) => (release = res));
