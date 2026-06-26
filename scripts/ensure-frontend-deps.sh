@@ -48,18 +48,25 @@ done
 hash_file() {
   if command -v sha256sum >/dev/null 2>&1; then
     sha256sum "$1" | cut -d' ' -f1
-  else
+  elif command -v shasum >/dev/null 2>&1; then
     shasum -a 256 "$1" | cut -d' ' -f1
+  else
+    echo "[deps] neither sha256sum nor shasum is on PATH; cannot hash $1" >&2
+    return 1
   fi
 }
 
 stamp="node_modules/.aethon-deps-lock-hash"
 want="$(hash_file "$lock_file")"
 
+# Read the stamp into a variable with an explicit `|| true` so a missing
+# stamp (first run) never trips errexit via the command substitution.
+current="$(cat "$stamp" 2>/dev/null || true)"
+
 # In sync iff node_modules is populated AND its stamp matches the lockfile.
 # The stamp lives inside node_modules, so wiping the tree also clears the
 # stamp and forces a reinstall.
-if [[ -x node_modules/.bin/vite && "$(cat "$stamp" 2>/dev/null)" == "$want" ]]; then
+if [[ -x node_modules/.bin/vite && "$current" == "$want" ]]; then
   exit 0
 fi
 
