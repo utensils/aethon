@@ -22,7 +22,6 @@ import {
   summaryWithFileEntries,
   toolDurationLabel,
   toolStateLabel,
-  withOpenToolCards,
 } from "./tool-activity-summary";
 import {
   FileChangeStats,
@@ -221,6 +220,13 @@ export function TurnActivity({
     [],
   );
 
+  // Cards remount collapsed when the body is hidden, so keep the toolbar's
+  // "Expand all / Collapse all" label in sync rather than leaving it stale.
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- resync the toolbar label to body visibility
+    if (!detailsBodyVisible) setAllExpanded(false);
+  }, [detailsBodyVisible]);
+
   if (!hasActivity) return null;
   const label = activityLabel({
     summary,
@@ -316,7 +322,7 @@ export function TurnActivity({
                 .map((message) => (
                   <ChatMessageRow
                     key={message.id}
-                    message={withOpenToolCards(message)}
+                    message={message}
                     state={state}
                     tabId={tabId}
                     className={`${rowClassName} ae-turn-tool-message`}

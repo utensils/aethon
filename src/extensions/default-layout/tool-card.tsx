@@ -301,7 +301,6 @@ export function ToolCard({
     fileChange?: ToolFileChange;
     filePath?: StringValue;
     rootPath?: StringValue;
-    defaultOpen?: BooleanValue;
   };
   const baseTitle = props.title ? resolveString(props.title, state) : "";
   const description = props.description
@@ -412,7 +411,10 @@ export function ToolCard({
   }
 
   const hasFileChange = Boolean(fileChange);
-  const hasRawOutput = hasChildren && !hasFileChange;
+  // Raw stdout still renders when an edit/write has no captured diff, so a
+  // tool's text output is never silently dropped (it renders alongside the
+  // file-change row in that case).
+  const hasRawOutput = hasChildren && !fileChange?.preview;
   // Every card collapses to one line. Edits/writes expand to their diff;
   // bash and friends expand to their stdout; subagents to their activity.
   const hasExpandableBody =
@@ -491,9 +493,8 @@ export function ToolCard({
           )}
           {hasFileChange && fileChange ? (
             <ToolFileChangeBody change={fileChange} onEvent={onEvent} />
-          ) : hasRawOutput ? (
-            renderChildren?.()
           ) : null}
+          {hasRawOutput ? renderChildren?.() : null}
         </div>
       )}
     </div>

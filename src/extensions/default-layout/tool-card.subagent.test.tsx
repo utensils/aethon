@@ -195,4 +195,35 @@ describe("ToolCard file changes", () => {
       rootPath: "/repo",
     });
   });
+
+  it("keeps raw output when a file-change has no captured diff", () => {
+    const { container } = render(
+      <ToolCard
+        component={{
+          id: "tool-edit-nodiff",
+          type: "tool-card",
+          props: {
+            title: "edit",
+            toolName: "edit",
+            // No `preview` — so the tool's text output must not be dropped.
+            fileChange: { kind: "edited", path: "src/x.ts", additions: 1 },
+          },
+          children: [
+            { id: "out", type: "code", props: { content: "wrote it" } },
+          ],
+        }}
+        state={{}}
+        onEvent={() => {}}
+        renderChildren={() => <div>raw stdout here</div>}
+      />,
+    );
+
+    const summary = container.querySelector(".ae-tool-card-summary");
+    expect(summary).toBeTruthy();
+    fireEvent.click(summary as Element);
+
+    // Both the file row AND the raw stdout render when there is no diff.
+    expect(screen.getByText("x.ts")).toBeTruthy();
+    expect(screen.getByText("raw stdout here")).toBeTruthy();
+  });
 });

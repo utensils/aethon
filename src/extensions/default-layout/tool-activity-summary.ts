@@ -149,27 +149,6 @@ export function hasToolCardChildren(message: ChatMessage): boolean {
   );
 }
 
-export function withOpenToolCards(message: ChatMessage): ChatMessage {
-  if (!message.a2ui?.components?.length) return message;
-  return {
-    ...message,
-    a2ui: {
-      ...message.a2ui,
-      components: message.a2ui.components.map((component) =>
-        component.type === "tool-card"
-          ? {
-              ...component,
-              props: {
-                ...component.props,
-                defaultOpen: true,
-              },
-            }
-          : component,
-      ),
-    },
-  };
-}
-
 export function basename(path: string): string {
   return (
     path
