@@ -13,7 +13,15 @@ function taskCard(state: Record<string, unknown>) {
     type: "tool-card",
     props: { title: "task", toolName: "task", startedAt: 1 },
   };
-  render(<ToolCard component={component} state={state} onEvent={() => {}} />);
+  const result = render(
+    <ToolCard component={component} state={state} onEvent={() => {}} />,
+  );
+  // Tool cards collapse by default; expand to reveal the subagent timeline.
+  const summary = result.container.querySelector(".ae-tool-card-summary");
+  if (summary && summary.tagName === "BUTTON") {
+    fireEvent.click(summary);
+  }
+  return result;
 }
 
 describe("ToolCard subagent activity", () => {
@@ -108,7 +116,7 @@ describe("ToolCard subagent activity", () => {
 
 describe("ToolCard file changes", () => {
   it("renders and expands an edited file preview", () => {
-    render(
+    const { container } = render(
       <ToolCard
         component={{
           id: "tool-edit",
@@ -133,7 +141,12 @@ describe("ToolCard file changes", () => {
       />,
     );
 
-    fireEvent.click(screen.getByText("Edited 1 file"));
+    // The +1/-1 stat shows on the collapsed summary line; expand the card to
+    // reveal the file row + inline diff.
+    expect(screen.getAllByText("+1").length).toBeGreaterThan(0);
+    const summary = container.querySelector(".ae-tool-card-summary");
+    expect(summary).toBeTruthy();
+    fireEvent.click(summary as Element);
 
     expect(screen.getByText("App.tsx")).toBeTruthy();
     expect(screen.getAllByText("+1").length).toBeGreaterThan(0);
@@ -143,7 +156,7 @@ describe("ToolCard file changes", () => {
 
   it("emits file open and diff actions", () => {
     const onEvent = vi.fn();
-    render(
+    const { container } = render(
       <ToolCard
         component={{
           id: "tool-write",
@@ -165,7 +178,9 @@ describe("ToolCard file changes", () => {
       />,
     );
 
-    fireEvent.click(screen.getByText("Created 1 file"));
+    const summary = container.querySelector(".ae-tool-card-summary");
+    expect(summary).toBeTruthy();
+    fireEvent.click(summary as Element);
     fireEvent.click(screen.getByTitle("Open src/new.ts"));
     expect(onEvent).toHaveBeenCalledWith("tool-file-open", {
       filePath: "src/new.ts",

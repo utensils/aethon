@@ -178,19 +178,13 @@ describe("parseSessionHistoryLines", () => {
                 title: "read",
                 toolName: "read",
                 description: "src/App.tsx",
+                filePath: "src/App.tsx",
                 startedAt: 1_000,
                 endedAt: 2_500,
               },
-              children: [
-                {
-                  id: "restored-tool-call-read-1-result",
-                  type: "code",
-                  props: {
-                    content: "export function App() {}",
-                    language: "tsx",
-                  },
-                },
-              ],
+              // A successful read renders as a clickable filename — no
+              // file-content child is emitted.
+              children: [],
             },
           ],
         },

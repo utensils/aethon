@@ -232,11 +232,18 @@ describe("ToolCard", () => {
     vi.useFakeTimers();
     vi.setSystemTime(10_000);
 
-    renderToolCard({ startedAt: 1_000, endedAt: 3_000, status: "cancelled" });
+    const { container } = renderToolCard({
+      startedAt: 1_000,
+      endedAt: 3_000,
+      status: "cancelled",
+    });
 
     expect(screen.getByText("Cancelled in 2.0s")).toBeTruthy();
     expect(screen.queryByText(/long-running/)).toBeNull();
-    expect(screen.getByLabelText("Tool cancelled")).toBeTruthy();
+    // State is conveyed by the card's border + duration label, not a glyph.
+    expect(
+      container.querySelector('.ae-tool-card[data-cancelled="true"]'),
+    ).toBeTruthy();
 
     vi.setSystemTime(30_000);
     vi.advanceTimersByTime(1_000);
@@ -245,7 +252,10 @@ describe("ToolCard", () => {
   });
 
   it("renders completed and failed terminal states with stable durations", () => {
-    const { rerender } = renderToolCard({ startedAt: 1_000, endedAt: 2_500 });
+    const { rerender, container } = renderToolCard({
+      startedAt: 1_000,
+      endedAt: 2_500,
+    });
     expect(screen.getByText("Completed in 1.5s")).toBeTruthy();
 
     rerender(
@@ -267,7 +277,9 @@ describe("ToolCard", () => {
       />,
     );
     expect(screen.getByText("Failed in 1.5s")).toBeTruthy();
-    expect(screen.getByLabelText("Tool failed")).toBeTruthy();
+    expect(
+      container.querySelector('.ae-tool-card[data-error="true"]'),
+    ).toBeTruthy();
   });
 });
 
@@ -1871,8 +1883,8 @@ describe("ChatHistory turn activity feed (mocked Virtuoso renders rows)", () => 
     expect(screen.getByText("bash")).toBeTruthy();
   });
 
-  it("keeps raw tool output visible when activity details are shown", () => {
-    renderGroupedHistory({
+  it("collapses tool output by default and reveals it on expand", () => {
+    const { container } = renderGroupedHistory({
       messages: [
         { id: "u1", role: "user", text: "run command" },
         {
@@ -1900,8 +1912,13 @@ describe("ChatHistory turn activity feed (mocked Virtuoso renders rows)", () => 
       transcriptVisibility: { toolCalls: "show" },
     });
 
-    expect(screen.getByText("raw command output")).toBeTruthy();
     expect(screen.getByText("done")).toBeTruthy();
+    // Tool cards collapse by default — stdout is hidden until expanded.
+    expect(screen.queryByText("raw command output")).toBeNull();
+    const cardSummary = container.querySelector(".ae-tool-card-summary");
+    expect(cardSummary).toBeTruthy();
+    fireEvent.click(cardSummary as Element);
+    expect(screen.getByText("raw command output")).toBeTruthy();
   });
 
   it("keeps turn activity mounted briefly while collapsing", () => {
@@ -2362,7 +2379,7 @@ describe("ChatHistory turn activity feed (mocked Virtuoso renders rows)", () => 
     expect(container.querySelectorAll(".ae-file-activity-card").length).toBe(1);
   });
 
-  it("auto-expands completed edit artifacts at the end of a turn", async () => {
+  it("keeps the completed edit artifacts card pinned regardless of the activity toggle", () => {
     renderGroupedHistory({
       messages: [
         { id: "u1", role: "user", text: "change files" },
@@ -2393,14 +2410,15 @@ describe("ChatHistory turn activity feed (mocked Virtuoso renders rows)", () => 
       transcriptVisibility: { toolCalls: "hide" },
     });
 
-    const summary = screen.getByRole("button", { name: /Edited 1 file/ });
-    expect(summary.getAttribute("aria-expanded")).toBe("true");
+    // The aggregated "Edited N files" card is a durable artifact — the file
+    // is always listed regardless of the tool-calls toggle / turn collapse.
     expect(screen.getByText("App.tsx")).toBeTruthy();
 
+    const summary = screen.getByRole("button", { name: /Edited 1 file/ });
     fireEvent.click(summary);
 
-    expect(summary.getAttribute("aria-expanded")).toBe("false");
-    await waitFor(() => expect(screen.queryByText("App.tsx")).toBeNull());
+    // Collapsing the turn body must NOT hide the pinned edits card.
+    expect(screen.getByText("App.tsx")).toBeTruthy();
   });
 
   it("does not rewrite compact edit artifact stats from the working tree", () => {
@@ -2725,7 +2743,7 @@ describe("ChatHistory turn activity feed (mocked Virtuoso renders rows)", () => 
   });
 
   it("keeps stopped assistant progress visible and expanded when there is no final answer", () => {
-    renderGroupedHistory({
+    const { container } = renderGroupedHistory({
       messages: [
         { id: "u1", role: "user", text: "Review this implementation" },
         {
@@ -2779,12 +2797,18 @@ describe("ChatHistory turn activity feed (mocked Virtuoso renders rows)", () => 
     ).toBeTruthy();
     expect(screen.getByText(/1 tool call/)).toBeTruthy();
     expect(screen.getByText("bash")).toBeTruthy();
-    expect(screen.getByText("mixed stop command output")).toBeTruthy();
+    // The turn stays expanded; the tool card itself is collapsed by default,
+    // so its stdout is revealed only after expanding the card.
     expect(
       screen
         .getByRole("button", { name: /1 tool call/ })
         .getAttribute("aria-expanded"),
     ).toBe("true");
+    expect(screen.queryByText("mixed stop command output")).toBeNull();
+    const cardSummary = container.querySelector(".ae-tool-card-summary");
+    expect(cardSummary).toBeTruthy();
+    fireEvent.click(cardSummary as Element);
+    expect(screen.getByText("mixed stop command output")).toBeTruthy();
   });
 
   it("keeps prior assistant prose visible when the latest agent row is hidden thinking", () => {
@@ -2887,7 +2911,7 @@ describe("ChatHistory turn activity feed (mocked Virtuoso renders rows)", () => 
   });
 
   it("keeps interrupted tool output visible when stop happens before prose", () => {
-    renderGroupedHistory({
+    const { container } = renderGroupedHistory({
       messages: [
         { id: "u1", role: "user", text: "Review this implementation" },
         {
@@ -2924,6 +2948,11 @@ describe("ChatHistory turn activity feed (mocked Virtuoso renders rows)", () => 
     const summary = screen.getByRole("button", { name: /1 tool call/ });
     expect(summary.getAttribute("aria-expanded")).toBe("true");
     expect(screen.getByText("bash")).toBeTruthy();
+    // Collapsed by default; expanding the card reveals the interrupted output.
+    expect(screen.queryByText("review output before stop")).toBeNull();
+    const cardSummary = container.querySelector(".ae-tool-card-summary");
+    expect(cardSummary).toBeTruthy();
+    fireEvent.click(cardSummary as Element);
     expect(screen.getByText("review output before stop")).toBeTruthy();
   });
 

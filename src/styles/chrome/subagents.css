@@ -60,6 +60,33 @@
     var(--ease-panel) both;
 }
 
+/* Expand/collapse-all toolbar for the turn's tool cards. */
+.ae-turn-activity-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: -2px;
+}
+.ae-turn-activity-expand-all {
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-sm);
+  color: var(--text-dim);
+  font-size: var(--chrome-text-muted);
+  padding: 2px 6px;
+  cursor: pointer;
+  transition:
+    color var(--motion-fast) ease,
+    background var(--motion-fast) ease;
+}
+.ae-turn-activity-expand-all:hover {
+  color: var(--text);
+  background: var(--bg-hover);
+}
+.ae-turn-activity-expand-all:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
 .ae-turn-branch-actions {
   display: flex;
   align-items: center;

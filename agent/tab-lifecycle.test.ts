@@ -334,7 +334,7 @@ describe("toolCardPayload", () => {
     const result = "x".repeat(2000);
     const payload = toolCardPayload({
       id: "tool-c1",
-      toolName: "read",
+      toolName: "bash",
       argsSummary: "",
       result,
     });
@@ -346,6 +346,38 @@ describe("toolCardPayload", () => {
     expect(code.type).toBe("code");
     expect(code.props.content.length).toBe(1500);
     expect(code.props.content.endsWith("…")).toBe(true);
+  });
+
+  it("suppresses the content child for a successful read and exposes filePath", () => {
+    const payload = toolCardPayload({
+      id: "tool-c1",
+      toolName: "read",
+      argsSummary: "src/App.tsx",
+      args: { path: "src/App.tsx" },
+      rootPath: "/repo",
+      result: "export function App() { return null; }",
+    });
+    const root = payload.components[0] as {
+      children: unknown[];
+      props: { filePath?: string; rootPath?: string };
+    };
+    // No file-content dump — the frontend renders a clickable filename instead.
+    expect(root.children).toHaveLength(0);
+    expect(root.props.filePath).toBe("src/App.tsx");
+    expect(root.props.rootPath).toBe("/repo");
+  });
+
+  it("keeps the output child for a FAILED read", () => {
+    const payload = toolCardPayload({
+      id: "tool-c1",
+      toolName: "read",
+      argsSummary: "src/missing.ts",
+      args: { path: "src/missing.ts" },
+      isError: true,
+      result: "ENOENT: no such file",
+    });
+    const root = payload.components[0] as { children: unknown[] };
+    expect(root.children).toHaveLength(1);
   });
 
   it("renders task text results as subagent prose output", () => {
@@ -367,7 +399,7 @@ describe("toolCardPayload", () => {
   it("infers the code language for file-backed tool results", () => {
     const payload = toolCardPayload({
       id: "tool-c1",
-      toolName: "read",
+      toolName: "write",
       argsSummary: "src/App.tsx lines 1-end",
       result: "export function App() { return null; }",
     });

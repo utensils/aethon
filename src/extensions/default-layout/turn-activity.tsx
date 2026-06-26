@@ -128,6 +128,13 @@ export function TurnActivity({
   const [closingBodyRetained, setClosingBodyRetained] = useState(false);
   const closingTimerRef = useRef<number | null>(null);
   const [manualOpen, setManualOpen] = useState<boolean | null>(null);
+  const [allExpanded, setAllExpanded] = useState(false);
+  const setAllToolCardsOpen = (next: boolean) => {
+    setAllExpanded(next);
+    window.dispatchEvent(
+      new CustomEvent("aethon:tool-cards-set-open", { detail: { open: next } }),
+    );
+  };
   const progressMessages =
     live || forceOpen
       ? []
@@ -175,12 +182,14 @@ export function TurnActivity({
       )
       .map((message) => message.id),
   );
-  const fileChangeEntries =
-    detailsBodyVisible && !showOriginalToolCards
-      ? collectFileChangeEntries(
-          detailTools.filter((message) => !originalToolCardIds.has(message.id)),
-        )
-      : [];
+  // The aggregated "Edited N files" card is the durable artifact of a turn,
+  // so it stays visible regardless of the tool-calls visibility toggle or
+  // whether the activity body is expanded. When tool cards render in full
+  // (showOriginalToolCards) each edit shows its own change, so skip it then
+  // to avoid duplication.
+  const pinnedFileChangeEntries = showOriginalToolCards
+    ? []
+    : collectFileChangeEntries(allToolMessages.filter(hasFileChange));
   const detailToolRows =
     showOriginalToolCards || !showGenericTools
       ? []
@@ -279,6 +288,18 @@ export function TurnActivity({
       </button>
       {detailsBodyVisible && (
         <div className="ae-turn-activity-body" data-state={detailsBodyState}>
+          {originalToolCardIds.size > 0 && (
+            <div className="ae-turn-activity-toolbar">
+              <button
+                type="button"
+                className="ae-turn-activity-expand-all"
+                aria-expanded={allExpanded}
+                onClick={() => setAllToolCardsOpen(!allExpanded)}
+              >
+                {allExpanded ? "Collapse all" : "Expand all"}
+              </button>
+            </div>
+          )}
           {originalToolCardIds.size > 0
             ? detailTools
                 .filter((message) => originalToolCardIds.has(message.id))
@@ -307,11 +328,6 @@ export function TurnActivity({
               thinkingVisibility={thinkingVisibility}
             />
           ))}
-          <ToolFileChangesCard
-            entries={fileChangeEntries}
-            summary={summary}
-            onEvent={onEvent}
-          />
           {detailToolRows.map((message) => (
             <ToolActivityRow
               key={message.id}
@@ -331,6 +347,13 @@ export function TurnActivity({
             />
           ))}
         </div>
+      )}
+      {pinnedFileChangeEntries.length > 0 && (
+        <ToolFileChangesCard
+          entries={pinnedFileChangeEntries}
+          summary={summary}
+          onEvent={onEvent}
+        />
       )}
     </div>
   );
