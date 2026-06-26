@@ -2956,6 +2956,43 @@ describe("ChatHistory turn activity feed (mocked Virtuoso renders rows)", () => 
     expect(screen.getByText("review output before stop")).toBeTruthy();
   });
 
+  it("expand-all reveals every tool card in the turn", () => {
+    const mkCard = (id: string, out: string) => ({
+      id,
+      type: "tool-card" as const,
+      props: { title: "bash", startedAt: 1, endedAt: 2 },
+      children: [{ id: `${id}-o`, type: "code", props: { content: out } }],
+    });
+    renderGroupedHistory({
+      messages: [
+        { id: "u1", role: "user", text: "go" },
+        {
+          id: "t1",
+          role: "agent",
+          a2ui: { components: [mkCard("c1", "first out"), mkCard("c2", "second out")] },
+        },
+      ],
+      waiting: false,
+      status: "ready",
+      transcriptVisibility: { toolCalls: "group-block" },
+    });
+
+    // Expand the turn body to surface the tool cards + the toolbar.
+    const turnHeader = screen.getByRole("button", { name: /tool call/ });
+    if (turnHeader.getAttribute("aria-expanded") !== "true") {
+      fireEvent.click(turnHeader);
+    }
+    // Cards are still collapsed individually by default.
+    expect(screen.queryByText("first out")).toBeNull();
+    expect(screen.queryByText("second out")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: /Expand all/ }));
+
+    // The per-turn toolbar expands every card in its own subtree.
+    expect(screen.getByText("first out")).toBeTruthy();
+    expect(screen.getByText("second out")).toBeTruthy();
+  });
+
   it("keeps the latest stopped status turn expanded when no stop notice is in the transcript", () => {
     renderGroupedHistory({
       status: "stopped",

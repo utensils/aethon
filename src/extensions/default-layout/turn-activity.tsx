@@ -129,11 +129,20 @@ export function TurnActivity({
   const closingTimerRef = useRef<number | null>(null);
   const [manualOpen, setManualOpen] = useState<boolean | null>(null);
   const [allExpanded, setAllExpanded] = useState(false);
+  const turnRef = useRef<HTMLDivElement>(null);
   const setAllToolCardsOpen = (next: boolean) => {
     setAllExpanded(next);
-    window.dispatchEvent(
-      new CustomEvent("aethon:tool-cards-set-open", { detail: { open: next } }),
-    );
+    // Dispatch only to the cards inside THIS turn's subtree so sibling
+    // turns are unaffected.
+    turnRef.current
+      ?.querySelectorAll(".ae-tool-card")
+      .forEach((el) =>
+        el.dispatchEvent(
+          new CustomEvent("aethon:tool-card-set-open", {
+            detail: { open: next },
+          }),
+        ),
+      );
   };
   const progressMessages =
     live || forceOpen
@@ -255,6 +264,7 @@ export function TurnActivity({
 
   return (
     <div
+      ref={turnRef}
       className="ae-turn-activity"
       data-expanded={detailsOpen ? "true" : "false"}
     >

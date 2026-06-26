@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { FileIcon } from "../../components/file-icon";
 import type { BooleanValue, NumberValue, StringValue } from "../../types/a2ui";
 import type { BuiltinComponentProps } from "../../components/A2UIRenderer";
@@ -327,15 +327,19 @@ export function ToolCard({
   // file-change summary visible because that lives outside the collapsible
   // body; only the raw output (bash stdout, etc.) hides.
   const [open, setOpen] = useState(false);
-  // Respond to the transcript-wide expand/collapse-all broadcast.
+  const cardRef = useRef<HTMLDivElement>(null);
+  // Respond to this turn's expand/collapse-all. The turn toolbar dispatches
+  // the event onto each card element in its own subtree (not window), so a
+  // turn's "Expand all" never reaches cards in sibling turns.
   useEffect(() => {
-    const onSetAll = (event: Event) => {
+    const el = cardRef.current;
+    if (!el) return;
+    const onSetOpen = (event: Event) => {
       const detail = (event as CustomEvent<{ open?: boolean }>).detail;
       if (detail && typeof detail.open === "boolean") setOpen(detail.open);
     };
-    window.addEventListener("aethon:tool-cards-set-open", onSetAll);
-    return () =>
-      window.removeEventListener("aethon:tool-cards-set-open", onSetAll);
+    el.addEventListener("aethon:tool-card-set-open", onSetOpen);
+    return () => el.removeEventListener("aethon:tool-card-set-open", onSetOpen);
   }, []);
 
   const [now, setNow] = useState(() => Date.now());
@@ -454,6 +458,7 @@ export function ToolCard({
 
   return (
     <div
+      ref={cardRef}
       className="ae-tool-card"
       data-open={open ? "true" : "false"}
       data-collapsible={hasExpandableBody ? "true" : "false"}
