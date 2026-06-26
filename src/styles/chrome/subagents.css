@@ -435,13 +435,11 @@
 }
 
 .ae-turn-block-caret {
-  display: inline-block;
-  font-size: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
   opacity: 0.8;
-  transition: transform var(--motion-fast) var(--ease-out);
-}
-.ae-turn-activity[data-expanded="true"] .ae-turn-block-caret {
-  transform: translateY(1px);
 }
 .ae-turn-block-label {
   font-weight: 500;

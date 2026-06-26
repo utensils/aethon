@@ -645,6 +645,13 @@ remains for the case where stdin is wedged.
   (currently just the `AgentProcess` mutex). Business logic belongs in the
   agent, not the shell.
 - **No emojis in code or commits** unless the user explicitly asks.
+- **Disclosure affordances always use the shared `Chevron`**
+  (`src/extensions/default-layout/sidebar/chevron.tsx`). Every
+  expand/collapse control — sidebar sections, host/project/workspace rows,
+  file tree, Source Control headers, and anything new — renders
+  `<Chevron expanded={…} />` (wrapped in a `…-chevron`/`…-caret` span for
+  sizing). Never hand-roll a `▸`/`▾`/`>` text caret or one-off rotating
+  glyph; they drift in size and weight.
 
 ## Editing Tauri Config
 

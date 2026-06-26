@@ -32,6 +32,7 @@ import {
   SearchableSidebarSection,
   type SidebarSectionExt,
 } from "./searchable-section";
+import { Chevron } from "./chevron";
 import { useSidebarContextMenu } from "./contextMenu";
 import { useSidebarResize } from "./resize";
 import { composeSidebarSections, resolveSidebarItems } from "./sections";
@@ -300,6 +301,30 @@ interface SidebarSectionBlockProps {
   onRenameWorkspaceEnd: (workspaceId: string) => void;
 }
 
+/** Per-section collapsed pref. Pure presentational state, so it lives in
+ *  localStorage (synchronous → no expand-then-collapse flash on load)
+ *  rather than the async disk-persist used for heavier state. */
+const SECTION_COLLAPSE_KEY = "aethon.sidebar.section-collapsed.";
+
+function readSectionCollapsed(id: string): boolean {
+  try {
+    return window.localStorage.getItem(SECTION_COLLAPSE_KEY + id) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function writeSectionCollapsed(id: string, collapsed: boolean): void {
+  try {
+    window.localStorage.setItem(
+      SECTION_COLLAPSE_KEY + id,
+      collapsed ? "1" : "0",
+    );
+  } catch {
+    /* private mode / unavailable — collapse just won't persist */
+  }
+}
+
 /** Plain (non-searchable) section block. Renders the title, the row
  *  list (with extension toggle / workspace disclosure / projects-slot
  *  alignment), and the trailing action row. Pulled out of Sidebar so
@@ -339,6 +364,19 @@ function SidebarSectionBlock({
   const isProjects = section.id === "projects";
   const isExtensionsSection =
     section.id === "extensions" || section.id === "extensions-user";
+
+  // Extension sections collapse to a single header row so a long list of
+  // disabled extensions stops eating the sidebar's vertical budget.
+  const collapsible = isExtensionsSection && Boolean(section.title);
+  const [collapsed, setCollapsed] = useState(
+    () => collapsible && readSectionCollapsed(section.id),
+  );
+  const toggleCollapsed = () =>
+    setCollapsed((prev) => {
+      const next = !prev;
+      writeSectionCollapsed(section.id, next);
+      return next;
+    });
 
   const finishWorkspaceDrag = () => {
     setDraggingWorkspaceId(null);
@@ -511,10 +549,26 @@ function SidebarSectionBlock({
         .filter(Boolean)
         .join(" ")}
     >
-      {section.title && (
-        <div className="a2ui-sidebar-section-title">{section.title}</div>
-      )}
-      {items.length === 0 ? (
+      {section.title &&
+        (collapsible ? (
+          <button
+            type="button"
+            className="a2ui-sidebar-section-title a2ui-sidebar-section-title-toggle"
+            onClick={toggleCollapsed}
+            aria-expanded={!collapsed}
+          >
+            <span className="a2ui-sidebar-section-caret" aria-hidden="true">
+              <Chevron expanded={!collapsed} />
+            </span>
+            <span className="a2ui-sidebar-section-title-text">
+              {section.title}
+            </span>
+            <span className="a2ui-sidebar-section-count">{items.length}</span>
+          </button>
+        ) : (
+          <div className="a2ui-sidebar-section-title">{section.title}</div>
+        ))}
+      {collapsed ? null : items.length === 0 ? (
         <div className="a2ui-sidebar-empty">empty</div>
       ) : (
         <ul className="a2ui-sidebar-list">
@@ -639,7 +693,7 @@ function SidebarSectionBlock({
           })}
         </ul>
       )}
-      {actions.length > 0 && (
+      {!collapsed && actions.length > 0 && (
         <ul className="a2ui-sidebar-actions">
           {actions.map((a) => (
             <li

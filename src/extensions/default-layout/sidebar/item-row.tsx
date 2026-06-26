@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import type { A2UIComponent, SidebarItem } from "../../../types/a2ui";
 import type { BuiltinComponentProps } from "../../../components/A2UIRenderer";
+import { Chevron } from "./chevron";
 
 export interface ItemRowProps {
   item: SidebarItem;
@@ -164,30 +165,7 @@ export function ItemRow({
         onToggleDisclosure?.();
       }}
     >
-      {/* Inline SVG instead of Unicode ▸/▾ — the geometric glyphs
-          render tiny at any font size because their metric box is
-          vertically thin. SVG scales exactly to the 12×12 viewport
-          so the chevron actually reads on Paper / Ember alike.
-          `currentColor` so the parent's `color:` controls fill. */}
-      <svg
-        width="12"
-        height="12"
-        viewBox="0 0 12 12"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.75"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        aria-hidden="true"
-      >
-        <path
-          d={
-            disclosure === "expanded"
-              ? "M2.5 4.5L6 8L9.5 4.5"
-              : "M4.5 2.5L8 6L4.5 9.5"
-          }
-        />
-      </svg>
+      <Chevron expanded={disclosure === "expanded"} size={12} />
     </button>
   ) : alignSlots ? (
     <span className="a2ui-sidebar-item-discl-spacer" aria-hidden="true" />

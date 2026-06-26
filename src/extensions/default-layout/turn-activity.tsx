@@ -8,6 +8,7 @@ import {
 } from "../../utils/toolCardGrouping";
 import type { ConversationTurn } from "../../utils/transcriptRows";
 import type { ToolCallsMode, VisibilityMode } from "../../config";
+import { Chevron } from "./sidebar/chevron";
 import { ChatMessageRow } from "./message-row";
 import { hasDisplayableAgentContent } from "./turn-activity-helpers";
 import {
@@ -256,7 +257,7 @@ export function TurnActivity({
         onClick={handleToggle}
       >
         <span className="ae-turn-block-caret" aria-hidden="true">
-          {detailsOpen ? "▾" : "▸"}
+          <Chevron expanded={detailsOpen} size={12} />
         </span>
         <span className="ae-turn-block-label">{label}</span>
         {meta ? (

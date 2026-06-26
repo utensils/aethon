@@ -562,6 +562,14 @@ The dev build must already be running — never launch a release build
 - **No global state in the Rust shell** beyond Tauri's `Manager`
   (currently just the `AgentProcess` mutex).
 - **No emojis in code or commits** unless asked.
+- **Disclosure affordances always use the shared `Chevron`**
+  (`src/extensions/default-layout/sidebar/chevron.tsx`). Every
+  expand/collapse control — sidebar sections, host/project/workspace rows,
+  file tree, Source Control headers, and anything new — renders
+  `<Chevron expanded={…} />` (wrapped in a `…-chevron`/`…-caret` span for
+  sizing). Never hand-roll a `▸`/`▾`/`>` text caret or a one-off rotating
+  glyph; they drift in size and weight. One component so every disclosure
+  rotates the same icon.
 - A few `react-hooks/*` per-line disables exist for set-state-in-effect
   resync paths + intentionally-empty memo deps. Audit on touch; don't
   broaden.

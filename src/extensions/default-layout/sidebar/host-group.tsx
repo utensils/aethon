@@ -14,6 +14,7 @@
  */
 
 import type { ReactNode } from "react";
+import { Chevron } from "./chevron";
 
 export interface HostGroupItem {
   id: string;
@@ -106,21 +107,7 @@ export function HostGroup({
               onToggleExpand();
             }}
           >
-            <svg
-              width="12"
-              height="12"
-              viewBox="0 0 12 12"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.75"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              aria-hidden="true"
-            >
-              <path
-                d={expanded ? "M2.5 4.5L6 8L9.5 4.5" : "M4.5 2.5L8 6L4.5 9.5"}
-              />
-            </svg>
+            <Chevron expanded={expanded} size={12} />
           </button>
         ) : (
           <span className="a2ui-sidebar-item-discl-spacer" aria-hidden="true" />

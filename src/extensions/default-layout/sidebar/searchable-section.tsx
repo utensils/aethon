@@ -4,6 +4,7 @@ import type {
   SidebarSection,
 } from "../../../types/a2ui";
 import type { BuiltinComponentProps } from "../../../components/A2UIRenderer";
+import { Chevron } from "./chevron";
 import { filterItems, providerOf } from "./filter";
 import { ItemRow, type ItemRowProps } from "./item-row";
 
@@ -103,7 +104,12 @@ export function SearchableSidebarSection({
                   onClick={() => toggleGroup(key)}
                   aria-expanded={!isCollapsed}
                 >
-                  <span className="a2ui-sidebar-group-caret">{isCollapsed ? "▸" : "▾"}</span>
+                  <span
+                    className="a2ui-sidebar-group-caret"
+                    aria-hidden="true"
+                  >
+                    <Chevron expanded={!isCollapsed} size={12} />
+                  </span>
                   <span className="a2ui-sidebar-group-name">{key}</span>
                   <span className="a2ui-sidebar-group-count">{gItems.length}</span>
                 </button>
