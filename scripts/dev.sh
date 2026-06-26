@@ -116,30 +116,12 @@ else
   DEV_INFO="${HOME}/.aethon/dev-info.json"
 fi
 
+# Keep node_modules in sync with bun.lock before launching. The real work
+# (lockfile-hash staleness check + install) lives in a shared script so the
+# Nix devshell startup hook and this launcher use one source of truth — see
+# scripts/ensure-frontend-deps.sh. Honors AETHON_SKIP_BUN_INSTALL.
 ensure_frontend_deps() {
-  if [[ "${AETHON_SKIP_BUN_INSTALL:-0}" == "1" ]]; then
-    return
-  fi
-  if [[ -x "node_modules/.bin/vite" ]]; then
-    return
-  fi
-  if ! command -v bun >/dev/null 2>&1; then
-    echo "[dev] local Vite is missing and bun is not on PATH; run bun install" >&2
-    return 1
-  fi
-  echo "[dev] local Vite is missing; running bun install" >&2
-  if [[ -f bun.lock || -f bun.lockb ]]; then
-    if ! bun install --frozen-lockfile; then
-      echo "[dev] frozen bun install failed; retrying without --frozen-lockfile" >&2
-      bun install
-    fi
-  else
-    bun install
-  fi
-  if [[ ! -x "node_modules/.bin/vite" ]]; then
-    echo "[dev] bun install completed but node_modules/.bin/vite is still missing" >&2
-    return 1
-  fi
+  "$(dirname "$0")/ensure-frontend-deps.sh"
 }
 
 # Test whether ANY process is listening on TCP $1 on any interface or

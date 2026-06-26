@@ -343,6 +343,20 @@
               }
             ];
 
+            # Keep node_modules in sync with bun.lock on every devshell
+            # entry. The check is hash-guarded so it's a sub-ms no-op unless
+            # the lockfile moved (e.g. a `git pull` adding a dependency) —
+            # see scripts/ensure-frontend-deps.sh. `.envrc` does
+            # `watch_file bun.lock`, so nix-direnv reloads the shell (and
+            # re-fires this hook) the moment the lockfile changes. A failed
+            # sync warns but never aborts shell entry.
+            devshell.startup."frontend-deps".text = ''
+              if [ -x "$PRJ_ROOT/scripts/ensure-frontend-deps.sh" ]; then
+                "$PRJ_ROOT/scripts/ensure-frontend-deps.sh" \
+                  || echo "[deps] sync failed; run 'bun install' manually" >&2
+              fi
+            '';
+
             commands = [
               {
                 category = "dev";
