@@ -4,6 +4,55 @@ All notable changes to Aethon. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 [SemVer](https://semver.org/).
 
+## [0.11.0](https://github.com/utensils/aethon/compare/v0.10.2...v0.11.0) (2026-06-26)
+
+
+### Features
+
+* add MCP setup and config flows ([#407](https://github.com/utensils/aethon/issues/407)) ([9580ce6](https://github.com/utensils/aethon/commit/9580ce6288deb538ec05b35cf7054ac815c66928))
+* link GitHub issues to active sessions ([fc869bf](https://github.com/utensils/aethon/commit/fc869bf43c240fd19d6a54f476057ade34048c83))
+
+
+### Bug Fixes
+
+* address quality review regressions ([#396](https://github.com/utensils/aethon/issues/396)) ([4670033](https://github.com/utensils/aethon/commit/467003398e0323607f778a501f53b7fcc923c1f5))
+* **agent:** notify parent on cancelled subagent delegation ([#359](https://github.com/utensils/aethon/issues/359)) ([fe0bc67](https://github.com/utensils/aethon/commit/fe0bc67b659b5ca77c4544854b927d676b4a0a2f))
+* compact completed turns after live threshold ([80e7919](https://github.com/utensils/aethon/commit/80e7919251544fba9cea62ed66280c2d0cc6dab7))
+* **composer:** share textarea input semantics ([#389](https://github.com/utensils/aethon/issues/389)) ([e6d0462](https://github.com/utensils/aethon/commit/e6d04626db8b61dc485b68c3245e0f3448f1f9de))
+* **config:** centralize safe frontend writes ([#384](https://github.com/utensils/aethon/issues/384)) ([d465195](https://github.com/utensils/aethon/commit/d465195d5bd55cb1dc9aad6b3bec8e29317ee9ea))
+* **devshell:** centralize prepare policy ([#385](https://github.com/utensils/aethon/issues/385)) ([5c146a0](https://github.com/utensils/aethon/commit/5c146a096e09864a39ad5908e799132cce4f317c))
+* **devshell:** resync node_modules when bun.lock changes ([#410](https://github.com/utensils/aethon/issues/410)) ([6f9db6e](https://github.com/utensils/aethon/commit/6f9db6e8a44ae5dcda65a9bba5462f12fbe396ba))
+* **devshell:** share effective config resolver ([#381](https://github.com/utensils/aethon/issues/381)) ([7cdbccf](https://github.com/utensils/aethon/commit/7cdbccff9c2a7eb69a006db366c3e76697abeb1c))
+* harden scheduled task workflows ([#366](https://github.com/utensils/aethon/issues/366)) ([98e89a7](https://github.com/utensils/aethon/commit/98e89a7a9516a80d56720e4bf42997570802d014))
+* keep overview model selection stable ([d331160](https://github.com/utensils/aethon/commit/d331160ab8e22fb363ccb33dee9bd8bd26752111))
+* keep Pi UI status out of Aethon chat ([#408](https://github.com/utensils/aethon/issues/408)) ([861282a](https://github.com/utensils/aethon/commit/861282adb052caf4e91401814632a86264f7db6b))
+* keep sidebar header static and left aligned ([d2a2e47](https://github.com/utensils/aethon/commit/d2a2e47a32b94654e4169a43a54cec6af7e1d38f))
+* persist tool diff snapshots ([a2f2dcf](https://github.com/utensils/aethon/commit/a2f2dcfa061f8ec4b3a834e20ff6d99c764880de))
+* preserve error message chronology ([#355](https://github.com/utensils/aethon/issues/355)) ([94bb70d](https://github.com/utensils/aethon/commit/94bb70d3a70b167c0160166471240c19a7f9a77f))
+* prevent voice composer status overlap ([#356](https://github.com/utensils/aethon/issues/356)) ([0815558](https://github.com/utensils/aethon/commit/081555800b6c669e85a1d0a8785c1566d15b80b4))
+* restore root workspace tabs from main row ([d851dc5](https://github.com/utensils/aethon/commit/d851dc54809dc899e950fdd972b5323bae1ae7e2))
+* **tool-cards:** dedupe task batch updates ([#360](https://github.com/utensils/aethon/issues/360)) ([5b874dd](https://github.com/utensils/aethon/commit/5b874ddeefc38c0e47bd13baf5ef60c3f414a375))
+
+
+### Refactors
+
+* **agent:** split session event dispatcher ([f5d89de](https://github.com/utensils/aethon/commit/f5d89de8b7f800d19fc689f801a959c2da9c317d)), closes [#361](https://github.com/utensils/aethon/issues/361)
+* **app:** extract routed tab helpers ([#402](https://github.com/utensils/aethon/issues/402)) ([c4f6a1f](https://github.com/utensils/aethon/commit/c4f6a1fe8d26fd7f2be406cda8eb5ef306f51183))
+* **app:** extract shell orchestration hooks ([#394](https://github.com/utensils/aethon/issues/394)) ([0ef3763](https://github.com/utensils/aethon/commit/0ef3763583c36382b9209df79b2488e7e944fe60))
+* **app:** split remaining root orchestration hooks ([#387](https://github.com/utensils/aethon/issues/387)) ([f5f7fb1](https://github.com/utensils/aethon/commit/f5f7fb11b246f747121dba4e918773de0e62e92f))
+* **auth:** split auth profile manager ([#369](https://github.com/utensils/aethon/issues/369)) ([ec71912](https://github.com/utensils/aethon/commit/ec71912ccb101fc7c3b5af81a593b6af89cdb934))
+* **chat:** extract transcript virtualization controller ([adbcc34](https://github.com/utensils/aethon/commit/adbcc34ec1e22cf93e8138e7df60e16abf550e02)), closes [#362](https://github.com/utensils/aethon/issues/362)
+* **chat:** split scroll-follow controllers ([#390](https://github.com/utensils/aethon/issues/390)) ([03e8a26](https://github.com/utensils/aethon/commit/03e8a26e2af2c2305faf8cbbf7683bb21145d282))
+* **chat:** split transcript activity modules ([#404](https://github.com/utensils/aethon/issues/404)) ([adcfe2c](https://github.com/utensils/aethon/commit/adcfe2c01cf948e1cac3804e228b737a27cd77b2))
+* **chat:** split useChat controllers ([d80f174](https://github.com/utensils/aethon/commit/d80f174302288c2a757dbea59d3936181fb3c920))
+* **ready:** split state reducer and effects ([a7002f9](https://github.com/utensils/aethon/commit/a7002f9b5ef6cddcc6fdd58dbd8714ce100188b4))
+* **scheduler:** split scheduled task command layers ([#367](https://github.com/utensils/aethon/issues/367)) ([1b077b9](https://github.com/utensils/aethon/commit/1b077b9e00a299391bfacd8bce2b4cbc3b605a06))
+* **settings:** split panel sections ([6eaafbe](https://github.com/utensils/aethon/commit/6eaafbeb1023c6c99ac71649a965a6e419a836ab))
+* **startup:** split workspace startup controller ([#403](https://github.com/utensils/aethon/issues/403)) ([de140e1](https://github.com/utensils/aethon/commit/de140e155f0a35e077fec62344990f69906d3a6f))
+* **styles:** split chrome css by domain ([50cc4dc](https://github.com/utensils/aethon/commit/50cc4dcb9b3cdc3f79fbfcec3d712979d7ac69b2))
+* **subagents:** split task tool orchestration ([#406](https://github.com/utensils/aethon/issues/406)) ([e498135](https://github.com/utensils/aethon/commit/e498135bf0c47d4f6d1c35fb5b438cfd7b354972))
+* **voice:** split catalog and tests from facade ([#383](https://github.com/utensils/aethon/issues/383)) ([811dd44](https://github.com/utensils/aethon/commit/811dd4440eb8be3000736db89852aba861305938))
+
 ## [0.10.2](https://github.com/utensils/aethon/compare/v0.10.1...v0.10.2) (2026-06-22)
 
 
