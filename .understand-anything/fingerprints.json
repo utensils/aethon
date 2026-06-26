@@ -1,7 +1,7 @@
 {
   "version": "1.0.0",
-  "gitCommitHash": "861282adb052caf4e91401814632a86264f7db6b",
-  "generatedAt": "2026-06-25T19:06:52.066Z",
+  "gitCommitHash": "7b9a9bf59e32686b4a28bc244160ebd25e8afdca",
+  "generatedAt": "2026-06-26T04:37:46.599Z",
   "files": {
     ".claude/skills/aethon-debug/scripts/debug-agent-diag.sh": {
       "filePath": ".claude/skills/aethon-debug/scripts/debug-agent-diag.sh",
@@ -8688,12 +8688,11 @@
     },
     "agent/session-history.test.ts": {
       "filePath": "agent/session-history.test.ts",
-      "contentHash": "8f704e89466489312ed891ac9521553229c0899dd6e7b0060ac36853851d85f1",
+      "contentHash": "4be16fae51d78319a28ffd701f1d15be22fc37bf87b5fd545a444ba320b39155",
       "functions": [
         {
           "name": "tempRoot",
           "params": [],
-          "returnType": "Promise<string>",
           "exported": false,
           "lineCount": 5
         }
@@ -8751,7 +8750,7 @@
         {
           "source": "./session-history/restore",
           "specifiers": [
-            "restoreTesting"
+            "__testing"
           ]
         },
         {
@@ -8762,7 +8761,7 @@
         }
       ],
       "exports": [],
-      "totalLines": 1957,
+      "totalLines": 1950,
       "hasStructuralAnalysis": true
     },
     "agent/session-history/index.ts": {
@@ -11665,7 +11664,7 @@
     },
     "agent/tab-lifecycle.test.ts": {
       "filePath": "agent/tab-lifecycle.test.ts",
-      "contentHash": "6544fd7b2c03edcc1f935ab19987352ec5e8fd86de1f940f378667655f645b28",
+      "contentHash": "cc1efa895594aad00c127e2d38bb4904f81a5593e5f1a27c2c8c57a96564779a",
       "functions": [
         {
           "name": "makeFixture",
@@ -11680,7 +11679,6 @@
           "params": [
             "model"
           ],
-          "returnType": "TabRecord",
           "exported": false,
           "lineCount": 16
         }
@@ -11721,8 +11719,8 @@
           "source": "./state",
           "specifiers": [
             "AethonAgentState",
-            "AethonAgentStateOptions",
-            "TabRecord"
+            "type AethonAgentStateOptions",
+            "type TabRecord"
           ]
         },
         {
@@ -11759,7 +11757,7 @@
         }
       ],
       "exports": [],
-      "totalLines": 1927,
+      "totalLines": 1958,
       "hasStructuralAnalysis": true
     },
     "agent/tab-lifecycle/events.ts": {
@@ -34116,7 +34114,7 @@
     },
     "src/extensions/default-layout/chat.test.tsx": {
       "filePath": "src/extensions/default-layout/chat.test.tsx",
-      "contentHash": "9aa976427b65c28171549d6dbc1cf3bcbe1e7e5a6e1ca1cfd5cef4423bcf1365",
+      "contentHash": "99f09734ea363d9638a8bd3008783d2cedfedc222786251a064714b67aa9c590",
       "functions": [
         {
           "name": "renderComposerPills",
@@ -34193,8 +34191,8 @@
           "specifiers": [
             "createResizeObserverFixture",
             "groupedHistoryElement",
-            "renderInput",
-            "renderHistory",
+            "renderChatInput",
+            "renderChatHistory",
             "renderGroupedHistory",
             "renderMainCanvas",
             "resetMockVirtuosoState",
@@ -34203,7 +34201,7 @@
             "toolTranscript",
             "userScrollToBottom",
             "userScrollUp",
-            "MockVirtuosoState"
+            "type MockVirtuosoState"
           ]
         },
         {
@@ -34232,7 +34230,7 @@
         }
       ],
       "exports": [],
-      "totalLines": 3208,
+      "totalLines": 3273,
       "hasStructuralAnalysis": true
     },
     "src/extensions/default-layout/chat.tsx": {
@@ -34392,7 +34390,7 @@
     },
     "src/extensions/default-layout/composer-visibility-pills.tsx": {
       "filePath": "src/extensions/default-layout/composer-visibility-pills.tsx",
-      "contentHash": "356f560c624188e630547d2994aa26f5c488f8ad736aff3118abcf40f6bc82ff",
+      "contentHash": "d8f7766e199f8378c8da37a25c95785d24cbe2e366e0e0f779b37f18d64aca55",
       "functions": [
         {
           "name": "resolveHardEnforce",
@@ -34400,7 +34398,6 @@
             "state",
             "tabId"
           ],
-          "returnType": "boolean",
           "exported": false,
           "lineCount": 13
         },
@@ -34410,7 +34407,6 @@
             "state",
             "tabId"
           ],
-          "returnType": "Tab | undefined",
           "exported": false,
           "lineCount": 9
         },
@@ -34421,7 +34417,6 @@
             "tabId",
             "category"
           ],
-          "returnType": "boolean",
           "exported": false,
           "lineCount": 9
         },
@@ -34431,7 +34426,7 @@
             "{\n  state,\n  tabId,\n  onEvent,\n}"
           ],
           "exported": true,
-          "lineCount": 183
+          "lineCount": 172
         }
       ],
       "classes": [],
@@ -34480,7 +34475,7 @@
       "exports": [
         "ComposerVisibilityPills"
       ],
-      "totalLines": 271,
+      "totalLines": 245,
       "hasStructuralAnalysis": true
     },
     "src/extensions/default-layout/conversation-hud.test.tsx": {
@@ -41378,7 +41373,7 @@
     },
     "src/extensions/default-layout/sidebar/host-group.tsx": {
       "filePath": "src/extensions/default-layout/sidebar/host-group.tsx",
-      "contentHash": "a5fa20542196e32a918c2f6ff07c1d52009ef9c9d12bd19250baddc7bb954e68",
+      "contentHash": "e548111fe1ecb23a227d79d995a9603a30fec3fac4d5e2d586762b4bbb21535e",
       "functions": [
         {
           "name": "HostGlyph",
@@ -41392,7 +41387,7 @@
             "{\n  host,\n  selected = false,\n  expanded,\n  collapsible,\n  onToggleExpand,\n  onSelectHost,\n  children,\n}"
           ],
           "exported": true,
-          "lineCount": 82
+          "lineCount": 68
         }
       ],
       "classes": [],
@@ -41402,12 +41397,18 @@
           "specifiers": [
             "ReactNode"
           ]
+        },
+        {
+          "source": "./chevron",
+          "specifiers": [
+            "Chevron"
+          ]
         }
       ],
       "exports": [
         "HostGroup"
       ],
-      "totalLines": 148,
+      "totalLines": 134,
       "hasStructuralAnalysis": true
     },
     "src/extensions/default-layout/sidebar/index.test.tsx": {
@@ -41479,7 +41480,7 @@
     },
     "src/extensions/default-layout/sidebar/index.tsx": {
       "filePath": "src/extensions/default-layout/sidebar/index.tsx",
-      "contentHash": "c04306c60c0914249c64ac0c3dc3768a81f85b61203aac14eb46faff32fcf986",
+      "contentHash": "5e0a8bc268bc62b93a6fb58600eef2d678809aed8921b79840aa81e012837fbf",
       "functions": [
         {
           "name": "Sidebar",
@@ -41490,12 +41491,29 @@
           "lineCount": 234
         },
         {
+          "name": "readSectionCollapsed",
+          "params": [
+            "id"
+          ],
+          "exported": false,
+          "lineCount": 7
+        },
+        {
+          "name": "writeSectionCollapsed",
+          "params": [
+            "id",
+            "collapsed"
+          ],
+          "exported": false,
+          "lineCount": 10
+        },
+        {
           "name": "SidebarSectionBlock",
           "params": [
             "{\n  section,\n  items,\n  monoItems,\n  componentId,\n  state,\n  onEvent,\n  renderChildWithState,\n  openItemContextMenu,\n  openWorkspaceContextMenu,\n  renamingWorkspaceId,\n  onRenameWorkspaceEnd,\n}"
           ],
           "exported": false,
-          "lineCount": 353
+          "lineCount": 382
         }
       ],
       "classes": [],
@@ -41554,7 +41572,7 @@
           "source": "./workspace-row",
           "specifiers": [
             "WorkspaceRow",
-            "WorkspaceSidebarItem"
+            "type WorkspaceSidebarItem"
           ]
         },
         {
@@ -41567,7 +41585,7 @@
           "source": "./host-group",
           "specifiers": [
             "HostGroup",
-            "HostGroupItem"
+            "type HostGroupItem"
           ]
         },
         {
@@ -41586,7 +41604,13 @@
           "source": "./searchable-section",
           "specifiers": [
             "SearchableSidebarSection",
-            "SidebarSectionExt"
+            "type SidebarSectionExt"
+          ]
+        },
+        {
+          "source": "./chevron",
+          "specifiers": [
+            "Chevron"
           ]
         },
         {
@@ -41626,7 +41650,7 @@
         "SearchableSidebarSectionProps",
         "Sidebar"
       ],
-      "totalLines": 660,
+      "totalLines": 713,
       "hasStructuralAnalysis": true
     },
     "src/extensions/default-layout/sidebar/item-row.test.tsx": {
@@ -41682,7 +41706,7 @@
     },
     "src/extensions/default-layout/sidebar/item-row.tsx": {
       "filePath": "src/extensions/default-layout/sidebar/item-row.tsx",
-      "contentHash": "b40fe76df280639d47eea240af3420692a3ae6879bbf83b76aef23145fd22c97",
+      "contentHash": "26692a2facddd73f62241ba1fe0ec063e2b9a53c81cab99abd54a38df4e83a95",
       "functions": [
         {
           "name": "ItemRow",
@@ -41690,7 +41714,7 @@
             "{\n  item,\n  monoItems,\n  sectionId,\n  componentId,\n  onEvent,\n  onItemContextMenu,\n  renderChildWithState,\n  state,\n  index,\n  disclosure,\n  onToggleDisclosure,\n  alignSlots,\n  stacked,\n  trailingControl,\n}"
           ],
           "exported": true,
-          "lineCount": 277
+          "lineCount": 254
         }
       ],
       "classes": [],
@@ -41713,12 +41737,18 @@
           "specifiers": [
             "BuiltinComponentProps"
           ]
+        },
+        {
+          "source": "./chevron",
+          "specifiers": [
+            "Chevron"
+          ]
         }
       ],
       "exports": [
         "ItemRow"
       ],
-      "totalLines": 321,
+      "totalLines": 298,
       "hasStructuralAnalysis": true
     },
     "src/extensions/default-layout/sidebar/menuItems.test.ts": {
@@ -41879,7 +41909,7 @@
     },
     "src/extensions/default-layout/sidebar/searchable-section.tsx": {
       "filePath": "src/extensions/default-layout/sidebar/searchable-section.tsx",
-      "contentHash": "3b8838d1dc4c0720aa76349d72294a7082360873ec778bdc336984b508683cdf",
+      "contentHash": "a49b7b84406f3af6eb6b9e7a7d8fcf78f5358c44435fb1dc74afbb46a840eda1",
       "functions": [
         {
           "name": "SearchableSidebarSection",
@@ -41887,7 +41917,7 @@
             "{\n  section,\n  items,\n  componentId,\n  state,\n  onEvent,\n  onItemContextMenu,\n  renderChildWithState,\n}"
           ],
           "exported": true,
-          "lineCount": 114
+          "lineCount": 119
         }
       ],
       "classes": [],
@@ -41913,6 +41943,12 @@
           ]
         },
         {
+          "source": "./chevron",
+          "specifiers": [
+            "Chevron"
+          ]
+        },
+        {
           "source": "./filter",
           "specifiers": [
             "filterItems",
@@ -41923,14 +41959,14 @@
           "source": "./item-row",
           "specifiers": [
             "ItemRow",
-            "ItemRowProps"
+            "type ItemRowProps"
           ]
         }
       ],
       "exports": [
         "SearchableSidebarSection"
       ],
-      "totalLines": 153,
+      "totalLines": 158,
       "hasStructuralAnalysis": true
     },
     "src/extensions/default-layout/sidebar/sections.ts": {
@@ -43497,7 +43533,7 @@
     },
     "src/extensions/default-layout/tool-card.tsx": {
       "filePath": "src/extensions/default-layout/tool-card.tsx",
-      "contentHash": "11496484575764c3626b3bac217d0a345e76c1a0039eebb6f602ac3d51dfac28",
+      "contentHash": "d4cb5cb752cf859ec87d84693d452091c01cb4414218b387b971352e621d105f",
       "functions": [
         {
           "name": "readSubagentProgress",
@@ -43505,7 +43541,6 @@
             "state",
             "componentId"
           ],
-          "returnType": "SubagentProgressEntry | null",
           "exported": false,
           "lineCount": 11
         },
@@ -43546,7 +43581,6 @@
           "params": [
             "ms"
           ],
-          "returnType": "string",
           "exported": true,
           "lineCount": 8
         },
@@ -43556,14 +43590,13 @@
             "{\n  running,\n  isError,\n  isCancelled,\n  isLongRunning,\n}"
           ],
           "exported": false,
-          "lineCount": 47
+          "lineCount": 30
         },
         {
           "name": "basename",
           "params": [
             "path"
           ],
-          "returnType": "string",
           "exported": false,
           "lineCount": 8
         },
@@ -43572,7 +43605,6 @@
           "params": [
             "path"
           ],
-          "returnType": "string",
           "exported": false,
           "lineCount": 5
         },
@@ -43581,7 +43613,6 @@
           "params": [
             "preview"
           ],
-          "returnType": "string[]",
           "exported": false,
           "lineCount": 6
         },
@@ -43598,17 +43629,16 @@
           "params": [
             "line"
           ],
-          "returnType": "\"add\" | \"del\" | \"hunk\" | \"meta\" | \"ctx\"",
           "exported": false,
           "lineCount": 14
         },
         {
-          "name": "ToolFileChangePreview",
+          "name": "ToolFileChangeBody",
           "params": [
             "{\n  change,\n  onEvent,\n}"
           ],
           "exported": false,
-          "lineCount": 122
+          "lineCount": 89
         },
         {
           "name": "ToolCard",
@@ -43616,7 +43646,7 @@
             "{\n  component,\n  state,\n  renderChildren,\n  onEvent,\n}"
           ],
           "exported": true,
-          "lineCount": 115
+          "lineCount": 216
         }
       ],
       "classes": [],
@@ -43626,6 +43656,7 @@
           "specifiers": [
             "useEffect",
             "useMemo",
+            "useRef",
             "useState"
           ]
         },
@@ -43683,7 +43714,7 @@
         "formatToolDuration",
         "ToolCard"
       ],
-      "totalLines": 449,
+      "totalLines": 502,
       "hasStructuralAnalysis": true
     },
     "src/extensions/default-layout/use-at-mention.ts": {
@@ -68636,6 +68667,459 @@
       "imports": [],
       "exports": [],
       "totalLines": 123,
+      "hasStructuralAnalysis": true
+    },
+    "cli/docs-dev.test.ts": {
+      "filePath": "cli/docs-dev.test.ts",
+      "contentHash": "3abdaaa6f026c3805f6f61bb34217bac957fbd0a1b6f37febde459df7342c101",
+      "functions": [
+        {
+          "name": "hasLsof",
+          "params": [],
+          "exported": false,
+          "lineCount": 8
+        },
+        {
+          "name": "listenLoopback",
+          "params": [
+            "port"
+          ],
+          "exported": false,
+          "lineCount": 22
+        }
+      ],
+      "classes": [],
+      "imports": [
+        {
+          "source": "node:child_process",
+          "specifiers": [
+            "execFile"
+          ]
+        },
+        {
+          "source": "node:net",
+          "specifiers": [
+            "createServer",
+            "type AddressInfo"
+          ]
+        },
+        {
+          "source": "node:fs/promises",
+          "specifiers": [
+            "readdir",
+            "readFile"
+          ]
+        },
+        {
+          "source": "node:util",
+          "specifiers": [
+            "promisify"
+          ]
+        },
+        {
+          "source": "vitest",
+          "specifiers": [
+            "describe",
+            "expect",
+            "it"
+          ]
+        }
+      ],
+      "exports": [],
+      "totalLines": 92,
+      "hasStructuralAnalysis": true
+    },
+    "src/extensions/default-layout/question-card.tsx": {
+      "filePath": "src/extensions/default-layout/question-card.tsx",
+      "contentHash": "77e6ff9364b4cdcfe6b795b6c36812f2f84045586ca7cbcde0a30650402ad523",
+      "functions": [
+        {
+          "name": "QuestionCard",
+          "params": [
+            "{ component }"
+          ],
+          "exported": true,
+          "lineCount": 100
+        },
+        {
+          "name": "normalizeChoices",
+          "params": [
+            "value"
+          ],
+          "exported": false,
+          "lineCount": 22
+        },
+        {
+          "name": "normalizeAnswer",
+          "params": [
+            "value"
+          ],
+          "exported": false,
+          "lineCount": 13
+        }
+      ],
+      "classes": [],
+      "imports": [
+        {
+          "source": "react",
+          "specifiers": [
+            "useMemo",
+            "useState"
+          ]
+        },
+        {
+          "source": "../../components/A2UIRenderer",
+          "specifiers": [
+            "BuiltinComponentProps"
+          ]
+        },
+        {
+          "source": "../../questions",
+          "specifiers": [
+            "emitQuestionAnswer",
+            "type AskUserAnswer",
+            "type AskUserChoice"
+          ]
+        }
+      ],
+      "exports": [
+        "QuestionCard"
+      ],
+      "totalLines": 145,
+      "hasStructuralAnalysis": true
+    },
+    "src/extensions/default-layout/tool-activity-summary.ts": {
+      "filePath": "src/extensions/default-layout/tool-activity-summary.ts",
+      "contentHash": "a18baabb1c457ef89eb0bf1bf35789f1388bdbbe1a8acaf2276197d83aacc727",
+      "functions": [
+        {
+          "name": "compactDuration",
+          "params": [
+            "ms"
+          ],
+          "exported": true,
+          "lineCount": 13
+        },
+        {
+          "name": "toolCountLabel",
+          "params": [
+            "summary"
+          ],
+          "exported": true,
+          "lineCount": 8
+        },
+        {
+          "name": "workedLabel",
+          "params": [
+            "summary"
+          ],
+          "exported": true,
+          "lineCount": 4
+        },
+        {
+          "name": "fileChangeLabel",
+          "params": [
+            "summary"
+          ],
+          "exported": true,
+          "lineCount": 12
+        },
+        {
+          "name": "activityLabel",
+          "params": [
+            "{\n  summary,\n  progressCount,\n}"
+          ],
+          "exported": true,
+          "lineCount": 15
+        },
+        {
+          "name": "activityMeta",
+          "params": [
+            "summary"
+          ],
+          "exported": true,
+          "lineCount": 4
+        },
+        {
+          "name": "fileChangeStatsLabel",
+          "params": [
+            "summary"
+          ],
+          "exported": true,
+          "lineCount": 9
+        },
+        {
+          "name": "collectFileChangeEntries",
+          "params": [
+            "messages"
+          ],
+          "exported": true,
+          "lineCount": 48
+        },
+        {
+          "name": "hasFileChange",
+          "params": [
+            "message"
+          ],
+          "exported": true,
+          "lineCount": 3
+        },
+        {
+          "name": "hasToolCardChildren",
+          "params": [
+            "message"
+          ],
+          "exported": true,
+          "lineCount": 8
+        },
+        {
+          "name": "basename",
+          "params": [
+            "path"
+          ],
+          "exported": true,
+          "lineCount": 8
+        },
+        {
+          "name": "parentPath",
+          "params": [
+            "path"
+          ],
+          "exported": true,
+          "lineCount": 5
+        },
+        {
+          "name": "previewLines",
+          "params": [
+            "preview"
+          ],
+          "exported": true,
+          "lineCount": 6
+        },
+        {
+          "name": "looksLikeUnifiedDiff",
+          "params": [
+            "preview"
+          ],
+          "exported": true,
+          "lineCount": 6
+        },
+        {
+          "name": "effectiveStats",
+          "params": [
+            "change"
+          ],
+          "exported": true,
+          "lineCount": 3
+        },
+        {
+          "name": "summaryWithFileEntries",
+          "params": [
+            "summary",
+            "entries"
+          ],
+          "exported": true,
+          "lineCount": 27
+        },
+        {
+          "name": "lineTone",
+          "params": [
+            "line"
+          ],
+          "exported": true,
+          "lineCount": 16
+        },
+        {
+          "name": "toolStateLabel",
+          "params": [
+            "details"
+          ],
+          "exported": true,
+          "lineCount": 8
+        },
+        {
+          "name": "toolDurationLabel",
+          "params": [
+            "details"
+          ],
+          "exported": true,
+          "lineCount": 8
+        },
+        {
+          "name": "statsKey",
+          "params": [
+            "rootPath",
+            "filePath"
+          ],
+          "exported": false,
+          "lineCount": 3
+        },
+        {
+          "name": "statsFromChange",
+          "params": [
+            "change"
+          ],
+          "exported": false,
+          "lineCount": 6
+        }
+      ],
+      "classes": [],
+      "imports": [
+        {
+          "source": "../../types/a2ui",
+          "specifiers": [
+            "ChatMessage"
+          ]
+        },
+        {
+          "source": "../../utils/toolCardGrouping",
+          "specifiers": [
+            "toolCardDetails",
+            "type ToolCardFileChange",
+            "type ToolMessageSummary"
+          ]
+        }
+      ],
+      "exports": [
+        "compactDuration",
+        "toolCountLabel",
+        "workedLabel",
+        "fileChangeLabel",
+        "activityLabel",
+        "activityMeta",
+        "fileChangeStatsLabel",
+        "collectFileChangeEntries",
+        "hasFileChange",
+        "hasToolCardChildren",
+        "basename",
+        "parentPath",
+        "previewLines",
+        "looksLikeUnifiedDiff",
+        "effectiveStats",
+        "summaryWithFileEntries",
+        "lineTone",
+        "toolStateLabel",
+        "toolDurationLabel"
+      ],
+      "totalLines": 257,
+      "hasStructuralAnalysis": true
+    },
+    "src/extensions/default-layout/turn-activity.tsx": {
+      "filePath": "src/extensions/default-layout/turn-activity.tsx",
+      "contentHash": "8535bc96da17849098c9c28f2c1b5fee0d1b369068d5583ea83573d6bb689df0",
+      "functions": [
+        {
+          "name": "prefersReducedMotion",
+          "params": [],
+          "exported": false,
+          "lineCount": 7
+        },
+        {
+          "name": "ToolActivityRow",
+          "params": [
+            "{\n  message,\n  onEvent,\n}"
+          ],
+          "exported": false,
+          "lineCount": 57
+        },
+        {
+          "name": "TurnActivity",
+          "params": [
+            "{\n  turn,\n  state,\n  tabId,\n  onEvent,\n  rowClassName,\n  thinkingVisibility,\n  toolCallsVisibility,\n  expanded,\n  onToggle,\n  live,\n  forceOpen,\n  visibleAgentMessageIds,\n}"
+          ],
+          "exported": true,
+          "lineCount": 277
+        }
+      ],
+      "classes": [],
+      "imports": [
+        {
+          "source": "react",
+          "specifiers": [
+            "useEffect",
+            "useRef",
+            "useState"
+          ]
+        },
+        {
+          "source": "../../components/A2UIRenderer",
+          "specifiers": [
+            "BuiltinComponentProps"
+          ]
+        },
+        {
+          "source": "../../types/a2ui",
+          "specifiers": [
+            "ChatMessage"
+          ]
+        },
+        {
+          "source": "../../utils/toolCardGrouping",
+          "specifiers": [
+            "isRunningToolCard",
+            "summarizeToolMessages",
+            "toolCardDetails"
+          ]
+        },
+        {
+          "source": "../../utils/transcriptRows",
+          "specifiers": [
+            "ConversationTurn"
+          ]
+        },
+        {
+          "source": "../../config",
+          "specifiers": [
+            "ToolCallsMode",
+            "VisibilityMode"
+          ]
+        },
+        {
+          "source": "./sidebar/chevron",
+          "specifiers": [
+            "Chevron"
+          ]
+        },
+        {
+          "source": "./message-row",
+          "specifiers": [
+            "ChatMessageRow"
+          ]
+        },
+        {
+          "source": "./turn-activity-helpers",
+          "specifiers": [
+            "hasDisplayableAgentContent"
+          ]
+        },
+        {
+          "source": "./tool-activity-summary",
+          "specifiers": [
+            "activityLabel",
+            "activityMeta",
+            "collectFileChangeEntries",
+            "fileChangeLabel",
+            "fileChangeStatsLabel",
+            "hasFileChange",
+            "hasToolCardChildren",
+            "summaryWithFileEntries",
+            "toolDurationLabel",
+            "toolStateLabel"
+          ]
+        },
+        {
+          "source": "./tool-file-changes",
+          "specifiers": [
+            "FileChangeStats",
+            "ToolFileChangesCard",
+            "ToolFileChangeRow"
+          ]
+        }
+      ],
+      "exports": [
+        "TurnActivity"
+      ],
+      "totalLines": 376,
       "hasStructuralAnalysis": true
     }
   }

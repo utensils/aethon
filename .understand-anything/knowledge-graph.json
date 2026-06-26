@@ -5553,19 +5553,6 @@
       "complexity": "simple"
     },
     {
-      "id": "file:agent/session-history.test.ts",
-      "type": "file",
-      "name": "session-history.test.ts",
-      "filePath": "agent/session-history.test.ts",
-      "summary": "Regression tests for session-history behavior in the Aethon agent bridge.",
-      "tags": [
-        "test",
-        "session-history",
-        "typescript"
-      ],
-      "complexity": "complex"
-    },
-    {
       "id": "file:agent/session-history/index.ts",
       "type": "file",
       "name": "index.ts",
@@ -29068,20 +29055,6 @@
       "complexity": "moderate"
     },
     {
-      "id": "file:agent/tab-lifecycle.test.ts",
-      "type": "file",
-      "name": "tab-lifecycle.test.ts",
-      "filePath": "agent/tab-lifecycle.test.ts",
-      "summary": "Broad regression suite for tab lifecycle helpers, model picker behavior, tool-card rendering, retry handling, ready handshakes, and session routing.",
-      "tags": [
-        "test",
-        "tab-lifecycle",
-        "model-picker",
-        "tool-card"
-      ],
-      "complexity": "complex"
-    },
-    {
       "id": "file:agent/tab-lifecycle/events.ts",
       "type": "file",
       "name": "events.ts",
@@ -29628,23 +29601,6 @@
         "git"
       ],
       "complexity": "moderate"
-    },
-    {
-      "id": "function:agent/tab-lifecycle.test.ts:fakeRec",
-      "type": "function",
-      "name": "fakeRec",
-      "filePath": "agent/tab-lifecycle.test.ts",
-      "lineRange": [
-        60,
-        75
-      ],
-      "summary": "Implements fakeRec within tab-lifecycle.test.ts, supporting this module's role: Broad regression suite for tab lifecycle helpers, model picker behavior, tool-card rendering, retry handling, ready handshakes, and session routing.",
-      "tags": [
-        "test",
-        "tab-lifecycle",
-        "helper"
-      ],
-      "complexity": "simple"
     },
     {
       "id": "function:agent/tab-lifecycle/events.ts:handleSessionEvent",
@@ -32242,21 +32198,6 @@
       "complexity": "moderate"
     },
     {
-      "id": "file:src/extensions/default-layout/sidebar/host-group.tsx",
-      "type": "file",
-      "name": "host-group.tsx",
-      "filePath": "src/extensions/default-layout/sidebar/host-group.tsx",
-      "summary": "Collapsible host node for the sidebar tree that owns its project list with a tinted left rail and switches the active host on selection.",
-      "tags": [
-        "component",
-        "sidebar",
-        "host",
-        "tree",
-        "tested"
-      ],
-      "complexity": "moderate"
-    },
-    {
       "id": "file:src/extensions/default-layout/sidebar/index.test.tsx",
       "type": "file",
       "name": "index.test.tsx",
@@ -32267,21 +32208,6 @@
         "sidebar",
         "navigation",
         "workspace-ui"
-      ],
-      "complexity": "complex"
-    },
-    {
-      "id": "file:src/extensions/default-layout/sidebar/index.tsx",
-      "type": "file",
-      "name": "index.tsx",
-      "filePath": "src/extensions/default-layout/sidebar/index.tsx",
-      "summary": "Composes the main sidebar chrome from host groups, section derivation, context menus, item rows, resize handling, and extension-injected sections.",
-      "tags": [
-        "component",
-        "sidebar",
-        "navigation",
-        "workspace-ui",
-        "tested"
       ],
       "complexity": "complex"
     },
@@ -32297,21 +32223,6 @@
         "item-row"
       ],
       "complexity": "simple"
-    },
-    {
-      "id": "file:src/extensions/default-layout/sidebar/item-row.tsx",
-      "type": "file",
-      "name": "item-row.tsx",
-      "filePath": "src/extensions/default-layout/sidebar/item-row.tsx",
-      "summary": "Sidebar item row component rendering project/session/generic entries in single- or stacked-line mode with git meta, active styling, and click/context-menu handlers.",
-      "tags": [
-        "component",
-        "sidebar",
-        "item-row",
-        "ui",
-        "tested"
-      ],
-      "complexity": "complex"
     },
     {
       "id": "file:src/extensions/default-layout/sidebar/menuItems.test.ts",
@@ -32354,20 +32265,6 @@
         "ui"
       ],
       "complexity": "simple"
-    },
-    {
-      "id": "file:src/extensions/default-layout/sidebar/searchable-section.tsx",
-      "type": "file",
-      "name": "searchable-section.tsx",
-      "filePath": "src/extensions/default-layout/sidebar/searchable-section.tsx",
-      "summary": "Sidebar section wrapper that adds a search input filtering its ItemRow children via the filter helpers.",
-      "tags": [
-        "component",
-        "sidebar",
-        "search",
-        "section"
-      ],
-      "complexity": "moderate"
     },
     {
       "id": "file:src/extensions/default-layout/sidebar/sections.ts",
@@ -32910,40 +32807,6 @@
       "complexity": "simple"
     },
     {
-      "id": "function:src/extensions/default-layout/sidebar/host-group.tsx:HostGlyph",
-      "type": "function",
-      "name": "HostGlyph",
-      "filePath": "src/extensions/default-layout/sidebar/host-group.tsx",
-      "lineRange": [
-        46,
-        64
-      ],
-      "summary": "Renders the small host icon glyph shown beside a host group header.",
-      "tags": [
-        "component",
-        "sidebar",
-        "icon"
-      ],
-      "complexity": "simple"
-    },
-    {
-      "id": "function:src/extensions/default-layout/sidebar/host-group.tsx:HostGroup",
-      "type": "function",
-      "name": "HostGroup",
-      "filePath": "src/extensions/default-layout/sidebar/host-group.tsx",
-      "lineRange": [
-        66,
-        147
-      ],
-      "summary": "React component rendering a collapsible host group header plus its nested project rows, emitting host-select and expand-toggle events.",
-      "tags": [
-        "component",
-        "sidebar",
-        "host"
-      ],
-      "complexity": "moderate"
-    },
-    {
       "id": "function:src/extensions/default-layout/sidebar/index.test.tsx:renderSidebar",
       "type": "function",
       "name": "renderSidebar",
@@ -32961,40 +32824,6 @@
       "complexity": "simple"
     },
     {
-      "id": "function:src/extensions/default-layout/sidebar/index.tsx:Sidebar",
-      "type": "function",
-      "name": "Sidebar",
-      "filePath": "src/extensions/default-layout/sidebar/index.tsx",
-      "lineRange": [
-        50,
-        283
-      ],
-      "summary": "Composes the top-level sidebar surface, including brand strip, host grouping, section rendering, context menu state, and resize behavior.",
-      "tags": [
-        "component",
-        "sidebar",
-        "navigation"
-      ],
-      "complexity": "complex"
-    },
-    {
-      "id": "function:src/extensions/default-layout/sidebar/index.tsx:SidebarSectionBlock",
-      "type": "function",
-      "name": "SidebarSectionBlock",
-      "filePath": "src/extensions/default-layout/sidebar/index.tsx",
-      "lineRange": [
-        307,
-        659
-      ],
-      "summary": "Renders a non-searchable sidebar section with actions, workspace rows, item rows, extension toggles, and context-menu hooks.",
-      "tags": [
-        "component",
-        "sidebar",
-        "section-renderer"
-      ],
-      "complexity": "complex"
-    },
-    {
       "id": "function:src/extensions/default-layout/sidebar/item-row.test.tsx:renderItemRow",
       "type": "function",
       "name": "renderItemRow",
@@ -33010,23 +32839,6 @@
         "item-row"
       ],
       "complexity": "simple"
-    },
-    {
-      "id": "function:src/extensions/default-layout/sidebar/item-row.tsx:ItemRow",
-      "type": "function",
-      "name": "ItemRow",
-      "filePath": "src/extensions/default-layout/sidebar/item-row.tsx",
-      "lineRange": [
-        44,
-        320
-      ],
-      "summary": "React component rendering a sidebar row (stacked two-line project card or single-line entry) with icon, git metadata, and select/context-menu event handlers.",
-      "tags": [
-        "component",
-        "sidebar",
-        "item-row"
-      ],
-      "complexity": "complex"
     },
     {
       "id": "function:src/extensions/default-layout/sidebar/menuItems.test.ts:wt",
@@ -33127,23 +32939,6 @@
         "hook",
         "sidebar",
         "resize"
-      ],
-      "complexity": "moderate"
-    },
-    {
-      "id": "function:src/extensions/default-layout/sidebar/searchable-section.tsx:SearchableSidebarSection",
-      "type": "function",
-      "name": "SearchableSidebarSection",
-      "filePath": "src/extensions/default-layout/sidebar/searchable-section.tsx",
-      "lineRange": [
-        39,
-        152
-      ],
-      "summary": "React component rendering a sidebar section with a live search filter over its items, delegating row rendering to ItemRow.",
-      "tags": [
-        "component",
-        "sidebar",
-        "search"
       ],
       "complexity": "moderate"
     },
@@ -33506,22 +33301,6 @@
         "component"
       ],
       "complexity": "moderate"
-    },
-    {
-      "id": "file:src/extensions/default-layout/tool-card.tsx",
-      "type": "file",
-      "name": "tool-card.tsx",
-      "filePath": "src/extensions/default-layout/tool-card.tsx",
-      "summary": "Renders agent tool-call cards, including running/error/cancelled status, elapsed duration, subagent progress stacks, and expandable file-change previews.",
-      "tags": [
-        "component",
-        "tool-card",
-        "subagent",
-        "diff-preview",
-        "tested"
-      ],
-      "complexity": "complex",
-      "languageNotes": "This composite mixes data-binding resolution with derived timer state so long-running tool calls update without rewriting the backing A2UI payload."
     },
     {
       "id": "file:src/extensions/default-layout/variation-components.test.tsx",
@@ -34219,159 +33998,6 @@
         "accessibility"
       ],
       "complexity": "simple"
-    },
-    {
-      "id": "function:src/extensions/default-layout/tool-card.tsx:readSubagentProgress",
-      "type": "function",
-      "name": "readSubagentProgress",
-      "filePath": "src/extensions/default-layout/tool-card.tsx",
-      "lineRange": [
-        31,
-        41
-      ],
-      "summary": "Looks up subagent progress keyed by the raw tool call id embedded in a tool-card component id.",
-      "tags": [
-        "utility",
-        "subagent",
-        "state-lookup"
-      ],
-      "complexity": "simple"
-    },
-    {
-      "id": "function:src/extensions/default-layout/tool-card.tsx:SubagentActivity",
-      "type": "function",
-      "name": "SubagentActivity",
-      "filePath": "src/extensions/default-layout/tool-card.tsx",
-      "lineRange": [
-        43,
-        71
-      ],
-      "summary": "Renders one subagent progress entry with model metadata, step labels, and streaming text.",
-      "tags": [
-        "component",
-        "subagent",
-        "progress"
-      ],
-      "complexity": "simple"
-    },
-    {
-      "id": "function:src/extensions/default-layout/tool-card.tsx:SubagentActivityStack",
-      "type": "function",
-      "name": "SubagentActivityStack",
-      "filePath": "src/extensions/default-layout/tool-card.tsx",
-      "lineRange": [
-        79,
-        95
-      ],
-      "summary": "Renders either a single subagent activity or an ordered batch of subagent activity entries.",
-      "tags": [
-        "component",
-        "subagent",
-        "progress"
-      ],
-      "complexity": "simple"
-    },
-    {
-      "id": "function:src/extensions/default-layout/tool-card.tsx:SubagentResult",
-      "type": "function",
-      "name": "SubagentResult",
-      "filePath": "src/extensions/default-layout/tool-card.tsx",
-      "lineRange": [
-        97,
-        109
-      ],
-      "summary": "Renders subagent result content with error styling resolved from A2UI data bindings.",
-      "tags": [
-        "component",
-        "subagent",
-        "result"
-      ],
-      "complexity": "simple"
-    },
-    {
-      "id": "function:src/extensions/default-layout/tool-card.tsx:formatToolDuration",
-      "type": "function",
-      "name": "formatToolDuration",
-      "filePath": "src/extensions/default-layout/tool-card.tsx",
-      "lineRange": [
-        112,
-        119
-      ],
-      "summary": "Formats elapsed tool time into seconds or minute-second labels for tool cards.",
-      "tags": [
-        "utility",
-        "formatting",
-        "tool-card"
-      ],
-      "complexity": "simple"
-    },
-    {
-      "id": "function:src/extensions/default-layout/tool-card.tsx:ToolStatusIcon",
-      "type": "function",
-      "name": "ToolStatusIcon",
-      "filePath": "src/extensions/default-layout/tool-card.tsx",
-      "lineRange": [
-        121,
-        167
-      ],
-      "summary": "Renders the running, long-running, failed, cancelled, or completed status indicator for a tool card.",
-      "tags": [
-        "component",
-        "tool-card",
-        "status"
-      ],
-      "complexity": "simple"
-    },
-    {
-      "id": "function:src/extensions/default-layout/tool-card.tsx:lineTone",
-      "type": "function",
-      "name": "lineTone",
-      "filePath": "src/extensions/default-layout/tool-card.tsx",
-      "lineRange": [
-        196,
-        209
-      ],
-      "summary": "Classifies diff preview lines as additions, deletions, hunk headers, metadata, or context.",
-      "tags": [
-        "utility",
-        "diff-preview",
-        "formatting"
-      ],
-      "complexity": "simple"
-    },
-    {
-      "id": "function:src/extensions/default-layout/tool-card.tsx:ToolFileChangePreview",
-      "type": "function",
-      "name": "ToolFileChangePreview",
-      "filePath": "src/extensions/default-layout/tool-card.tsx",
-      "lineRange": [
-        211,
-        332
-      ],
-      "summary": "Renders an expandable file-change preview with file metadata, diff tone styling, and open actions.",
-      "tags": [
-        "component",
-        "diff-preview",
-        "event-handler"
-      ],
-      "complexity": "moderate"
-    },
-    {
-      "id": "function:src/extensions/default-layout/tool-card.tsx:ToolCard",
-      "type": "function",
-      "name": "ToolCard",
-      "filePath": "src/extensions/default-layout/tool-card.tsx",
-      "lineRange": [
-        334,
-        448
-      ],
-      "summary": "Renders the full tool-call card, resolving A2UI state, tracking elapsed time, showing status, subagent progress, previews, and child output.",
-      "tags": [
-        "component",
-        "tool-card",
-        "event-handler"
-      ],
-      "complexity": "moderate"
     },
     {
       "id": "function:src/extensions/default-layout/variation-components.tsx:AgentStatusPill",
@@ -36685,20 +36311,6 @@
       "complexity": "complex"
     },
     {
-      "id": "file:src/extensions/default-layout/chat.test.tsx",
-      "type": "file",
-      "name": "chat.test.tsx",
-      "filePath": "src/extensions/default-layout/chat.test.tsx",
-      "summary": "Large regression suite covering chat layout behavior, tool cards, composer visibility pills, project routing, and related default-layout chat surfaces.",
-      "tags": [
-        "test",
-        "chat",
-        "composer",
-        "tool-card"
-      ],
-      "complexity": "complex"
-    },
-    {
       "id": "file:src/extensions/default-layout/chat.tsx",
       "type": "file",
       "name": "chat.tsx",
@@ -36711,22 +36323,6 @@
         "tested"
       ],
       "complexity": "simple"
-    },
-    {
-      "id": "file:src/extensions/default-layout/composer-visibility-pills.tsx",
-      "type": "file",
-      "name": "composer-visibility-pills.tsx",
-      "filePath": "src/extensions/default-layout/composer-visibility-pills.tsx",
-      "summary": "Chrome composite that renders Plan mode, thinking, tool-call, and guardrail controls for the active composer session.",
-      "tags": [
-        "component",
-        "composer",
-        "visibility",
-        "guardrail",
-        "tested"
-      ],
-      "complexity": "complex",
-      "languageNotes": "Uses fixed-position popover coordinates adjusted by UI scale to avoid clipping inside layout cells."
     },
     {
       "id": "file:src/extensions/default-layout/dashboard/gh-stats-strip.test.tsx",
@@ -37545,75 +37141,6 @@
         "ui-feedback"
       ],
       "complexity": "simple"
-    },
-    {
-      "id": "function:src/extensions/default-layout/chat.test.tsx:renderComposerPills",
-      "type": "function",
-      "name": "renderComposerPills",
-      "filePath": "src/extensions/default-layout/chat.test.tsx",
-      "lineRange": [
-        191,
-        209
-      ],
-      "summary": "Test helper rendering composer visibility pills with configurable state and event spies.",
-      "tags": [
-        "test-helper",
-        "composer",
-        "visibility"
-      ],
-      "complexity": "simple"
-    },
-    {
-      "id": "function:src/extensions/default-layout/chat.test.tsx:renderToolCard",
-      "type": "function",
-      "name": "renderToolCard",
-      "filePath": "src/extensions/default-layout/chat.test.tsx",
-      "lineRange": [
-        215,
-        228
-      ],
-      "summary": "Test helper that renders a tool card fixture with default event handlers.",
-      "tags": [
-        "test-helper",
-        "tool-card",
-        "chat"
-      ],
-      "complexity": "simple"
-    },
-    {
-      "id": "function:src/extensions/default-layout/composer-visibility-pills.tsx:resolveHardEnforce",
-      "type": "function",
-      "name": "resolveHardEnforce",
-      "filePath": "src/extensions/default-layout/composer-visibility-pills.tsx",
-      "lineRange": [
-        52,
-        64
-      ],
-      "summary": "Resolves the effective project-root hard-enforcement guardrail for a tab, preferring per-tab overrides over global state.",
-      "tags": [
-        "utility",
-        "guardrail",
-        "composer"
-      ],
-      "complexity": "simple"
-    },
-    {
-      "id": "function:src/extensions/default-layout/composer-visibility-pills.tsx:ComposerVisibilityPills",
-      "type": "function",
-      "name": "ComposerVisibilityPills",
-      "filePath": "src/extensions/default-layout/composer-visibility-pills.tsx",
-      "lineRange": [
-        88,
-        270
-      ],
-      "summary": "Renders composer controls for plan mode, visibility toggles, default/reset actions, and project-root guardrail enforcement.",
-      "tags": [
-        "component",
-        "composer",
-        "visibility",
-        "guardrail"
-      ],
-      "complexity": "complex"
     },
     {
       "id": "function:src/extensions/default-layout/dashboard/gh-stats-strip.test.tsx:fullOverview",
@@ -53970,6 +53497,1094 @@
         "schema-definition"
       ],
       "complexity": "simple"
+    },
+    {
+      "id": "file:agent/session-history.test.ts",
+      "type": "file",
+      "name": "session-history.test.ts",
+      "filePath": "agent/session-history.test.ts",
+      "summary": "Vitest suite for the agent session-history module: parsing and normalizing session transcript lines, reading session metadata and labels, locating session files by cwd, and repairing dangling subagent tool calls/results.",
+      "tags": [
+        "test",
+        "session-history",
+        "agent",
+        "transcript",
+        "persistence"
+      ],
+      "complexity": "complex"
+    },
+    {
+      "id": "file:agent/tab-lifecycle.test.ts",
+      "type": "file",
+      "name": "tab-lifecycle.test.ts",
+      "filePath": "agent/tab-lifecycle.test.ts",
+      "summary": "Vitest suite covering the agent tab-lifecycle helpers and AethonAgentState: model picker building, running tool-card cancellation, session-event handling, slash-command collection, retry-classifier install, and per-tab cwd resolution.",
+      "tags": [
+        "test",
+        "tab-lifecycle",
+        "agent-state",
+        "lifecycle",
+        "agent"
+      ],
+      "complexity": "complex"
+    },
+    {
+      "id": "file:cli/docs-dev.test.ts",
+      "type": "file",
+      "name": "docs-dev.test.ts",
+      "filePath": "cli/docs-dev.test.ts",
+      "summary": "Small Vitest suite for the docs-dev CLI helper, verifying loopback TCP port listening and probing behaviour (using lsof when available) used by the VitePress docs dev server.",
+      "tags": [
+        "test",
+        "cli",
+        "docs",
+        "networking"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "file:src/extensions/default-layout/chat.test.tsx",
+      "type": "file",
+      "name": "chat.test.tsx",
+      "filePath": "src/extensions/default-layout/chat.test.tsx",
+      "summary": "Large React Testing Library suite for the default-layout chat surface: transcript rendering, tool cards, composer visibility pills, resize-observer follow behaviour, and project-scoped input rendering.",
+      "tags": [
+        "test",
+        "chat",
+        "component",
+        "default-layout",
+        "transcript"
+      ],
+      "complexity": "complex"
+    },
+    {
+      "id": "file:src/extensions/default-layout/composer-visibility-pills.tsx",
+      "type": "file",
+      "name": "composer-visibility-pills.tsx",
+      "filePath": "src/extensions/default-layout/composer-visibility-pills.tsx",
+      "summary": "Composer-bar chrome composite rendering Thinking and Tool-calls visibility pills plus a More-options popover that toggles the active session's transcript visibility and the per-session project-root guardrail.",
+      "tags": [
+        "component",
+        "chrome-composite",
+        "default-layout",
+        "visibility",
+        "event-handler"
+      ],
+      "complexity": "complex"
+    },
+    {
+      "id": "file:src/extensions/default-layout/question-card.tsx",
+      "type": "file",
+      "name": "question-card.tsx",
+      "filePath": "src/extensions/default-layout/question-card.tsx",
+      "summary": "Renders an ask-user question card (title, prompt, multiple-choice buttons, optional free-text answer) and emits the chosen or custom answer back to the agent via emitQuestionAnswer.",
+      "tags": [
+        "component",
+        "default-layout",
+        "question",
+        "event-handler",
+        "a2ui"
+      ],
+      "complexity": "moderate"
+    },
+    {
+      "id": "file:src/extensions/default-layout/sidebar/host-group.tsx",
+      "type": "file",
+      "name": "host-group.tsx",
+      "filePath": "src/extensions/default-layout/sidebar/host-group.tsx",
+      "summary": "Sidebar host-group node — the top tier of the host to project to workspace hierarchy. Renders a collapsible host header (machine glyph, name, local/remote badge, disclosure chevron) and nests its project list as children.",
+      "tags": [
+        "component",
+        "sidebar",
+        "default-layout",
+        "host",
+        "navigation"
+      ],
+      "complexity": "moderate"
+    },
+    {
+      "id": "function:src/extensions/default-layout/composer-visibility-pills.tsx:ComposerVisibilityPills",
+      "type": "function",
+      "name": "ComposerVisibilityPills",
+      "filePath": "src/extensions/default-layout/composer-visibility-pills.tsx",
+      "lineRange": [
+        74,
+        245
+      ],
+      "summary": "React component rendering the Thinking/Tool-calls visibility pills and a positioned More-options popover; reads effective visibility via the shared resolver and emits visibility and guardrail toggle events.",
+      "tags": [
+        "component",
+        "event-handler",
+        "visibility",
+        "popover"
+      ],
+      "complexity": "complex"
+    },
+    {
+      "id": "function:src/extensions/default-layout/composer-visibility-pills.tsx:resolveHardEnforce",
+      "type": "function",
+      "name": "resolveHardEnforce",
+      "filePath": "src/extensions/default-layout/composer-visibility-pills.tsx",
+      "lineRange": [
+        38,
+        50
+      ],
+      "summary": "Computes the effective hard project-root guardrail state for a tab: a per-tab override wins, otherwise the global default, otherwise false.",
+      "tags": [
+        "utility",
+        "guardrail",
+        "state"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:src/extensions/default-layout/question-card.tsx:QuestionCard",
+      "type": "function",
+      "name": "QuestionCard",
+      "filePath": "src/extensions/default-layout/question-card.tsx",
+      "lineRange": [
+        9,
+        108
+      ],
+      "summary": "Question-card component: normalizes choices and answer, renders choice buttons plus an optional custom-text input, and dispatches the selected or typed answer to the agent.",
+      "tags": [
+        "component",
+        "event-handler",
+        "question"
+      ],
+      "complexity": "complex"
+    },
+    {
+      "id": "function:src/extensions/default-layout/question-card.tsx:normalizeChoices",
+      "type": "function",
+      "name": "normalizeChoices",
+      "filePath": "src/extensions/default-layout/question-card.tsx",
+      "lineRange": [
+        110,
+        131
+      ],
+      "summary": "Coerces an unknown choices payload into a clean AskUserChoice[] with trimmed id/label/description, tolerating malformed entries.",
+      "tags": [
+        "validation",
+        "normalization",
+        "utility"
+      ],
+      "complexity": "moderate"
+    },
+    {
+      "id": "function:src/extensions/default-layout/question-card.tsx:normalizeAnswer",
+      "type": "function",
+      "name": "normalizeAnswer",
+      "filePath": "src/extensions/default-layout/question-card.tsx",
+      "lineRange": [
+        133,
+        145
+      ],
+      "summary": "Coerces an unknown answer payload into a normalized AskUserAnswer object, or undefined when absent or invalid.",
+      "tags": [
+        "validation",
+        "normalization",
+        "utility"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:src/extensions/default-layout/sidebar/host-group.tsx:HostGroup",
+      "type": "function",
+      "name": "HostGroup",
+      "filePath": "src/extensions/default-layout/sidebar/host-group.tsx",
+      "lineRange": [
+        67,
+        134
+      ],
+      "summary": "Renders a collapsible sidebar host group: a header with glyph, label, local/remote badge, and disclosure chevron wired to select and toggle handlers, with its project list rendered as children.",
+      "tags": [
+        "component",
+        "sidebar",
+        "navigation",
+        "event-handler"
+      ],
+      "complexity": "moderate"
+    },
+    {
+      "id": "function:src/extensions/default-layout/sidebar/host-group.tsx:HostGlyph",
+      "type": "function",
+      "name": "HostGlyph",
+      "filePath": "src/extensions/default-layout/sidebar/host-group.tsx",
+      "lineRange": [
+        47,
+        65
+      ],
+      "summary": "Inline SVG monitor-outline glyph used as the host icon; local vs. remote is conveyed by the badge text, so one icon covers both cases.",
+      "tags": [
+        "component",
+        "icon",
+        "svg",
+        "presentational"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:agent/tab-lifecycle.test.ts:fakeRec",
+      "type": "function",
+      "name": "fakeRec",
+      "filePath": "agent/tab-lifecycle.test.ts",
+      "lineRange": [
+        60,
+        75
+      ],
+      "summary": "Test helper that builds a fake model-registry record from a provider/model id string for tab-lifecycle assertions.",
+      "tags": [
+        "test",
+        "fixture",
+        "helper"
+      ],
+      "complexity": "moderate"
+    },
+    {
+      "id": "function:cli/docs-dev.test.ts:listenLoopback",
+      "type": "function",
+      "name": "listenLoopback",
+      "filePath": "cli/docs-dev.test.ts",
+      "lineRange": [
+        18,
+        39
+      ],
+      "summary": "Test helper that opens a loopback TCP server on a given port and resolves with its bound address, used to simulate a busy docs-dev port.",
+      "tags": [
+        "test",
+        "networking",
+        "helper"
+      ],
+      "complexity": "moderate"
+    },
+    {
+      "id": "function:src/extensions/default-layout/chat.test.tsx:renderComposerPills",
+      "type": "function",
+      "name": "renderComposerPills",
+      "filePath": "src/extensions/default-layout/chat.test.tsx",
+      "lineRange": [
+        191,
+        209
+      ],
+      "summary": "Test helper that renders the composer visibility pills inside the extension-registry context for visibility assertions.",
+      "tags": [
+        "test",
+        "helper",
+        "render"
+      ],
+      "complexity": "moderate"
+    },
+    {
+      "id": "function:src/extensions/default-layout/chat.test.tsx:renderToolCard",
+      "type": "function",
+      "name": "renderToolCard",
+      "filePath": "src/extensions/default-layout/chat.test.tsx",
+      "lineRange": [
+        215,
+        228
+      ],
+      "summary": "Test helper that renders a single transcript tool card with mock props for tool-call rendering assertions.",
+      "tags": [
+        "test",
+        "helper",
+        "render"
+      ],
+      "complexity": "moderate"
+    },
+    {
+      "id": "file:src/extensions/default-layout/sidebar/index.tsx",
+      "type": "file",
+      "name": "index.tsx",
+      "filePath": "src/extensions/default-layout/sidebar/index.tsx",
+      "summary": "Composes the host→project→workspace sidebar tree from host groups, derived sections, context menus, item rows, a resize handle, and extension-injected sections; persists per-section collapse and handles workspace drag-to-reorder.",
+      "tags": [
+        "component",
+        "sidebar",
+        "navigation",
+        "workspace-ui",
+        "tested"
+      ],
+      "complexity": "complex"
+    },
+    {
+      "id": "function:src/extensions/default-layout/sidebar/index.tsx:Sidebar",
+      "type": "function",
+      "name": "Sidebar",
+      "filePath": "src/extensions/default-layout/sidebar/index.tsx",
+      "lineRange": [
+        51,
+        284
+      ],
+      "summary": "Top-level sidebar composite: resolves bound props, derives sections via composeSidebarSections, wires context-menu and resize hooks, renders host groups with collapse, and dispatches select/toggle events.",
+      "tags": [
+        "component",
+        "sidebar",
+        "composition"
+      ],
+      "complexity": "complex"
+    },
+    {
+      "id": "function:src/extensions/default-layout/sidebar/index.tsx:readSectionCollapsed",
+      "type": "function",
+      "name": "readSectionCollapsed",
+      "filePath": "src/extensions/default-layout/sidebar/index.tsx",
+      "lineRange": [
+        309,
+        315
+      ],
+      "summary": "Reads a section's persisted collapsed flag from window.localStorage, defaulting to expanded when absent or on access failure.",
+      "tags": [
+        "utility",
+        "persistence",
+        "localstorage"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:src/extensions/default-layout/sidebar/index.tsx:writeSectionCollapsed",
+      "type": "function",
+      "name": "writeSectionCollapsed",
+      "filePath": "src/extensions/default-layout/sidebar/index.tsx",
+      "lineRange": [
+        317,
+        326
+      ],
+      "summary": "Persists a section's collapsed flag to window.localStorage, swallowing storage errors.",
+      "tags": [
+        "utility",
+        "persistence",
+        "localstorage"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:src/extensions/default-layout/sidebar/index.tsx:SidebarSectionBlock",
+      "type": "function",
+      "name": "SidebarSectionBlock",
+      "filePath": "src/extensions/default-layout/sidebar/index.tsx",
+      "lineRange": [
+        332,
+        713
+      ],
+      "summary": "Renders one sidebar section (title, items, workspaces, action rows) with a Chevron disclosure, pointer-driven workspace drag-and-drop reordering, and a drop indicator; emits reorder/select events.",
+      "tags": [
+        "component",
+        "sidebar",
+        "drag-and-drop",
+        "section"
+      ],
+      "complexity": "complex"
+    },
+    {
+      "id": "file:src/extensions/default-layout/sidebar/item-row.tsx",
+      "type": "file",
+      "name": "item-row.tsx",
+      "filePath": "src/extensions/default-layout/sidebar/item-row.tsx",
+      "summary": "Renders a single sidebar item row with optional disclosure chevron, stacked two-line git-meta layout, slot alignment, a trailing control slot, and right-click context-menu wiring.",
+      "tags": [
+        "component",
+        "sidebar",
+        "item-row",
+        "tested"
+      ],
+      "complexity": "moderate"
+    },
+    {
+      "id": "function:src/extensions/default-layout/sidebar/item-row.tsx:ItemRow",
+      "type": "function",
+      "name": "ItemRow",
+      "filePath": "src/extensions/default-layout/sidebar/item-row.tsx",
+      "lineRange": [
+        45,
+        298
+      ],
+      "summary": "Single sidebar item: renders label/hint with an optional Chevron disclosure caret, stacked git-meta second line, trailing control, and active styling; fires select/context-menu events without toggling on caret clicks.",
+      "tags": [
+        "component",
+        "sidebar",
+        "item-row"
+      ],
+      "complexity": "moderate"
+    },
+    {
+      "id": "file:src/extensions/default-layout/sidebar/searchable-section.tsx",
+      "type": "file",
+      "name": "searchable-section.tsx",
+      "filePath": "src/extensions/default-layout/sidebar/searchable-section.tsx",
+      "summary": "A sidebar section variant that surfaces a filter input over a long item list and optionally groups items by leading id prefix with collapsible subheads.",
+      "tags": [
+        "component",
+        "sidebar",
+        "search",
+        "filter"
+      ],
+      "complexity": "moderate"
+    },
+    {
+      "id": "function:src/extensions/default-layout/sidebar/searchable-section.tsx:SearchableSidebarSection",
+      "type": "function",
+      "name": "SearchableSidebarSection",
+      "filePath": "src/extensions/default-layout/sidebar/searchable-section.tsx",
+      "lineRange": [
+        40,
+        158
+      ],
+      "summary": "Renders a sidebar section with a live filter input and optional prefix grouping (collapsible groups); filters items via filterItems and renders each through ItemRow.",
+      "tags": [
+        "component",
+        "sidebar",
+        "search",
+        "grouping"
+      ],
+      "complexity": "moderate"
+    },
+    {
+      "id": "file:src/extensions/default-layout/tool-activity-summary.ts",
+      "type": "file",
+      "name": "tool-activity-summary.ts",
+      "filePath": "src/extensions/default-layout/tool-activity-summary.ts",
+      "summary": "Pure helpers shared by the turn-activity and tool-card chrome: duration/label formatting, file-change collection and de-duplication, diff-line tone classification, and per-tool state/duration labels.",
+      "tags": [
+        "utility",
+        "tool-activity",
+        "labels",
+        "diff",
+        "tested"
+      ],
+      "complexity": "moderate"
+    },
+    {
+      "id": "function:src/extensions/default-layout/tool-activity-summary.ts:compactDuration",
+      "type": "function",
+      "name": "compactDuration",
+      "filePath": "src/extensions/default-layout/tool-activity-summary.ts",
+      "lineRange": [
+        18,
+        30
+      ],
+      "summary": "Formats an elapsed millisecond span into a compact human label (sub-second, seconds, or minutes).",
+      "tags": [
+        "utility",
+        "formatting",
+        "duration"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:src/extensions/default-layout/tool-activity-summary.ts:toolCountLabel",
+      "type": "function",
+      "name": "toolCountLabel",
+      "filePath": "src/extensions/default-layout/tool-activity-summary.ts",
+      "lineRange": [
+        32,
+        39
+      ],
+      "summary": "Builds a count label summarizing a tool summary by state (running / done / errored).",
+      "tags": [
+        "utility",
+        "labels"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:src/extensions/default-layout/tool-activity-summary.ts:workedLabel",
+      "type": "function",
+      "name": "workedLabel",
+      "filePath": "src/extensions/default-layout/tool-activity-summary.ts",
+      "lineRange": [
+        41,
+        44
+      ],
+      "summary": "Returns a \"worked for <duration>\" label from a summary's elapsed time via compactDuration.",
+      "tags": [
+        "utility",
+        "labels",
+        "duration"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:src/extensions/default-layout/tool-activity-summary.ts:fileChangeLabel",
+      "type": "function",
+      "name": "fileChangeLabel",
+      "filePath": "src/extensions/default-layout/tool-activity-summary.ts",
+      "lineRange": [
+        46,
+        57
+      ],
+      "summary": "Produces an \"Edited N files\" style label from a summary's file-change count.",
+      "tags": [
+        "utility",
+        "labels",
+        "file-change"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:src/extensions/default-layout/tool-activity-summary.ts:activityLabel",
+      "type": "function",
+      "name": "activityLabel",
+      "filePath": "src/extensions/default-layout/tool-activity-summary.ts",
+      "lineRange": [
+        59,
+        73
+      ],
+      "summary": "Computes the primary turn-activity headline, preferring a file-change label, falling back to a worked label, and folding in subagent progress count.",
+      "tags": [
+        "utility",
+        "labels",
+        "activity"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:src/extensions/default-layout/tool-activity-summary.ts:activityMeta",
+      "type": "function",
+      "name": "activityMeta",
+      "filePath": "src/extensions/default-layout/tool-activity-summary.ts",
+      "lineRange": [
+        75,
+        78
+      ],
+      "summary": "Returns the secondary meta line for a turn-activity header (tool-count label).",
+      "tags": [
+        "utility",
+        "labels"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:src/extensions/default-layout/tool-activity-summary.ts:fileChangeStatsLabel",
+      "type": "function",
+      "name": "fileChangeStatsLabel",
+      "filePath": "src/extensions/default-layout/tool-activity-summary.ts",
+      "lineRange": [
+        80,
+        88
+      ],
+      "summary": "Builds a file-change label augmented with aggregate +additions/-deletions stats.",
+      "tags": [
+        "utility",
+        "labels",
+        "diffstat"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:src/extensions/default-layout/tool-activity-summary.ts:collectFileChangeEntries",
+      "type": "function",
+      "name": "collectFileChangeEntries",
+      "filePath": "src/extensions/default-layout/tool-activity-summary.ts",
+      "lineRange": [
+        90,
+        137
+      ],
+      "summary": "Walks a turn's tool messages, de-duplicates file changes by root+path key, and merges previews and add/del stats into ToolFileChangeEntry records.",
+      "tags": [
+        "utility",
+        "file-change",
+        "aggregation"
+      ],
+      "complexity": "moderate"
+    },
+    {
+      "id": "function:src/extensions/default-layout/tool-activity-summary.ts:hasFileChange",
+      "type": "function",
+      "name": "hasFileChange",
+      "filePath": "src/extensions/default-layout/tool-activity-summary.ts",
+      "lineRange": [
+        139,
+        141
+      ],
+      "summary": "Predicate: whether a tool message carries a file-change in its tool-card details.",
+      "tags": [
+        "utility",
+        "predicate"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:src/extensions/default-layout/tool-activity-summary.ts:hasToolCardChildren",
+      "type": "function",
+      "name": "hasToolCardChildren",
+      "filePath": "src/extensions/default-layout/tool-activity-summary.ts",
+      "lineRange": [
+        143,
+        150
+      ],
+      "summary": "Predicate: whether a message's A2UI payload contains tool-card child components.",
+      "tags": [
+        "utility",
+        "predicate",
+        "a2ui"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:src/extensions/default-layout/tool-activity-summary.ts:basename",
+      "type": "function",
+      "name": "basename",
+      "filePath": "src/extensions/default-layout/tool-activity-summary.ts",
+      "lineRange": [
+        152,
+        159
+      ],
+      "summary": "Returns the final path segment, trimming trailing separators (cross-platform).",
+      "tags": [
+        "utility",
+        "path"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:src/extensions/default-layout/tool-activity-summary.ts:parentPath",
+      "type": "function",
+      "name": "parentPath",
+      "filePath": "src/extensions/default-layout/tool-activity-summary.ts",
+      "lineRange": [
+        161,
+        165
+      ],
+      "summary": "Returns the parent-directory portion of a path.",
+      "tags": [
+        "utility",
+        "path"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:src/extensions/default-layout/tool-activity-summary.ts:previewLines",
+      "type": "function",
+      "name": "previewLines",
+      "filePath": "src/extensions/default-layout/tool-activity-summary.ts",
+      "lineRange": [
+        167,
+        172
+      ],
+      "summary": "Splits a preview string into trimmed, capped lines for inline display.",
+      "tags": [
+        "utility",
+        "formatting"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:src/extensions/default-layout/tool-activity-summary.ts:looksLikeUnifiedDiff",
+      "type": "function",
+      "name": "looksLikeUnifiedDiff",
+      "filePath": "src/extensions/default-layout/tool-activity-summary.ts",
+      "lineRange": [
+        174,
+        179
+      ],
+      "summary": "Tests whether a preview string contains unified-diff markers (diff --git / @@ / ---/+++).",
+      "tags": [
+        "utility",
+        "diff",
+        "predicate"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:src/extensions/default-layout/tool-activity-summary.ts:effectiveStats",
+      "type": "function",
+      "name": "effectiveStats",
+      "filePath": "src/extensions/default-layout/tool-activity-summary.ts",
+      "lineRange": [
+        181,
+        183
+      ],
+      "summary": "Resolves a change's effective add/del LineChangeStats, falling back to stats derived from the change.",
+      "tags": [
+        "utility",
+        "diffstat"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:src/extensions/default-layout/tool-activity-summary.ts:summaryWithFileEntries",
+      "type": "function",
+      "name": "summaryWithFileEntries",
+      "filePath": "src/extensions/default-layout/tool-activity-summary.ts",
+      "lineRange": [
+        185,
+        211
+      ],
+      "summary": "Merges collected file-change entries back into a tool summary, recomputing aggregate file and line-change counts.",
+      "tags": [
+        "utility",
+        "aggregation",
+        "summary"
+      ],
+      "complexity": "moderate"
+    },
+    {
+      "id": "function:src/extensions/default-layout/tool-activity-summary.ts:lineTone",
+      "type": "function",
+      "name": "lineTone",
+      "filePath": "src/extensions/default-layout/tool-activity-summary.ts",
+      "lineRange": [
+        213,
+        228
+      ],
+      "summary": "Classifies a diff line into a tone (added / removed / meta / context) for syntax-styled preview rendering.",
+      "tags": [
+        "utility",
+        "diff",
+        "classification"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:src/extensions/default-layout/tool-activity-summary.ts:toolStateLabel",
+      "type": "function",
+      "name": "toolStateLabel",
+      "filePath": "src/extensions/default-layout/tool-activity-summary.ts",
+      "lineRange": [
+        230,
+        237
+      ],
+      "summary": "Returns a human label for a single tool's state (running / done / error / cancelled).",
+      "tags": [
+        "utility",
+        "labels"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:src/extensions/default-layout/tool-activity-summary.ts:toolDurationLabel",
+      "type": "function",
+      "name": "toolDurationLabel",
+      "filePath": "src/extensions/default-layout/tool-activity-summary.ts",
+      "lineRange": [
+        239,
+        246
+      ],
+      "summary": "Returns a compact elapsed-duration label for a single tool's details.",
+      "tags": [
+        "utility",
+        "labels",
+        "duration"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "file:src/extensions/default-layout/tool-card.tsx",
+      "type": "file",
+      "name": "tool-card.tsx",
+      "filePath": "src/extensions/default-layout/tool-card.tsx",
+      "summary": "Renders agent tool-call cards: collapse-by-default with a clickable read-file path, single-line edit/bash diffstats, an expandable file-change body with diff preview, elapsed-time updates, running/error/cancelled status, and subagent progress stacks.",
+      "tags": [
+        "component",
+        "tool-card",
+        "subagent",
+        "diff-preview",
+        "tested"
+      ],
+      "complexity": "complex",
+      "languageNotes": "Mixes data-binding resolution with a derived timer so long-running calls update without rewriting the backing A2UI payload."
+    },
+    {
+      "id": "function:src/extensions/default-layout/tool-card.tsx:readSubagentProgress",
+      "type": "function",
+      "name": "readSubagentProgress",
+      "filePath": "src/extensions/default-layout/tool-card.tsx",
+      "lineRange": [
+        31,
+        41
+      ],
+      "summary": "Looks up the subagent-progress slice keyed by the raw tool call id embedded in a tool-card component id.",
+      "tags": [
+        "utility",
+        "subagent",
+        "state-lookup"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:src/extensions/default-layout/tool-card.tsx:SubagentActivity",
+      "type": "function",
+      "name": "SubagentActivity",
+      "filePath": "src/extensions/default-layout/tool-card.tsx",
+      "lineRange": [
+        43,
+        71
+      ],
+      "summary": "Renders a single subagent's live step list from its progress entry.",
+      "tags": [
+        "component",
+        "subagent",
+        "progress"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:src/extensions/default-layout/tool-card.tsx:isBatchProgress",
+      "type": "function",
+      "name": "isBatchProgress",
+      "filePath": "src/extensions/default-layout/tool-card.tsx",
+      "lineRange": [
+        73,
+        77
+      ],
+      "summary": "Type guard distinguishing batch (multi-subagent) progress from a single entry.",
+      "tags": [
+        "utility",
+        "predicate",
+        "subagent"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:src/extensions/default-layout/tool-card.tsx:SubagentActivityStack",
+      "type": "function",
+      "name": "SubagentActivityStack",
+      "filePath": "src/extensions/default-layout/tool-card.tsx",
+      "lineRange": [
+        79,
+        95
+      ],
+      "summary": "Renders stacked per-subagent progress for a batch dispatch in declared order.",
+      "tags": [
+        "component",
+        "subagent",
+        "progress"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:src/extensions/default-layout/tool-card.tsx:SubagentResult",
+      "type": "function",
+      "name": "SubagentResult",
+      "filePath": "src/extensions/default-layout/tool-card.tsx",
+      "lineRange": [
+        97,
+        109
+      ],
+      "summary": "Renders a completed subagent result block from its bound component/state.",
+      "tags": [
+        "component",
+        "subagent",
+        "result"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:src/extensions/default-layout/tool-card.tsx:formatToolDuration",
+      "type": "function",
+      "name": "formatToolDuration",
+      "filePath": "src/extensions/default-layout/tool-card.tsx",
+      "lineRange": [
+        112,
+        119
+      ],
+      "summary": "Formats a tool's elapsed milliseconds as seconds or mm:ss for the card header.",
+      "tags": [
+        "utility",
+        "formatting",
+        "duration"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:src/extensions/default-layout/tool-card.tsx:ToolStatusIcon",
+      "type": "function",
+      "name": "ToolStatusIcon",
+      "filePath": "src/extensions/default-layout/tool-card.tsx",
+      "lineRange": [
+        121,
+        150
+      ],
+      "summary": "Renders the tool-card status glyph for running / error / cancelled / long-running states.",
+      "tags": [
+        "component",
+        "tool-card",
+        "status"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:src/extensions/default-layout/tool-card.tsx:basename",
+      "type": "function",
+      "name": "basename",
+      "filePath": "src/extensions/default-layout/tool-card.tsx",
+      "lineRange": [
+        152,
+        159
+      ],
+      "summary": "Returns the final path segment, trimming trailing separators (card-local copy).",
+      "tags": [
+        "utility",
+        "path"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:src/extensions/default-layout/tool-card.tsx:parentPath",
+      "type": "function",
+      "name": "parentPath",
+      "filePath": "src/extensions/default-layout/tool-card.tsx",
+      "lineRange": [
+        161,
+        165
+      ],
+      "summary": "Returns the parent-directory portion of a path (card-local copy).",
+      "tags": [
+        "utility",
+        "path"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:src/extensions/default-layout/tool-card.tsx:previewLines",
+      "type": "function",
+      "name": "previewLines",
+      "filePath": "src/extensions/default-layout/tool-card.tsx",
+      "lineRange": [
+        167,
+        172
+      ],
+      "summary": "Splits a preview string into trimmed, capped lines for the card body.",
+      "tags": [
+        "utility",
+        "formatting"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:src/extensions/default-layout/tool-card.tsx:looksLikeUnifiedDiff",
+      "type": "function",
+      "name": "looksLikeUnifiedDiff",
+      "filePath": "src/extensions/default-layout/tool-card.tsx",
+      "lineRange": [
+        174,
+        177
+      ],
+      "summary": "Tests whether a preview looks like a unified diff (card-local copy).",
+      "tags": [
+        "utility",
+        "diff",
+        "predicate"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:src/extensions/default-layout/tool-card.tsx:lineTone",
+      "type": "function",
+      "name": "lineTone",
+      "filePath": "src/extensions/default-layout/tool-card.tsx",
+      "lineRange": [
+        179,
+        192
+      ],
+      "summary": "Classifies a diff line into a tone for the card's preview rendering.",
+      "tags": [
+        "utility",
+        "diff",
+        "classification"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:src/extensions/default-layout/tool-card.tsx:ToolFileChangeBody",
+      "type": "function",
+      "name": "ToolFileChangeBody",
+      "filePath": "src/extensions/default-layout/tool-card.tsx",
+      "lineRange": [
+        197,
+        285
+      ],
+      "summary": "Renders the expandable file-change body of a tool card: header path, diffstat, truncated diff/preview lines, and an open-file affordance that emits onEvent.",
+      "tags": [
+        "component",
+        "tool-card",
+        "file-change",
+        "diff-preview"
+      ],
+      "complexity": "complex"
+    },
+    {
+      "id": "function:src/extensions/default-layout/tool-card.tsx:ToolCard",
+      "type": "function",
+      "name": "ToolCard",
+      "filePath": "src/extensions/default-layout/tool-card.tsx",
+      "lineRange": [
+        287,
+        502
+      ],
+      "summary": "Main tool-call card: resolves bound props, drives a derived elapsed timer, renders status/subagent stacks, a single-line diffstat with clickable read path, and an open/close expandable file-change body.",
+      "tags": [
+        "component",
+        "tool-card",
+        "interactive"
+      ],
+      "complexity": "complex"
+    },
+    {
+      "id": "file:src/extensions/default-layout/turn-activity.tsx",
+      "type": "file",
+      "name": "turn-activity.tsx",
+      "filePath": "src/extensions/default-layout/turn-activity.tsx",
+      "summary": "Groups a conversation turn's tool and progress messages into a collapsible activity block with an expand/collapse-all toolbar, a pinned aggregated \"Edited N files\" card, and per-tool activity rows.",
+      "tags": [
+        "component",
+        "turn-activity",
+        "transcript",
+        "tool-card"
+      ],
+      "complexity": "complex"
+    },
+    {
+      "id": "function:src/extensions/default-layout/turn-activity.tsx:prefersReducedMotion",
+      "type": "function",
+      "name": "prefersReducedMotion",
+      "filePath": "src/extensions/default-layout/turn-activity.tsx",
+      "lineRange": [
+        34,
+        40
+      ],
+      "summary": "Reads the prefers-reduced-motion media query to gate the activity block's exit animation.",
+      "tags": [
+        "utility",
+        "accessibility",
+        "motion"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:src/extensions/default-layout/turn-activity.tsx:ToolActivityRow",
+      "type": "function",
+      "name": "ToolActivityRow",
+      "filePath": "src/extensions/default-layout/turn-activity.tsx",
+      "lineRange": [
+        42,
+        98
+      ],
+      "summary": "Renders a single tool message as a compact activity row with title, description, state label, and duration.",
+      "tags": [
+        "component",
+        "turn-activity",
+        "tool-row"
+      ],
+      "complexity": "moderate"
+    },
+    {
+      "id": "function:src/extensions/default-layout/turn-activity.tsx:TurnActivity",
+      "type": "function",
+      "name": "TurnActivity",
+      "filePath": "src/extensions/default-layout/turn-activity.tsx",
+      "lineRange": [
+        100,
+        376
+      ],
+      "summary": "Groups a turn's tool/progress messages: derives the activity summary and file-change entries, renders the header label/meta, an expand/collapse-all toolbar, a pinned aggregated file-changes card, original tool cards, and running-tool rows.",
+      "tags": [
+        "component",
+        "turn-activity",
+        "composition"
+      ],
+      "complexity": "complex"
     }
   ],
   "edges": [
@@ -60759,20 +61374,6 @@
     {
       "source": "file:agent/session-busy.ts",
       "target": "file:agent/state.ts",
-      "type": "imports",
-      "direction": "forward",
-      "weight": 0.7
-    },
-    {
-      "source": "file:agent/session-history.test.ts",
-      "target": "file:agent/session-history/index.ts",
-      "type": "imports",
-      "direction": "forward",
-      "weight": 0.7
-    },
-    {
-      "source": "file:agent/session-history.test.ts",
-      "target": "file:agent/silent-tools.ts",
       "type": "imports",
       "direction": "forward",
       "weight": 0.7
@@ -82681,27 +83282,6 @@
       "weight": 0.7
     },
     {
-      "source": "file:agent/tab-lifecycle.test.ts",
-      "target": "file:agent/silent-tools.ts",
-      "type": "imports",
-      "direction": "forward",
-      "weight": 0.7
-    },
-    {
-      "source": "file:agent/tab-lifecycle.test.ts",
-      "target": "file:agent/state.ts",
-      "type": "imports",
-      "direction": "forward",
-      "weight": 0.7
-    },
-    {
-      "source": "file:agent/tab-lifecycle.test.ts",
-      "target": "file:agent/tab-lifecycle/index.ts",
-      "type": "imports",
-      "direction": "forward",
-      "weight": 0.7
-    },
-    {
       "source": "file:agent/tab-lifecycle/events.ts",
       "target": "file:agent/aethon-api-sessions.ts",
       "type": "imports",
@@ -83435,13 +84015,6 @@
       "type": "exports",
       "direction": "forward",
       "weight": 0.8
-    },
-    {
-      "source": "file:agent/tab-lifecycle.test.ts",
-      "target": "function:agent/tab-lifecycle.test.ts:fakeRec",
-      "type": "contains",
-      "direction": "forward",
-      "weight": 1
     },
     {
       "source": "file:agent/tab-lifecycle/events.ts",
@@ -86321,50 +86894,8 @@
       "weight": 0.8
     },
     {
-      "source": "file:src/extensions/default-layout/sidebar/host-group.tsx",
-      "target": "function:src/extensions/default-layout/sidebar/host-group.tsx:HostGlyph",
-      "type": "contains",
-      "direction": "forward",
-      "weight": 1
-    },
-    {
-      "source": "file:src/extensions/default-layout/sidebar/host-group.tsx",
-      "target": "function:src/extensions/default-layout/sidebar/host-group.tsx:HostGroup",
-      "type": "contains",
-      "direction": "forward",
-      "weight": 1
-    },
-    {
-      "source": "file:src/extensions/default-layout/sidebar/host-group.tsx",
-      "target": "function:src/extensions/default-layout/sidebar/host-group.tsx:HostGroup",
-      "type": "exports",
-      "direction": "forward",
-      "weight": 0.8
-    },
-    {
       "source": "file:src/extensions/default-layout/sidebar/index.test.tsx",
       "target": "function:src/extensions/default-layout/sidebar/index.test.tsx:renderSidebar",
-      "type": "contains",
-      "direction": "forward",
-      "weight": 1
-    },
-    {
-      "source": "file:src/extensions/default-layout/sidebar/index.tsx",
-      "target": "function:src/extensions/default-layout/sidebar/index.tsx:Sidebar",
-      "type": "contains",
-      "direction": "forward",
-      "weight": 1
-    },
-    {
-      "source": "file:src/extensions/default-layout/sidebar/index.tsx",
-      "target": "function:src/extensions/default-layout/sidebar/index.tsx:Sidebar",
-      "type": "exports",
-      "direction": "forward",
-      "weight": 0.8
-    },
-    {
-      "source": "file:src/extensions/default-layout/sidebar/index.tsx",
-      "target": "function:src/extensions/default-layout/sidebar/index.tsx:SidebarSectionBlock",
       "type": "contains",
       "direction": "forward",
       "weight": 1
@@ -86375,20 +86906,6 @@
       "type": "contains",
       "direction": "forward",
       "weight": 1
-    },
-    {
-      "source": "file:src/extensions/default-layout/sidebar/item-row.tsx",
-      "target": "function:src/extensions/default-layout/sidebar/item-row.tsx:ItemRow",
-      "type": "contains",
-      "direction": "forward",
-      "weight": 1
-    },
-    {
-      "source": "file:src/extensions/default-layout/sidebar/item-row.tsx",
-      "target": "function:src/extensions/default-layout/sidebar/item-row.tsx:ItemRow",
-      "type": "exports",
-      "direction": "forward",
-      "weight": 0.8
     },
     {
       "source": "file:src/extensions/default-layout/sidebar/menuItems.test.ts",
@@ -86463,20 +86980,6 @@
     {
       "source": "file:src/extensions/default-layout/sidebar/resize.ts",
       "target": "function:src/extensions/default-layout/sidebar/resize.ts:useSidebarResize",
-      "type": "exports",
-      "direction": "forward",
-      "weight": 0.8
-    },
-    {
-      "source": "file:src/extensions/default-layout/sidebar/searchable-section.tsx",
-      "target": "function:src/extensions/default-layout/sidebar/searchable-section.tsx:SearchableSidebarSection",
-      "type": "contains",
-      "direction": "forward",
-      "weight": 1
-    },
-    {
-      "source": "file:src/extensions/default-layout/sidebar/searchable-section.tsx",
-      "target": "function:src/extensions/default-layout/sidebar/searchable-section.tsx:SearchableSidebarSection",
       "type": "exports",
       "direction": "forward",
       "weight": 0.8
@@ -86916,118 +87419,6 @@
       "weight": 0.7
     },
     {
-      "source": "file:src/extensions/default-layout/sidebar/index.tsx",
-      "target": "file:src/components/A2UIRenderer.tsx",
-      "type": "imports",
-      "direction": "forward",
-      "weight": 0.7
-    },
-    {
-      "source": "file:src/extensions/default-layout/sidebar/index.tsx",
-      "target": "file:src/components/primitives/context-menu.tsx",
-      "type": "imports",
-      "direction": "forward",
-      "weight": 0.7
-    },
-    {
-      "source": "file:src/extensions/default-layout/sidebar/index.tsx",
-      "target": "file:src/extensions/default-layout/layout/index.ts",
-      "type": "imports",
-      "direction": "forward",
-      "weight": 0.7
-    },
-    {
-      "source": "file:src/extensions/default-layout/sidebar/index.tsx",
-      "target": "file:src/extensions/default-layout/sidebar/contextMenu.tsx",
-      "type": "imports",
-      "direction": "forward",
-      "weight": 0.7
-    },
-    {
-      "source": "file:src/extensions/default-layout/sidebar/index.tsx",
-      "target": "file:src/extensions/default-layout/sidebar/host-group.tsx",
-      "type": "imports",
-      "direction": "forward",
-      "weight": 0.7
-    },
-    {
-      "source": "file:src/extensions/default-layout/sidebar/index.tsx",
-      "target": "file:src/extensions/default-layout/sidebar/item-row.tsx",
-      "type": "imports",
-      "direction": "forward",
-      "weight": 0.7
-    },
-    {
-      "source": "file:src/extensions/default-layout/sidebar/index.tsx",
-      "target": "file:src/extensions/default-layout/sidebar/menuItems.ts",
-      "type": "imports",
-      "direction": "forward",
-      "weight": 0.7
-    },
-    {
-      "source": "file:src/extensions/default-layout/sidebar/index.tsx",
-      "target": "file:src/extensions/default-layout/sidebar/resize.ts",
-      "type": "imports",
-      "direction": "forward",
-      "weight": 0.7
-    },
-    {
-      "source": "file:src/extensions/default-layout/sidebar/index.tsx",
-      "target": "file:src/extensions/default-layout/sidebar/searchable-section.tsx",
-      "type": "imports",
-      "direction": "forward",
-      "weight": 0.7
-    },
-    {
-      "source": "file:src/extensions/default-layout/sidebar/index.tsx",
-      "target": "file:src/extensions/default-layout/sidebar/sections.ts",
-      "type": "imports",
-      "direction": "forward",
-      "weight": 0.7
-    },
-    {
-      "source": "file:src/extensions/default-layout/sidebar/index.tsx",
-      "target": "file:src/extensions/default-layout/sidebar/workspace-row.tsx",
-      "type": "imports",
-      "direction": "forward",
-      "weight": 0.7
-    },
-    {
-      "source": "file:src/extensions/default-layout/sidebar/index.tsx",
-      "target": "file:src/extensions/default-layout/toggle-switch.tsx",
-      "type": "imports",
-      "direction": "forward",
-      "weight": 0.7
-    },
-    {
-      "source": "file:src/extensions/default-layout/sidebar/index.tsx",
-      "target": "file:src/types/a2ui.ts",
-      "type": "imports",
-      "direction": "forward",
-      "weight": 0.7
-    },
-    {
-      "source": "file:src/extensions/default-layout/sidebar/index.tsx",
-      "target": "file:src/utils/dataBinding.ts",
-      "type": "imports",
-      "direction": "forward",
-      "weight": 0.7
-    },
-    {
-      "source": "file:src/extensions/default-layout/sidebar/index.tsx",
-      "target": "file:src/utils/platform.ts",
-      "type": "imports",
-      "direction": "forward",
-      "weight": 0.7
-    },
-    {
-      "source": "file:src/extensions/default-layout/sidebar/index.tsx",
-      "target": "file:src/utils/windowDrag.ts",
-      "type": "imports",
-      "direction": "forward",
-      "weight": 0.7
-    },
-    {
       "source": "file:src/extensions/default-layout/sidebar/item-row.test.tsx",
       "target": "file:src/extensions/default-layout/sidebar/item-row.tsx",
       "type": "imports",
@@ -87036,20 +87427,6 @@
     },
     {
       "source": "file:src/extensions/default-layout/sidebar/item-row.test.tsx",
-      "target": "file:src/types/a2ui.ts",
-      "type": "imports",
-      "direction": "forward",
-      "weight": 0.7
-    },
-    {
-      "source": "file:src/extensions/default-layout/sidebar/item-row.tsx",
-      "target": "file:src/components/A2UIRenderer.tsx",
-      "type": "imports",
-      "direction": "forward",
-      "weight": 0.7
-    },
-    {
-      "source": "file:src/extensions/default-layout/sidebar/item-row.tsx",
       "target": "file:src/types/a2ui.ts",
       "type": "imports",
       "direction": "forward",
@@ -87100,34 +87477,6 @@
     {
       "source": "file:src/extensions/default-layout/sidebar/resize.ts",
       "target": "file:src/components/A2UIRenderer.tsx",
-      "type": "imports",
-      "direction": "forward",
-      "weight": 0.7
-    },
-    {
-      "source": "file:src/extensions/default-layout/sidebar/searchable-section.tsx",
-      "target": "file:src/components/A2UIRenderer.tsx",
-      "type": "imports",
-      "direction": "forward",
-      "weight": 0.7
-    },
-    {
-      "source": "file:src/extensions/default-layout/sidebar/searchable-section.tsx",
-      "target": "file:src/extensions/default-layout/sidebar/filter.ts",
-      "type": "imports",
-      "direction": "forward",
-      "weight": 0.7
-    },
-    {
-      "source": "file:src/extensions/default-layout/sidebar/searchable-section.tsx",
-      "target": "file:src/extensions/default-layout/sidebar/item-row.tsx",
-      "type": "imports",
-      "direction": "forward",
-      "weight": 0.7
-    },
-    {
-      "source": "file:src/extensions/default-layout/sidebar/searchable-section.tsx",
-      "target": "file:src/types/a2ui.ts",
       "type": "imports",
       "direction": "forward",
       "weight": 0.7
@@ -87266,20 +87615,6 @@
       "weight": 0.5
     },
     {
-      "source": "file:src/extensions/default-layout/sidebar/host-group.tsx",
-      "target": "file:src/extensions/default-layout/sidebar/host-group.test.tsx",
-      "type": "tested_by",
-      "direction": "forward",
-      "weight": 0.5
-    },
-    {
-      "source": "file:src/extensions/default-layout/sidebar/item-row.tsx",
-      "target": "file:src/extensions/default-layout/sidebar/item-row.test.tsx",
-      "type": "tested_by",
-      "direction": "forward",
-      "weight": 0.5
-    },
-    {
       "source": "file:src/extensions/default-layout/sidebar/menuItems.ts",
       "target": "file:src/extensions/default-layout/sidebar/menuItems.test.ts",
       "type": "tested_by",
@@ -87364,62 +87699,6 @@
       "weight": 0.8
     },
     {
-      "source": "function:src/extensions/default-layout/sidebar/index.tsx:Sidebar",
-      "target": "function:src/extensions/default-layout/sidebar/contextMenu.tsx:useSidebarContextMenu",
-      "type": "calls",
-      "direction": "forward",
-      "weight": 0.8
-    },
-    {
-      "source": "function:src/extensions/default-layout/sidebar/index.tsx:Sidebar",
-      "target": "function:src/extensions/default-layout/sidebar/resize.ts:useSidebarResize",
-      "type": "calls",
-      "direction": "forward",
-      "weight": 0.8
-    },
-    {
-      "source": "function:src/extensions/default-layout/sidebar/index.tsx:Sidebar",
-      "target": "function:src/extensions/default-layout/sidebar/sections.ts:composeSidebarSections",
-      "type": "calls",
-      "direction": "forward",
-      "weight": 0.8
-    },
-    {
-      "source": "function:src/extensions/default-layout/sidebar/index.tsx:Sidebar",
-      "target": "function:src/extensions/default-layout/sidebar/sections.ts:resolveSidebarItems",
-      "type": "calls",
-      "direction": "forward",
-      "weight": 0.8
-    },
-    {
-      "source": "function:src/extensions/default-layout/sidebar/index.tsx:Sidebar",
-      "target": "function:src/extensions/default-layout/sidebar/host-group.tsx:HostGroup",
-      "type": "calls",
-      "direction": "forward",
-      "weight": 0.8
-    },
-    {
-      "source": "function:src/extensions/default-layout/sidebar/index.tsx:Sidebar",
-      "target": "function:src/extensions/default-layout/sidebar/searchable-section.tsx:SearchableSidebarSection",
-      "type": "calls",
-      "direction": "forward",
-      "weight": 0.8
-    },
-    {
-      "source": "function:src/extensions/default-layout/sidebar/index.tsx:SidebarSectionBlock",
-      "target": "function:src/extensions/default-layout/sidebar/item-row.tsx:ItemRow",
-      "type": "calls",
-      "direction": "forward",
-      "weight": 0.8
-    },
-    {
-      "source": "function:src/extensions/default-layout/sidebar/index.tsx:SidebarSectionBlock",
-      "target": "function:src/extensions/default-layout/sidebar/menuItems.ts:buildSidebarMenuItems",
-      "type": "calls",
-      "direction": "forward",
-      "weight": 0.8
-    },
-    {
       "source": "function:src/extensions/default-layout/sidebar/item-row.test.tsx:renderItemRow",
       "target": "function:src/extensions/default-layout/sidebar/item-row.tsx:ItemRow",
       "type": "calls",
@@ -87436,27 +87715,6 @@
     {
       "source": "function:src/extensions/default-layout/sidebar/menuItems.ts:buildSidebarMenuItems",
       "target": "function:src/extensions/default-layout/sidebar/menuItems.ts:canRemoveWorkspace",
-      "type": "calls",
-      "direction": "forward",
-      "weight": 0.8
-    },
-    {
-      "source": "function:src/extensions/default-layout/sidebar/searchable-section.tsx:SearchableSidebarSection",
-      "target": "function:src/extensions/default-layout/sidebar/filter.ts:filterItems",
-      "type": "calls",
-      "direction": "forward",
-      "weight": 0.8
-    },
-    {
-      "source": "function:src/extensions/default-layout/sidebar/searchable-section.tsx:SearchableSidebarSection",
-      "target": "function:src/extensions/default-layout/sidebar/filter.ts:providerOf",
-      "type": "calls",
-      "direction": "forward",
-      "weight": 0.8
-    },
-    {
-      "source": "function:src/extensions/default-layout/sidebar/searchable-section.tsx:SearchableSidebarSection",
-      "target": "function:src/extensions/default-layout/sidebar/item-row.tsx:ItemRow",
       "type": "calls",
       "direction": "forward",
       "weight": 0.8
@@ -87492,48 +87750,6 @@
     {
       "source": "file:src/extensions/default-layout/shell/panel.tsx",
       "target": "file:src/extensions/default-layout/shell/panel-helpers.ts",
-      "type": "depends_on",
-      "direction": "forward",
-      "weight": 0.6
-    },
-    {
-      "source": "file:src/extensions/default-layout/sidebar/index.tsx",
-      "target": "file:src/extensions/default-layout/sidebar/contextMenu.tsx",
-      "type": "depends_on",
-      "direction": "forward",
-      "weight": 0.6
-    },
-    {
-      "source": "file:src/extensions/default-layout/sidebar/index.tsx",
-      "target": "file:src/extensions/default-layout/sidebar/sections.ts",
-      "type": "depends_on",
-      "direction": "forward",
-      "weight": 0.6
-    },
-    {
-      "source": "file:src/extensions/default-layout/sidebar/index.tsx",
-      "target": "file:src/extensions/default-layout/sidebar/menuItems.ts",
-      "type": "depends_on",
-      "direction": "forward",
-      "weight": 0.6
-    },
-    {
-      "source": "file:src/extensions/default-layout/sidebar/index.tsx",
-      "target": "file:src/extensions/default-layout/sidebar/item-row.tsx",
-      "type": "depends_on",
-      "direction": "forward",
-      "weight": 0.6
-    },
-    {
-      "source": "file:src/extensions/default-layout/sidebar/index.tsx",
-      "target": "file:src/extensions/default-layout/sidebar/searchable-section.tsx",
-      "type": "depends_on",
-      "direction": "forward",
-      "weight": 0.6
-    },
-    {
-      "source": "file:src/extensions/default-layout/sidebar/searchable-section.tsx",
-      "target": "file:src/extensions/default-layout/sidebar/filter.ts",
       "type": "depends_on",
       "direction": "forward",
       "weight": 0.6
@@ -87905,90 +88121,6 @@
     {
       "source": "file:src/extensions/default-layout/toggle-switch.tsx",
       "target": "function:src/extensions/default-layout/toggle-switch.tsx:ToggleSwitch",
-      "type": "exports",
-      "direction": "forward",
-      "weight": 0.8
-    },
-    {
-      "source": "file:src/extensions/default-layout/tool-card.tsx",
-      "target": "function:src/extensions/default-layout/tool-card.tsx:readSubagentProgress",
-      "type": "contains",
-      "direction": "forward",
-      "weight": 1
-    },
-    {
-      "source": "file:src/extensions/default-layout/tool-card.tsx",
-      "target": "function:src/extensions/default-layout/tool-card.tsx:SubagentActivity",
-      "type": "contains",
-      "direction": "forward",
-      "weight": 1
-    },
-    {
-      "source": "file:src/extensions/default-layout/tool-card.tsx",
-      "target": "function:src/extensions/default-layout/tool-card.tsx:SubagentActivityStack",
-      "type": "contains",
-      "direction": "forward",
-      "weight": 1
-    },
-    {
-      "source": "file:src/extensions/default-layout/tool-card.tsx",
-      "target": "function:src/extensions/default-layout/tool-card.tsx:SubagentResult",
-      "type": "contains",
-      "direction": "forward",
-      "weight": 1
-    },
-    {
-      "source": "file:src/extensions/default-layout/tool-card.tsx",
-      "target": "function:src/extensions/default-layout/tool-card.tsx:SubagentResult",
-      "type": "exports",
-      "direction": "forward",
-      "weight": 0.8
-    },
-    {
-      "source": "file:src/extensions/default-layout/tool-card.tsx",
-      "target": "function:src/extensions/default-layout/tool-card.tsx:formatToolDuration",
-      "type": "contains",
-      "direction": "forward",
-      "weight": 1
-    },
-    {
-      "source": "file:src/extensions/default-layout/tool-card.tsx",
-      "target": "function:src/extensions/default-layout/tool-card.tsx:formatToolDuration",
-      "type": "exports",
-      "direction": "forward",
-      "weight": 0.8
-    },
-    {
-      "source": "file:src/extensions/default-layout/tool-card.tsx",
-      "target": "function:src/extensions/default-layout/tool-card.tsx:ToolStatusIcon",
-      "type": "contains",
-      "direction": "forward",
-      "weight": 1
-    },
-    {
-      "source": "file:src/extensions/default-layout/tool-card.tsx",
-      "target": "function:src/extensions/default-layout/tool-card.tsx:lineTone",
-      "type": "contains",
-      "direction": "forward",
-      "weight": 1
-    },
-    {
-      "source": "file:src/extensions/default-layout/tool-card.tsx",
-      "target": "function:src/extensions/default-layout/tool-card.tsx:ToolFileChangePreview",
-      "type": "contains",
-      "direction": "forward",
-      "weight": 1
-    },
-    {
-      "source": "file:src/extensions/default-layout/tool-card.tsx",
-      "target": "function:src/extensions/default-layout/tool-card.tsx:ToolCard",
-      "type": "contains",
-      "direction": "forward",
-      "weight": 1
-    },
-    {
-      "source": "file:src/extensions/default-layout/tool-card.tsx",
-      "target": "function:src/extensions/default-layout/tool-card.tsx:ToolCard",
       "type": "exports",
       "direction": "forward",
       "weight": 0.8
@@ -88449,48 +88581,6 @@
       "weight": 0.7
     },
     {
-      "source": "file:src/extensions/default-layout/tool-card.tsx",
-      "target": "file:src/components/A2UIRenderer.tsx",
-      "type": "imports",
-      "direction": "forward",
-      "weight": 0.7
-    },
-    {
-      "source": "file:src/extensions/default-layout/tool-card.tsx",
-      "target": "file:src/components/file-icon.tsx",
-      "type": "imports",
-      "direction": "forward",
-      "weight": 0.7
-    },
-    {
-      "source": "file:src/extensions/default-layout/tool-card.tsx",
-      "target": "file:src/extensions/default-layout/sidebar/chevron.tsx",
-      "type": "imports",
-      "direction": "forward",
-      "weight": 0.7
-    },
-    {
-      "source": "file:src/extensions/default-layout/tool-card.tsx",
-      "target": "file:src/hooks/bridgeMessageHandlers/subagentProgress.ts",
-      "type": "imports",
-      "direction": "forward",
-      "weight": 0.7
-    },
-    {
-      "source": "file:src/extensions/default-layout/tool-card.tsx",
-      "target": "file:src/types/a2ui.ts",
-      "type": "imports",
-      "direction": "forward",
-      "weight": 0.7
-    },
-    {
-      "source": "file:src/extensions/default-layout/tool-card.tsx",
-      "target": "file:src/utils/dataBinding.ts",
-      "type": "imports",
-      "direction": "forward",
-      "weight": 0.7
-    },
-    {
       "source": "file:src/extensions/default-layout/variation-components.test.tsx",
       "target": "file:src/extensions/default-layout/variation-components.tsx",
       "type": "imports",
@@ -88799,41 +88889,6 @@
       "weight": 0.8
     },
     {
-      "source": "function:src/extensions/default-layout/tool-card.tsx:SubagentActivityStack",
-      "target": "function:src/extensions/default-layout/tool-card.tsx:SubagentActivity",
-      "type": "calls",
-      "direction": "forward",
-      "weight": 0.8
-    },
-    {
-      "source": "function:src/extensions/default-layout/tool-card.tsx:ToolFileChangePreview",
-      "target": "function:src/extensions/default-layout/tool-card.tsx:lineTone",
-      "type": "calls",
-      "direction": "forward",
-      "weight": 0.8
-    },
-    {
-      "source": "function:src/extensions/default-layout/tool-card.tsx:ToolCard",
-      "target": "function:src/extensions/default-layout/tool-card.tsx:readSubagentProgress",
-      "type": "calls",
-      "direction": "forward",
-      "weight": 0.8
-    },
-    {
-      "source": "function:src/extensions/default-layout/tool-card.tsx:ToolCard",
-      "target": "function:src/extensions/default-layout/tool-card.tsx:formatToolDuration",
-      "type": "calls",
-      "direction": "forward",
-      "weight": 0.8
-    },
-    {
-      "source": "function:src/extensions/default-layout/tool-card.tsx:ToolCard",
-      "target": "function:src/extensions/default-layout/tool-card.tsx:ToolFileChangePreview",
-      "type": "calls",
-      "direction": "forward",
-      "weight": 0.8
-    },
-    {
       "source": "function:src/extensions/default-layout/variation-components.tsx:ModelPicker",
       "target": "function:src/extensions/default-layout/variation-components.tsx:DropdownPickerCore",
       "type": "calls",
@@ -88948,13 +89003,6 @@
     {
       "source": "file:src/extensions/default-layout/toggle-switch.tsx",
       "target": "file:src/extensions/default-layout/toggle-switch.test.tsx",
-      "type": "tested_by",
-      "direction": "forward",
-      "weight": 0.5
-    },
-    {
-      "source": "file:src/extensions/default-layout/tool-card.tsx",
-      "target": "file:src/extensions/default-layout/tool-card.subagent.test.tsx",
       "type": "tested_by",
       "direction": "forward",
       "weight": 0.5
@@ -90983,41 +91031,6 @@
       "weight": 1
     },
     {
-      "source": "file:src/extensions/default-layout/chat.test.tsx",
-      "target": "function:src/extensions/default-layout/chat.test.tsx:renderComposerPills",
-      "type": "contains",
-      "direction": "forward",
-      "weight": 1
-    },
-    {
-      "source": "file:src/extensions/default-layout/chat.test.tsx",
-      "target": "function:src/extensions/default-layout/chat.test.tsx:renderToolCard",
-      "type": "contains",
-      "direction": "forward",
-      "weight": 1
-    },
-    {
-      "source": "file:src/extensions/default-layout/composer-visibility-pills.tsx",
-      "target": "function:src/extensions/default-layout/composer-visibility-pills.tsx:resolveHardEnforce",
-      "type": "contains",
-      "direction": "forward",
-      "weight": 1
-    },
-    {
-      "source": "file:src/extensions/default-layout/composer-visibility-pills.tsx",
-      "target": "function:src/extensions/default-layout/composer-visibility-pills.tsx:ComposerVisibilityPills",
-      "type": "contains",
-      "direction": "forward",
-      "weight": 1
-    },
-    {
-      "source": "file:src/extensions/default-layout/composer-visibility-pills.tsx",
-      "target": "function:src/extensions/default-layout/composer-visibility-pills.tsx:ComposerVisibilityPills",
-      "type": "exports",
-      "direction": "forward",
-      "weight": 0.8
-    },
-    {
       "source": "file:src/extensions/default-layout/dashboard/gh-stats-strip.test.tsx",
       "target": "function:src/extensions/default-layout/dashboard/gh-stats-strip.test.tsx:fullOverview",
       "type": "contains",
@@ -91550,76 +91563,6 @@
       "weight": 0.7
     },
     {
-      "source": "file:src/extensions/default-layout/chat.test.tsx",
-      "target": "file:src/components/A2UIRenderer.tsx",
-      "type": "imports",
-      "direction": "forward",
-      "weight": 0.7
-    },
-    {
-      "source": "file:src/extensions/default-layout/chat.test.tsx",
-      "target": "file:src/extensions/default-layout/chat.tsx",
-      "type": "imports",
-      "direction": "forward",
-      "weight": 0.7
-    },
-    {
-      "source": "file:src/extensions/default-layout/chat.test.tsx",
-      "target": "file:src/extensions/default-layout/composer-visibility-pills.tsx",
-      "type": "imports",
-      "direction": "forward",
-      "weight": 0.7
-    },
-    {
-      "source": "file:src/extensions/default-layout/chat.test.tsx",
-      "target": "file:src/extensions/ExtensionRegistry.ts",
-      "type": "imports",
-      "direction": "forward",
-      "weight": 0.7
-    },
-    {
-      "source": "file:src/extensions/default-layout/chat.test.tsx",
-      "target": "file:src/extensions/ExtensionRegistryProvider.tsx",
-      "type": "imports",
-      "direction": "forward",
-      "weight": 0.7
-    },
-    {
-      "source": "file:src/extensions/default-layout/composer-visibility-pills.tsx",
-      "target": "file:src/components/A2UIRenderer.tsx",
-      "type": "imports",
-      "direction": "forward",
-      "weight": 0.7
-    },
-    {
-      "source": "file:src/extensions/default-layout/composer-visibility-pills.tsx",
-      "target": "file:src/config.ts",
-      "type": "imports",
-      "direction": "forward",
-      "weight": 0.7
-    },
-    {
-      "source": "file:src/extensions/default-layout/composer-visibility-pills.tsx",
-      "target": "file:src/extensions/default-layout/layout/index.ts",
-      "type": "imports",
-      "direction": "forward",
-      "weight": 0.7
-    },
-    {
-      "source": "file:src/extensions/default-layout/composer-visibility-pills.tsx",
-      "target": "file:src/types/tab.ts",
-      "type": "imports",
-      "direction": "forward",
-      "weight": 0.7
-    },
-    {
-      "source": "file:src/extensions/default-layout/composer-visibility-pills.tsx",
-      "target": "file:src/utils/visibilityResolver.ts",
-      "type": "imports",
-      "direction": "forward",
-      "weight": 0.7
-    },
-    {
       "source": "file:src/extensions/default-layout/dashboard/gh-stats-strip.test.tsx",
       "target": "file:src/extensions/default-layout/dashboard/gh-stats-strip.tsx",
       "type": "imports",
@@ -91789,13 +91732,6 @@
     },
     {
       "source": "file:src/extensions/default-layout/chat.tsx",
-      "target": "file:src/extensions/default-layout/chat.test.tsx",
-      "type": "tested_by",
-      "direction": "forward",
-      "weight": 0.5
-    },
-    {
-      "source": "file:src/extensions/default-layout/composer-visibility-pills.tsx",
       "target": "file:src/extensions/default-layout/chat.test.tsx",
       "type": "tested_by",
       "direction": "forward",
@@ -92052,20 +91988,6 @@
       "type": "depends_on",
       "direction": "forward",
       "weight": 0.6
-    },
-    {
-      "source": "function:src/extensions/default-layout/composer-visibility-pills.tsx:ComposerVisibilityPills",
-      "target": "function:src/utils/visibilityResolver.ts:resolveVisibility",
-      "type": "calls",
-      "direction": "forward",
-      "weight": 0.8
-    },
-    {
-      "source": "function:src/extensions/default-layout/composer-visibility-pills.tsx:ComposerVisibilityPills",
-      "target": "function:src/extensions/default-layout/composer-visibility-pills.tsx:resolveHardEnforce",
-      "type": "calls",
-      "direction": "forward",
-      "weight": 0.8
     },
     {
       "source": "function:src/extensions/default-layout/dashboard/gh-stats-strip.tsx:GhStatsStrip",
@@ -107868,14 +107790,6 @@
       "weight": 0.7
     },
     {
-      "source": "file:src/extensions/default-layout/sidebar/index.tsx",
-      "target": "file:src/extensions/default-layout/sidebar/index.test.tsx",
-      "type": "tested_by",
-      "direction": "forward",
-      "weight": 0.5,
-      "description": "Path-based pairing (deterministic)"
-    },
-    {
       "source": "file:src/utils/messages.ts",
       "target": "file:src/utils/messages.test.ts",
       "type": "tested_by",
@@ -108161,13 +108075,6 @@
       "weight": 0.8
     },
     {
-      "source": "function:src/extensions/default-layout/composer-visibility-pills.tsx:ComposerVisibilityPills",
-      "target": "function:src/extensions/default-layout/layout/mark.tsx:readUiScale",
-      "type": "calls",
-      "direction": "forward",
-      "weight": 0.8
-    },
-    {
       "source": "function:src/eventRoutes/dashboard.ts:handleProjectsDashboard",
       "target": "function:src/eventRoutes/sidebar/session.ts:handleSidebarDeleteSession",
       "type": "calls",
@@ -108184,6 +108091,1273 @@
     {
       "source": "function:src/eventRoutes/dashboard.ts:handleProjectDashboard",
       "target": "function:src/eventRoutes/sidebar/workspace.ts:handleSidebarRemoveWorkspace",
+      "type": "calls",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "file:agent/session-history.test.ts",
+      "target": "file:agent/session-history/index.ts",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7
+    },
+    {
+      "source": "file:agent/session-history.test.ts",
+      "target": "file:agent/session-history/restore.ts",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7
+    },
+    {
+      "source": "file:agent/session-history.test.ts",
+      "target": "file:agent/silent-tools.ts",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7
+    },
+    {
+      "source": "file:agent/tab-lifecycle.test.ts",
+      "target": "file:agent/state.ts",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7
+    },
+    {
+      "source": "file:agent/tab-lifecycle.test.ts",
+      "target": "file:agent/silent-tools.ts",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7
+    },
+    {
+      "source": "file:agent/tab-lifecycle.test.ts",
+      "target": "file:agent/tab-lifecycle/index.ts",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/extensions/default-layout/chat.test.tsx",
+      "target": "file:src/extensions/default-layout/chat.tsx",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/extensions/default-layout/chat.test.tsx",
+      "target": "file:src/extensions/default-layout/composer-visibility-pills.tsx",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/extensions/default-layout/chat.test.tsx",
+      "target": "file:src/extensions/ExtensionRegistry.ts",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/extensions/default-layout/chat.test.tsx",
+      "target": "file:src/extensions/ExtensionRegistryProvider.tsx",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/extensions/default-layout/chat.test.tsx",
+      "target": "file:src/components/A2UIRenderer.tsx",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/extensions/default-layout/composer-visibility-pills.tsx",
+      "target": "file:src/components/A2UIRenderer.tsx",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/extensions/default-layout/composer-visibility-pills.tsx",
+      "target": "file:src/utils/visibilityResolver.ts",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/extensions/default-layout/composer-visibility-pills.tsx",
+      "target": "file:src/config.ts",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/extensions/default-layout/composer-visibility-pills.tsx",
+      "target": "file:src/types/tab.ts",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/extensions/default-layout/composer-visibility-pills.tsx",
+      "target": "file:src/extensions/default-layout/layout/index.ts",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/extensions/default-layout/question-card.tsx",
+      "target": "file:src/components/A2UIRenderer.tsx",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/extensions/default-layout/sidebar/host-group.tsx",
+      "target": "file:src/extensions/default-layout/sidebar/chevron.tsx",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/extensions/default-layout/composer-visibility-pills.tsx",
+      "target": "function:src/extensions/default-layout/composer-visibility-pills.tsx:ComposerVisibilityPills",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:src/extensions/default-layout/composer-visibility-pills.tsx",
+      "target": "function:src/extensions/default-layout/composer-visibility-pills.tsx:resolveHardEnforce",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:src/extensions/default-layout/question-card.tsx",
+      "target": "function:src/extensions/default-layout/question-card.tsx:QuestionCard",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:src/extensions/default-layout/question-card.tsx",
+      "target": "function:src/extensions/default-layout/question-card.tsx:normalizeChoices",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:src/extensions/default-layout/question-card.tsx",
+      "target": "function:src/extensions/default-layout/question-card.tsx:normalizeAnswer",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:src/extensions/default-layout/sidebar/host-group.tsx",
+      "target": "function:src/extensions/default-layout/sidebar/host-group.tsx:HostGroup",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:src/extensions/default-layout/sidebar/host-group.tsx",
+      "target": "function:src/extensions/default-layout/sidebar/host-group.tsx:HostGlyph",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:agent/tab-lifecycle.test.ts",
+      "target": "function:agent/tab-lifecycle.test.ts:fakeRec",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:cli/docs-dev.test.ts",
+      "target": "function:cli/docs-dev.test.ts:listenLoopback",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:src/extensions/default-layout/chat.test.tsx",
+      "target": "function:src/extensions/default-layout/chat.test.tsx:renderComposerPills",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:src/extensions/default-layout/chat.test.tsx",
+      "target": "function:src/extensions/default-layout/chat.test.tsx:renderToolCard",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:src/extensions/default-layout/composer-visibility-pills.tsx",
+      "target": "function:src/extensions/default-layout/composer-visibility-pills.tsx:ComposerVisibilityPills",
+      "type": "exports",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "file:src/extensions/default-layout/question-card.tsx",
+      "target": "function:src/extensions/default-layout/question-card.tsx:QuestionCard",
+      "type": "exports",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "file:src/extensions/default-layout/sidebar/host-group.tsx",
+      "target": "function:src/extensions/default-layout/sidebar/host-group.tsx:HostGroup",
+      "type": "exports",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "function:src/extensions/default-layout/composer-visibility-pills.tsx:ComposerVisibilityPills",
+      "target": "function:src/extensions/default-layout/composer-visibility-pills.tsx:resolveHardEnforce",
+      "type": "calls",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "function:src/extensions/default-layout/question-card.tsx:QuestionCard",
+      "target": "function:src/extensions/default-layout/question-card.tsx:normalizeChoices",
+      "type": "calls",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "function:src/extensions/default-layout/question-card.tsx:QuestionCard",
+      "target": "function:src/extensions/default-layout/question-card.tsx:normalizeAnswer",
+      "type": "calls",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "file:agent/session-history/restore.ts",
+      "target": "file:agent/session-history.test.ts",
+      "type": "tested_by",
+      "direction": "forward",
+      "weight": 0.5
+    },
+    {
+      "source": "file:agent/state.ts",
+      "target": "file:agent/tab-lifecycle.test.ts",
+      "type": "tested_by",
+      "direction": "forward",
+      "weight": 0.5
+    },
+    {
+      "source": "file:src/extensions/default-layout/composer-visibility-pills.tsx",
+      "target": "file:src/extensions/default-layout/chat.test.tsx",
+      "type": "tested_by",
+      "direction": "forward",
+      "weight": 0.5
+    },
+    {
+      "source": "file:src/extensions/default-layout/sidebar/index.tsx",
+      "target": "function:src/extensions/default-layout/sidebar/index.tsx:Sidebar",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:src/extensions/default-layout/sidebar/index.tsx",
+      "target": "function:src/extensions/default-layout/sidebar/index.tsx:readSectionCollapsed",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:src/extensions/default-layout/sidebar/index.tsx",
+      "target": "function:src/extensions/default-layout/sidebar/index.tsx:writeSectionCollapsed",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:src/extensions/default-layout/sidebar/index.tsx",
+      "target": "function:src/extensions/default-layout/sidebar/index.tsx:SidebarSectionBlock",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:src/extensions/default-layout/sidebar/item-row.tsx",
+      "target": "function:src/extensions/default-layout/sidebar/item-row.tsx:ItemRow",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:src/extensions/default-layout/sidebar/searchable-section.tsx",
+      "target": "function:src/extensions/default-layout/sidebar/searchable-section.tsx:SearchableSidebarSection",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:src/extensions/default-layout/sidebar/index.tsx",
+      "target": "function:src/extensions/default-layout/sidebar/index.tsx:Sidebar",
+      "type": "exports",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "file:src/extensions/default-layout/sidebar/item-row.tsx",
+      "target": "function:src/extensions/default-layout/sidebar/item-row.tsx:ItemRow",
+      "type": "exports",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "file:src/extensions/default-layout/sidebar/searchable-section.tsx",
+      "target": "function:src/extensions/default-layout/sidebar/searchable-section.tsx:SearchableSidebarSection",
+      "type": "exports",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "file:src/extensions/default-layout/sidebar/index.tsx",
+      "target": "file:src/types/a2ui.ts",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/extensions/default-layout/sidebar/index.tsx",
+      "target": "file:src/utils/dataBinding.ts",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/extensions/default-layout/sidebar/index.tsx",
+      "target": "file:src/utils/platform.ts",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/extensions/default-layout/sidebar/index.tsx",
+      "target": "file:src/utils/windowDrag.ts",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/extensions/default-layout/sidebar/index.tsx",
+      "target": "file:src/components/primitives/context-menu.tsx",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/extensions/default-layout/sidebar/index.tsx",
+      "target": "file:src/components/A2UIRenderer.tsx",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/extensions/default-layout/sidebar/index.tsx",
+      "target": "file:src/extensions/default-layout/sidebar/workspace-row.tsx",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/extensions/default-layout/sidebar/index.tsx",
+      "target": "file:src/extensions/default-layout/layout/index.ts",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/extensions/default-layout/sidebar/index.tsx",
+      "target": "file:src/extensions/default-layout/sidebar/host-group.tsx",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/extensions/default-layout/sidebar/index.tsx",
+      "target": "file:src/extensions/default-layout/sidebar/item-row.tsx",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/extensions/default-layout/sidebar/index.tsx",
+      "target": "file:src/extensions/default-layout/toggle-switch.tsx",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/extensions/default-layout/sidebar/index.tsx",
+      "target": "file:src/extensions/default-layout/sidebar/searchable-section.tsx",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/extensions/default-layout/sidebar/index.tsx",
+      "target": "file:src/extensions/default-layout/sidebar/chevron.tsx",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/extensions/default-layout/sidebar/index.tsx",
+      "target": "file:src/extensions/default-layout/sidebar/contextMenu.tsx",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/extensions/default-layout/sidebar/index.tsx",
+      "target": "file:src/extensions/default-layout/sidebar/resize.ts",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/extensions/default-layout/sidebar/index.tsx",
+      "target": "file:src/extensions/default-layout/sidebar/sections.ts",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/extensions/default-layout/sidebar/index.tsx",
+      "target": "file:src/extensions/default-layout/sidebar/menuItems.ts",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/extensions/default-layout/sidebar/item-row.tsx",
+      "target": "file:src/types/a2ui.ts",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/extensions/default-layout/sidebar/item-row.tsx",
+      "target": "file:src/components/A2UIRenderer.tsx",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/extensions/default-layout/sidebar/item-row.tsx",
+      "target": "file:src/extensions/default-layout/sidebar/chevron.tsx",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/extensions/default-layout/sidebar/searchable-section.tsx",
+      "target": "file:src/types/a2ui.ts",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/extensions/default-layout/sidebar/searchable-section.tsx",
+      "target": "file:src/components/A2UIRenderer.tsx",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/extensions/default-layout/sidebar/searchable-section.tsx",
+      "target": "file:src/extensions/default-layout/sidebar/chevron.tsx",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/extensions/default-layout/sidebar/searchable-section.tsx",
+      "target": "file:src/extensions/default-layout/sidebar/filter.ts",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/extensions/default-layout/sidebar/searchable-section.tsx",
+      "target": "file:src/extensions/default-layout/sidebar/item-row.tsx",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7
+    },
+    {
+      "source": "function:src/extensions/default-layout/sidebar/index.tsx:Sidebar",
+      "target": "function:src/extensions/default-layout/sidebar/index.tsx:SidebarSectionBlock",
+      "type": "calls",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "function:src/extensions/default-layout/sidebar/index.tsx:Sidebar",
+      "target": "function:src/extensions/default-layout/sidebar/searchable-section.tsx:SearchableSidebarSection",
+      "type": "calls",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "function:src/extensions/default-layout/sidebar/index.tsx:SidebarSectionBlock",
+      "target": "function:src/extensions/default-layout/sidebar/item-row.tsx:ItemRow",
+      "type": "calls",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "function:src/extensions/default-layout/sidebar/index.tsx:SidebarSectionBlock",
+      "target": "function:src/extensions/default-layout/sidebar/index.tsx:readSectionCollapsed",
+      "type": "calls",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "function:src/extensions/default-layout/sidebar/index.tsx:SidebarSectionBlock",
+      "target": "function:src/extensions/default-layout/sidebar/index.tsx:writeSectionCollapsed",
+      "type": "calls",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "function:src/extensions/default-layout/sidebar/searchable-section.tsx:SearchableSidebarSection",
+      "target": "function:src/extensions/default-layout/sidebar/item-row.tsx:ItemRow",
+      "type": "calls",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "file:src/extensions/default-layout/tool-activity-summary.ts",
+      "target": "function:src/extensions/default-layout/tool-activity-summary.ts:compactDuration",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:src/extensions/default-layout/tool-activity-summary.ts",
+      "target": "function:src/extensions/default-layout/tool-activity-summary.ts:toolCountLabel",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:src/extensions/default-layout/tool-activity-summary.ts",
+      "target": "function:src/extensions/default-layout/tool-activity-summary.ts:workedLabel",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:src/extensions/default-layout/tool-activity-summary.ts",
+      "target": "function:src/extensions/default-layout/tool-activity-summary.ts:fileChangeLabel",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:src/extensions/default-layout/tool-activity-summary.ts",
+      "target": "function:src/extensions/default-layout/tool-activity-summary.ts:activityLabel",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:src/extensions/default-layout/tool-activity-summary.ts",
+      "target": "function:src/extensions/default-layout/tool-activity-summary.ts:activityMeta",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:src/extensions/default-layout/tool-activity-summary.ts",
+      "target": "function:src/extensions/default-layout/tool-activity-summary.ts:fileChangeStatsLabel",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:src/extensions/default-layout/tool-activity-summary.ts",
+      "target": "function:src/extensions/default-layout/tool-activity-summary.ts:collectFileChangeEntries",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:src/extensions/default-layout/tool-activity-summary.ts",
+      "target": "function:src/extensions/default-layout/tool-activity-summary.ts:hasFileChange",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:src/extensions/default-layout/tool-activity-summary.ts",
+      "target": "function:src/extensions/default-layout/tool-activity-summary.ts:hasToolCardChildren",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:src/extensions/default-layout/tool-activity-summary.ts",
+      "target": "function:src/extensions/default-layout/tool-activity-summary.ts:basename",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:src/extensions/default-layout/tool-activity-summary.ts",
+      "target": "function:src/extensions/default-layout/tool-activity-summary.ts:parentPath",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:src/extensions/default-layout/tool-activity-summary.ts",
+      "target": "function:src/extensions/default-layout/tool-activity-summary.ts:previewLines",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:src/extensions/default-layout/tool-activity-summary.ts",
+      "target": "function:src/extensions/default-layout/tool-activity-summary.ts:looksLikeUnifiedDiff",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:src/extensions/default-layout/tool-activity-summary.ts",
+      "target": "function:src/extensions/default-layout/tool-activity-summary.ts:effectiveStats",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:src/extensions/default-layout/tool-activity-summary.ts",
+      "target": "function:src/extensions/default-layout/tool-activity-summary.ts:summaryWithFileEntries",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:src/extensions/default-layout/tool-activity-summary.ts",
+      "target": "function:src/extensions/default-layout/tool-activity-summary.ts:lineTone",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:src/extensions/default-layout/tool-activity-summary.ts",
+      "target": "function:src/extensions/default-layout/tool-activity-summary.ts:toolStateLabel",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:src/extensions/default-layout/tool-activity-summary.ts",
+      "target": "function:src/extensions/default-layout/tool-activity-summary.ts:toolDurationLabel",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:src/extensions/default-layout/tool-card.tsx",
+      "target": "function:src/extensions/default-layout/tool-card.tsx:readSubagentProgress",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:src/extensions/default-layout/tool-card.tsx",
+      "target": "function:src/extensions/default-layout/tool-card.tsx:SubagentActivity",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:src/extensions/default-layout/tool-card.tsx",
+      "target": "function:src/extensions/default-layout/tool-card.tsx:isBatchProgress",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:src/extensions/default-layout/tool-card.tsx",
+      "target": "function:src/extensions/default-layout/tool-card.tsx:SubagentActivityStack",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:src/extensions/default-layout/tool-card.tsx",
+      "target": "function:src/extensions/default-layout/tool-card.tsx:SubagentResult",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:src/extensions/default-layout/tool-card.tsx",
+      "target": "function:src/extensions/default-layout/tool-card.tsx:formatToolDuration",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:src/extensions/default-layout/tool-card.tsx",
+      "target": "function:src/extensions/default-layout/tool-card.tsx:ToolStatusIcon",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:src/extensions/default-layout/tool-card.tsx",
+      "target": "function:src/extensions/default-layout/tool-card.tsx:basename",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:src/extensions/default-layout/tool-card.tsx",
+      "target": "function:src/extensions/default-layout/tool-card.tsx:parentPath",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:src/extensions/default-layout/tool-card.tsx",
+      "target": "function:src/extensions/default-layout/tool-card.tsx:previewLines",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:src/extensions/default-layout/tool-card.tsx",
+      "target": "function:src/extensions/default-layout/tool-card.tsx:looksLikeUnifiedDiff",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:src/extensions/default-layout/tool-card.tsx",
+      "target": "function:src/extensions/default-layout/tool-card.tsx:lineTone",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:src/extensions/default-layout/tool-card.tsx",
+      "target": "function:src/extensions/default-layout/tool-card.tsx:ToolFileChangeBody",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:src/extensions/default-layout/tool-card.tsx",
+      "target": "function:src/extensions/default-layout/tool-card.tsx:ToolCard",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:src/extensions/default-layout/turn-activity.tsx",
+      "target": "function:src/extensions/default-layout/turn-activity.tsx:prefersReducedMotion",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:src/extensions/default-layout/turn-activity.tsx",
+      "target": "function:src/extensions/default-layout/turn-activity.tsx:ToolActivityRow",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:src/extensions/default-layout/turn-activity.tsx",
+      "target": "function:src/extensions/default-layout/turn-activity.tsx:TurnActivity",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:src/extensions/default-layout/tool-activity-summary.ts",
+      "target": "function:src/extensions/default-layout/tool-activity-summary.ts:compactDuration",
+      "type": "exports",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "file:src/extensions/default-layout/tool-activity-summary.ts",
+      "target": "function:src/extensions/default-layout/tool-activity-summary.ts:toolCountLabel",
+      "type": "exports",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "file:src/extensions/default-layout/tool-activity-summary.ts",
+      "target": "function:src/extensions/default-layout/tool-activity-summary.ts:workedLabel",
+      "type": "exports",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "file:src/extensions/default-layout/tool-activity-summary.ts",
+      "target": "function:src/extensions/default-layout/tool-activity-summary.ts:fileChangeLabel",
+      "type": "exports",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "file:src/extensions/default-layout/tool-activity-summary.ts",
+      "target": "function:src/extensions/default-layout/tool-activity-summary.ts:activityLabel",
+      "type": "exports",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "file:src/extensions/default-layout/tool-activity-summary.ts",
+      "target": "function:src/extensions/default-layout/tool-activity-summary.ts:activityMeta",
+      "type": "exports",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "file:src/extensions/default-layout/tool-activity-summary.ts",
+      "target": "function:src/extensions/default-layout/tool-activity-summary.ts:fileChangeStatsLabel",
+      "type": "exports",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "file:src/extensions/default-layout/tool-activity-summary.ts",
+      "target": "function:src/extensions/default-layout/tool-activity-summary.ts:collectFileChangeEntries",
+      "type": "exports",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "file:src/extensions/default-layout/tool-activity-summary.ts",
+      "target": "function:src/extensions/default-layout/tool-activity-summary.ts:hasFileChange",
+      "type": "exports",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "file:src/extensions/default-layout/tool-activity-summary.ts",
+      "target": "function:src/extensions/default-layout/tool-activity-summary.ts:hasToolCardChildren",
+      "type": "exports",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "file:src/extensions/default-layout/tool-activity-summary.ts",
+      "target": "function:src/extensions/default-layout/tool-activity-summary.ts:basename",
+      "type": "exports",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "file:src/extensions/default-layout/tool-activity-summary.ts",
+      "target": "function:src/extensions/default-layout/tool-activity-summary.ts:parentPath",
+      "type": "exports",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "file:src/extensions/default-layout/tool-activity-summary.ts",
+      "target": "function:src/extensions/default-layout/tool-activity-summary.ts:previewLines",
+      "type": "exports",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "file:src/extensions/default-layout/tool-activity-summary.ts",
+      "target": "function:src/extensions/default-layout/tool-activity-summary.ts:looksLikeUnifiedDiff",
+      "type": "exports",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "file:src/extensions/default-layout/tool-activity-summary.ts",
+      "target": "function:src/extensions/default-layout/tool-activity-summary.ts:effectiveStats",
+      "type": "exports",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "file:src/extensions/default-layout/tool-activity-summary.ts",
+      "target": "function:src/extensions/default-layout/tool-activity-summary.ts:summaryWithFileEntries",
+      "type": "exports",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "file:src/extensions/default-layout/tool-activity-summary.ts",
+      "target": "function:src/extensions/default-layout/tool-activity-summary.ts:lineTone",
+      "type": "exports",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "file:src/extensions/default-layout/tool-activity-summary.ts",
+      "target": "function:src/extensions/default-layout/tool-activity-summary.ts:toolStateLabel",
+      "type": "exports",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "file:src/extensions/default-layout/tool-activity-summary.ts",
+      "target": "function:src/extensions/default-layout/tool-activity-summary.ts:toolDurationLabel",
+      "type": "exports",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "file:src/extensions/default-layout/tool-card.tsx",
+      "target": "function:src/extensions/default-layout/tool-card.tsx:SubagentResult",
+      "type": "exports",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "file:src/extensions/default-layout/tool-card.tsx",
+      "target": "function:src/extensions/default-layout/tool-card.tsx:formatToolDuration",
+      "type": "exports",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "file:src/extensions/default-layout/tool-card.tsx",
+      "target": "function:src/extensions/default-layout/tool-card.tsx:ToolCard",
+      "type": "exports",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "file:src/extensions/default-layout/turn-activity.tsx",
+      "target": "function:src/extensions/default-layout/turn-activity.tsx:TurnActivity",
+      "type": "exports",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "file:src/extensions/default-layout/tool-activity-summary.ts",
+      "target": "file:src/types/a2ui.ts",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/extensions/default-layout/tool-activity-summary.ts",
+      "target": "file:src/utils/toolCardGrouping.ts",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/extensions/default-layout/tool-card.tsx",
+      "target": "file:src/components/file-icon.tsx",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/extensions/default-layout/tool-card.tsx",
+      "target": "file:src/types/a2ui.ts",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/extensions/default-layout/tool-card.tsx",
+      "target": "file:src/components/A2UIRenderer.tsx",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/extensions/default-layout/tool-card.tsx",
+      "target": "file:src/utils/dataBinding.ts",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/extensions/default-layout/tool-card.tsx",
+      "target": "file:src/hooks/bridgeMessageHandlers/subagentProgress.ts",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/extensions/default-layout/tool-card.tsx",
+      "target": "file:src/extensions/default-layout/sidebar/chevron.tsx",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/extensions/default-layout/turn-activity.tsx",
+      "target": "file:src/components/A2UIRenderer.tsx",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/extensions/default-layout/turn-activity.tsx",
+      "target": "file:src/types/a2ui.ts",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/extensions/default-layout/turn-activity.tsx",
+      "target": "file:src/utils/toolCardGrouping.ts",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/extensions/default-layout/turn-activity.tsx",
+      "target": "file:src/config.ts",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/extensions/default-layout/turn-activity.tsx",
+      "target": "file:src/extensions/default-layout/sidebar/chevron.tsx",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/extensions/default-layout/turn-activity.tsx",
+      "target": "file:src/extensions/default-layout/tool-activity-summary.ts",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7
+    },
+    {
+      "source": "function:src/extensions/default-layout/tool-activity-summary.ts:workedLabel",
+      "target": "function:src/extensions/default-layout/tool-activity-summary.ts:compactDuration",
+      "type": "calls",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "function:src/extensions/default-layout/tool-activity-summary.ts:activityLabel",
+      "target": "function:src/extensions/default-layout/tool-activity-summary.ts:fileChangeLabel",
+      "type": "calls",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "function:src/extensions/default-layout/tool-activity-summary.ts:activityLabel",
+      "target": "function:src/extensions/default-layout/tool-activity-summary.ts:workedLabel",
+      "type": "calls",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "function:src/extensions/default-layout/tool-activity-summary.ts:activityMeta",
+      "target": "function:src/extensions/default-layout/tool-activity-summary.ts:toolCountLabel",
+      "type": "calls",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "function:src/extensions/default-layout/tool-activity-summary.ts:fileChangeStatsLabel",
+      "target": "function:src/extensions/default-layout/tool-activity-summary.ts:fileChangeLabel",
+      "type": "calls",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "function:src/extensions/default-layout/tool-activity-summary.ts:collectFileChangeEntries",
+      "target": "function:src/extensions/default-layout/tool-activity-summary.ts:looksLikeUnifiedDiff",
+      "type": "calls",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "function:src/extensions/default-layout/tool-activity-summary.ts:summaryWithFileEntries",
+      "target": "function:src/extensions/default-layout/tool-activity-summary.ts:effectiveStats",
+      "type": "calls",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "function:src/extensions/default-layout/tool-activity-summary.ts:toolDurationLabel",
+      "target": "function:src/extensions/default-layout/tool-activity-summary.ts:compactDuration",
+      "type": "calls",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "function:src/extensions/default-layout/tool-card.tsx:SubagentActivityStack",
+      "target": "function:src/extensions/default-layout/tool-card.tsx:isBatchProgress",
+      "type": "calls",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "function:src/extensions/default-layout/tool-card.tsx:ToolFileChangeBody",
+      "target": "function:src/extensions/default-layout/tool-card.tsx:basename",
+      "type": "calls",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "function:src/extensions/default-layout/tool-card.tsx:ToolFileChangeBody",
+      "target": "function:src/extensions/default-layout/tool-card.tsx:parentPath",
+      "type": "calls",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "function:src/extensions/default-layout/tool-card.tsx:ToolFileChangeBody",
+      "target": "function:src/extensions/default-layout/tool-card.tsx:looksLikeUnifiedDiff",
+      "type": "calls",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "function:src/extensions/default-layout/tool-card.tsx:ToolFileChangeBody",
+      "target": "function:src/extensions/default-layout/tool-card.tsx:previewLines",
+      "type": "calls",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "function:src/extensions/default-layout/tool-card.tsx:ToolFileChangeBody",
+      "target": "function:src/extensions/default-layout/tool-card.tsx:lineTone",
+      "type": "calls",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "function:src/extensions/default-layout/tool-card.tsx:ToolCard",
+      "target": "function:src/extensions/default-layout/tool-card.tsx:readSubagentProgress",
+      "type": "calls",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "function:src/extensions/default-layout/tool-card.tsx:ToolCard",
+      "target": "function:src/extensions/default-layout/tool-card.tsx:formatToolDuration",
+      "type": "calls",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "function:src/extensions/default-layout/tool-card.tsx:ToolCard",
+      "target": "function:src/extensions/default-layout/tool-card.tsx:ToolFileChangeBody",
+      "type": "calls",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "function:src/extensions/default-layout/tool-card.tsx:ToolCard",
+      "target": "function:src/extensions/default-layout/tool-card.tsx:ToolStatusIcon",
+      "type": "calls",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "function:src/extensions/default-layout/turn-activity.tsx:ToolActivityRow",
+      "target": "function:src/extensions/default-layout/tool-activity-summary.ts:toolStateLabel",
+      "type": "calls",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "function:src/extensions/default-layout/turn-activity.tsx:ToolActivityRow",
+      "target": "function:src/extensions/default-layout/tool-activity-summary.ts:toolDurationLabel",
+      "type": "calls",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "function:src/extensions/default-layout/turn-activity.tsx:TurnActivity",
+      "target": "function:src/extensions/default-layout/tool-activity-summary.ts:collectFileChangeEntries",
+      "type": "calls",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "function:src/extensions/default-layout/turn-activity.tsx:TurnActivity",
+      "target": "function:src/extensions/default-layout/tool-activity-summary.ts:summaryWithFileEntries",
+      "type": "calls",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "function:src/extensions/default-layout/turn-activity.tsx:TurnActivity",
+      "target": "function:src/extensions/default-layout/tool-activity-summary.ts:activityLabel",
+      "type": "calls",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "function:src/extensions/default-layout/turn-activity.tsx:TurnActivity",
+      "target": "function:src/extensions/default-layout/tool-activity-summary.ts:activityMeta",
+      "type": "calls",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "function:src/extensions/default-layout/turn-activity.tsx:TurnActivity",
+      "target": "function:src/extensions/default-layout/tool-activity-summary.ts:fileChangeLabel",
+      "type": "calls",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "function:src/extensions/default-layout/turn-activity.tsx:TurnActivity",
+      "target": "function:src/extensions/default-layout/tool-activity-summary.ts:fileChangeStatsLabel",
+      "type": "calls",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "function:src/extensions/default-layout/turn-activity.tsx:TurnActivity",
+      "target": "function:src/extensions/default-layout/tool-activity-summary.ts:hasFileChange",
+      "type": "calls",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "function:src/extensions/default-layout/turn-activity.tsx:TurnActivity",
+      "target": "function:src/extensions/default-layout/tool-activity-summary.ts:hasToolCardChildren",
+      "type": "calls",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "function:src/extensions/default-layout/turn-activity.tsx:TurnActivity",
+      "target": "function:src/extensions/default-layout/turn-activity.tsx:ToolActivityRow",
+      "type": "calls",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "function:src/extensions/default-layout/turn-activity.tsx:TurnActivity",
+      "target": "function:src/extensions/default-layout/turn-activity.tsx:prefersReducedMotion",
       "type": "calls",
       "direction": "forward",
       "weight": 0.8
@@ -108551,7 +109725,10 @@
         "file:src/monaco/theme.ts",
         "file:src/styles/chrome.css",
         "file:src/styles/themes.css",
-        "file:src/styles/tokens.css"
+        "file:src/styles/tokens.css",
+        "file:src/extensions/default-layout/question-card.tsx",
+        "file:src/extensions/default-layout/tool-activity-summary.ts",
+        "file:src/extensions/default-layout/turn-activity.tsx"
       ]
     },
     {
@@ -109139,7 +110316,8 @@
         "file:src/utils/zoom-probe.test.ts",
         "file:src/vcsSliceCache.test.ts",
         "file:src/workspaceNames.test.ts",
-        "file:src/workspaces.test.ts"
+        "file:src/workspaces.test.ts",
+        "file:cli/docs-dev.test.ts"
       ]
     },
     {
