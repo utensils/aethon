@@ -249,14 +249,13 @@ test("chat canvas contains wide content without horizontal scrolling", async ({
     .evaluate((el) => ({ overflowX: getComputedStyle(el).overflowX }));
   expect(scrollerMetrics.overflowX).toBe("hidden");
 
-  const containment = await page.locator(".ae-tool-card").evaluate((details) => {
-    if (!(details instanceof HTMLDetailsElement)) {
-      throw new Error("expected tool card details element");
-    }
-    details.open = true;
-    details.dispatchEvent(new Event("toggle", { bubbles: true }));
+  // The card is collapsed by default; expand it via its disclosure summary
+  // (a button now, not a <details>) so the code block mounts.
+  await page.locator(".ae-tool-card-summary").click();
+  await expect(page.locator(".ae-tool-card .a2ui-code")).toBeVisible();
 
-    const code = details.querySelector(".a2ui-code");
+  const containment = await page.locator(".ae-tool-card").evaluate((card) => {
+    const code = card.querySelector(".a2ui-code");
     if (!code) throw new Error("expected open tool card code block");
     const scroller = document.querySelector(".a2ui-canvas-scroller");
     const codeRect = code.getBoundingClientRect();

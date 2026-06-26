@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { FileIcon } from "../../components/file-icon";
 import type { BooleanValue, NumberValue, StringValue } from "../../types/a2ui";
 import type { BuiltinComponentProps } from "../../components/A2UIRenderer";
@@ -141,29 +141,12 @@ function ToolStatusIcon({
       </span>
     );
   }
-  if (isError || isCancelled) {
-    const className = isCancelled
-      ? "ae-tool-status-icon ae-tool-status-cancelled"
-      : "ae-tool-status-icon ae-tool-status-error";
-    return (
-      <span
-        role="img"
-        aria-label={isCancelled ? "Tool cancelled" : "Tool failed"}
-        className={className}
-      >
-        <span aria-hidden="true">✕</span>
-      </span>
-    );
-  }
-  return (
-    <span
-      role="img"
-      aria-label="Tool completed"
-      className="ae-tool-status-icon ae-tool-status-done"
-    >
-      <span aria-hidden="true">✓</span>
-    </span>
-  );
+  // Completed / failed / cancelled state is conveyed by the card's border
+  // colour and the duration label ("Completed"/"Failed in …s"), so no static
+  // ✓/✕ glyph is rendered — it was redundant noise on every row.
+  void isError;
+  void isCancelled;
+  return null;
 }
 
 function basename(path: string): string {
@@ -208,18 +191,18 @@ function lineTone(line: string): "add" | "del" | "hunk" | "meta" | "ctx" {
   return "ctx";
 }
 
-function ToolFileChangePreview({
+/** The expandable body of an edit/write card: the file row (open file /
+ *  open diff) plus the inline diff. The "+N -M" stat now lives on the
+ *  tool-card summary line, so this renders only when the card is expanded. */
+function ToolFileChangeBody({
   change,
   onEvent,
 }: {
   change: ToolFileChange;
   onEvent: BuiltinComponentProps["onEvent"];
 }) {
-  const [open, setOpen] = useState(false);
   const filePath = typeof change.path === "string" ? change.path : "";
   if (!filePath) return null;
-  const kind = change.kind === "created" ? "created" : "edited";
-  const label = kind === "created" ? "Created 1 file" : "Edited 1 file";
   const fileName = basename(filePath);
   const dir = parentPath(filePath);
   const additions =
@@ -250,84 +233,54 @@ function ToolFileChangePreview({
   };
 
   return (
-    <details
-      className="ae-tool-file-change"
-      onToggle={(event) => setOpen(event.currentTarget.open)}
-    >
-      <summary className="ae-tool-file-change-summary">
-        <span className="ae-tool-file-change-chevron" aria-hidden="true">
-          <Chevron expanded={open} />
+    <div className="ae-tool-file-change-body">
+      <div className="ae-tool-file-row">
+        <button
+          type="button"
+          className="ae-tool-file-open"
+          title={`Open ${filePath}`}
+          onClick={() => onEvent("tool-file-open", eventPayload)}
+        >
+          <FileIcon path={filePath} isDir={false} className="ae-tool-file-icon" />
+          <span className="ae-tool-file-name">{fileName}</span>
+          {dir ? <span className="ae-tool-file-dir">{dir}</span> : null}
+        </button>
+        <span className="ae-tool-file-stat" aria-label="Line changes">
+          {additions > 0 ? (
+            <span className="ae-tool-file-add">+{additions}</span>
+          ) : null}
+          {deletions > 0 ? (
+            <span className="ae-tool-file-del">-{deletions}</span>
+          ) : null}
         </span>
-        <span className="ae-tool-file-change-icon" aria-hidden="true">
-          ✎
-        </span>
-        <span className="ae-tool-file-change-label">{label}</span>
-        {(additions > 0 || deletions > 0) && (
-          <span className="ae-tool-file-change-stat" aria-label="Line changes">
-            {additions > 0 ? (
-              <span className="ae-tool-file-add">+{additions}</span>
-            ) : null}
-            {deletions > 0 ? (
-              <span className="ae-tool-file-del">-{deletions}</span>
-            ) : null}
-          </span>
-        )}
-      </summary>
-      <div className="ae-tool-file-change-body">
-        <div className="ae-tool-file-row">
-          <button
-            type="button"
-            className="ae-tool-file-open"
-            title={`Open ${filePath}`}
-            onClick={() => onEvent("tool-file-open", eventPayload)}
-          >
-            <FileIcon
-              path={filePath}
-              isDir={false}
-              className="ae-tool-file-icon"
-            />
-            <span className="ae-tool-file-name">{fileName}</span>
-            {dir ? <span className="ae-tool-file-dir">{dir}</span> : null}
-          </button>
-          <span className="ae-tool-file-stat" aria-label="Line changes">
-            {additions > 0 ? (
-              <span className="ae-tool-file-add">+{additions}</span>
-            ) : null}
-            {deletions > 0 ? (
-              <span className="ae-tool-file-del">-{deletions}</span>
-            ) : null}
-          </span>
-          <button
-            type="button"
-            className="ae-tool-file-diff"
-            title={`Open diff for ${filePath}`}
-            aria-label={`Open diff for ${fileName}`}
-            onClick={() => onEvent("tool-file-diff", eventPayload)}
-          >
-            ⧉
-          </button>
-        </div>
-        {change.preview ? (
-          <pre className="ae-tool-file-diff-preview">
-            <code>
-              {previewLines(change.preview).map((line, index) => (
-                <span
-                  key={`${index}-${line}`}
-                  className={`ae-tool-file-diff-line is-${lineTone(line)}`}
-                >
-                  <span className="ae-tool-file-diff-lineno">{index + 1}</span>
-                  <span className="ae-tool-file-diff-text">{line || " "}</span>
-                </span>
-              ))}
-            </code>
-          </pre>
-        ) : (
-          <div className="ae-tool-file-no-preview">
-            No inline diff available
-          </div>
-        )}
+        <button
+          type="button"
+          className="ae-tool-file-diff"
+          title={`Open diff for ${filePath}`}
+          aria-label={`Open diff for ${fileName}`}
+          onClick={() => onEvent("tool-file-diff", eventPayload)}
+        >
+          ⧉
+        </button>
       </div>
-    </details>
+      {change.preview ? (
+        <pre className="ae-tool-file-diff-preview">
+          <code>
+            {previewLines(change.preview).map((line, index) => (
+              <span
+                key={`${index}-${line}`}
+                className={`ae-tool-file-diff-line is-${lineTone(line)}`}
+              >
+                <span className="ae-tool-file-diff-lineno">{index + 1}</span>
+                <span className="ae-tool-file-diff-text">{line || " "}</span>
+              </span>
+            ))}
+          </code>
+        </pre>
+      ) : (
+        <div className="ae-tool-file-no-preview">No inline diff available</div>
+      )}
+    </div>
   );
 }
 
@@ -346,7 +299,8 @@ export function ToolCard({
     toolName?: StringValue;
     status?: StringValue;
     fileChange?: ToolFileChange;
-    defaultOpen?: BooleanValue;
+    filePath?: StringValue;
+    rootPath?: StringValue;
   };
   const baseTitle = props.title ? resolveString(props.title, state) : "";
   const description = props.description
@@ -367,10 +321,25 @@ export function ToolCard({
   const status = props.status ? resolveString(props.status, state) : undefined;
   const isCancelled = status === "cancelled";
   const running = startedAt !== undefined && endedAt === undefined;
-  const defaultOpen = props.defaultOpen
-    ? resolveBoolean(props.defaultOpen, state)
-    : false;
-  const [open, setOpen] = useState(defaultOpen);
+  // Tool calls are collapsed by default — the card shows only its summary
+  // row until the user expands it (or hits "expand all"). Edits keep their
+  // file-change summary visible because that lives outside the collapsible
+  // body; only the raw output (bash stdout, etc.) hides.
+  const [open, setOpen] = useState(false);
+  const cardRef = useRef<HTMLDivElement>(null);
+  // Respond to this turn's expand/collapse-all. The turn toolbar dispatches
+  // the event onto each card element in its own subtree (not window), so a
+  // turn's "Expand all" never reaches cards in sibling turns.
+  useEffect(() => {
+    const el = cardRef.current;
+    if (!el) return;
+    const onSetOpen = (event: Event) => {
+      const detail = (event as CustomEvent<{ open?: boolean }>).detail;
+      if (detail && typeof detail.open === "boolean") setOpen(detail.open);
+    };
+    el.addEventListener("aethon:tool-card-set-open", onSetOpen);
+    return () => el.removeEventListener("aethon:tool-card-set-open", onSetOpen);
+  }, []);
 
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -403,46 +372,131 @@ export function ToolCard({
     return `Completed in ${duration}`;
   }, [running, startedAt, elapsedMs, isCancelled, isError]);
 
+  // A successful `read` renders as a single clickable filename (opens in the
+  // Monaco editor) — no file-content dump. The path is taken from the
+  // explicit `filePath` prop when present, else parsed out of the legacy
+  // description ("<path> lines N-M") for older restored sessions.
+  const readFilePath = props.filePath ? resolveString(props.filePath, state) : "";
+  const readRootPath = props.rootPath ? resolveString(props.rootPath, state) : "";
+  const openPath =
+    readFilePath || (description ?? "").replace(/\s+lines\s+\S.*$/, "");
+  if (toolName === "read" && !isError && openPath) {
+    return (
+      <div className="ae-tool-card ae-tool-card-read">
+        <div className="ae-tool-card-summary">
+          <ToolStatusIcon
+            running={running}
+            isError={isError}
+            isCancelled={isCancelled}
+            isLongRunning={isLongRunning}
+          />
+          <span className="ae-tool-card-name">{baseTitle}</span>
+          <button
+            type="button"
+            className="ae-tool-card-read-path"
+            title={`Open ${openPath}`}
+            onClick={() =>
+              onEvent("tool-file-open", {
+                filePath: openPath,
+                ...(readRootPath ? { rootPath: readRootPath } : {}),
+              })
+            }
+          >
+            {description || openPath}
+          </button>
+          {timeSuffix && <span className="ae-tool-card-time">{timeSuffix}</span>}
+        </div>
+      </div>
+    );
+  }
+
+  const hasFileChange = Boolean(fileChange);
+  // Raw stdout still renders when an edit/write has no captured diff, so a
+  // tool's text output is never silently dropped (it renders alongside the
+  // file-change row in that case).
+  const hasRawOutput = hasChildren && !fileChange?.preview;
+  // Every card collapses to one line. Edits/writes expand to their diff;
+  // bash and friends expand to their stdout; subagents to their activity.
+  const hasExpandableBody =
+    hasFileChange || hasRawOutput || Boolean(subagentProgress);
+  const fileAdds =
+    fileChange && typeof fileChange.additions === "number"
+      ? fileChange.additions
+      : 0;
+  const fileDels =
+    fileChange && typeof fileChange.deletions === "number"
+      ? fileChange.deletions
+      : 0;
+  const summaryInner = (
+    <>
+      <ToolStatusIcon
+        running={running}
+        isError={isError}
+        isCancelled={isCancelled}
+        isLongRunning={isLongRunning}
+      />
+      <span className="ae-tool-card-name">{baseTitle}</span>
+      {description && (
+        <span className="ae-tool-card-description">{description}</span>
+      )}
+      {hasFileChange && (fileAdds > 0 || fileDels > 0) && (
+        <span className="ae-tool-card-diffstat" aria-label="Line changes">
+          {fileAdds > 0 ? (
+            <span className="ae-tool-file-add">+{fileAdds}</span>
+          ) : null}
+          {fileDels > 0 ? (
+            <span className="ae-tool-file-del">-{fileDels}</span>
+          ) : null}
+        </span>
+      )}
+      {timeSuffix && <span className="ae-tool-card-time">{timeSuffix}</span>}
+      {isLongRunning && (
+        <span className="ae-tool-card-long-hint">
+          long-running · <kbd>⌘.</kbd> to stop
+        </span>
+      )}
+    </>
+  );
+
   return (
-    <details
+    <div
+      ref={cardRef}
       className="ae-tool-card"
-      open={open}
-      onToggle={(event) => setOpen(event.currentTarget.open)}
+      data-open={open ? "true" : "false"}
+      data-collapsible={hasExpandableBody ? "true" : "false"}
       data-running={running ? "true" : "false"}
       data-long-running={isLongRunning ? "true" : "false"}
       data-error={isError ? "true" : "false"}
       data-cancelled={isCancelled ? "true" : "false"}
     >
-      <summary className="ae-tool-card-summary">
-        <ToolStatusIcon
-          running={running}
-          isError={isError}
-          isCancelled={isCancelled}
-          isLongRunning={isLongRunning}
-        />
-        <span className="ae-tool-card-name">{baseTitle}</span>
-        {description && (
-          <span className="ae-tool-card-description">{description}</span>
-        )}
-        {timeSuffix && <span className="ae-tool-card-time">{timeSuffix}</span>}
-        {isLongRunning && (
-          <span className="ae-tool-card-long-hint">
-            long-running · <kbd>⌘.</kbd> to stop
+      {hasExpandableBody ? (
+        <button
+          type="button"
+          className="ae-tool-card-summary"
+          aria-expanded={open}
+          onClick={() => setOpen((prev) => !prev)}
+        >
+          <span className="ae-tool-card-disclosure" aria-hidden="true">
+            <Chevron expanded={open} size={12} />
           </span>
-        )}
-      </summary>
-      <div className="ae-tool-card-body">
-        {subagentProgress && (
-          <SubagentActivityStack progress={subagentProgress} />
-        )}
-        {fileChange && (
-          <ToolFileChangePreview change={fileChange} onEvent={onEvent} />
-        )}
-        {hasChildren && !fileChange?.preview ? renderChildren?.() : null}
-        {!hasChildren && !fileChange && !subagentProgress ? (
-          <div className="ae-tool-card-empty">No output</div>
-        ) : null}
-      </div>
-    </details>
+          {summaryInner}
+        </button>
+      ) : (
+        <div className="ae-tool-card-summary ae-tool-card-summary-static">
+          {summaryInner}
+        </div>
+      )}
+      {hasExpandableBody && open && (
+        <div className="ae-tool-card-body">
+          {subagentProgress && (
+            <SubagentActivityStack progress={subagentProgress} />
+          )}
+          {hasFileChange && fileChange ? (
+            <ToolFileChangeBody change={fileChange} onEvent={onEvent} />
+          ) : null}
+          {hasRawOutput ? renderChildren?.() : null}
+        </div>
+      )}
+    </div>
   );
 }

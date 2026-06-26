@@ -702,6 +702,51 @@ body.ae-resizing-sidebar .a2ui-layout {
   font-family: var(--font-ui);
 }
 
+/* Collapsible section header (extensions). A full-width disclosure
+   button that reuses the section-title type so it reads identically to
+   the static headers, plus a caret and a count badge. */
+.a2ui-sidebar-section-title-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  text-align: left;
+  transition: color var(--motion-fast) ease;
+}
+.a2ui-sidebar-section-title-toggle:hover {
+  opacity: 1;
+  color: var(--text);
+}
+.a2ui-sidebar-section-title-toggle:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+  border-radius: var(--radius-sm);
+}
+.a2ui-sidebar-section-caret {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 16px;
+  opacity: 0.7;
+}
+.a2ui-sidebar-section-title-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.a2ui-sidebar-section-count {
+  flex: 0 0 auto;
+  letter-spacing: 0;
+  font-weight: 600;
+  opacity: 0.6;
+}
+
 .a2ui-sidebar-list {
   list-style: none;
   margin: 0;
@@ -758,9 +803,10 @@ body.ae-resizing-sidebar .a2ui-layout {
   color: var(--text);
 }
 .a2ui-sidebar-group-caret {
-  display: inline-block;
-  width: 10px;
-  font-size: var(--chrome-text-compact);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
   opacity: 0.7;
 }
 .a2ui-sidebar-group-name {

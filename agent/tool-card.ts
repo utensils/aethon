@@ -450,7 +450,13 @@ export function toolCardPayload(opts: {
   const children: unknown[] = [];
   const toolFileChange =
     fileChange ?? fileChangeForTool({ toolName, args, result, rootPath });
-  if (result !== undefined) {
+  // A successful `read` just dumps a whole file into the transcript — pure
+  // noise, since the user has the file. We render only a clickable filename
+  // (opens in Monaco) on the frontend, so emit no content child here. A
+  // failed read keeps its output (the error message is useful).
+  const readPath = toolName === "read" ? stringArg(args, "path") : "";
+  const isReadOk = toolName === "read" && !isError;
+  if (result !== undefined && !isReadOk) {
     const extracted = extractToolContent(result);
     if (extracted.text) {
       if (toolName === "task" || toolName === "task_batch") {
@@ -497,6 +503,8 @@ export function toolCardPayload(opts: {
           title: toolName,
           toolName,
           description: argsSummary || undefined,
+          ...(readPath ? { filePath: readPath } : {}),
+          ...(readPath && rootPath ? { rootPath } : {}),
           ...(startedAt !== undefined ? { startedAt } : {}),
           ...(endedAt !== undefined ? { endedAt } : {}),
           ...(isError ? { isError: true } : {}),

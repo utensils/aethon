@@ -40,40 +40,29 @@
   background: var(--accent);
   flex: none;
 }
-/* Per-session override marker — a small accent tag after the state text. */
-.ae-vis-pill[data-scope="session"] {
+/* Unified on/off treatment across all three pills (Plan mode, Thinking,
+   Tool calls). ON: an accent-tinted pill with the state word ("on") in
+   the accent colour. OFF: quiet/dim with a hollow dot. Driven by
+   `data-on` so every pill reads identically regardless of its underlying
+   mode enum. */
+.ae-vis-pill[data-on="true"] {
   border-color: color-mix(in oklab, var(--accent) 55%, var(--border));
-}
-.ae-vis-pill-scope {
-  font-size: 9px;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  padding: 1px 4px;
-  border-radius: 999px;
-  background: color-mix(in oklab, var(--accent) 20%, transparent);
-  color: var(--accent);
-}
-.ae-vis-pill[data-mode="hide"],
-.ae-vis-pill[data-mode="collapse"],
-.ae-vis-pill[data-mode="group-turn"],
-.ae-vis-pill[data-mode="group-run"],
-.ae-vis-pill[data-mode="group-block"] {
-  color: color-mix(in oklab, var(--text-dim) 70%, transparent);
-}
-.ae-vis-pill[data-mode="hide"] .ae-vis-pill-dot,
-.ae-vis-pill[data-mode="collapse"] .ae-vis-pill-dot,
-.ae-vis-pill[data-mode="group-turn"] .ae-vis-pill-dot,
-.ae-vis-pill[data-mode="group-run"] .ae-vis-pill-dot,
-.ae-vis-pill[data-mode="group-block"] .ae-vis-pill-dot {
-  background: transparent;
-  border: 1px solid var(--border-strong);
-}
-.ae-plan-pill[data-mode="on"] {
-  border-color: color-mix(in oklab, var(--accent) 70%, var(--border));
-  background: color-mix(in oklab, var(--accent) 14%, transparent);
+  background: color-mix(in oklab, var(--accent) 12%, transparent);
   color: var(--text);
 }
-.ae-plan-pill[data-mode="off"] .ae-vis-pill-dot {
+.ae-vis-pill[data-on="true"]:hover {
+  border-color: color-mix(in oklab, var(--accent) 70%, var(--border));
+  background: color-mix(in oklab, var(--accent) 18%, transparent);
+}
+.ae-vis-pill[data-on="true"] .ae-vis-pill-state {
+  color: var(--accent);
+  opacity: 1;
+  font-weight: 600;
+}
+.ae-vis-pill[data-on="false"] {
+  color: color-mix(in oklab, var(--text-dim) 70%, transparent);
+}
+.ae-vis-pill[data-on="false"] .ae-vis-pill-dot {
   background: transparent;
   border: 1px solid var(--border-strong);
 }

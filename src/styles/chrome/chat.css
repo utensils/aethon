@@ -3042,12 +3042,17 @@ body.ae-resizing-composer * {
 .ae-question-card {
   display: grid;
   gap: 12px;
-  max-width: 680px;
-  padding: 14px;
+  /* A fixed width (responsive cap) so stacked cards line up instead of
+     each shrinking to its own content — the old shrink-to-fit made a
+     3-choice card and a 4-choice card render at different widths. The
+     bubble wraps a shrink-to-fit child, so a percentage wouldn't break
+     the cycle; an absolute width does. */
+  width: 680px;
+  max-width: 100%;
+  padding: 16px;
   border: 1px solid var(--border);
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--bg-elevated) 92%, var(--accent) 8%);
-  box-shadow: var(--shadow-sm);
+  border-radius: var(--radius-lg);
+  background: var(--bg-elev);
 }
 
 .ae-question-card-head {
@@ -3055,19 +3060,33 @@ body.ae-resizing-composer * {
   align-items: center;
   justify-content: space-between;
   gap: 10px;
+  min-height: 18px;
 }
 
-.ae-question-card-kicker,
-.ae-question-card-state {
+.ae-question-card-kicker {
   color: var(--text-dim);
   font-size: 0.72rem;
   font-weight: 700;
-  letter-spacing: 0;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
 }
 
-.ae-question-card-prompt,
-.ae-question-answer {
+/* Answered marker — one compact accent check that replaces the old
+   wordy "ANSWERED" badge plus the redundant "Selected: …" footer. */
+.ae-question-card-state {
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: var(--radius-circle);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 0.72rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.ae-question-card-prompt {
   margin: 0;
   color: var(--text);
 }
@@ -3079,31 +3098,59 @@ body.ae-resizing-composer * {
 }
 
 .ae-question-choice {
+  position: relative;
   display: grid;
   gap: 4px;
   min-height: 58px;
   padding: 10px 12px;
   border: 1px solid var(--border);
-  border-radius: 7px;
+  border-radius: var(--radius-md);
   background: var(--bg);
   color: var(--text);
   text-align: left;
   cursor: pointer;
+  transition:
+    border-color var(--motion-fast) ease,
+    background var(--motion-fast) ease,
+    opacity var(--motion-fast) ease;
 }
 
-.ae-question-choice:hover:not(:disabled),
+.ae-question-choice:hover:not(:disabled) {
+  border-color: var(--border-strong);
+  background: var(--bg-hover);
+}
+
 .ae-question-choice.is-selected {
+  padding-right: 28px;
   border-color: var(--accent);
   background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+/* Check glyph on the chosen option so the selection reads instantly. */
+.ae-question-choice.is-selected::after {
+  content: "✓";
+  position: absolute;
+  top: 9px;
+  right: 10px;
+  color: var(--accent);
+  font-size: 0.78rem;
+  font-weight: 700;
+  line-height: 1;
 }
 
 .ae-question-choice:disabled {
   cursor: default;
-  opacity: 0.72;
+}
+
+/* Once answered, fade the options that weren't chosen so the pick is
+   unambiguous without an extra confirmation line. */
+.ae-question-card[data-answered] .ae-question-choice:not(.is-selected) {
+  opacity: 0.4;
 }
 
 .ae-question-choice span {
-  font-weight: 650;
+  font-weight: 600;
 }
 
 .ae-question-choice small {

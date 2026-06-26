@@ -5,7 +5,9 @@
    warning amber, error = danger red.
    ============================================================================= */
 
-/* Tool card — compact pill style, collapsed by default */
+/* Tool card — full-width row, collapsed by default. Bash/output cards
+   expand their stdout behind a disclosure; edits show a file-change row
+   that expands its diff; reads are a single clickable filename. */
 .ae-tool-card {
   background: transparent;
   border: 1px solid var(--border);
@@ -13,18 +15,19 @@
   padding: 0;
   min-width: 0;
   max-width: 100%;
-  width: fit-content;
+  width: 100%;
+  box-sizing: border-box;
   transition:
     border-color 120ms ease,
     background 120ms ease;
 }
-.ae-tool-card[open] {
-  border-radius: var(--radius-md);
-  width: 100%;
+.ae-tool-card[data-open="true"] {
   background: var(--bg-elev);
 }
-.ae-tool-card:not([open]):hover {
+.ae-tool-card:not([data-open="true"]):hover {
   border-color: var(--border-strong);
+}
+.ae-tool-card[data-collapsible="true"]:not([data-open="true"]):hover {
   background: var(--bg-hover);
 }
 .ae-tool-card[data-running="true"] {
@@ -43,17 +46,39 @@
   flex-direction: row;
   align-items: center;
   gap: 6px;
+  width: 100%;
   padding: 4px 10px 4px 8px;
   cursor: pointer;
   list-style: none;
   user-select: none;
   white-space: nowrap;
   overflow: hidden;
+  /* The collapsible variant renders as a <button>; reset its chrome. */
+  background: transparent;
+  border: 0;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+.ae-tool-card-summary-static {
+  cursor: default;
 }
 .ae-tool-card-summary::-webkit-details-marker {
   display: none;
 }
-.ae-tool-card[open] .ae-tool-card-summary {
+.ae-tool-card-summary:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+.ae-tool-card-disclosure {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 14px;
+  color: var(--text-dim);
+}
+.ae-tool-card[data-open="true"] .ae-tool-card-summary {
   padding-bottom: 6px;
   border-bottom: 1px solid var(--border);
   border-radius: var(--radius-md) var(--radius-md) 0 0;
@@ -66,6 +91,54 @@
   gap: 8px;
   padding: 8px 10px 10px;
   min-width: 0;
+}
+
+/* Tool output: the tool card is the ONLY box. Inside the card body the
+   framed code block sheds its own border / background / shadow and its
+   TEXT/JSON header bar (the copy action floats in on hover instead), and
+   the accent left-rail on `text` output is neutralised. This kills the
+   box-in-box-in-box stack that made tool calls read as "wildly busy".
+   Markdown code blocks in agent *prose* are untouched — they keep the
+   full framed treatment. */
+.ae-tool-card-body .a2ui-code-frame {
+  position: relative;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.ae-tool-card-body .a2ui-code-header {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  min-height: 0;
+  padding: 0;
+  border-bottom: 0;
+  background: transparent;
+  z-index: 1;
+}
+.ae-tool-card-body .a2ui-code-title {
+  display: none;
+}
+.ae-tool-card-body .a2ui-code-copy {
+  opacity: 0;
+  transition: opacity var(--motion-fast) ease;
+}
+.ae-tool-card-body .a2ui-code-frame:hover .a2ui-code-copy,
+.ae-tool-card-body .a2ui-code-copy:focus-visible,
+.ae-tool-card-body .a2ui-code-copy[data-copied="true"] {
+  opacity: 1;
+}
+.ae-tool-card-body .a2ui-code-frame .a2ui-code {
+  padding: 0;
+}
+/* Neutralise the orange "reference chip" rail on plain-text tool output —
+   accent should mean state (running / error), not "here is some text". */
+.ae-tool-card-body .a2ui-code[data-language="text"] {
+  margin: 0;
+  padding: 0;
+  border-left: 0;
 }
 
 /* Status icon + spinner */
@@ -123,9 +196,10 @@
      it from the surrounding command text and matches the syntax
      palette's `function` colour family. */
   color: var(--accent-2, var(--text));
-  overflow: hidden;
-  text-overflow: ellipsis;
-  min-width: 0;
+  /* NEVER truncate the tool name — only the command/description ellipsizes
+     when space runs out. */
+  flex: 0 0 auto;
+  white-space: nowrap;
 }
 
 .ae-tool-card-description {
@@ -134,14 +208,27 @@
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   overflow: hidden;
   text-overflow: ellipsis;
-  flex: 1;
+  /* Don't grow — so a trailing diff stat hugs the filename; the time's
+     margin-left:auto still claims the free space and stays right-aligned.
+     Long commands still shrink + ellipsize via flex-shrink. */
+  flex: 0 1 auto;
   min-width: 0;
 }
-.ae-tool-card[open] .ae-tool-card-description {
+.ae-tool-card[data-open="true"] .ae-tool-card-description {
   white-space: pre-wrap;
   word-break: break-word;
   overflow: visible;
   text-overflow: unset;
+}
+/* Inline +adds/-dels stat folded onto an edit/write card's summary line so
+   the card collapses to a single row (filename + diff numbers + duration). */
+.ae-tool-card-diffstat {
+  display: inline-flex;
+  gap: 6px;
+  flex: 0 0 auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: var(--chrome-text-muted);
+  font-variant-numeric: tabular-nums;
 }
 
 .ae-tool-card-time {
@@ -171,6 +258,36 @@
   color: var(--warning, #d18a2c);
   font-size: var(--chrome-text-muted);
   flex-shrink: 0;
+}
+
+/* Read tool: a single clickable filename that opens the file in Monaco —
+   no content dump. The row is not a disclosure, so only the path is
+   interactive. */
+.ae-tool-card-read .ae-tool-card-summary {
+  cursor: default;
+}
+.ae-tool-card-read-path {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: var(--chrome-text-muted);
+  color: var(--text-secondary, var(--text-dim));
+  background: transparent;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  transition: color var(--motion-fast) ease;
+}
+.ae-tool-card-read-path:hover,
+.ae-tool-card-read-path:focus-visible {
+  outline: none;
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 .ae-tool-card-long-hint kbd {
   font-family: inherit;

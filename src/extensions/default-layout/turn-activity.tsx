@@ -8,6 +8,7 @@ import {
 } from "../../utils/toolCardGrouping";
 import type { ConversationTurn } from "../../utils/transcriptRows";
 import type { ToolCallsMode, VisibilityMode } from "../../config";
+import { Chevron } from "./sidebar/chevron";
 import { ChatMessageRow } from "./message-row";
 import { hasDisplayableAgentContent } from "./turn-activity-helpers";
 import {
@@ -21,7 +22,6 @@ import {
   summaryWithFileEntries,
   toolDurationLabel,
   toolStateLabel,
-  withOpenToolCards,
 } from "./tool-activity-summary";
 import {
   FileChangeStats,
@@ -127,6 +127,22 @@ export function TurnActivity({
   const [closingBodyRetained, setClosingBodyRetained] = useState(false);
   const closingTimerRef = useRef<number | null>(null);
   const [manualOpen, setManualOpen] = useState<boolean | null>(null);
+  const [allExpanded, setAllExpanded] = useState(false);
+  const turnRef = useRef<HTMLDivElement>(null);
+  const setAllToolCardsOpen = (next: boolean) => {
+    setAllExpanded(next);
+    // Dispatch only to the cards inside THIS turn's subtree so sibling
+    // turns are unaffected.
+    turnRef.current
+      ?.querySelectorAll(".ae-tool-card")
+      .forEach((el) =>
+        el.dispatchEvent(
+          new CustomEvent("aethon:tool-card-set-open", {
+            detail: { open: next },
+          }),
+        ),
+      );
+  };
   const progressMessages =
     live || forceOpen
       ? []
@@ -174,12 +190,14 @@ export function TurnActivity({
       )
       .map((message) => message.id),
   );
-  const fileChangeEntries =
-    detailsBodyVisible && !showOriginalToolCards
-      ? collectFileChangeEntries(
-          detailTools.filter((message) => !originalToolCardIds.has(message.id)),
-        )
-      : [];
+  // The aggregated "Edited N files" card is the durable artifact of a turn,
+  // so it stays visible regardless of the tool-calls visibility toggle or
+  // whether the activity body is expanded. When tool cards render in full
+  // (showOriginalToolCards) each edit shows its own change, so skip it then
+  // to avoid duplication.
+  const pinnedFileChangeEntries = showOriginalToolCards
+    ? []
+    : collectFileChangeEntries(allToolMessages.filter(hasFileChange));
   const detailToolRows =
     showOriginalToolCards || !showGenericTools
       ? []
@@ -201,6 +219,13 @@ export function TurnActivity({
     },
     [],
   );
+
+  // Cards remount collapsed when the body is hidden, so keep the toolbar's
+  // "Expand all / Collapse all" label in sync rather than leaving it stale.
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- resync the toolbar label to body visibility
+    if (!detailsBodyVisible) setAllExpanded(false);
+  }, [detailsBodyVisible]);
 
   if (!hasActivity) return null;
   const label = activityLabel({
@@ -245,6 +270,7 @@ export function TurnActivity({
 
   return (
     <div
+      ref={turnRef}
       className="ae-turn-activity"
       data-expanded={detailsOpen ? "true" : "false"}
     >
@@ -256,7 +282,7 @@ export function TurnActivity({
         onClick={handleToggle}
       >
         <span className="ae-turn-block-caret" aria-hidden="true">
-          {detailsOpen ? "▾" : "▸"}
+          <Chevron expanded={detailsOpen} size={12} />
         </span>
         <span className="ae-turn-block-label">{label}</span>
         {meta ? (
@@ -278,13 +304,25 @@ export function TurnActivity({
       </button>
       {detailsBodyVisible && (
         <div className="ae-turn-activity-body" data-state={detailsBodyState}>
+          {originalToolCardIds.size > 0 && (
+            <div className="ae-turn-activity-toolbar">
+              <button
+                type="button"
+                className="ae-turn-activity-expand-all"
+                aria-expanded={allExpanded}
+                onClick={() => setAllToolCardsOpen(!allExpanded)}
+              >
+                {allExpanded ? "Collapse all" : "Expand all"}
+              </button>
+            </div>
+          )}
           {originalToolCardIds.size > 0
             ? detailTools
                 .filter((message) => originalToolCardIds.has(message.id))
                 .map((message) => (
                   <ChatMessageRow
                     key={message.id}
-                    message={withOpenToolCards(message)}
+                    message={message}
                     state={state}
                     tabId={tabId}
                     className={`${rowClassName} ae-turn-tool-message`}
@@ -306,11 +344,6 @@ export function TurnActivity({
               thinkingVisibility={thinkingVisibility}
             />
           ))}
-          <ToolFileChangesCard
-            entries={fileChangeEntries}
-            summary={summary}
-            onEvent={onEvent}
-          />
           {detailToolRows.map((message) => (
             <ToolActivityRow
               key={message.id}
@@ -330,6 +363,13 @@ export function TurnActivity({
             />
           ))}
         </div>
+      )}
+      {pinnedFileChangeEntries.length > 0 && (
+        <ToolFileChangesCard
+          entries={pinnedFileChangeEntries}
+          summary={summary}
+          onEvent={onEvent}
+        />
       )}
     </div>
   );
