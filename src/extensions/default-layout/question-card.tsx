@@ -49,10 +49,21 @@ export function QuestionCard({ component }: BuiltinComponentProps) {
   }
 
   return (
-    <section className="ae-question-card" aria-label={title}>
+    <section
+      className="ae-question-card"
+      aria-label={title}
+      data-answered={answer ? "true" : undefined}
+    >
       <div className="ae-question-card-head">
         <span className="ae-question-card-kicker">{title}</span>
-        {answer && <span className="ae-question-card-state">answered</span>}
+        {answer && (
+          <span
+            className="ae-question-card-state"
+            aria-label={`Answered: ${answer.label}`}
+          >
+            ✓
+          </span>
+        )}
       </div>
       {prompt && <p className="ae-question-card-prompt">{prompt}</p>}
       <div className="ae-question-card-choices">
@@ -92,7 +103,6 @@ export function QuestionCard({ component }: BuiltinComponentProps) {
           </button>
         </form>
       )}
-      {answer && <p className="ae-question-answer">Selected: {answer.label}</p>}
     </section>
   );
 }
