@@ -4,6 +4,13 @@ All notable changes to Aethon. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 [SemVer](https://semver.org/).
 
+## [0.11.1](https://github.com/utensils/aethon/compare/v0.11.0...v0.11.1) (2026-06-26)
+
+
+### Bug Fixes
+
+* **e2e:** retry transient flakes in CI and pin serial workers ([f3bde99](https://github.com/utensils/aethon/commit/f3bde99ea7577cc691daaf9bb83c7a4ccd4f16c9))
+
 ## [0.11.0](https://github.com/utensils/aethon/compare/v0.10.2...v0.11.0) (2026-06-26)
 
 
