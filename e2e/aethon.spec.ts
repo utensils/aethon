@@ -250,9 +250,19 @@ test("chat canvas contains wide content without horizontal scrolling", async ({
   expect(scrollerMetrics.overflowX).toBe("hidden");
 
   // The card is collapsed by default; expand it via its disclosure summary
-  // (a button now, not a <details>) so the code block mounts.
-  await page.locator(".ae-tool-card-summary").click();
-  await expect(page.locator(".ae-tool-card .a2ui-code")).toBeVisible();
+  // (a button now, not a <details>) so the code block mounts. A late
+  // re-render — e.g. completed-turn compaction after the stream settles —
+  // can remount the card collapsed (fresh useState(false)), discarding a
+  // single click. Retry the click until the code block stays mounted, only
+  // clicking while it's still hidden so we never toggle an open card shut.
+  await expect(async () => {
+    if (!(await page.locator(".ae-tool-card .a2ui-code").isVisible())) {
+      await page.locator(".ae-tool-card-summary").click();
+    }
+    await expect(page.locator(".ae-tool-card .a2ui-code")).toBeVisible({
+      timeout: 1000,
+    });
+  }).toPass({ timeout: 15000 });
 
   const containment = await page.locator(".ae-tool-card").evaluate((card) => {
     const code = card.querySelector(".a2ui-code");
