@@ -25,21 +25,7 @@ const THINKING_LABEL: Record<VisibilityMode, string> = {
   hide: "off",
 };
 
-const THINKING_TITLE: Record<VisibilityMode, string> = {
-  show: "on",
-  collapse: "off",
-  hide: "off",
-};
-
 const TOOL_LABEL: Record<ToolCallsMode, string> = {
-  show: "on",
-  "group-turn": "off",
-  "group-run": "off",
-  "group-block": "off",
-  hide: "off",
-};
-
-const TOOL_TITLE: Record<ToolCallsMode, string> = {
   show: "on",
   "group-turn": "off",
   "group-run": "off",
@@ -148,34 +134,22 @@ export function ComposerVisibilityPills({
       category === "thinking"
         ? THINKING_LABEL[visibility.thinking]
         : TOOL_LABEL[visibility.toolCalls];
-    const titleText =
-      category === "thinking"
-        ? THINKING_TITLE[visibility.thinking]
-        : TOOL_TITLE[visibility.toolCalls];
-    const scoped = hasOverride(state, tabId, category);
+    const isOn = stateLabel === "on";
     return (
       <button
         type="button"
         className="ae-vis-pill"
         data-category={category}
         data-mode={mode}
-        data-scope={scoped ? "session" : "global"}
-        title={`${label}: ${titleText}${
-          scoped ? " — this session only (overrides the global default)" : ""
-        }. Click to toggle.`}
-        aria-label={`${label} visibility: ${stateLabel}${
-          scoped ? ", this session" : ""
-        }. Click to toggle.`}
+        data-on={isOn ? "true" : "false"}
+        title={`${label}: ${stateLabel}. Click to toggle.`}
+        aria-label={`${label} visibility: ${stateLabel}. Click to toggle.`}
+        aria-pressed={isOn}
         onClick={() => onEvent("cycle", { category })}
       >
         <span className="ae-vis-pill-dot" aria-hidden="true" />
         <span className="ae-vis-pill-label">{label}</span>
         <span className="ae-vis-pill-state">{stateLabel}</span>
-        {scoped && (
-          <span className="ae-vis-pill-scope" aria-hidden="true">
-            session
-          </span>
-        )}
       </button>
     );
   };
@@ -186,6 +160,7 @@ export function ComposerVisibilityPills({
         type="button"
         className="ae-vis-pill ae-plan-pill"
         data-mode={planMode ? "on" : "off"}
+        data-on={planMode ? "true" : "false"}
         title={`Plan mode is ${planMode ? "on" : "off"}. Click or press Shift+Tab to toggle.`}
         aria-label={`Plan mode: ${planMode ? "on" : "off"}. Click to toggle.`}
         aria-pressed={planMode}
