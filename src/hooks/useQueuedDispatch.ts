@@ -1,7 +1,8 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, type MutableRefObject } from "react";
 import type { ChatAttachment } from "../types/a2ui";
 import type { Tab } from "../types/tab";
 import { isAgentTabInFlight } from "../utils/agentBusy";
+import type { TabBucket } from "./projectOps/types";
 
 /**
  * Drains client-held queues. Watches every agent tab's in-flight state;
@@ -28,8 +29,60 @@ import { isAgentTabInFlight } from "../utils/agentBusy";
  *   shell and editor tabs have queue arrays only because they share
  *   the Tab interface.
  */
+type BucketRecord = Record<string, TabBucket | undefined>;
+
+function appendUniqueTabs(
+  result: Tab[],
+  seen: Set<string>,
+  tabs: readonly Tab[] | undefined,
+): void {
+  for (const tab of tabs ?? []) {
+    if (seen.has(tab.id)) continue;
+    seen.add(tab.id);
+    result.push(tab);
+  }
+}
+
+function bucketValues(source: unknown): TabBucket[] {
+  if (!source || typeof source !== "object") return [];
+  if (source instanceof Map) return Array.from(source.values());
+  if (Array.isArray(source)) return [];
+  return Object.values(source as BucketRecord).filter(
+    (bucket): bucket is TabBucket =>
+      Boolean(bucket) && Array.isArray(bucket?.tabs),
+  );
+}
+
+export function collectQueuedDispatchTabs(
+  visibleTabs: readonly Tab[],
+  tabBuckets?: Map<string, TabBucket> | null,
+  persistedTabBuckets?: unknown,
+): Tab[] {
+  const result: Tab[] = [];
+  const seen = new Set<string>();
+
+  // Prefer the visible active-bucket record when a tab is present in both
+  // places. Stashed bucket snapshots can be older than state.tabs.
+  appendUniqueTabs(result, seen, visibleTabs);
+
+  for (const bucket of bucketValues(tabBuckets)) {
+    appendUniqueTabs(result, seen, bucket.tabs);
+  }
+
+  // Restored persisted buckets are included as a boot-time safety net: the
+  // hydration effect that copies them into tabBucketsRef runs after render,
+  // while this hook's drain effect is registered in the same commit.
+  for (const bucket of bucketValues(persistedTabBuckets)) {
+    appendUniqueTabs(result, seen, bucket.tabs);
+  }
+
+  return result;
+}
+
 export interface UseQueuedDispatchParams {
   tabs: Tab[];
+  tabBucketsRef?: MutableRefObject<Map<string, TabBucket>>;
+  persistedTabBuckets?: unknown;
   sendChat: (
     text: string,
     options?: {
@@ -44,13 +97,21 @@ export interface UseQueuedDispatchParams {
 
 export function useQueuedDispatch({
   tabs,
+  tabBucketsRef,
+  persistedTabBuckets,
   sendChat,
   updateTab,
 }: UseQueuedDispatchParams): void {
   const dispatchingRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
-    for (const tab of tabs) {
+    const dispatchTabs = collectQueuedDispatchTabs(
+      tabs,
+      tabBucketsRef?.current,
+      persistedTabBuckets,
+    );
+
+    for (const tab of dispatchTabs) {
       if (tab.kind !== "agent") continue;
       if (isAgentTabInFlight(tab)) continue;
       // Defensive: persisted tabs created before this feature don't have
@@ -94,5 +155,5 @@ export function useQueuedDispatch({
         dispatchingRef.current.delete(tab.id);
       });
     }
-  }, [tabs, sendChat, updateTab]);
+  }, [tabs, tabBucketsRef, persistedTabBuckets, sendChat, updateTab]);
 }

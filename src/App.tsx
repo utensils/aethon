@@ -604,6 +604,8 @@ export default function App() {
   // `queuedSteeringId`, and a private in-flight set.
   useQueuedDispatch({
     tabs: (state.tabs as Tab[] | undefined) ?? [],
+    tabBucketsRef,
+    persistedTabBuckets: state.persistedTabBuckets,
     sendChat,
     updateTab: updateTabRouted,
   });
