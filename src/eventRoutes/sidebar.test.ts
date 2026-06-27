@@ -242,7 +242,11 @@ describe("handleSidebarDeleteSession", () => {
 
 describe("handleSidebarRenameSession", () => {
   it("forwards a set_session_label command to the bridge", async () => {
-    const { ctx, mocks } = buildRouteFixture();
+    const { ctx, mocks } = buildRouteFixture({
+      state: {
+        tabs: [{ id: "tab-7", kind: "agent", label: "Tab 1", cwd: "/repo/a" }],
+      },
+    });
     const handled = await handleSidebarRenameSession(
       {
         component: { id: "sidebar" },
@@ -257,6 +261,97 @@ describe("handleSidebarRenameSession", () => {
         type: "set_session_label",
         tabId: "tab-7",
         label: "Refactor pass",
+        cwd: "/repo/a",
+      }),
+    });
+  });
+
+  it("trims cwd before forwarding a rename", async () => {
+    const { ctx, mocks } = buildRouteFixture({
+      state: {
+        tabs: [
+          {
+            id: "tab-spaced",
+            kind: "agent",
+            label: "Tab 1",
+            cwd: "  /repo/spaced  ",
+          },
+        ],
+      },
+    });
+
+    const handled = await handleSidebarRenameSession(
+      {
+        component: { id: "sidebar" },
+        eventType: "rename-session",
+        data: { sessionId: "tab-spaced", label: "Trimmed cwd" },
+      },
+      ctx,
+    );
+
+    expect(handled).toBe(true);
+    expect(mocks.invoke).toHaveBeenCalledWith("agent_command", {
+      payload: JSON.stringify({
+        type: "set_session_label",
+        tabId: "tab-spaced",
+        label: "Trimmed cwd",
+        cwd: "/repo/spaced",
+      }),
+    });
+  });
+
+  it("includes the recent session cwd when renaming a closed session", async () => {
+    const { ctx, mocks } = buildRouteFixture({
+      state: {
+        tabs: [],
+        recentSessions: [
+          { id: "sess-closed", label: "Old name", cwd: "/repo/closed" },
+        ],
+      },
+    });
+    const handled = await handleSidebarRenameSession(
+      {
+        component: { id: "sidebar" },
+        eventType: "rename-session",
+        data: { sessionId: "sess-closed", label: "Manual name" },
+      },
+      ctx,
+    );
+    expect(handled).toBe(true);
+    expect(mocks.invoke).toHaveBeenCalledWith("agent_command", {
+      payload: JSON.stringify({
+        type: "set_session_label",
+        tabId: "sess-closed",
+        label: "Manual name",
+        cwd: "/repo/closed",
+      }),
+    });
+  });
+
+  it("falls back to discovered session cwd when renaming a closed session", async () => {
+    const { ctx, mocks } = buildRouteFixture({
+      state: { tabs: [] },
+    });
+    ctx.allDiscoveredSessionsRef.current = [
+      { tabId: "sess-discovered", lastModified: 1, cwd: "/repo/discovered" },
+    ];
+
+    const handled = await handleSidebarRenameSession(
+      {
+        component: { id: "sidebar" },
+        eventType: "rename-session",
+        data: { sessionId: "sess-discovered", label: "Discovered name" },
+      },
+      ctx,
+    );
+
+    expect(handled).toBe(true);
+    expect(mocks.invoke).toHaveBeenCalledWith("agent_command", {
+      payload: JSON.stringify({
+        type: "set_session_label",
+        tabId: "sess-discovered",
+        label: "Discovered name",
+        cwd: "/repo/discovered",
       }),
     });
   });

@@ -22,9 +22,9 @@ function stripTrailingSlashes(p: string): string {
  *  miss on exact string compare and silently start a fresh session
  *  instead of resuming. A vanished path (deleted workspace) falls back
  *  to the normalized string so old sessions still compare predictably. */
-async function canonicalCwd(
+export async function canonicalCwdForComparison(
   p: string,
-  cache: Map<string, string>,
+  cache: Map<string, string> = new Map(),
 ): Promise<string> {
   const norm = stripTrailingSlashes(p);
   const hit = cache.get(norm);
@@ -116,7 +116,7 @@ export async function findSessionFileMatchingCwd(
     return undefined;
   }
   const realpathCache = new Map<string, string>();
-  const target = await canonicalCwd(expectedCwd, realpathCache);
+  const target = await canonicalCwdForComparison(expectedCwd, realpathCache);
   const matches: LatestSessionLog[] = [];
   for (const name of entries) {
     if (name === LOCAL_CHAT_FILE) continue;
@@ -130,7 +130,7 @@ export async function findSessionFileMatchingCwd(
     }
     const cwd = await readSessionHeaderCwd(path);
     if (!cwd) continue;
-    if ((await canonicalCwd(cwd, realpathCache)) !== target) continue;
+    if ((await canonicalCwdForComparison(cwd, realpathCache)) !== target) continue;
     matches.push({ path, mtimeMs, name });
   }
   if (matches.length === 0) return undefined;

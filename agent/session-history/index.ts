@@ -25,6 +25,7 @@
 export type {
   RestoredChatAttachment,
   RestoredChatMessage,
+  SessionLabelMetadata,
   SessionLogMetadata,
 } from "./shared";
 export { hasA2ui, parseChatAttachments } from "./shared";
@@ -33,6 +34,7 @@ export {
   appendLocalChatMessage,
   normalizeSessionLabel,
   readSessionLabel,
+  readSessionLabelMetadata,
   truncateLocalChatAfterEntry,
   writeSessionLabel,
 } from "./io";

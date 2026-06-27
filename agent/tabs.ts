@@ -202,8 +202,15 @@ export async function handleSetSessionLabel(
     return;
   }
   const label = typeof labelField === "string" ? labelField : "";
+  const ownerCwdField = (msg as { cwd?: unknown }).cwd;
+  const ownerCwd =
+    typeof ownerCwdField === "string" && ownerCwdField.length > 0
+      ? ownerCwdField
+      : undefined;
   try {
-    await setSessionLabelForTab(state, deps, tabId, label);
+    await setSessionLabelForTab(state, deps, tabId, label, {
+      ...(ownerCwd ? { ownerCwd } : {}),
+    });
   } catch (err) {
     deps.send({
       type: "error",

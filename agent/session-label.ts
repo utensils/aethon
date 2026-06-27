@@ -13,11 +13,29 @@ interface SessionLabelDeps {
 export interface SetSessionLabelOptions {
   requireNonEmpty?: boolean;
   syncPiSessionName?: (label: string) => void;
+  ownerCwd?: string;
 }
 
 export interface SetSessionLabelResult {
   label: string;
   session?: DiscoveredTab;
+}
+
+function nonEmptyCwd(value: string | undefined): string | undefined {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : undefined;
+}
+
+function labelOwnerCwd(
+  state: AethonAgentState,
+  tabId: string,
+  explicitCwd: string | undefined,
+): string | undefined {
+  return (
+    nonEmptyCwd(explicitCwd) ??
+    nonEmptyCwd(state.tabProjectCwds.get(tabId)) ??
+    nonEmptyCwd(state.currentProjectCwd)
+  );
 }
 
 function upsertDiscoveredTab(
@@ -45,7 +63,10 @@ export async function setSessionLabelForTab(
   if (options.requireNonEmpty === true && !label) {
     throw new Error("setSessionTabTitle: title required");
   }
-  await writeSessionLabel(tabSessionDir(state, tabId), label);
+  const ownerCwd = labelOwnerCwd(state, tabId, options.ownerCwd);
+  await writeSessionLabel(tabSessionDir(state, tabId), label, {
+    ...(ownerCwd ? { cwd: ownerCwd } : {}),
+  });
   if (label && options.syncPiSessionName) {
     options.syncPiSessionName(label);
   }

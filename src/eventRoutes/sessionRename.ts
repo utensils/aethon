@@ -1,17 +1,50 @@
 import type { EventRouteContext } from "./types";
 
+function nonEmptyString(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
+function cwdForSession(
+  ctx: EventRouteContext,
+  tabId: string,
+): string | undefined {
+  const tabs =
+    (ctx.stateRef.current.tabs as { id?: unknown; cwd?: unknown }[] | undefined) ??
+    [];
+  const tab = tabs.find((item) => item.id === tabId);
+  const tabCwd = nonEmptyString(tab?.cwd);
+  if (tabCwd) return tabCwd;
+
+  const recentSessions =
+    (ctx.stateRef.current.recentSessions as
+      | { id?: unknown; cwd?: unknown }[]
+      | undefined) ?? [];
+  const recent = recentSessions.find((item) => item.id === tabId);
+  const recentCwd = nonEmptyString(recent?.cwd);
+  if (recentCwd) return recentCwd;
+
+  const discovered = ctx.allDiscoveredSessionsRef.current.find(
+    (item) => item.tabId === tabId,
+  );
+  return nonEmptyString(discovered?.cwd);
+}
+
 export function renameSessionLabel(
   ctx: EventRouteContext,
   tabId: string,
   label: string,
 ): void {
   applyOptimisticTabLabel(ctx, tabId, label);
+  const cwd = cwdForSession(ctx, tabId);
   ctx
     .invoke("agent_command", {
       payload: JSON.stringify({
         type: "set_session_label",
         tabId,
         label,
+        ...(cwd ? { cwd } : {}),
       }),
     })
     .catch((err: unknown) => {
