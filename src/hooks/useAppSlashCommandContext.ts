@@ -7,7 +7,7 @@ import {
 import { invoke } from "@tauri-apps/api/core";
 import type { A2UIPayload, ChatMessage } from "../types/a2ui";
 import type { Tab } from "../types/tab";
-import { activeProject, type ProjectsState } from "../projects";
+import { activeCwd, activeProject, type ProjectsState } from "../projects";
 import { durableImageAttachments } from "../utils/imageAttachments";
 import { trimMessage } from "../utils/messages";
 import type { SlashCommandContext } from "../slashCommands";
@@ -177,6 +177,11 @@ export function useAppSlashCommandContext({
         lastCreatedAt = createdAt;
         return createdAt;
       };
+      const effectiveProjectRoot = () => {
+        const tab = invocationTab();
+        if (tab?.kind === "agent" && tab.cwd) return tab.cwd;
+        return activeCwd(projectsRef.current);
+      };
       return {
         appendSystem: (text: string) => {
           const msg = {
@@ -200,11 +205,7 @@ export function useAppSlashCommandContext({
             createdAt: nextCreatedAt(),
           });
         },
-        activeProjectRoot: () => {
-          const tab = invocationTab();
-          if (tab?.kind === "agent" && tab.cwd) return tab.cwd;
-          return activeProject(projectsRef.current)?.path ?? null;
-        },
+        activeProjectRoot: effectiveProjectRoot,
         clearChat,
         setTheme,
         listThemes,
@@ -347,12 +348,14 @@ export function useAppSlashCommandContext({
           await invoke("reload_agent");
         },
         runNativeCommand: async (name: string, args: string) => {
+          const cwd = effectiveProjectRoot() ?? undefined;
           await invoke("agent_command", {
             payload: JSON.stringify({
               type: "native_slash_command",
               tabId: persistenceTabId,
               name,
               args,
+              ...(cwd ? { cwd } : {}),
             }),
           });
         },
