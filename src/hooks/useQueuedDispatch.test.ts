@@ -3,6 +3,11 @@ import { describe, expect, it, vi } from "vitest";
 import { act, renderHook } from "@testing-library/react";
 import { useQueuedDispatch } from "./useQueuedDispatch";
 import { makeEmptyTab, type Tab } from "../types/tab";
+import type { ProjectsState } from "../projects";
+import type { TabBucket } from "./projectOps/types";
+import { updateTabAcrossBuckets } from "./tabRouting";
+import { handleResponseEnd } from "./bridgeMessageHandlers/responseEnd";
+import { buildHandlerFixture } from "./bridgeMessageHandlers/testFixtures";
 
 function tabWithQueue(
   partial: Partial<Tab> = {},
@@ -17,6 +22,103 @@ function tabWithQueue(
 }
 
 describe("useQueuedDispatch", () => {
+  it("drains queued messages for hidden workspace tabs after response_end", () => {
+    const sendChat = vi.fn(() => Promise.resolve());
+    const hidden = tabWithQueue(
+      {
+        id: "tab-a",
+        label: "Workspace A",
+        projectId: "project-a",
+        cwd: "/repo/a-worktree",
+        waiting: true,
+      },
+      { id: "q1", content: "next" },
+    );
+    const visible = tabWithQueue({
+      id: "tab-b",
+      label: "Workspace B",
+      projectId: "project-b",
+      cwd: "/repo/b",
+      waiting: false,
+    });
+    const hiddenBucketKey = "project-a::workspace::wt-a";
+    const tabBucketsRef = {
+      current: new Map<string, TabBucket>([
+        [hiddenBucketKey, { tabs: [hidden], activeTabId: "tab-a" }],
+      ]),
+    };
+    const { ctx } = buildHandlerFixture({
+      state: {
+        activeTabId: "tab-b",
+        tabs: [visible],
+        persistedTabBuckets: {
+          [hiddenBucketKey]: { tabs: [hidden], activeTabId: "tab-a" },
+        },
+        agentRunningTabs: { "tab-a": true },
+      },
+    });
+    ctx.projectsRef.current = {
+      activeId: "project-b",
+      activeWorkspaceId: null,
+      activeHostId: null,
+      projects: [
+        { id: "project-a", label: "Workspace A", path: "/repo/a", lastUsed: 1 },
+        { id: "project-b", label: "Workspace B", path: "/repo/b", lastUsed: 2 },
+      ],
+      workspacesByProject: {
+        "project-a": [
+          {
+            id: "wt-a",
+            projectId: "project-a",
+            path: "/repo/a-worktree",
+            branch: "feat/a",
+            isMain: false,
+          },
+        ],
+      },
+    } satisfies ProjectsState;
+    ctx.updateTab = (tabId, mutator) =>
+      updateTabAcrossBuckets(
+        {
+          setState: ctx.setState,
+          stateRef: ctx.stateRef,
+          projectsRef: ctx.projectsRef,
+          tabBucketsRef,
+        },
+        tabId,
+        mutator,
+      );
+
+    const { rerender } = renderHook(
+      ({ state }: { state: Record<string, unknown> }) =>
+        useQueuedDispatch({
+          tabs: (state.tabs as Tab[] | undefined) ?? [],
+          tabBucketsRef,
+          persistedTabBuckets: state.persistedTabBuckets,
+          sendChat,
+          updateTab: ctx.updateTab,
+        }),
+      { initialProps: { state: ctx.stateRef.current } },
+    );
+
+    expect(sendChat).not.toHaveBeenCalled();
+
+    act(() => {
+      handleResponseEnd({ type: "response_end", tabId: "tab-a" }, ctx);
+    });
+    rerender({ state: ctx.stateRef.current });
+
+    expect(sendChat).toHaveBeenCalledWith("next", {
+      mode: "normal",
+      tabId: "tab-a",
+    });
+    expect(ctx.stateRef.current.activeTabId).toBe("tab-b");
+    expect(ctx.stateRef.current.tabs).toEqual([visible]);
+    const hiddenTab = tabBucketsRef.current.get(hiddenBucketKey)?.tabs[0];
+    expect(hiddenTab?.queuedMessages).toEqual([]);
+    expect(hiddenTab?.queueCount).toBe(0);
+  });
+
   it("drains the head when waiting transitions false and hands off to sendChat", () => {
     const sendChat = vi.fn(() => Promise.resolve());
     const updateTab = vi.fn();
