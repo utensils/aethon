@@ -21,12 +21,21 @@ export interface SetSessionLabelResult {
   session?: DiscoveredTab;
 }
 
+function nonEmptyCwd(value: string | undefined): string | undefined {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : undefined;
+}
+
 function labelOwnerCwd(
   state: AethonAgentState,
   tabId: string,
   explicitCwd: string | undefined,
 ): string | undefined {
-  return explicitCwd ?? state.tabProjectCwds.get(tabId) ?? state.currentProjectCwd ?? undefined;
+  return (
+    nonEmptyCwd(explicitCwd) ??
+    nonEmptyCwd(state.tabProjectCwds.get(tabId)) ??
+    nonEmptyCwd(state.currentProjectCwd)
+  );
 }
 
 function upsertDiscoveredTab(

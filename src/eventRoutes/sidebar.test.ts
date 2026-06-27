@@ -266,6 +266,40 @@ describe("handleSidebarRenameSession", () => {
     });
   });
 
+  it("trims cwd before forwarding a rename", async () => {
+    const { ctx, mocks } = buildRouteFixture({
+      state: {
+        tabs: [
+          {
+            id: "tab-spaced",
+            kind: "agent",
+            label: "Tab 1",
+            cwd: "  /repo/spaced  ",
+          },
+        ],
+      },
+    });
+
+    const handled = await handleSidebarRenameSession(
+      {
+        component: { id: "sidebar" },
+        eventType: "rename-session",
+        data: { sessionId: "tab-spaced", label: "Trimmed cwd" },
+      },
+      ctx,
+    );
+
+    expect(handled).toBe(true);
+    expect(mocks.invoke).toHaveBeenCalledWith("agent_command", {
+      payload: JSON.stringify({
+        type: "set_session_label",
+        tabId: "tab-spaced",
+        label: "Trimmed cwd",
+        cwd: "/repo/spaced",
+      }),
+    });
+  });
+
   it("includes the recent session cwd when renaming a closed session", async () => {
     const { ctx, mocks } = buildRouteFixture({
       state: {

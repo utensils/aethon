@@ -7,7 +7,7 @@ import {
   type AethonAgentStateOptions,
   type TabRecord,
 } from "./state";
-import { writeSessionLabel } from "./session-history";
+import { readSessionLabelMetadata, writeSessionLabel } from "./session-history";
 import { buildSessionTitleTools } from "./session-title-tool";
 import { tabSessionDir } from "./tab-lifecycle";
 
@@ -129,6 +129,21 @@ describe("buildSessionTitleTools", () => {
         },
       ],
       details: { ok: true, title: "Refactor auth flow" },
+    });
+  });
+
+  it("records trimmed fallback cwd ownership when tab cwd is blank", async () => {
+    const { state, deps } = await makeFixture();
+    const sessionDir = tabSessionDir(state, "tab-1");
+    state.tabProjectCwds.set("tab-1", "   ");
+    state.currentProjectCwd = "  /repo/current  ";
+
+    await getTool(state, deps).execute("call-1", {
+      title: "Prompt polish",
+    });
+
+    await expect(readSessionLabelMetadata(sessionDir)).resolves.toEqual({
+      cwd: "/repo/current",
     });
   });
 

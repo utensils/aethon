@@ -57,6 +57,12 @@ export async function readSessionLabel(
   }
 }
 
+function normalizeMetadataCwd(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
 export async function readSessionLabelMetadata(
   sessionDir: string,
 ): Promise<SessionLabelMetadata | undefined> {
@@ -65,10 +71,9 @@ export async function readSessionLabelMetadata(
     const parsed: unknown = JSON.parse(raw);
     if (!parsed || typeof parsed !== "object") return undefined;
     const record = parsed as Record<string, unknown>;
+    const cwd = normalizeMetadataCwd(record.cwd);
     return {
-      ...(typeof record.cwd === "string" && record.cwd.length > 0
-        ? { cwd: record.cwd }
-        : {}),
+      ...(cwd ? { cwd } : {}),
     };
   } catch {
     return undefined;
@@ -98,7 +103,8 @@ export async function writeSessionLabel(
     return;
   }
   await writeFile(path, trimmed + "\n", "utf8");
-  await writeFile(metaPath, `${JSON.stringify(metadata)}\n`, "utf8");
+  const cwd = normalizeMetadataCwd(metadata.cwd);
+  await writeFile(metaPath, `${JSON.stringify({ ...(cwd ? { cwd } : {}) })}\n`, "utf8");
 }
 
 export async function appendLocalChatMessage(

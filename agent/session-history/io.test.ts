@@ -2,7 +2,12 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { appendLocalChatMessage, truncateLocalChatAfterEntry } from "./io";
+import {
+  appendLocalChatMessage,
+  readSessionLabelMetadata,
+  truncateLocalChatAfterEntry,
+  writeSessionLabel,
+} from "./io";
 import { LOCAL_CHAT_FILE } from "./shared";
 
 let dir: string;
@@ -19,6 +24,18 @@ beforeEach(() => {
 
 afterEach(() => {
   rmSync(dir, { recursive: true, force: true });
+});
+
+describe("writeSessionLabel", () => {
+  it("trims cwd metadata and skips whitespace-only cwd values", async () => {
+    await writeSessionLabel(dir, "Named", { cwd: "  /repo/app  " });
+    await expect(readSessionLabelMetadata(dir)).resolves.toEqual({
+      cwd: "/repo/app",
+    });
+
+    await writeSessionLabel(dir, "Named", { cwd: "   " });
+    await expect(readSessionLabelMetadata(dir)).resolves.toEqual({});
+  });
 });
 
 describe("truncateLocalChatAfterEntry", () => {
