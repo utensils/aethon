@@ -518,6 +518,75 @@ async fn prepare_workspace_startup_inner(
         }
     }
 
+    if !config.commands.is_empty() {
+        startup.set_record(
+            root,
+            StartupRecord {
+                fingerprint: fingerprint.clone(),
+                state: StartupState::Running,
+                reason: None,
+                active_task_id: Some(STARTUP_DEVSHELL_TASK_ID.to_string()),
+                task_states: task_states.clone(),
+            },
+        );
+        emit_startup_event(
+            app,
+            StartupEvent {
+                root: root.display().to_string(),
+                fingerprint: fingerprint.clone(),
+                state: "running".to_string(),
+                task_id: Some(STARTUP_DEVSHELL_TASK_ID.to_string()),
+                task_label: Some(STARTUP_DEVSHELL_TASK_LABEL.to_string()),
+                required: Some(false),
+                message: Some("Refreshing workspace environment".to_string()),
+                reason: None,
+            },
+        );
+        if let Err(reason) = prepare_devshell_env(app, devshell, root).await {
+            let record = StartupRecord {
+                fingerprint: fingerprint.clone(),
+                state: StartupState::Failed,
+                reason: Some(reason.clone()),
+                active_task_id: Some(STARTUP_DEVSHELL_TASK_ID.to_string()),
+                task_states: task_states.clone(),
+            };
+            startup.set_record(root, record.clone());
+            emit_startup_event(
+                app,
+                StartupEvent {
+                    root: root.display().to_string(),
+                    fingerprint: fingerprint.clone(),
+                    state: "failed".to_string(),
+                    task_id: Some(STARTUP_DEVSHELL_TASK_ID.to_string()),
+                    task_label: Some(STARTUP_DEVSHELL_TASK_LABEL.to_string()),
+                    required: Some(false),
+                    message: Some("Workspace environment refresh failed".to_string()),
+                    reason: Some(reason),
+                },
+            );
+            return Ok(status_response(
+                root,
+                &config,
+                &fingerprint,
+                policy,
+                Some(record),
+            ));
+        }
+        emit_startup_event(
+            app,
+            StartupEvent {
+                root: root.display().to_string(),
+                fingerprint: fingerprint.clone(),
+                state: "ready".to_string(),
+                task_id: Some(STARTUP_DEVSHELL_TASK_ID.to_string()),
+                task_label: Some(STARTUP_DEVSHELL_TASK_LABEL.to_string()),
+                required: Some(false),
+                message: Some("Workspace environment ready".to_string()),
+                reason: None,
+            },
+        );
+    }
+
     let record = StartupRecord {
         fingerprint: fingerprint.clone(),
         state: StartupState::Ready,

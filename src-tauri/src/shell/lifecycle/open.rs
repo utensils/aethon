@@ -8,7 +8,7 @@ use std::sync::{Arc, Mutex};
 
 use portable_pty::{CommandBuilder, PtySize, native_pty_system};
 use serde::Deserialize;
-use tauri::{AppHandle, Runtime, State};
+use tauri::{AppHandle, State};
 
 use super::reader::spawn_reader_thread;
 use super::registry::{
@@ -50,10 +50,11 @@ pub struct ShellOpenArgs {
 }
 
 #[tauri::command]
-pub async fn shell_open<R: Runtime>(
-    app: AppHandle<R>,
+pub async fn shell_open(
+    app: AppHandle,
     state: State<'_, ShellRegistry>,
     devshell: State<'_, Arc<DevshellCache>>,
+    startup: State<'_, crate::commands::startup::WorkspaceStartupState>,
     args: ShellOpenArgs,
 ) -> Result<(), String> {
     if args.tab_id.is_empty() {
@@ -64,6 +65,11 @@ pub async fn shell_open<R: Runtime>(
         if guard.contains_key(&args.tab_id) {
             return Err(format!("shell already open for tab {}", args.tab_id));
         }
+    }
+
+    if let Some(cwd) = args.cwd.as_deref().filter(|cwd| !cwd.is_empty()) {
+        crate::commands::startup::ensure_workspace_startup_ready(&app, &startup, &devshell, cwd)
+            .await?;
     }
 
     let pty_system = native_pty_system();
@@ -94,7 +100,7 @@ pub async fn shell_open<R: Runtime>(
     let command_program = effective_command
         .map(str::to_string)
         .unwrap_or_else(default_shell_label);
-    let mut launch_kind: Option<DevshellKind> = None;
+    let launch_kind: Option<DevshellKind> = None;
     let mut prepared_env: Option<(Option<String>, std::collections::BTreeMap<String, String>)> =
         None;
     let mut detected_launch_kind: Option<DevshellKind> = None;
@@ -115,14 +121,7 @@ pub async fn shell_open<R: Runtime>(
                     prepared.env.len(),
                     args.tab_id
                 );
-                match kind {
-                    DevshellKind::Flake | DevshellKind::Direnv => {
-                        launch_kind = Some(kind);
-                    }
-                    DevshellKind::Shell => {
-                        prepared_env = Some((prepared.kind, prepared.env));
-                    }
-                }
+                prepared_env = Some((prepared.kind, prepared.env));
             }
             crate::devshell::PrepareDecision::DirenvAllowFailedOptional { kind, reason } => {
                 detected_launch_kind = Some(kind);
@@ -197,7 +196,7 @@ pub async fn shell_open<R: Runtime>(
     if let Some((_kind, env)) = prepared_env {
         tracing::debug!(
             target: "aethon::devshell",
-            "shell_open: applying {} legacy devshell vars to tab {}",
+            "shell_open: applying {} prepared devshell vars to tab {}",
             env.len(),
             args.tab_id
         );
