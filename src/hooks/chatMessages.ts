@@ -150,12 +150,16 @@ export function useChatMessageController(
   }
 
   function appendSystem(text: string) {
-    appendMessage({
+    const tabId =
+      (stateRef.current.activeTabId as string | undefined) ?? "default";
+    const message = {
       id: crypto.randomUUID(),
-      role: "system",
+      role: "system" as const,
       text,
       createdAt: Date.now(),
-    });
+    };
+    appendMessage(message, tabId);
+    persistLocalChatMessage(message, tabId);
   }
 
   function clearChat() {

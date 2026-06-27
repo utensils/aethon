@@ -189,6 +189,23 @@ describe("useChat setModel", () => {
     ).toEqual(["u1", "stderr", "a1"]);
   });
 
+  it("persists generic system messages with their chronological timestamp", () => {
+    const { ctx, stateRef } = buildContext();
+    const { result } = renderHook(() => useChat(ctx));
+
+    act(() => {
+      result.current.appendSystem("MCP servers\n- nixos (stdio) — uvx");
+    });
+
+    const message = (stateRef.current.tabs as Tab[])[0].messages.at(-1);
+    expect(message).toMatchObject({
+      role: "system",
+      text: "MCP servers\n- nixos (stdio) — uvx",
+      createdAt: expect.any(Number),
+    });
+    expect(ctx.persistLocalChatMessage).toHaveBeenCalledWith(message, "tab-1");
+  });
+
   it("sends normal chat messages with normal mode", async () => {
     const { ctx, stateRef } = buildContext();
     const { result } = renderHook(() => useChat(ctx));
