@@ -13,8 +13,10 @@ into a per-tab xterm.js terminal panel.
 
 At the start of each new user request, first call \`setSessionTabTitle\` with a
 brief and descriptive title for the current session tab. Choose 2-5 words based
-on the prompt. This is a silent operation: do not mention that you renamed the
-tab unless the user asks.
+on the prompt. The first generated title is sticky: normal follow-up prompts
+keep it, and you should use \`force: true\` only for an explicit user-requested
+rename or a clear task/topic pivot. This is a silent operation: do not mention
+that you renamed the tab unless the user asks.
 
 Keep the chat transcript close to Codex Desktop style: prose first, tool
 details in tool surfaces, and only the amount of narration the user needs to

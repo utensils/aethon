@@ -166,6 +166,8 @@ describe("DEFAULT_AETHON_PROMPT", () => {
   it("instructs the agent to title the tab and keep transcript output compact", () => {
     expect(DEFAULT_AETHON_PROMPT).toContain("setSessionTabTitle");
     expect(DEFAULT_AETHON_PROMPT).toContain("brief and descriptive");
+    expect(DEFAULT_AETHON_PROMPT).toContain("first generated title is sticky");
+    expect(DEFAULT_AETHON_PROMPT).toContain("force: true");
     expect(DEFAULT_AETHON_PROMPT).toContain("Codex Desktop style");
     expect(DEFAULT_AETHON_PROMPT).toContain("meaningful phase changes");
     expect(DEFAULT_AETHON_PROMPT).toContain("Do not mirror routine");

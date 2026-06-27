@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -7,6 +7,7 @@ import {
   type AethonAgentStateOptions,
   type TabRecord,
 } from "./state";
+import { writeSessionLabel } from "./session-history";
 import { buildSessionTitleTools } from "./session-title-tool";
 import { tabSessionDir } from "./tab-lifecycle";
 
@@ -37,10 +38,16 @@ async function makeFixture() {
     sessionsDir: join(root, "sessions"),
   });
   const sent: Record<string, unknown>[] = [];
-  const setSessionName = vi.fn();
+  let sessionName: string | undefined;
+  const setSessionName = vi.fn((name: string) => {
+    sessionName = name;
+  });
   state.tabs.set("tab-1", {
     id: "tab-1",
-    session: { setSessionName } as unknown as TabRecord["session"],
+    session: {
+      setSessionName,
+      sessionManager: { getSessionName: () => sessionName },
+    } as unknown as TabRecord["session"],
     toolArgsCache: new Map(),
     promptInFlight: false,
     agentEndFired: false,
@@ -122,6 +129,122 @@ describe("buildSessionTitleTools", () => {
         },
       ],
       details: { ok: true, title: "Refactor auth flow" },
+    });
+  });
+
+  it("keeps the first generated title stable across follow-up prompts", async () => {
+    const { state, deps, sent, setSessionName } = await makeFixture();
+    const sessionDir = tabSessionDir(state, "tab-1");
+    state.tabProjectCwds.set("tab-1", "/repo/a");
+    await getTool(state, deps).execute("call-1", {
+      title: "Fix login flow",
+    });
+    sent.length = 0;
+    setSessionName.mockClear();
+
+    const result = await getTool(state, deps).execute("call-2", {
+      title: "Update tests",
+    });
+
+    expect(setSessionName).not.toHaveBeenCalled();
+    await expect(readFile(join(sessionDir, "label.txt"), "utf8")).resolves.toBe(
+      "Fix login flow\n",
+    );
+    expect(sent).not.toContainEqual(
+      expect.objectContaining({ type: "session_label_changed" }),
+    );
+    expect(result).toMatchObject({
+      details: { ok: true, title: "Fix login flow", skipped: "already_named" },
+    });
+  });
+
+  it("allows an explicit override when the conversation clearly pivots", async () => {
+    const { state, deps, setSessionName } = await makeFixture();
+    const sessionDir = tabSessionDir(state, "tab-1");
+    await writeFile(join(sessionDir, "label.txt"), "Fix login flow\n", "utf8");
+
+    const result = await getTool(state, deps).execute("call-2", {
+      title: "Design billing dashboard",
+      force: true,
+    });
+
+    expect(setSessionName).toHaveBeenCalledWith("Design billing dashboard");
+    await expect(readFile(join(sessionDir, "label.txt"), "utf8")).resolves.toBe(
+      "Design billing dashboard\n",
+    );
+    expect(result).toMatchObject({
+      details: { ok: true, title: "Design billing dashboard" },
+    });
+  });
+
+  it("replaces a stale label when a reused tab directory starts a different cwd session", async () => {
+    const { state, deps, setSessionName } = await makeFixture();
+    const sessionDir = tabSessionDir(state, "tab-1");
+    state.tabProjectCwds.set("tab-1", "/repo/b");
+    await writeFile(join(sessionDir, "label.txt"), "Old project task\n", "utf8");
+
+    const result = await getTool(state, deps).execute("call-2", {
+      title: "New project task",
+    });
+
+    expect(setSessionName).toHaveBeenCalledWith("New project task");
+    await expect(readFile(join(sessionDir, "label.txt"), "utf8")).resolves.toBe(
+      "New project task\n",
+    );
+    expect(result).toMatchObject({
+      details: { ok: true, title: "New project task" },
+    });
+  });
+
+  it("does not trust a stale unowned label just because the latest log matches the current cwd", async () => {
+    const { state, deps, setSessionName } = await makeFixture();
+    const sessionDir = tabSessionDir(state, "tab-1");
+    state.tabProjectCwds.set("tab-1", "/repo/b");
+    await writeFile(
+      join(sessionDir, "session.jsonl"),
+      `${JSON.stringify({ type: "session", id: "s", cwd: "/repo/b" })}\n`,
+      "utf8",
+    );
+    await writeFile(join(sessionDir, "label.txt"), "Old project task\n", "utf8");
+
+    const result = await getTool(state, deps).execute("call-2", {
+      title: "New project task",
+    });
+
+    expect(setSessionName).toHaveBeenCalledWith("New project task");
+    await expect(readFile(join(sessionDir, "label.txt"), "utf8")).resolves.toBe(
+      "New project task\n",
+    );
+    expect(result).toMatchObject({
+      details: { ok: true, title: "New project task" },
+    });
+  });
+
+  it("keeps a sticky title when the current cwd is a canonical-equivalent path", async () => {
+    const { state, deps, setSessionName } = await makeFixture();
+    const sessionDir = tabSessionDir(state, "tab-1");
+    const realProject = join(state.userDir, "real-project");
+    const linkedProject = join(state.userDir, "linked-project");
+    await mkdir(realProject);
+    await symlink(realProject, linkedProject, "dir");
+    await writeFile(
+      join(sessionDir, "session.jsonl"),
+      `${JSON.stringify({ type: "session", id: "s", cwd: realProject })}\n`,
+      "utf8",
+    );
+    state.tabProjectCwds.set("tab-1", linkedProject);
+    await writeSessionLabel(sessionDir, "Canonical task", { cwd: realProject });
+
+    const result = await getTool(state, deps).execute("call-2", {
+      title: "Follow up task",
+    });
+
+    expect(setSessionName).not.toHaveBeenCalled();
+    await expect(readFile(join(sessionDir, "label.txt"), "utf8")).resolves.toBe(
+      "Canonical task\n",
+    );
+    expect(result).toMatchObject({
+      details: { ok: true, title: "Canonical task", skipped: "already_named" },
     });
   });
 

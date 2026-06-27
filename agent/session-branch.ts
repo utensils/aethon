@@ -213,11 +213,13 @@ export async function handleForkSession(
     () => undefined,
   );
   const label = forkLabel(srcLabel);
-  await writeSessionLabel(newDir, label).catch(() => {
-    /* best effort */
-  });
   const cwd =
     state.tabProjectCwds.get(tabId) ?? mirroredTabCwd(state, tabId) ?? cwdHint;
+  await writeSessionLabel(newDir, label, {
+    ...(cwd ? { cwd } : {}),
+  }).catch(() => {
+    /* best effort */
+  });
   deps.send({
     type: "session_forked",
     tabId,

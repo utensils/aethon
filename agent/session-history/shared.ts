@@ -6,6 +6,7 @@
  */
 
 export const LABEL_FILE = "label.txt";
+export const LABEL_META_FILE = "label-meta.json";
 export const LOCAL_CHAT_FILE = "aethon-chat.jsonl";
 export const MAX_CUSTOM_LABEL_CHARS = 120;
 export const MAX_RESTORED_MESSAGES = 200;
@@ -42,6 +43,10 @@ export interface LatestSessionLog {
   path: string;
   mtimeMs: number;
   name: string;
+}
+
+export interface SessionLabelMetadata {
+  cwd?: string;
 }
 
 export interface SessionLogMetadata {

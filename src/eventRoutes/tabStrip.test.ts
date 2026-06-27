@@ -172,7 +172,7 @@ describe("handleTabStrip", () => {
     const { ctx, mocks, applySetState } = buildRouteFixture({
       state: {
         tabs: [
-          { id: "tab-4", kind: "agent", label: "Tab 1" },
+          { id: "tab-4", kind: "agent", label: "Tab 1", cwd: "/repo/a" },
           { id: "tab-5", kind: "agent", label: "Tab 2" },
         ],
       },
@@ -191,6 +191,7 @@ describe("handleTabStrip", () => {
         type: "set_session_label",
         tabId: "tab-4",
         label: "Planning",
+        cwd: "/repo/a",
       }),
     });
     const next = applySetState({

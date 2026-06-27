@@ -15,16 +15,19 @@ import {
   mkdir,
   readFile,
   rename,
+  unlink,
   writeFile,
 } from "node:fs/promises";
 import { join } from "node:path";
 import { parseLocalChatLines } from "./parse-local";
 import {
   LABEL_FILE,
+  LABEL_META_FILE,
   LOCAL_CHAT_FILE,
   MAX_CUSTOM_LABEL_CHARS,
   MAX_LOCAL_CHAT_MESSAGES,
   type RestoredChatMessage,
+  type SessionLabelMetadata,
   hasA2ui,
   isChatRole,
   parseChatAttachments,
@@ -54,26 +57,48 @@ export async function readSessionLabel(
   }
 }
 
+export async function readSessionLabelMetadata(
+  sessionDir: string,
+): Promise<SessionLabelMetadata | undefined> {
+  try {
+    const raw = await readFile(join(sessionDir, LABEL_META_FILE), "utf8");
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object") return undefined;
+    const record = parsed as Record<string, unknown>;
+    return {
+      ...(typeof record.cwd === "string" && record.cwd.length > 0
+        ? { cwd: record.cwd }
+        : {}),
+    };
+  } catch {
+    return undefined;
+  }
+}
+
 /** Write a custom label for the given session. Empty / whitespace-only
  *  input clears the label (deletes the file). The session dir is
  *  created if missing so the call is safe before any chat turn. */
 export async function writeSessionLabel(
   sessionDir: string,
   label: string,
+  metadata: SessionLabelMetadata = {},
 ): Promise<void> {
   await mkdir(sessionDir, { recursive: true });
   const trimmed = normalizeSessionLabel(label);
   const path = join(sessionDir, LABEL_FILE);
+  const metaPath = join(sessionDir, LABEL_META_FILE);
   if (!trimmed) {
-    try {
-      const fs = await import("node:fs/promises");
-      await fs.unlink(path);
-    } catch {
-      // Already absent — the desired end state.
+    for (const target of [path, metaPath]) {
+      try {
+        await unlink(target);
+      } catch {
+        // Already absent — the desired end state.
+      }
     }
     return;
   }
   await writeFile(path, trimmed + "\n", "utf8");
+  await writeFile(metaPath, `${JSON.stringify(metadata)}\n`, "utf8");
 }
 
 export async function appendLocalChatMessage(
