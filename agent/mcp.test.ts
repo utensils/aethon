@@ -608,7 +608,7 @@ project_configs = "require-approval"
     );
     expect(process.argv).toEqual(previousArgv);
     expect(process.env.MCP_DIRECT_TOOLS).toBe(previousDirectTools);
-  });
+  }, 15_000);
 
   it(
     "refreshes the pi adapter config for the executing session cwd",

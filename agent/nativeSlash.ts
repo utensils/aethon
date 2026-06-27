@@ -129,16 +129,32 @@ function tryRunExtensionSlashCommand(
   tab: Awaited<ReturnType<typeof ensureTab>>,
   command: string,
   args: unknown,
+  cwdOverride?: string,
 ): Promise<boolean> {
-  const runExtensionCommand = (
-    tab.session as {
-      _tryExecuteExtensionCommand?: (text: string) => Promise<boolean>;
-    }
-  )._tryExecuteExtensionCommand;
+  const session = tab.session as {
+    _tryExecuteExtensionCommand?: (text: string) => Promise<boolean>;
+    _extensionRunner?: { cwd?: string };
+  };
+  const runExtensionCommand = session._tryExecuteExtensionCommand;
   if (typeof runExtensionCommand !== "function") return Promise.resolve(false);
   const rawArgs = typeof args === "string" ? args.trim() : "";
   const text = rawArgs ? `/${command} ${rawArgs}` : `/${command}`;
-  return Promise.resolve(runExtensionCommand.call(tab.session, text));
+  const runner = session._extensionRunner;
+  const hadCwd = runner
+    ? Object.prototype.hasOwnProperty.call(runner, "cwd")
+    : false;
+  const previousCwd = runner?.cwd;
+  if (cwdOverride && runner) {
+    runner.cwd = cwdOverride;
+  }
+  return Promise.resolve(runExtensionCommand.call(tab.session, text)).finally(
+    () => {
+      if (cwdOverride && runner) {
+        if (hadCwd) runner.cwd = previousCwd;
+        else delete runner.cwd;
+      }
+    },
+  );
 }
 
 export async function handleNativeSlashCommand(
@@ -158,7 +174,12 @@ export async function handleNativeSlashCommand(
     });
     return;
   }
-  const tab = await ensureTab(state, deps, tabId);
+  const cwdOverride =
+    typeof msg.cwd === "string" && msg.cwd.length > 0 ? msg.cwd : undefined;
+  if (cwdOverride) state.tabProjectCwds.set(tabId, cwdOverride);
+  const tab = await ensureTab(state, deps, tabId, {
+    ...(cwdOverride ? { cwdOverride } : {}),
+  });
   const command = name.toLowerCase();
   switch (command) {
     case "memory": {
@@ -314,7 +335,9 @@ export async function handleNativeSlashCommand(
       return;
     }
     default: {
-      if (await tryRunExtensionSlashCommand(tab, command, msg.args)) {
+      if (
+        await tryRunExtensionSlashCommand(tab, command, msg.args, cwdOverride)
+      ) {
         return;
       }
       deps.send({

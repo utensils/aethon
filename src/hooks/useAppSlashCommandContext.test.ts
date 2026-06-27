@@ -153,6 +153,169 @@ describe("useAppSlashCommandContext", () => {
     });
   });
 
+  it("uses the active workspace as the project root when the invoking tab has no cwd", () => {
+    const projects = makeProjects();
+    projects.activeWorkspaceId = "wt-1";
+    projects.workspacesByProject = {
+      "project-1": [
+        {
+          id: "wt-1",
+          projectId: "project-1",
+          label: "feature-worktree",
+          path: "/repo/aethon-worktree",
+          isMain: false,
+          branch: "feature/worktree",
+        },
+      ],
+    };
+    const { result } = renderHook(() =>
+      useAppSlashCommandContext({
+        bootLayout: { components: [] },
+        setState: vi.fn(),
+        setLayout: vi.fn(),
+        stateRef: ref({
+          activeTabId: "tab-1",
+          tabs: [{ id: "tab-1", kind: "agent", label: "One" }],
+        }),
+        projectsRef: ref(projects),
+        layoutCatalogueRef: ref([]),
+        registry: new ExtensionRegistry(),
+        appendMessage: vi.fn(),
+        pushNotification: vi.fn(() => "toast-1"),
+        clearChat: vi.fn(),
+        setTheme: vi.fn(),
+        listThemes: vi.fn(() => []),
+        setModel: vi.fn(() => Promise.resolve()),
+        toggleTerminal: vi.fn(),
+        toggleSidebar: vi.fn(),
+        toggleFilesSidebar: vi.fn(),
+        activateLayoutById: vi.fn(() => true),
+        openProjectFromPicker: vi.fn(() => Promise.resolve(null)),
+        openProjectByPath: vi.fn((path: string) => path),
+        setActiveProjectById: vi.fn(() => true),
+        clearActiveProject: vi.fn(),
+        removeProjectById: vi.fn(() => true),
+      }),
+    );
+
+    expect(result.current.slashContext().activeProjectRoot?.()).toBe(
+      "/repo/aethon-worktree",
+    );
+  });
+
+  it("carries the invoking tab cwd when forwarding native slash commands", async () => {
+    const { result } = renderHook(() =>
+      useAppSlashCommandContext({
+        bootLayout: { components: [] },
+        setState: vi.fn(),
+        setLayout: vi.fn(),
+        stateRef: ref({
+          activeTabId: "tab-1",
+          tabs: [
+            {
+              id: "tab-1",
+              kind: "agent",
+              label: "One",
+              cwd: "/repo/aethon-worktree",
+            },
+          ],
+        }),
+        projectsRef: ref(makeProjects()),
+        layoutCatalogueRef: ref([]),
+        registry: new ExtensionRegistry(),
+        appendMessage: vi.fn(),
+        pushNotification: vi.fn(() => "toast-1"),
+        clearChat: vi.fn(),
+        setTheme: vi.fn(),
+        listThemes: vi.fn(() => []),
+        setModel: vi.fn(() => Promise.resolve()),
+        toggleTerminal: vi.fn(),
+        toggleSidebar: vi.fn(),
+        toggleFilesSidebar: vi.fn(),
+        activateLayoutById: vi.fn(() => true),
+        openProjectFromPicker: vi.fn(() => Promise.resolve(null)),
+        openProjectByPath: vi.fn((path: string) => path),
+        setActiveProjectById: vi.fn(() => true),
+        clearActiveProject: vi.fn(),
+        removeProjectById: vi.fn(() => true),
+      }),
+    );
+
+    await act(async () => {
+      await result.current.slashContext().runNativeCommand("mcp", "tools");
+    });
+
+    expect(invokeMock).toHaveBeenCalledWith("agent_command", {
+      payload: JSON.stringify({
+        type: "native_slash_command",
+        tabId: "tab-1",
+        name: "mcp",
+        args: "tools",
+        cwd: "/repo/aethon-worktree",
+      }),
+    });
+  });
+
+  it("carries the active workspace cwd for native slash commands when the tab has no cwd", async () => {
+    const projects = makeProjects();
+    projects.activeWorkspaceId = "wt-1";
+    projects.workspacesByProject = {
+      "project-1": [
+        {
+          id: "wt-1",
+          projectId: "project-1",
+          label: "feature-worktree",
+          path: "/repo/aethon-worktree",
+          isMain: false,
+          branch: "feature/worktree",
+        },
+      ],
+    };
+    const { result } = renderHook(() =>
+      useAppSlashCommandContext({
+        bootLayout: { components: [] },
+        setState: vi.fn(),
+        setLayout: vi.fn(),
+        stateRef: ref({
+          activeTabId: "tab-1",
+          tabs: [{ id: "tab-1", kind: "agent", label: "One" }],
+        }),
+        projectsRef: ref(projects),
+        layoutCatalogueRef: ref([]),
+        registry: new ExtensionRegistry(),
+        appendMessage: vi.fn(),
+        pushNotification: vi.fn(() => "toast-1"),
+        clearChat: vi.fn(),
+        setTheme: vi.fn(),
+        listThemes: vi.fn(() => []),
+        setModel: vi.fn(() => Promise.resolve()),
+        toggleTerminal: vi.fn(),
+        toggleSidebar: vi.fn(),
+        toggleFilesSidebar: vi.fn(),
+        activateLayoutById: vi.fn(() => true),
+        openProjectFromPicker: vi.fn(() => Promise.resolve(null)),
+        openProjectByPath: vi.fn((path: string) => path),
+        setActiveProjectById: vi.fn(() => true),
+        clearActiveProject: vi.fn(),
+        removeProjectById: vi.fn(() => true),
+      }),
+    );
+
+    await act(async () => {
+      await result.current.slashContext().runNativeCommand("mcp", "tools");
+    });
+
+    expect(invokeMock).toHaveBeenCalledWith("agent_command", {
+      payload: JSON.stringify({
+        type: "native_slash_command",
+        tabId: "tab-1",
+        name: "mcp",
+        args: "tools",
+        cwd: "/repo/aethon-worktree",
+      }),
+    });
+  });
+
   it("does not persist empty local chat messages", () => {
     const { result } = renderHook(() =>
       useAppSlashCommandContext({
