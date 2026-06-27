@@ -694,18 +694,38 @@ impl AppEmitter {
     }
 }
 
+/// Files whose metadata invalidates a prepared devshell snapshot.
+///
+/// Keep this intentionally conservative: `.envrc` commonly delegates to
+/// worktree-local dotenv files with `source_env` / `dotenv`, and startup
+/// commands may generate those files after the first direnv prepare. If the
+/// fingerprint ignores them, Aethon can report a pre-generation env as ready.
+const FINGERPRINT_STAT_INPUTS: &[&str] = &[
+    ".envrc",
+    ".envrc.local",
+    ".env",
+    ".env.local",
+    ".env.development",
+    ".env.development.local",
+    ".env.test",
+    ".env.test.local",
+    ".env.worktree",
+    "flake.nix",
+    "shell.nix",
+];
+
 /// Fingerprint that gates "is the cached env still valid?". Combines
 /// the lockfile contents (when present) with (mtime, size) for each
-/// marker file. The lock dominates the cost so we only read its
+/// marker / dotenv input. The lock dominates the cost so we only read its
 /// bytes once.
 pub fn fingerprint_inputs(root: &Path) -> String {
     let mut hasher = Sha1::new();
-    hasher.update(b"resolver:v2:nix-develop-env");
+    hasher.update(b"resolver:v3:nix-develop-env-and-dotenv-inputs");
     if let Ok(bytes) = std::fs::read(root.join("flake.lock")) {
         hasher.update(b"lock:");
         hasher.update(&bytes);
     }
-    for name in [".envrc", "flake.nix", "shell.nix"] {
+    for name in FINGERPRINT_STAT_INPUTS {
         if let Ok(meta) = std::fs::metadata(root.join(name)) {
             hasher.update(name.as_bytes());
             hasher.update(b":");
@@ -845,6 +865,32 @@ mod tests {
         let fp3 = fingerprint_inputs(td.path());
         assert_ne!(fp1, fp2);
         assert_ne!(fp2, fp3);
+    }
+
+    #[test]
+    fn fingerprint_changes_when_generated_worktree_env_appears() {
+        let td = TempDir::new().unwrap();
+        fs::write(
+            td.path().join(".envrc"),
+            "source_env_if_exists .env.worktree\n",
+        )
+        .unwrap();
+        let before = fingerprint_inputs(td.path());
+        fs::write(td.path().join(".env.worktree"), "PORT=3056\n").unwrap();
+        let after = fingerprint_inputs(td.path());
+        assert_ne!(before, after);
+    }
+
+    #[test]
+    fn fingerprint_changes_when_dotenv_dependency_changes() {
+        let td = TempDir::new().unwrap();
+        fs::write(td.path().join(".envrc"), "dotenv .env.development\n").unwrap();
+        fs::write(td.path().join(".env.development"), "RACK_ENV=development\n").unwrap();
+        let before = fingerprint_inputs(td.path());
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        fs::write(td.path().join(".env.development"), "RACK_ENV=test\n").unwrap();
+        let after = fingerprint_inputs(td.path());
+        assert_ne!(before, after);
     }
 
     #[test]

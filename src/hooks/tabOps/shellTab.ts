@@ -16,6 +16,9 @@ export interface NewShellTabDeps {
   shellDefaultCommandRef: MutableRefObject<string | null>;
   shellDefaultArgsRef: MutableRefObject<string[]>;
   shellInheritEnvRef: MutableRefObject<boolean>;
+  /** Project/workspace startup gate. Resolves once env providers and
+   *  approved bootstrapping commands have completed for the cwd. */
+  prepareWorkspaceStartup?: (cwd: string) => Promise<boolean>;
   /** Callback into mutations.updateTab — patches the tab's shellState
    *  on bridge success/failure without re-implementing the mirror dance. */
   updateTab: (tabId: string, mutator: (tab: Tab) => Tab) => void;
@@ -37,6 +40,7 @@ export function useNewShellTab(deps: NewShellTabDeps) {
     shellDefaultCommandRef,
     shellDefaultArgsRef,
     shellInheritEnvRef,
+    prepareWorkspaceStartup,
     updateTab,
   } = deps;
 
@@ -92,22 +96,43 @@ export function useNewShellTab(deps: NewShellTabDeps) {
         terminal: { ...term, open: true },
       };
     });
-    invoke("shell_open", {
-      args: {
-        tabId: id,
-        ...(resolvedCommand ? { command: resolvedCommand } : {}),
-        ...(resolvedArgs ? { args: resolvedArgs } : {}),
-        ...(inheritedCwd ? { cwd: inheritedCwd } : {}),
-        // Seed the share mode atomically inside shell_open so the
-        // privacy floor pins at total_appended=0 — every byte from the
-        // first prompt forward is visible to the agent when the user
-        // configured a non-private default. Applying the mode post-open
-        // would race the login banner and pin it below the floor.
-        ...(seedShareMode !== "private" ? { shareMode: seedShareMode } : {}),
-        ...(inheritEnv === false ? { inheritEnv: false } : {}),
-      },
-    })
-      .then(() => {
+    const openShell = async (): Promise<boolean> => {
+      if (inheritedCwd) {
+        const ready = prepareWorkspaceStartup
+          ? await prepareWorkspaceStartup(inheritedCwd)
+          : await invoke<{ state?: string }>(
+              "workspace_startup_prepare_for_path",
+              {
+                args: { cwd: inheritedCwd },
+              },
+            ).then((status) =>
+              ["ready", "continued", "disabled"].includes(
+                status?.state ?? "ready",
+              ),
+            );
+        if (!ready) throw new Error("workspace startup not ready");
+      }
+      if (!shellTabStillExists(stateRef.current, id)) return false;
+      await invoke("shell_open", {
+        args: {
+          tabId: id,
+          ...(resolvedCommand ? { command: resolvedCommand } : {}),
+          ...(resolvedArgs ? { args: resolvedArgs } : {}),
+          ...(inheritedCwd ? { cwd: inheritedCwd } : {}),
+          // Seed the share mode atomically inside shell_open so the
+          // privacy floor pins at total_appended=0 — every byte from the
+          // first prompt forward is visible to the agent when the user
+          // configured a non-private default. Applying the mode post-open
+          // would race the login banner and pin it below the floor.
+          ...(seedShareMode !== "private" ? { shareMode: seedShareMode } : {}),
+          ...(inheritEnv === false ? { inheritEnv: false } : {}),
+        },
+      });
+      return true;
+    };
+    openShell()
+      .then((opened) => {
+        if (!opened) return;
         updateTab(id, (t) => ({
           ...t,
           shell: t.shell ? { ...t.shell, shellState: "running" } : t.shell,
@@ -123,4 +148,12 @@ export function useNewShellTab(deps: NewShellTabDeps) {
         }));
       });
   };
+}
+
+function shellTabStillExists(
+  state: Record<string, unknown>,
+  id: string,
+): boolean {
+  const tabs = (state.tabs as Tab[] | undefined) ?? [];
+  return tabs.some((tab) => tab.id === id && tab.kind === "shell");
 }

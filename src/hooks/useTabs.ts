@@ -87,6 +87,7 @@ export function useTabs(ctx: UseTabsContext): UseTabsActions {
     shellDefaultCommandRef: ctx.shellDefaultCommandRef,
     shellDefaultArgsRef: ctx.shellDefaultArgsRef,
     shellInheritEnvRef: ctx.shellInheritEnvRef,
+    prepareWorkspaceStartup: ctx.prepareWorkspaceStartup,
     updateTab: mutations.updateTab,
   });
 
