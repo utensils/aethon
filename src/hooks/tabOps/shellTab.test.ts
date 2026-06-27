@@ -150,6 +150,63 @@ describe("newShellTab", () => {
     expect(appendSystem).not.toHaveBeenCalled();
   });
 
+  it("does not report startup failures after the shell tab closes", async () => {
+    let rejectStartup: ((error: Error) => void) | undefined;
+    const prepareWorkspaceStartup = vi.fn(
+      () => new Promise<boolean>((_, reject) => (rejectStartup = reject)),
+    );
+    let state: Record<string, unknown> = { tabs: [] };
+    const stateRef = ref(state);
+    const setState = vi.fn((updater: unknown) => {
+      if (typeof updater !== "function") return;
+      state = (
+        updater as (prev: Record<string, unknown>) => Record<string, unknown>
+      )(state);
+      stateRef.current = state;
+    });
+    const updateTab = vi.fn();
+    const appendSystem = vi.fn();
+
+    const newShellTab = useNewShellTab({
+      setState,
+      stateRef,
+      projectsRef: ref<ProjectsState>({
+        activeId: "p1",
+        activeWorkspaceId: null,
+        activeHostId: null,
+        projects: [
+          {
+            id: "p1",
+            label: "Project",
+            path: "/proj",
+            lastUsed: 1,
+          },
+        ],
+        workspacesByProject: {},
+      }),
+      appendSystem,
+      defaultShareModeRef: ref("private"),
+      shellDefaultCommandRef: ref(null),
+      shellDefaultArgsRef: ref([]),
+      shellInheritEnvRef: ref(true),
+      prepareWorkspaceStartup,
+      updateTab,
+    });
+
+    newShellTab();
+    expect((state.tabs as unknown[]).length).toBe(1);
+
+    state = { ...state, tabs: [] };
+    stateRef.current = state;
+    rejectStartup?.(new Error("startup failed"));
+
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(invoke).not.toHaveBeenCalledWith("shell_open", expect.anything());
+    expect(updateTab).not.toHaveBeenCalled();
+    expect(appendSystem).not.toHaveBeenCalled();
+  });
+
   it("waits for workspace startup before opening a project shell", async () => {
     let releaseStartup: ((ready: boolean) => void) | undefined;
     const prepareWorkspaceStartup = vi.fn(

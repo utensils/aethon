@@ -139,6 +139,7 @@ export function useNewShellTab(deps: NewShellTabDeps) {
         }));
       })
       .catch((err: unknown) => {
+        if (!shellTabStillExists(stateRef.current, id)) return;
         appendSystem(`Failed to open shell tab: ${String(err)}`);
         updateTab(id, (t) => ({
           ...t,
