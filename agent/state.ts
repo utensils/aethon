@@ -558,6 +558,8 @@ export class AethonAgentState {
     string,
     Set<(payload: unknown) => void>
   >();
+  /** Unsubscribe callbacks keyed by the logical sessions.on dedupe key. */
+  readonly sessionEventHandlerTeardowns = new Map<string, () => void>();
   readonly a2uiEventHandlers: {
     match: A2UIEventMatch;
     handler: A2UIEventHandler;
@@ -566,6 +568,10 @@ export class AethonAgentState {
    *  sessions on demand — so without dedup, every new tab would re-add
    *  every extension handler, multiplying side effects on each click. */
   readonly registeredHandlerKeys = new Set<string>();
+  /** Per-register() ordinal counters for handlers with the same logical key.
+   *  Reset around each extension register() call so repeated runs dedupe the
+   *  same ordinal while same-source handlers in one run remain distinct. */
+  readonly currentExtensionHandlerOrdinals = new Map<string, number>();
 
   // -- Loading state -------------------------------------------------------
   readonly loadedExtensions = new Map<string, ExtensionSource>();
