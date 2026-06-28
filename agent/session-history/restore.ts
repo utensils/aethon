@@ -15,6 +15,11 @@
  */
 
 import { readFile } from "node:fs/promises";
+import {
+  importLegacySessionDir,
+  readSqliteSessionStreams,
+  sessionTabIdFromDir,
+} from "../session-sqlite";
 import { latestSessionLog } from "./metadata";
 import { findSessionFileMatchingCwd } from "./lookup";
 import { readLocalChatTranscript } from "./parse-local";
@@ -482,6 +487,37 @@ export async function readSessionTranscript(
   sessionDir: string,
   expectedCwd?: string,
 ): Promise<RestoredChatMessage[]> {
+  importLegacySessionDir(sessionDir);
+  const sqliteTranscript = readSqliteSessionStreams(
+    sessionTabIdFromDir(sessionDir),
+    expectedCwd,
+  );
+  if (
+    sqliteTranscript &&
+    (sqliteTranscript.piMessages.length > 0 ||
+      sqliteTranscript.localMessages.length > 0)
+  ) {
+    const piMessages = removePiToolCardsCoveredByLocalCancellation(
+      sqliteTranscript.piMessages,
+      sqliteTranscript.localMessages,
+    );
+    const piMessagesWithLocalFileChanges = mergeLocalFileChangesIntoPiMessages(
+      piMessages,
+      sqliteTranscript.localMessages,
+    );
+    const mergedPiMessages = mergeLocalAttachmentsIntoPiMessages(
+      piMessagesWithLocalFileChanges,
+      sqliteTranscript.localMessages,
+    );
+    const localOnly = dedupeLocalMessages(
+      mergedPiMessages,
+      sqliteTranscript.localMessages,
+    );
+    return mergeRestoredMessagesChronologically(
+      mergedPiMessages,
+      localOnly,
+    ).slice(-MAX_RESTORED_MESSAGES);
+  }
   // When `expectedCwd` is provided, only restore from a session whose
   // header cwd matches — the shared `default` tab dir collects sessions
   // from every project the user worked in, and the latest by mtime can

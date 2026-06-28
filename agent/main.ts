@@ -109,6 +109,8 @@ async function main(): Promise<void> {
   const userDir = process.env.AETHON_USER_DIR ?? join(homedir(), ".aethon");
   const stateFile =
     process.env.AETHON_STATE_FILE ?? join(userDir, "state.json");
+  const dbFile = process.env.AETHON_DB_FILE ?? join(userDir, "state", "aethon.sqlite3");
+  const projectsDir = process.env.AETHON_PROJECTS_DIR ?? join(userDir, "projects");
   const sessionsDir =
     process.env.AETHON_SESSIONS_DIR ?? join(userDir, "sessions");
   const docsDir = process.env.AETHON_DOCS_DIR;
@@ -134,6 +136,8 @@ async function main(): Promise<void> {
   const state = new AethonAgentState({
     userDir,
     stateFile,
+    dbFile,
+    projectsDir,
     sessionsDir,
     docsDir,
     projectRoot,

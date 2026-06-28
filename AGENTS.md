@@ -424,13 +424,16 @@ via `src/workspaces.ts` (Rust commands in `commands/git/`); the active
 workspace is mirrored to `/activeWorkspaceId` so the file tree and new tabs
 follow the sidebar selection.
 
-Pi sessions are scoped to a working directory. `src/projects.ts` persists
-the project list at `~/.aethon/projects.json` (max 16, MRU-ordered,
-schemaVersion 5; older schemas — including v4's `activeWorktreeId` /
-`worktreesByProject` spellings — migrate on read). The active project's
-path is passed as `cwd` on `tab_open`. **Existing tabs keep the cwd they
-were created with** — switching the active project only affects new tabs.
-When updating tab/session code, treat the per-tab cwd as immutable.
+Pi sessions are scoped to a working directory, but Aethon's application
+state is SQLite-backed. `src/projects.ts` still reads/writes the logical
+`projects.json` state key for compatibility, but `read_state` / `write_state`
+persist that key in `~/.aethon/state/aethon.sqlite3`; generated per-project
+data lives under `~/.aethon/projects/<projectId>/`. Older project schemas —
+including v4's `activeWorktreeId` / `worktreesByProject` spellings — migrate
+on read. The active project's path is passed as `cwd` on `tab_open`.
+**Existing tabs keep the cwd they were created with** — switching the active
+project only affects new tabs. When updating tab/session code, treat the
+per-tab cwd as immutable.
 
 The sidebar tree is **host → project → workspace**
 (`src/extensions/default-layout/sidebar/`). Tabs bucket per workspace
@@ -460,8 +463,8 @@ to the OS trash via the `trash` crate, never `unlink`.
 ### Window state persistence
 
 `src-tauri/src/window_state/` saves window position, size, and
-`maximized` flag to `~/.aethon/window-state.json` (keyed by window
-label). Everything is stored in **logical** units — physical pixels
+`maximized` flag through the SQLite-backed `window-state.json` state key
+(keyed by window label). Everything is stored in **logical** units — physical pixels
 aren't portable across monitors with different scale factors, so a
 window saved on Retina (2×) would render at the wrong size when
 restored to a 1× monitor.
@@ -548,9 +551,11 @@ The Tauri shell sets these env vars when spawning the bridge (`agent/main.ts`):
 | Env var                             | Purpose                                                                                                                                                                                                                                                      |
 | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `AETHON_DOCS_DIR`                   | Bundled docs dir (`docs/aethon-agent/` in dev, `<resource_dir>/docs/aethon-agent/` in release). Contains `README.md`, `api.md`, `components.md`, `extensions.md`. The system prompt points the model at these for the authoritative API/component reference. |
-| `AETHON_USER_DIR`                   | `~/.aethon/` — user extensions, sessions, state file.                                                                                                                                                                                                        |
-| `AETHON_STATE_FILE`                 | `~/.aethon/state.json` — JSON snapshot of loaded extensions, themes, custom components, layout summary, and tab list. Rewritten (debounced 200 ms) on every registration.                                                                                    |
-| `AETHON_SESSIONS_DIR`               | `~/.aethon/sessions/<tabId>/` per tab. Each tab uses `SessionManager.continueRecent` so pi context survives bun restarts.                                                                                                                                    |
+| `AETHON_USER_DIR`                   | `~/.aethon/` — user extensions, config, logs, and the SQLite-backed app state directory.                                                                                                                                                                      |
+| `AETHON_DB_FILE`                    | `~/.aethon/state/aethon.sqlite3` — canonical Aethon app state, projects, sessions, search index, and small managed state slices.                                                                                                                             |
+| `AETHON_PROJECTS_DIR`               | `~/.aethon/projects/` — stable per-project generated data directories keyed by project id.                                                                                                                                                                    |
+| `AETHON_STATE_FILE`                 | `~/.aethon/state.json` — compatibility/debug JSON snapshot of loaded extensions, themes, custom components, layout summary, and tab list. Rewritten (debounced 200 ms) on every registration.                                                               |
+| `AETHON_SESSIONS_DIR`               | Legacy Aethon session-import location. New Aethon session state is SQLite-backed; pi still writes sidecar transcripts to pi's default session location for later pi pickup and analytics.                                                                    |
 | `AETHON_RELEASE_MODE`               | `"1"` in release, `"0"` in dev. The system prompt branches on this to (a) avoid telling the model to read source files that aren't there, (b) point at `~/.aethon/extensions/` for new extensions instead.                                                   |
 | `AETHON_PROJECT_ROOT`               | Source tree path (dev only). Lets the model reference `agent/main.ts` etc. by absolute path during dev work.                                                                                                                                                 |
 | `AETHON_PROVIDER_TIMEOUT_SECONDS`   | Optional Aethon-owned provider/SDK request timeout override from `[agent] provider_timeout_seconds`; omitted leaves pi's provider retry settings unchanged.                                                                                                  |

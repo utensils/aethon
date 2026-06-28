@@ -10,6 +10,11 @@
 
 import { readdir, readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
+import {
+  importLegacySessionDir,
+  readSqliteSessionMetadata,
+  sessionTabIdFromDir,
+} from "../session-sqlite";
 import { readSessionLabel } from "./io";
 import {
   LOCAL_CHAT_FILE,
@@ -101,6 +106,9 @@ export async function latestSessionLog(
 export async function readSessionMetadata(
   sessionDir: string,
 ): Promise<SessionLogMetadata | null> {
+  importLegacySessionDir(sessionDir);
+  const sqliteMeta = readSqliteSessionMetadata(sessionTabIdFromDir(sessionDir));
+  if (sqliteMeta) return sqliteMeta;
   const latest = await latestSessionLog(sessionDir);
   if (!latest) return null;
 

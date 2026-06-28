@@ -44,6 +44,7 @@ mod paste;
 mod platform_speech;
 mod server;
 mod shell;
+mod storage;
 mod updater_state;
 #[cfg(feature = "voice")]
 mod voice;
@@ -202,7 +203,6 @@ pub fn run() {
             commands::session::search_sessions,
             commands::session::delete_session,
             commands::session::export_chat_markdown,
-            commands::session::copy_session_file,
             commands::scheduler::scheduled_tasks_list,
             commands::scheduler::scheduled_tasks_reconcile_live_tabs,
             commands::scheduler::scheduled_tasks_fail_running_for_tab,
@@ -331,6 +331,9 @@ pub fn run() {
 
     let app = builder
         .setup(move |app| {
+            if let Err(e) = storage::initialize(app.handle()) {
+                tracing::warn!(target: "aethon::storage", "initialize sqlite storage: {e}");
+            }
             agent_process::cleanup_orphaned_dev_agents();
             if let Some(watcher) = commands::extensions::start_agent_watcher(app.handle().clone()) {
                 app.manage(watcher);
@@ -504,7 +507,6 @@ mod tests {
             "commands::subagents::subagents_list",
             "commands::subagents::subagents_write",
             "commands::subagents::subagents_delete",
-            "commands::session::copy_session_file",
         ] {
             assert!(
                 src.contains(command),

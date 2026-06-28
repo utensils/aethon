@@ -24,6 +24,15 @@ fn state_file_path(app: &AppHandle) -> Result<PathBuf, String> {
 }
 
 pub(super) fn load_store(app: &AppHandle) -> PersistedStore {
+    if let Ok(Some(s)) = crate::storage::read_state_value(app, STATE_FILE)
+        && !s.trim().is_empty()
+    {
+        let raw: PersistedStore = serde_json::from_str(&s).unwrap_or_else(|e| {
+            tracing::warn!(target: "aethon::window_state", "parse sqlite {STATE_FILE}: {e}");
+            PersistedStore::default()
+        });
+        return migrate(raw);
+    }
     let Ok(path) = state_file_path(app) else {
         return PersistedStore::default();
     };
@@ -40,9 +49,12 @@ pub(super) fn load_store(app: &AppHandle) -> PersistedStore {
 }
 
 pub(super) fn save_store(app: &AppHandle, store: &PersistedStore) -> Result<(), String> {
-    let path = state_file_path(app)?;
     let body = serde_json::to_string_pretty(store).map_err(|e| format!("serialize: {e}"))?;
-    std::fs::write(&path, body).map_err(|e| format!("write {}: {e}", path.display()))
+    crate::storage::write_state_value(app, STATE_FILE, &body).or_else(|err| {
+        tracing::warn!(target: "aethon::window_state", "sqlite write failed: {err}; writing legacy file");
+        let path = state_file_path(app)?;
+        std::fs::write(&path, body).map_err(|e| format!("write {}: {e}", path.display()))
+    })
 }
 
 #[cfg(test)]

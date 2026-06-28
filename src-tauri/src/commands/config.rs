@@ -23,14 +23,7 @@ use crate::helpers::{
 /// without env-var assumptions.
 pub(crate) fn aethon_state_path(app: &AppHandle, name: &str) -> Result<PathBuf, String> {
     validate_state_name(name)?;
-    let home = app
-        .path()
-        .home_dir()
-        .map_err(|e| format!("home_dir: {e}"))?;
-    let dir = crate::helpers::aethon_dir(Some(home))
-        .ok_or_else(|| "aethon dir unresolved".to_string())?;
-    std::fs::create_dir_all(&dir).map_err(|e| format!("create_dir_all: {e}"))?;
-    Ok(dir.join(name))
+    crate::storage::legacy_state_file_path(app, name)
 }
 
 /// Read a file from `~/.aethon/`. Returns an empty string when the file
@@ -38,6 +31,10 @@ pub(crate) fn aethon_state_path(app: &AppHandle, name: &str) -> Result<PathBuf, 
 /// missing from empty.
 #[tauri::command]
 pub fn read_state(name: String, app: AppHandle) -> Result<String, String> {
+    if !crate::storage::is_file_backed_state_name(&name) {
+        return crate::storage::read_state_value(&app, &name)
+            .map(|value| value.unwrap_or_default());
+    }
     let path = aethon_state_path(&app, &name)?;
     match std::fs::read_to_string(&path) {
         Ok(s) => Ok(s),
@@ -49,6 +46,9 @@ pub fn read_state(name: String, app: AppHandle) -> Result<String, String> {
 /// Write a file to `~/.aethon/`. Creates the directory if missing.
 #[tauri::command]
 pub fn write_state(name: String, content: String, app: AppHandle) -> Result<(), String> {
+    if !crate::storage::is_file_backed_state_name(&name) {
+        return crate::storage::write_state_value(&app, &name, &content);
+    }
     let path = aethon_state_path(&app, &name)?;
     std::fs::write(&path, content).map_err(|e| format!("write {}: {e}", path.display()))
 }

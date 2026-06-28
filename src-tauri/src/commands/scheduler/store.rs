@@ -64,7 +64,10 @@ pub(super) fn ensure_loaded(state: &ScheduledTasksState, app: &AppHandle) -> Res
         }
     }
     let path = storage_path(app)?;
-    let mut tasks = read_store(&path)?;
+    let mut tasks = read_store_for_app(app).or_else(|err| {
+        tracing::warn!(target: "aethon::scheduler", "sqlite read failed: {err}; trying legacy file");
+        read_store(&path)
+    })?;
     let recovered = recover_loaded_running_tasks(&mut tasks, now_ms());
     {
         let mut inner = state.lock();
@@ -111,7 +114,10 @@ pub(super) fn persist_emit(state: &ScheduledTasksState, app: &AppHandle) -> Resu
             .clone()
             .ok_or_else(|| "scheduled task store not initialized".to_string())?
     };
-    write_store(&path, &list)?;
+    write_store_for_app(app, &list).or_else(|err| {
+        tracing::warn!(target: "aethon::scheduler", "sqlite write failed: {err}; writing legacy file");
+        write_store(&path, &list)
+    })?;
     let _ = app.emit("scheduled-tasks-changed", &list);
     Ok(())
 }
@@ -142,6 +148,27 @@ fn read_store(path: &Path) -> Result<HashMap<String, ScheduledTaskRecord>, Strin
         .collect())
 }
 
+fn read_store_for_app(app: &AppHandle) -> Result<HashMap<String, ScheduledTaskRecord>, String> {
+    let Some(raw) = crate::storage::read_state_value(app, STORE_FILE)? else {
+        return Ok(HashMap::new());
+    };
+    if raw.trim().is_empty() {
+        return Ok(HashMap::new());
+    }
+    parse_store(&raw)
+}
+
+fn parse_store(raw: &str) -> Result<HashMap<String, ScheduledTaskRecord>, String> {
+    let store: ScheduledTaskStore =
+        serde_json::from_str(raw).map_err(|e| format!("parse {STORE_FILE}: {e}"))?;
+    Ok(store
+        .tasks
+        .into_iter()
+        .filter(|task| task.version == TASK_VERSION)
+        .map(|task| (task.id.clone(), task))
+        .collect())
+}
+
 fn write_store(path: &Path, tasks: &[ScheduledTaskRecord]) -> Result<(), String> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| format!("create {}: {e}", parent.display()))?;
@@ -152,6 +179,15 @@ fn write_store(path: &Path, tasks: &[ScheduledTaskRecord]) -> Result<(), String>
     };
     let body = serde_json::to_string_pretty(&store).map_err(|e| format!("serialize: {e}"))?;
     std::fs::write(path, body).map_err(|e| format!("write {}: {e}", path.display()))
+}
+
+fn write_store_for_app(app: &AppHandle, tasks: &[ScheduledTaskRecord]) -> Result<(), String> {
+    let store = ScheduledTaskStore {
+        version: STORE_VERSION,
+        tasks: tasks.to_vec(),
+    };
+    let body = serde_json::to_string_pretty(&store).map_err(|e| format!("serialize: {e}"))?;
+    crate::storage::write_state_value(app, STORE_FILE, &body)
 }
 
 #[cfg(test)]

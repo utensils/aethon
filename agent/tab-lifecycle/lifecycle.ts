@@ -10,7 +10,6 @@
  * so one desktop session can switch between multiple signed-in accounts.
  */
 
-import { mkdirSync } from "node:fs";
 import {
   SessionManager,
   createAgentSession,
@@ -42,18 +41,15 @@ import {
 import { wrapWithSourceGuard } from "../source-guard";
 import { logger } from "../logger";
 import { authProfileServicesForTab } from "../auth-profiles";
-import {
-  findSessionFileMatchingCwd,
-  repairDanglingSubagentToolResults,
-} from "../session-history";
 import { emitGlobalReady } from "../dispatcherTypes";
 import type { AethonAgentState, TabRecord } from "../state";
 import { contextUsageSnapshot, emitContextUsage } from "../context-usage";
+import { createSqliteBackedSessionManager } from "../session-sqlite";
 import { handleSessionEvent } from "./events";
 import { installAethonRetryClassifier } from "./retry";
 import { buildPickerModels, ensurePickerHasModel } from "./models";
 import { refreshPiSlashCommands } from "./slash-commands";
-import { modelDescriptor, modelKey, tabSessionDir } from "./utils";
+import { modelDescriptor, modelKey } from "./utils";
 import type { TabLifecycleDeps } from "./utils";
 
 export interface EnsureTabOptions {
@@ -194,30 +190,13 @@ export async function ensureTab(
 
   let sessionManager;
   try {
-    const dir = tabSessionDir(state, tabId);
-    mkdirSync(dir, { recursive: true });
-    // Sessions are stored per-tabId, but `default` is shared across
-    // every project bucket — a plain `continueRecent` would resume
-    // whichever project last wrote there, leaking the wrong chat into
-    // a freshly-opened project. Open the most-recent session whose
-    // header cwd matches the active project; if none matches, start
-    // fresh under the same dir rather than picking up an unrelated
-    // project's history (`continueRecent` would).
-    const matching = await findSessionFileMatchingCwd(dir, resolvedCwd);
-    if (matching) {
-      await repairDanglingSubagentToolResults(matching).catch(
-        (err: unknown) => {
-          lifecycleLog.warn(
-            `subagent result repair failed for ${matching}: ${
-              err instanceof Error ? err.message : String(err)
-            }`,
-          );
-        },
-      );
-    }
-    sessionManager = matching
-      ? SessionManager.open(matching, dir)
-      : SessionManager.create(resolvedCwd, dir);
+    // Aethon session state is SQLite-backed; pi receives its own normal
+    // default-location session file as a write-through sidecar only.
+    sessionManager = createSqliteBackedSessionManager(
+      SessionManager.create(resolvedCwd),
+      tabId,
+      resolvedCwd,
+    );
   } catch (err) {
     logger
       .scope("session")

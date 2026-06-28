@@ -4,12 +4,21 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const ensureTabMock = vi.hoisted(() => vi.fn());
+const forkSqliteSessionMock = vi.hoisted(() => vi.fn(() => true));
 
 vi.mock("./tab-lifecycle", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./tab-lifecycle")>();
   return {
     ...actual,
     ensureTab: ensureTabMock,
+  };
+});
+
+vi.mock("./session-sqlite", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./session-sqlite")>();
+  return {
+    ...actual,
+    forkSqliteSession: forkSqliteSessionMock,
   };
 });
 
@@ -86,6 +95,8 @@ function msg(extra: Partial<InboundMessage>): InboundMessage {
 beforeEach(() => {
   sessionsDir = mkdtempSync(join(tmpdir(), "aethon-branch-"));
   ensureTabMock.mockReset();
+  forkSqliteSessionMock.mockReset();
+  forkSqliteSessionMock.mockReturnValue(true);
 });
 
 afterEach(() => {
@@ -194,16 +205,29 @@ describe("handleForkSession", () => {
     expect(forked).toBeTruthy();
     expect(typeof forked?.newTabId).toBe("string");
     expect((forked?.newTabId as string).length).toBeGreaterThan(0);
-    expect(forked?.sourcePath).toBe(join(sessionsDir, "t1", "branch.jsonl"));
+    expect(forked).not.toHaveProperty("sourcePath");
     expect(forked?.label).toMatch(/^Fork of /);
     expect(forked?.cwd).toBe("/proj");
   });
 
-  it("errors when the session is in-memory (no branched path)", async () => {
+  it("emits a fork event even when pi does not produce a sidecar path", async () => {
     const { state } = makeState({ branchedPath: undefined });
     const { deps, sent } = makeDeps();
     await handleForkSession(state, deps, msg({ tabId: "t1", entryId: "e2" }));
-    expect(sent.some((m) => m.type === "error")).toBe(true);
+    expect(sent.some((m) => m.type === "error")).toBe(false);
+    expect(sent.some((m) => m.type === "session_forked")).toBe(true);
+  });
+
+  it("does not emit session_forked when sqlite state copy fails", async () => {
+    forkSqliteSessionMock.mockReturnValue(false);
+    const { state } = makeState();
+    const { deps, sent } = makeDeps();
+    await handleForkSession(state, deps, msg({ tabId: "t1", entryId: "e2" }));
+    expect(sent).toContainEqual({
+      type: "error",
+      tabId: "t1",
+      message: "fork_session: failed to copy session state",
+    });
     expect(sent.some((m) => m.type === "session_forked")).toBe(false);
   });
 

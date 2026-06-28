@@ -88,23 +88,24 @@ falls back unknown enum values to safe defaults.
 ├── config.toml            # this file
 ├── agents/                # user-scope subagent definitions (<name>.md)
 ├── extensions/            # installed extension packages
-├── sessions/<tabId>/      # one pi session per agent tab
 ├── auth/                  # auth-profile metadata + per-profile credentials
 ├── logs/                  # daily-rotating Rust + bridge logs
-├── state.json             # tab / layout snapshot
-├── window-state.json      # window geometry restore
+├── state/aethon.sqlite3   # canonical app state, projects, sessions, caches
+├── projects/<projectId>/  # Aethon-managed per-project data
+├── state.json             # debug/runtime snapshot export
 ├── system-prompt.md       # optional full system-prompt override
 ├── system-prompt-append.md# optional system-prompt append
 ├── devshell-cache/        # resolved Nix devshell snapshots
-├── updates/               # update backups for boot-probation rollback
-└── projects.json          # recent project list
+└── updates/               # update backups for boot-probation rollback
 ```
 
 The hand-editable ones are `config.toml`, the subagent definitions under
 `agents/` (see [Agents](/guide/agents#subagents)), and the system-prompt
 override / append files (see
 [Agents](/guide/agents#system-prompt-customization)). The rest are managed
-by Aethon.
+by Aethon. Pi may also write its own session files in pi's default session
+directory so a conversation can be picked up from pi later, but Aethon restores
+its application state from SQLite.
 
 ## Set a theme
 

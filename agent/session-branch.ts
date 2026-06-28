@@ -6,14 +6,12 @@
  *    earlier message. Non-destructive — the abandoned path stays in the file,
  *    so a later restore still sees it; we just realign the Aethon-local chat
  *    so it doesn't resurrect post-rollback rows.
- *  - fork: `createBranchedSession(entryId)` extracts the path root→entry into a
- *    fresh jsonl (in the source tab's dir) *without* disturbing the source
- *    session. The frontend then moves that file into a new tab's dir (via the
- *    `copy_session_file` Rust command) and opens the tab.
+ *  - fork: SQLite copies the path root→entry into a new Aethon session.
+ *    Pi still receives a sidecar branch file in its default session location,
+ *    but Aethon does not read or copy that file.
  */
 
 import { randomUUID } from "node:crypto";
-import { mkdirSync } from "node:fs";
 import type { AethonAgentState, TabRecord } from "./state";
 import type { DispatcherDeps, InboundMessage } from "./dispatcherTypes";
 import { ensureTab, tabSessionDir } from "./tab-lifecycle";
@@ -22,6 +20,7 @@ import {
   truncateLocalChatAfterEntry,
   writeSessionLabel,
 } from "./session-history";
+import { forkSqliteSession } from "./session-sqlite";
 
 function stringField(value: unknown): string {
   return typeof value === "string" ? value : "";
@@ -183,9 +182,8 @@ export async function handleForkSession(
     });
     return;
   }
-  let sourcePath: string | undefined;
   try {
-    sourcePath = sm.createBranchedSession(entryId);
+    sm.createBranchedSession(entryId);
   } catch (err) {
     deps.send({
       type: "error",
@@ -194,27 +192,22 @@ export async function handleForkSession(
     });
     return;
   }
-  if (!sourcePath) {
-    deps.send({
-      type: "error",
-      tabId,
-      message: "fork_session: cannot fork an in-memory session",
-    });
-    return;
-  }
   const newTabId = randomUUID();
-  const newDir = tabSessionDir(state, newTabId);
-  try {
-    mkdirSync(newDir, { recursive: true });
-  } catch {
-    /* the Rust copy command also creates it */
-  }
   const srcLabel = await readSessionLabel(tabSessionDir(state, tabId)).catch(
     () => undefined,
   );
   const label = forkLabel(srcLabel);
   const cwd =
     state.tabProjectCwds.get(tabId) ?? mirroredTabCwd(state, tabId) ?? cwdHint;
+  const newDir = tabSessionDir(state, newTabId);
+  if (!forkSqliteSession(tabId, newTabId, entryId, label, cwd)) {
+    deps.send({
+      type: "error",
+      tabId,
+      message: "fork_session: failed to copy session state",
+    });
+    return;
+  }
   await writeSessionLabel(newDir, label, {
     ...(cwd ? { cwd } : {}),
   }).catch(() => {
@@ -224,7 +217,6 @@ export async function handleForkSession(
     type: "session_forked",
     tabId,
     newTabId,
-    sourcePath,
     label,
     ...(cwd ? { cwd } : {}),
   });
