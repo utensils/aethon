@@ -70,20 +70,23 @@ pub fn fs_reveal_in_file_manager(root: String, path: String) -> Result<(), Strin
 ///
 /// The command does not return existence info beyond the success / error
 /// boundary, so a malicious extension can't use this as a generic
-/// "does this directory exist?" oracle — the only side effect is opening
-/// Finder/Explorer/xdg-open, which is itself visible to the user.
+/// "does this directory exist?" oracle — failed shape checks and launcher
+/// failures all return the same opaque public error.
 #[tauri::command]
 pub fn fs_open_in_file_manager(path: String) -> Result<(), String> {
     let p = PathBuf::from(&path);
     if !p.is_absolute() {
-        return Err(format!("path must be absolute: {path}"));
+        return open_in_file_manager_error(&path, "path must be absolute");
     }
     if path.contains('\0') {
-        return Err("path contains NUL".to_string());
+        return open_in_file_manager_error(&path, "path contains NUL");
     }
-    let canon = p.canonicalize().map_err(|e| format!("canonicalize: {e}"))?;
+    let canon = match p.canonicalize() {
+        Ok(canon) => canon,
+        Err(e) => return open_in_file_manager_error(&path, format!("canonicalize: {e}")),
+    };
     if !canon.is_dir() {
-        return Err(format!("not a directory: {path}"));
+        return open_in_file_manager_error(&path, "not a directory");
     }
     let target = canon;
     #[cfg(target_os = "macos")]
@@ -91,7 +94,10 @@ pub fn fs_open_in_file_manager(path: String) -> Result<(), String> {
         crate::env::command("open")
             .arg(&target)
             .spawn()
-            .map_err(|e| format!("open: {e}"))?;
+            .map_err(|e| {
+                log_open_in_file_manager_error(&path, format!("open: {e}"));
+                "open failed".to_string()
+            })?;
         Ok(())
     }
     #[cfg(target_os = "windows")]
@@ -99,7 +105,10 @@ pub fn fs_open_in_file_manager(path: String) -> Result<(), String> {
         crate::env::command("explorer.exe")
             .arg(&target)
             .spawn()
-            .map_err(|e| format!("explorer.exe: {e}"))?;
+            .map_err(|e| {
+                log_open_in_file_manager_error(&path, format!("explorer.exe: {e}"));
+                "open failed".to_string()
+            })?;
         Ok(())
     }
     #[cfg(all(unix, not(target_os = "macos")))]
@@ -107,8 +116,51 @@ pub fn fs_open_in_file_manager(path: String) -> Result<(), String> {
         crate::env::command("xdg-open")
             .arg(&target)
             .spawn()
-            .map_err(|e| format!("xdg-open: {e}"))?;
+            .map_err(|e| {
+                log_open_in_file_manager_error(&path, format!("xdg-open: {e}"));
+                "open failed".to_string()
+            })?;
         Ok(())
+    }
+}
+
+fn open_in_file_manager_error(path: &str, reason: impl std::fmt::Display) -> Result<(), String> {
+    log_open_in_file_manager_error(path, reason);
+    Err("open failed".to_string())
+}
+
+fn log_open_in_file_manager_error(path: &str, reason: impl std::fmt::Display) {
+    tracing::warn!(
+        target: "aethon::fs",
+        path = %path,
+        reason = %reason,
+        "fs_open_in_file_manager failed"
+    );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::fs_open_in_file_manager;
+
+    #[test]
+    fn open_in_file_manager_failure_errors_are_opaque() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let missing_path = dir.path().join("missing");
+        let file_path = dir.path().join("file.txt");
+        std::fs::write(&file_path, "not a directory").expect("write file");
+
+        let malformed_path = format!("{}{}bad", dir.path().display(), '\0');
+        let errors = [
+            fs_open_in_file_manager("relative/path".to_string()).expect_err("relative path"),
+            fs_open_in_file_manager(missing_path.display().to_string()).expect_err("missing path"),
+            fs_open_in_file_manager(file_path.display().to_string()).expect_err("file path"),
+            fs_open_in_file_manager(malformed_path).expect_err("malformed path"),
+        ];
+
+        assert_eq!(
+            errors,
+            ["open failed", "open failed", "open failed", "open failed"]
+        );
     }
 }
 
