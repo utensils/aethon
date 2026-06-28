@@ -67,11 +67,22 @@ function componentMatchesToolIdentity(
   component: A2UIComponent | undefined,
   identity: string,
   incomingStartedAt: number | undefined,
+  incomingEndedAt: number | undefined,
 ): boolean {
   if (component?.type !== "tool-card") return false;
   const currentStartedAt = numericProp(component, "startedAt");
   if (currentStartedAt === undefined) return false;
+  // When both the existing card and the incoming one are still running (no
+  // endedAt), a replayed tool_execution_start mints a fresh startedAt for the
+  // same logical call (identity == normalized toolCallId, which is unique per
+  // call). Merge by identity alone in that case so a retry/respawn doesn't
+  // leave two "Running" copies. The strict startedAt match still gates merges
+  // that involve a finished card (e.g. late results onto a cancelled card).
+  const bothRunning =
+    numericProp(component, "endedAt") === undefined &&
+    incomingEndedAt === undefined;
   if (
+    !bothRunning &&
     incomingStartedAt !== undefined &&
     currentStartedAt !== incomingStartedAt
   ) {
@@ -88,13 +99,19 @@ function findCurrentToolCardMatches(
   incomingId: string | undefined,
   identity: string | undefined,
   incomingStartedAt: number | undefined,
+  incomingEndedAt: number | undefined,
 ): Array<{ index: number; component: A2UIComponent }> {
   const matches: Array<{ index: number; component: A2UIComponent }> = [];
   for (let index = 0; index < messages.length; index += 1) {
     const component = (messages[index].a2ui?.components ?? []).find((item) => {
       if (componentMatchesIncomingToolId(item, incomingId ?? "")) return true;
       if (!identity) return false;
-      return componentMatchesToolIdentity(item, identity, incomingStartedAt);
+      return componentMatchesToolIdentity(
+        item,
+        identity,
+        incomingStartedAt,
+        incomingEndedAt,
+      );
     });
     if (component) matches.push({ index, component });
   }
@@ -163,11 +180,13 @@ function upsertToolCardMessage(
 ): { tab: Tab; message: ChatMessage } {
   const incomingId = toolCard.id;
   const incomingStartedAt = numericProp(toolCard, "startedAt");
+  const incomingEndedAt = numericProp(toolCard, "endedAt");
   const matches = findCurrentToolCardMatches(
     current.messages,
     incomingId,
     identity,
     incomingStartedAt,
+    incomingEndedAt,
   );
   if (matches.length > 0) {
     const targetIndex = matches[0].index;

@@ -191,6 +191,79 @@ describe("handleA2ui", () => {
     );
   });
 
+  it("merges a replayed running tool card by identity even when startedAt drifts", () => {
+    // A re-emitted tool_execution_start (auto-retry / codex replay, or a worker
+    // respawn that lost its uiId cache) arrives with a fresh uiId AND a fresh
+    // startedAt for the same logical call. Both cards are still running (no
+    // endedAt), so they must collapse to ONE card rather than showing two
+    // "Running" copies of the same command.
+    let tab = makeEmptyTab("tab-1", "Tab 1");
+    const { ctx } = buildHandlerFixture({
+      state: { activeTabId: "tab-1", tabs: [tab] },
+    });
+    ctx.updateTab = vi.fn((_tabId, updater) => {
+      tab = updater(tab);
+    });
+    ctx.appendMessage = vi.fn((message: ChatMessage) => {
+      tab = applyAppendByMessageId(tab, message);
+    });
+
+    const firstStart = {
+      components: [
+        {
+          id: "tool-1-call_bash_1-fc_abc",
+          type: "tool-card",
+          props: {
+            toolName: "bash",
+            description: "bunx vitest run",
+            startedAt: 1_000,
+          },
+          children: [],
+        },
+      ],
+    };
+    const replayedStart = {
+      components: [
+        {
+          id: "tool-2-call_bash_1-fc_abc",
+          type: "tool-card",
+          props: {
+            toolName: "bash",
+            description: "bunx vitest run",
+            // Replay minted a new clock — the merge must ignore this drift.
+            startedAt: 5_000,
+          },
+          children: [],
+        },
+      ],
+    };
+
+    handleA2ui(
+      {
+        type: "a2ui",
+        payload: firstStart,
+        id: "tool-1-call_bash_1-fc_abc",
+        tabId: "tab-1",
+      },
+      ctx,
+    );
+    handleA2ui(
+      {
+        type: "a2ui",
+        payload: replayedStart,
+        id: "tool-2-call_bash_1-fc_abc",
+        tabId: "tab-1",
+      },
+      ctx,
+    );
+
+    expect(tab.messages).toHaveLength(1);
+    expect(tab.messages[0]).toMatchObject({
+      id: "tool-2-call_bash_1-fc_abc",
+      a2ui: replayedStart,
+    });
+  });
+
   it("replaces a running task_batch card with a synthetic cancellation by identity", () => {
     let tab = makeEmptyTab("tab-1", "Tab 1");
     const { ctx } = buildHandlerFixture({

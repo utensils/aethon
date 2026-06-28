@@ -49,10 +49,19 @@ export function handleToolExecutionStart(
     return;
   }
   const summary = summarizeToolArgs(ev.toolName, ev.args);
-  const startedAt = Date.now();
-  const uiId = `tool-${++rec.toolCardSeq}-${ev.toolCallId}`;
-  const rootPath = currentToolRoot(state, tabId);
+  // pi can re-emit tool_execution_start for the *same* toolCallId without an
+  // intervening tool_execution_end — auto-retry of a wedged turn, codex replay,
+  // etc. handleToolExecutionEnd deletes the cache entry, so a still-cached
+  // toolCallId means this is a replay of an in-flight call: reuse the existing
+  // card id + startedAt instead of minting a fresh card, otherwise the user
+  // sees two "Running" copies of the same long-running command (the original is
+  // orphaned because the single end event only closes the newest uiId).
+  const existing = rec.toolArgsCache.get(ev.toolCallId);
+  const startedAt = existing?.startedAt ?? Date.now();
+  const uiId = existing?.uiId ?? `tool-${++rec.toolCardSeq}-${ev.toolCallId}`;
+  const rootPath = existing?.rootPath ?? currentToolRoot(state, tabId);
   rec.toolArgsCache.set(ev.toolCallId, {
+    ...existing,
     name: ev.toolName,
     summary,
     uiId,
