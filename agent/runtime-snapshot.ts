@@ -143,8 +143,8 @@ export function scheduleStateFileWrite(state: AethonAgentState): void {
   state.stateFileTimer = setTimeout(async () => {
     state.stateFileTimer = null;
     while (state.stateFileDirty) {
+      if (state.stateFileWriting) return; // active writer will observe dirty
       state.stateFileDirty = false;
-      if (state.stateFileWriting) return; // overlap guard
       state.stateFileWriting = true;
       try {
         mkdirSync(state.userDir, { recursive: true });
