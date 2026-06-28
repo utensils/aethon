@@ -21,6 +21,7 @@ import {
   workspaceIdForCwd,
   type UseProjectOpsContext,
 } from "./useProjectOps";
+import { defaultWorkspacePath } from "./projectOps/workspaceOps/git";
 
 vi.mock("../monaco/editor-buffers", () => ({
   disposeEditorBuffer: vi.fn(),
@@ -1604,6 +1605,13 @@ describe("useProjectOps workspace creation", () => {
       /^\/tmp\/aethon\/worktrees\/aethon-01m6jvq\/feat-/,
     );
     expect(created).toBe(addCall?.[1]?.targetPath);
+  });
+
+  it("keeps the project hash case-preserving for managed path namespaces", () => {
+    expect(defaultWorkspacePath("/Work/aethon", "fix/thing", "/tmp/aethon"))
+      .toBe("/tmp/aethon/worktrees/aethon-1yl0o23/fix-thing");
+    expect(defaultWorkspacePath("/work/aethon", "fix/thing", "/tmp/aethon"))
+      .toBe("/tmp/aethon/worktrees/aethon-1dg8obv/fix-thing");
   });
 
   it("namespaces managed paths for same-name projects", async () => {

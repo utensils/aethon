@@ -82,12 +82,16 @@ function uniqueWorkspacePath(
 }
 
 function workspacePathKey(path: string): string {
-  return trimTrailingSeparators(path).replace(/\\/g, "/").toLowerCase();
+  return normalizedWorkspacePath(path).toLowerCase();
+}
+
+function normalizedWorkspacePath(path: string): string {
+  return trimTrailingSeparators(path).replace(/\\/g, "/");
 }
 
 function stablePathHash(path: string): string {
   let hash = 0x811c9dc5;
-  for (const char of workspacePathKey(path)) {
+  for (const char of normalizedWorkspacePath(path)) {
     hash ^= char.charCodeAt(0);
     hash = Math.imul(hash, 0x01000193) >>> 0;
   }
