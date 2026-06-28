@@ -91,6 +91,54 @@ function applyOptimisticUpdate(
   return setPointer(prev, valueProp.$ref, next);
 }
 
+function escapePointerToken(token: string): string {
+  return token.replace(/~/g, "~0").replace(/\//g, "~1");
+}
+
+function topLevelOverlayPaths(state: Record<string, unknown>): Set<string> {
+  return new Set(Object.keys(state).map((key) => `/${escapePointerToken(key)}`));
+}
+
+function optimisticUpdatePath(
+  component: A2UIComponent,
+  eventType: string,
+  data: unknown,
+): string | undefined {
+  if (eventType !== "change" && eventType !== "submit") return undefined;
+  const valueProp = component.props?.value;
+  if (!isDynamicRef(valueProp)) return undefined;
+  const next = (data as { value?: unknown } | undefined)?.value;
+  return next === undefined ? undefined : valueProp.$ref;
+}
+
+function mergeStateOverlay(
+  base: Record<string, unknown>,
+  overlay: Record<string, unknown>,
+  overlayPaths: Set<string>,
+): Record<string, unknown> {
+  let merged: Record<string, unknown> = { ...base };
+  for (const path of overlayPaths) {
+    merged = setPointer(merged, path, resolvePointer(overlay, path));
+  }
+  return merged;
+}
+
+function diffStateOverlay(
+  next: Record<string, unknown>,
+  base: Record<string, unknown>,
+  overlayPaths: Set<string>,
+): { diff: Record<string, unknown>; paths: Set<string> } {
+  let diff: Record<string, unknown> = {};
+  const paths = new Set<string>();
+  for (const path of overlayPaths) {
+    const nextValue = resolvePointer(next, path);
+    if (Object.is(nextValue, resolvePointer(base, path))) continue;
+    diff = setPointer(diff, path, nextValue);
+    paths.add(path);
+  }
+  return { diff, paths };
+}
+
 export interface BuiltinComponentProps {
   component: A2UIComponent;
   state: Record<string, unknown>;
@@ -244,9 +292,15 @@ export default function A2UIRenderer({
   bare = false,
 }: A2UIRendererProps) {
   const registry = useExtensionRegistry();
-  const [internalState, setInternalState] = useState<Record<string, unknown>>(
-    payload.state || {},
-  );
+  const [internalOverlay, setInternalOverlay] = useState<{
+    state: Record<string, unknown>;
+    paths: Set<string>;
+  }>(() => ({
+    state: payload.state || {},
+    paths: topLevelOverlayPaths(payload.state || {}),
+  }));
+  const internalState = internalOverlay.state;
+  const overlayPaths = internalOverlay.paths;
   // Bump on extension template registry changes so the renderer re-evaluates
   // any `<Unknown>` types into newly-registered templates without unmounting.
   const [, setTemplateVersion] = useState(0);
@@ -275,16 +329,18 @@ export default function A2UIRenderer({
   const state = useMemo(() => {
     if (mode === "controlled") return externalState as Record<string, unknown>;
     if (mode === "observer") {
-      return {
-        ...(externalState as Record<string, unknown>),
-        ...internalState,
-      };
+      return mergeStateOverlay(
+        externalState as Record<string, unknown>,
+        internalState,
+        overlayPaths,
+      );
     }
     return internalState;
-  }, [mode, externalState, internalState]);
+  }, [mode, externalState, internalState, overlayPaths]);
 
   const updateState = (
     updater: (prev: Record<string, unknown>) => Record<string, unknown>,
+    overlayPath?: string,
   ) => {
     if (mode === "controlled") {
       // Pass the updater to React's setState so it composes against the
@@ -296,32 +352,27 @@ export default function A2UIRenderer({
       // the first event's real mutation.
       onStateChange!((prev) => updater(prev));
     } else if (mode === "observer") {
-      // Compute the post-update merged state, then DIFF against the parent
-      // external state so internalState only retains keys that diverge.
-      // Without the diff, snapshotted external keys would freeze in
-      // internal and shadow future global updates (e.g. extension
-      // state_patch values arriving after a local click).
-      //
-      // Known limitation: the diff is top-level only. If a chat-card
-      // text-input writes `/foo/bar` while extension state ALSO writes
-      // under `/foo/...`, the entire `foo` subtree freezes in the
-      // overlay and live extension updates to siblings stop reflecting
-      // in this card. The contrived collision (extension key namespace
-      // overlapping with a card-local input path) is unlikely in
-      // practice; deeper-path tracking would require threading the
-      // optimistic-update path out of applyOptimisticUpdate.
-      setInternalState((prev) => {
+      // Compute the post-update merged state, then DIFF only the JSON Pointer
+      // paths currently owned by the internal overlay. Without path-scoped
+      // overlay tracking, a local optimistic write such as `/foo/bar` would
+      // retain the whole `foo` object internally and mask later external
+      // sibling updates under `/foo/...`. Keeping explicit paths also preserves
+      // whole-object writes: an intentional `/foo` replacement still shadows
+      // external `/foo/*` children instead of deep-merging them back in.
+      setInternalOverlay((prev) => {
         const ext = externalState as Record<string, unknown>;
-        const merged = { ...ext, ...prev };
+        const nextOverlayPaths = new Set(prev.paths);
+        if (overlayPath) nextOverlayPaths.add(overlayPath);
+        const merged = mergeStateOverlay(ext, prev.state, prev.paths);
         const next = updater(merged);
-        const diff: Record<string, unknown> = {};
-        for (const k of Object.keys(next)) {
-          if (!Object.is(next[k], ext[k])) diff[k] = next[k];
-        }
-        return diff;
+        const { diff, paths } = diffStateOverlay(next, ext, nextOverlayPaths);
+        return { state: diff, paths };
       });
     } else {
-      setInternalState(updater);
+      setInternalOverlay((prev) => ({
+        state: updater(prev.state),
+        paths: prev.paths,
+      }));
     }
   };
 
@@ -335,7 +386,10 @@ export default function A2UIRenderer({
   useEffect(() => {
     if (mode === "controlled") return;
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setInternalState(payload.state || {});
+    setInternalOverlay({
+      state: payload.state || {},
+      paths: topLevelOverlayPaths(payload.state || {}),
+    });
   }, [payload, mode]);
 
   const handleEvent = async (
@@ -345,8 +399,9 @@ export default function A2UIRenderer({
     templateRootType?: string,
     descendantId?: string,
   ) => {
-    updateState((prev) =>
-      applyOptimisticUpdate(prev, component, eventType, data),
+    updateState(
+      (prev) => applyOptimisticUpdate(prev, component, eventType, data),
+      optimisticUpdatePath(component, eventType, data),
     );
 
     if (externalOnEvent) {
