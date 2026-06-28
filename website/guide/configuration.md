@@ -301,16 +301,17 @@ disable_auto_check = false
 in-development builds. Set `disable_auto_check = true` to stop background
 checks; the manual "Check for Updates" menu item still works.
 
-## Stop LAN advertisement
+## Stop LAN listener and advertisement
 
 ```toml
 [server]
 enabled = false
 ```
 
-This silences the mDNS advertiser (`_aethon._tcp.local.`) so other hosts
-stop discovering this one. Read-only peer discovery still runs, and a
-manual `server_start` action advertises regardless.
+This prevents Aethon from starting its unauthenticated LAN HTTP listener
+and silences the mDNS advertiser (`_aethon._tcp.local.`) on boot. Read-only
+peer discovery still runs, and a manual `server_start` action starts and
+advertises the local server regardless.
 
 ::: warning
 The discovery server has no authentication and no TLS today. It is

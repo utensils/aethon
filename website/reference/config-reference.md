@@ -220,14 +220,14 @@ enabled = true
 
 | Key | Type | Default | Notes |
 |---|---|---|---|
-| `enabled` | boolean | `true` | Whether to advertise this host over mDNS (`_aethon._tcp.local.`) at boot. Set `false` to stop the LAN announcement while keeping peer discovery (the browser) running read-only. A manual `server_start` action always advertises regardless of this flag. |
+| `enabled` | boolean | `true` | Whether to start the unauthenticated LAN HTTP listener and advertise this host over mDNS (`_aethon._tcp.local.`) at boot. Set `false` to stop LAN exposure while keeping peer discovery (the browser) running read-only. A manual `server_start` action starts and advertises regardless of this flag. |
 
 ::: warning
 The discovery server has **no authentication and no TLS**. It is explicit
 scaffolding for an upcoming pairing feature; do not treat the HTTP
-endpoints as a trusted IPC channel. `enabled = false` only silences the
-mDNS advertiser; the HTTP server and the read-only discovery browser keep
-running.
+endpoints as a trusted IPC channel. `enabled = false` prevents the local
+HTTP listener and mDNS advertiser from starting on boot; the read-only
+discovery browser keeps running.
 :::
 
 ## `[startup]`

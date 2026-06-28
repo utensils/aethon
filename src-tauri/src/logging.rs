@@ -64,8 +64,7 @@ pub(crate) fn init_tracing() {
     };
     // Quiet the mdns_sd crate's below-warn chatter (routine multicast send
     // retries on interfaces without a route) in the DEFAULT filter only — an
-    // explicit AETHON_LOG / RUST_LOG override wins and can re-enable it. The
-    // `[server] enabled = false` gate is the full off-switch.
+    // explicit AETHON_LOG / RUST_LOG override wins and can re-enable it.
     let filter = EnvFilter::try_from_env("AETHON_LOG")
         .or_else(|_| EnvFilter::try_from_default_env())
         .unwrap_or_else(|_| EnvFilter::new(format!("{default_level},mdns_sd=warn")));
