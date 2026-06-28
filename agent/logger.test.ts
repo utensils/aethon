@@ -19,10 +19,11 @@ import { join } from "node:path";
  * resets the module registry and re-imports with the env it wants.
  */
 describe("bridge logger file sink", () => {
-  const savedEnv = { ...process.env };
-
   afterEach(() => {
-    process.env = { ...savedEnv };
+    // Restore the individual stubbed vars without replacing the process.env
+    // reference — a fresh object would leak into other test files sharing this
+    // Vitest worker and break helpers like vi.stubEnv.
+    vi.unstubAllEnvs();
     vi.resetModules();
     vi.doUnmock("node:os");
   });
@@ -30,7 +31,7 @@ describe("bridge logger file sink", () => {
   it("writes to AETHON_LOG_DIR when the override is set", async () => {
     const dir = mkdtempSync(join(tmpdir(), "aethon-log-override-"));
     try {
-      process.env.AETHON_LOG_DIR = dir;
+      vi.stubEnv("AETHON_LOG_DIR", dir);
       vi.resetModules();
       const { logger } = await import("./logger");
       logger.scope("probe").info("override-line");
@@ -52,8 +53,8 @@ describe("bridge logger file sink", () => {
         homedir: () => fakeHome,
         tmpdir: () => tmpdir(),
       }));
-      delete process.env.AETHON_LOG_DIR;
-      process.env.VITEST = "true";
+      vi.stubEnv("AETHON_LOG_DIR", undefined);
+      vi.stubEnv("VITEST", "true");
       vi.resetModules();
       const { logger } = await import("./logger");
       logger.scope("probe").info("must-not-be-filed");
