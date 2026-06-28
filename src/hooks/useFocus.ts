@@ -1,17 +1,10 @@
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
-import { isOverviewActive, type Tab } from "../types/tab";
+import type { Tab } from "../types/tab";
 import { focusTerminalPanel, isFocusInTerminalPanel } from "../utils/focus";
 
 export interface UseFocusContext {
   setState: Dispatch<SetStateAction<Record<string, unknown>>>;
   stateRef: MutableRefObject<Record<string, unknown>>;
-  /** Optional: invoked when the user opens the terminal panel on the
-   *  overview pseudo-tab and no interactive shell tabs exist yet.
-   *  Lets the panel land in a real shell instead of the empty-state
-   *  placeholder. Closing every shell afterwards does NOT re-trigger
-   *  the auto-spawn — the user explicitly closed them, so respect that
-   *  until the next deliberate open. */
-  newShellTabOnOverviewOpen?: () => void;
 }
 
 export interface UseFocusActions {
@@ -169,11 +162,13 @@ export function workstationRows(
  * shifting the call site.
  */
 export function useFocus(ctx: UseFocusContext): UseFocusActions {
-  const { setState, stateRef, newShellTabOnOverviewOpen } = ctx;
+  const { setState, stateRef } = ctx;
 
   function toggleTerminal() {
-    const prev = stateRef.current;
-    const wasOpen = !!(prev.terminal as { open?: boolean } | undefined)?.open;
+    // Toggling the console panel only flips visibility. It must never spawn a
+    // shell — the panel defaults to the read-only agent-bash stream (or the
+    // empty-state placeholder), and interactive shells are created solely by
+    // explicit user actions (Cmd+T / Cmd+Shift+T / the "+" button).
     setState((p) => {
       const term = (p.terminal as { open?: boolean; output?: string }) ?? {};
       const nextOpen = !term.open;
@@ -188,17 +183,6 @@ export function useFocus(ctx: UseFocusContext): UseFocusActions {
         },
       };
     });
-    // Closed → open transition on the overview with no interactive
-    // shells: hand off to the auto-spawn so the user lands in a real
-    // shell instead of the panel's empty placeholder.
-    if (!wasOpen && newShellTabOnOverviewOpen) {
-      const overview = isOverviewActive(prev.activeTabId as string | undefined);
-      const tabs = (prev.tabs as Tab[] | undefined) ?? [];
-      const hasShell = tabs.some((t) => t.kind === "shell");
-      if (overview && !hasShell) {
-        newShellTabOnOverviewOpen();
-      }
-    }
   }
 
   function focusComposer() {

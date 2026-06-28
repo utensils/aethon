@@ -1218,6 +1218,44 @@ describe("handleSessionEvent", () => {
     expect(ids).toEqual(["tool-1-c1", "tool-1-c1", "tool-2-c1"]);
   });
 
+  it("collapses a replayed start for the same in-flight tool call into one card", () => {
+    // pi re-emits tool_execution_start for the same toolCallId on auto-retry /
+    // codex replay (no intervening tool_execution_end). The replay must reuse
+    // the existing card id + startedAt instead of minting a fresh card, so the
+    // user doesn't see two "Running" copies of the same long-running command.
+    const f = makeFixture();
+    const rec = fakeRec();
+    handleSessionEvent(f.state, f.deps, rec, "tab-1", {
+      type: "tool_execution_start",
+      toolCallId: "c1",
+      toolName: "bash",
+      args: { command: "bunx vitest run" },
+    });
+    const firstCard = f.sent.find((m) => m.type === "a2ui");
+    const firstStartedAt = (
+      (firstCard?.payload as { components?: { props?: { startedAt?: number } }[] })
+        ?.components?.[0]?.props ?? {}
+    ).startedAt;
+    handleSessionEvent(f.state, f.deps, rec, "tab-1", {
+      type: "tool_execution_start",
+      toolCallId: "c1",
+      toolName: "bash",
+      args: { command: "bunx vitest run" },
+    });
+
+    const cards = f.sent.filter((m) => m.type === "a2ui");
+    // Same uiId both times — not tool-1-c1 then tool-2-c1.
+    expect(cards.map((m) => m.id)).toEqual(["tool-1-c1", "tool-1-c1"]);
+    expect(rec.toolCardSeq).toBe(1);
+    const replayStartedAt = (
+      (cards.at(-1)?.payload as {
+        components?: { props?: { startedAt?: number } }[];
+      })?.components?.[0]?.props ?? {}
+    ).startedAt;
+    // startedAt is preserved so the frontend clock doesn't jump on replay.
+    expect(replayStartedAt).toBe(firstStartedAt);
+  });
+
   it("cancelRunningToolCards freezes active tool-card timers", () => {
     const f = makeFixture();
     const rec = fakeRec();

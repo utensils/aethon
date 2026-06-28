@@ -71,8 +71,11 @@ export interface UseProjectOpsContext {
    *  is removed. Workspace deletion is already destructive, so there is
    *  no separate close confirmation for those session tabs. */
   closeTabNow: (tabId: string) => void;
-  /** From useTabs: create an interactive shell sub-tab when the project
-   *  overview is already showing an open terminal panel. */
+  /** From useTabs: create an interactive shell sub-tab. Injected so the
+   *  capability is available, but project/workspace bucket switches must
+   *  NOT auto-invoke it — interactive shells are created only by explicit
+   *  user action (Cmd+T / Cmd+Shift+T / the "+" button). A regression test
+   *  asserts switching buckets never calls this. */
   newShellTab?: () => void;
   /** Notification-backed prompts for destructive workspace removal flows. */
   workspacePrompts: WorkspaceRemovalPrompts;

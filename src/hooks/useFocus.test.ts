@@ -150,7 +150,7 @@ describe("workstationRows", () => {
   });
 });
 
-describe("toggleTerminal auto-spawn", () => {
+describe("toggleTerminal", () => {
   function useFocusHarness(initial: Record<string, unknown>) {
     let current = initial;
     const ref = <T,>(v: T): MutableRefObject<T> => ({ current: v });
@@ -163,53 +163,50 @@ describe("toggleTerminal auto-spawn", () => {
       current = fn(current);
       stateRef.current = current;
     });
-    const newShellTabOnOverviewOpen = vi.fn();
-    const actions = useFocus({ setState, stateRef, newShellTabOnOverviewOpen });
-    return { actions, setState, newShellTabOnOverviewOpen, get: () => current };
+    const actions = useFocus({ setState, stateRef });
+    return { actions, setState, get: () => current };
   }
 
-  it("auto-spawns a shell when opening the terminal on overview with no shells", () => {
-    const { actions, newShellTabOnOverviewOpen, get } = useFocusHarness({
+  // Opening the console panel must surface the read-only agent-bash stream /
+  // empty-state placeholder — never auto-spawn an interactive shell. The shell
+  // list is owned solely by explicit user actions (Cmd+T / Cmd+Shift+T / +).
+  it("opens the panel on overview with no shells without creating a shell", () => {
+    const { actions, get } = useFocusHarness({
       activeTabId: OVERVIEW_TAB_ID,
       tabs: [],
       terminal: { open: false },
       layout: {},
     });
     actions.toggleTerminal();
-    expect(newShellTabOnOverviewOpen).toHaveBeenCalledTimes(1);
     expect((get().terminal as { open: boolean }).open).toBe(true);
+    expect(get().tabs).toEqual([]);
+    expect((get().tabs as { kind?: string }[]).some((t) => t.kind === "shell")).toBe(
+      false,
+    );
   });
 
-  it("does NOT auto-spawn when the terminal is closing", () => {
-    const { actions, newShellTabOnOverviewOpen } = useFocusHarness({
+  it("never adds a shell tab when an agent session owns the canvas", () => {
+    const agentTab = makeEmptyTab("agent-1", "Tab 1");
+    const { actions, get } = useFocusHarness({
+      activeTabId: "agent-1",
+      tabs: [agentTab],
+      terminal: { open: false },
+      layout: {},
+    });
+    actions.toggleTerminal();
+    expect((get().terminal as { open: boolean }).open).toBe(true);
+    expect(get().tabs).toEqual([agentTab]);
+  });
+
+  it("toggles the panel closed when already open", () => {
+    const { actions, get } = useFocusHarness({
       activeTabId: OVERVIEW_TAB_ID,
       tabs: [],
       terminal: { open: true },
       layout: {},
     });
     actions.toggleTerminal();
-    expect(newShellTabOnOverviewOpen).not.toHaveBeenCalled();
-  });
-
-  it("does NOT auto-spawn when a shell already exists", () => {
-    const { actions, newShellTabOnOverviewOpen } = useFocusHarness({
-      activeTabId: OVERVIEW_TAB_ID,
-      tabs: [makeEmptyTab("sh-1", "Shell 1", null, "shell")],
-      terminal: { open: false },
-      layout: {},
-    });
-    actions.toggleTerminal();
-    expect(newShellTabOnOverviewOpen).not.toHaveBeenCalled();
-  });
-
-  it("does NOT auto-spawn when an agent session owns the canvas", () => {
-    const { actions, newShellTabOnOverviewOpen } = useFocusHarness({
-      activeTabId: "agent-1",
-      tabs: [makeEmptyTab("agent-1", "Tab 1")],
-      terminal: { open: false },
-      layout: {},
-    });
-    actions.toggleTerminal();
-    expect(newShellTabOnOverviewOpen).not.toHaveBeenCalled();
+    expect((get().terminal as { open: boolean }).open).toBe(false);
+    expect(get().tabs).toEqual([]);
   });
 });

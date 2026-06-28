@@ -57,8 +57,17 @@ const RETENTION_DAYS = 7;
 
 // Same dir the Rust shell uses, so `ls ~/.aethon/logs/` shows both
 // `aethon.YYYY-MM-DD` (Rust supervisor) and `bridge.YYYY-MM-DD.log`
-// (this process) side by side.
-const LOG_DIR = join(homedir(), ".aethon", "logs");
+// (this process) side by side. `AETHON_LOG_DIR` overrides the location
+// (used by tests, and available for ad-hoc redirection).
+const LOG_DIR_OVERRIDE = process.env.AETHON_LOG_DIR;
+const LOG_DIR = LOG_DIR_OVERRIDE ?? join(homedir(), ".aethon", "logs");
+
+// The rotating-file sink is disabled under test runs (vitest sets VITEST)
+// unless an explicit AETHON_LOG_DIR override is given. The agent runs
+// `bunx vitest` via its own bash tool, which loads these modules; without
+// this gate those runs append test fixtures to the real
+// `~/.aethon/logs/bridge.<date>.log`. stderr still carries every line.
+const FILE_SINK_ENABLED = Boolean(LOG_DIR_OVERRIDE) || !process.env.VITEST;
 
 function todayStamp(): string {
   // YYYY-MM-DD in local time. Matches `tracing-appender`'s daily
@@ -75,6 +84,7 @@ let currentDay = todayStamp();
 let currentFd: number | null = null;
 
 function openCurrentLog(): number | null {
+  if (!FILE_SINK_ENABLED) return null;
   try {
     if (!existsSync(LOG_DIR)) {
       mkdirSync(LOG_DIR, { recursive: true });
@@ -88,6 +98,7 @@ function openCurrentLog(): number | null {
 }
 
 function ensureFd(): number | null {
+  if (!FILE_SINK_ENABLED) return null;
   const today = todayStamp();
   if (today !== currentDay) {
     // Rotated past midnight — close the old fd and open today's file.
@@ -110,6 +121,7 @@ function ensureFd(): number | null {
 function pruneOldLogs(): void {
   // Best-effort retention sweep. Runs once at module load; daily
   // rotation handles the day-to-day churn.
+  if (!FILE_SINK_ENABLED) return;
   try {
     if (!existsSync(LOG_DIR)) return;
     const cutoff = Date.now() - RETENTION_DAYS * 24 * 60 * 60 * 1000;
