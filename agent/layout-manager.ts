@@ -40,6 +40,10 @@ function decodePointerToken(t: string): string {
   return t.replace(/~1/g, "/").replace(/~0/g, "~");
 }
 
+function isArrayIndex(token: string | undefined): boolean {
+  return token !== undefined && /^(0|[1-9]\d*)$/.test(token);
+}
+
 /** Layout-aware patch that preserves arrays (mirror of the frontend's
  *  layoutPatch). Used to fold patch_layout calls into the retained
  *  layout so ready/report replay matches the live frontend state. */
@@ -51,20 +55,23 @@ export function patchLayoutTree(
   if (!pointer || pointer === "" || pointer === "/") return payload;
   const path = pointer.startsWith("/") ? pointer.slice(1) : pointer;
   const tokens = path.split("/").map(decodePointerToken);
-  const cloneNode = (node: unknown): Record<string, unknown> | unknown[] => {
+  const cloneNode = (
+    node: unknown,
+    nextToken: string | undefined,
+  ): Record<string, unknown> | unknown[] => {
     if (Array.isArray(node)) return [...node];
     if (node && typeof node === "object") {
       return { ...(node as Record<string, unknown>) };
     }
-    return {};
+    return isArrayIndex(nextToken) ? [] : {};
   };
-  const root = cloneNode(payload);
+  const root = cloneNode(payload, tokens[0]);
   let cursor: Record<string, unknown> | unknown[] = root;
   for (let i = 0; i < tokens.length - 1; i++) {
     const key = tokens[i];
     const idx = Array.isArray(cursor) ? Number(key) : key;
     const existing = (cursor as Record<string | number, unknown>)[idx as never];
-    const child = cloneNode(existing);
+    const child = cloneNode(existing, tokens[i + 1]);
     (cursor as Record<string | number, unknown>)[idx as never] = child;
     cursor = child;
   }

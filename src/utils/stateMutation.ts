@@ -7,22 +7,33 @@ export function decodeToken(t: string): string {
   return t.replace(/~1/g, "/").replace(/~0/g, "~");
 }
 
+function isArrayIndex(token: string | undefined): boolean {
+  return token !== undefined && /^(0|[1-9]\d*)$/.test(token);
+}
+
 export function layoutPatch<T>(payload: T, pointer: string, value: unknown): T {
   if (!pointer || pointer === "" || pointer === "/") return payload;
   const path = pointer.startsWith("/") ? pointer.slice(1) : pointer;
   const tokens = path.split("/").map(decodeToken);
-  const cloneNode = (node: unknown): unknown => {
+  const cloneNode = (
+    node: unknown,
+    nextToken: string | undefined,
+  ): unknown => {
     if (Array.isArray(node)) return [...node];
-    if (node && typeof node === "object") return { ...(node as Record<string, unknown>) };
-    return {};
+    if (node && typeof node === "object") {
+      return { ...(node as Record<string, unknown>) };
+    }
+    return isArrayIndex(nextToken) ? [] : {};
   };
-  const root = cloneNode(payload) as Record<string, unknown> | unknown[];
+  const root = cloneNode(payload, tokens[0]) as
+    | Record<string, unknown>
+    | unknown[];
   let cursor: Record<string, unknown> | unknown[] = root;
   for (let i = 0; i < tokens.length - 1; i++) {
     const key = tokens[i];
     const idx = Array.isArray(cursor) ? Number(key) : key;
     const existing = (cursor as Record<string | number, unknown>)[idx as never];
-    const child = cloneNode(existing);
+    const child = cloneNode(existing, tokens[i + 1]);
     (cursor as Record<string | number, unknown>)[idx as never] = child;
     cursor = child as Record<string, unknown> | unknown[];
   }

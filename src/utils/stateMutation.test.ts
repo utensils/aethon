@@ -53,6 +53,12 @@ describe("layoutPatch", () => {
     expect(out).toEqual({ a: { b: { c: 7 } } });
   });
 
+  it("materializes missing numeric branches as arrays", () => {
+    expect(layoutPatch({}, "/items/0/x", 1)).toEqual({
+      items: [{ x: 1 }],
+    });
+  });
+
   it("decodes escape sequences in keys", () => {
     const out = layoutPatch({}, "/foo~1bar/baz", 1);
     expect(out).toEqual({ "foo/bar": { baz: 1 } });
