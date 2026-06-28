@@ -1,6 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Buffer } from "node:buffer";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -9,6 +9,24 @@ import {
   type TabRecord,
 } from "./state";
 import { getRuntimeSnapshot, scheduleStateFileWrite } from "./runtime-snapshot";
+
+const { writeFileMock } = vi.hoisted(() => ({
+  writeFileMock: vi.fn(),
+}));
+
+vi.mock("node:fs/promises", () => ({
+  writeFile: writeFileMock,
+}));
+
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
 
 function makeOpts(userDir: string): AethonAgentStateOptions {
   return {
@@ -201,7 +219,16 @@ describe("getRuntimeSnapshot", () => {
 });
 
 describe("scheduleStateFileWrite", () => {
-  it("debounces writes and produces a JSON file", async () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    writeFileMock.mockReset().mockResolvedValue(undefined);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("debounces writes and produces a JSON payload", async () => {
     const root = mkdtempSync(join(tmpdir(), "aethon-rs-"));
     try {
       const state = new AethonAgentState(makeOpts(root));
@@ -209,14 +236,48 @@ describe("scheduleStateFileWrite", () => {
       scheduleStateFileWrite(state);
       scheduleStateFileWrite(state);
       scheduleStateFileWrite(state);
-      // Wait past the debounce + flush.
-      await new Promise((r) => setTimeout(r, 350));
-      const text = readFileSync(state.stateFile, "utf8");
-      const parsed = JSON.parse(text);
+      await vi.advanceTimersByTimeAsync(STATE_FILE_DEBOUNCE_MS_FOR_TEST);
+      expect(writeFileMock).toHaveBeenCalledTimes(1);
+      const parsed = JSON.parse(writeFileMock.mock.calls[0][1] as string);
       expect(parsed.userDir).toBe(root);
       expect(state.stateFileTimer).toBeNull();
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
   });
+
+  it("does not drop mutations scheduled while a state-file write is in flight", async () => {
+    const root = mkdtempSync(join(tmpdir(), "aethon-rs-"));
+    try {
+      const state = new AethonAgentState(makeOpts(root));
+      state.loadedExtensions.set("first", "directory");
+      const firstWrite = deferred<void>();
+      writeFileMock.mockImplementationOnce(() => firstWrite.promise);
+
+      scheduleStateFileWrite(state);
+      await vi.advanceTimersByTimeAsync(STATE_FILE_DEBOUNCE_MS_FOR_TEST);
+      expect(writeFileMock).toHaveBeenCalledTimes(1);
+
+      state.loadedExtensions.set("second", "directory");
+      scheduleStateFileWrite(state);
+      await vi.advanceTimersByTimeAsync(STATE_FILE_DEBOUNCE_MS_FOR_TEST);
+      expect(writeFileMock).toHaveBeenCalledTimes(1);
+      expect(state.stateFileDirty).toBe(true);
+
+      firstWrite.resolve();
+      await firstWrite.promise;
+      await Promise.resolve();
+      expect(writeFileMock).toHaveBeenCalledTimes(2);
+      const latest = JSON.parse(writeFileMock.mock.calls[1][1] as string);
+      expect(latest.extensions).toEqual([
+        { name: "first", source: "directory" },
+        { name: "second", source: "directory" },
+      ]);
+      expect(state.stateFileDirty).toBe(false);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
 });
+
+const STATE_FILE_DEBOUNCE_MS_FOR_TEST = 200;
