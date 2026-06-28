@@ -573,6 +573,21 @@ export function handleMirroredTabsChanged(
   }
 }
 
+function sessionEventHandlerKey(
+  state: AethonAgentState,
+  event: SessionEventName,
+  handler: SessionEventHandler,
+): string | undefined {
+  if (!state.currentExtensionName || !state.currentExtensionLoadScope) {
+    return undefined;
+  }
+  const scope = `${state.currentExtensionLoadScope}:${state.currentExtensionName}`;
+  const base = `sessions:on::${scope}::${event}::${handler.toString()}`;
+  const ordinal = state.currentExtensionHandlerOrdinals.get(base) ?? 0;
+  state.currentExtensionHandlerOrdinals.set(base, ordinal + 1);
+  return `${base}::${ordinal}`;
+}
+
 export function buildSessionsApi(state: AethonAgentState): SessionsApi {
   return {
     list: () => Promise.resolve(listSessionSummaries(state)),
@@ -589,6 +604,13 @@ export function buildSessionsApi(state: AethonAgentState): SessionsApi {
     },
     on(event: SessionEventName, handler: SessionEventHandler) {
       if (typeof handler !== "function") return () => {};
+      const key = sessionEventHandlerKey(state, event, handler);
+      if (key && state.registeredHandlerKeys.has(key)) {
+        const existingOff = state.sessionEventHandlerTeardowns.get(key);
+        if (existingOff) return existingOff;
+        state.registeredHandlerKeys.delete(key);
+      }
+      if (key) state.registeredHandlerKeys.add(key);
       let handlers = state.sessionEventHandlers.get(event) as
         | Set<SessionEventHandler>
         | undefined;
@@ -599,9 +621,17 @@ export function buildSessionsApi(state: AethonAgentState): SessionsApi {
       handlers.add(handler);
       const off = () => {
         handlers?.delete(handler);
+        if (handlers?.size === 0) state.sessionEventHandlers.delete(event);
+        if (key) {
+          state.registeredHandlerKeys.delete(key);
+          state.sessionEventHandlerTeardowns.delete(key);
+        }
       };
+      if (key) state.sessionEventHandlerTeardowns.set(key, off);
       if (state.currentExtensionLoadScope === "project") {
         state.projectExtensionTeardowns.push(off);
+      } else if (state.currentExtensionLoadScope === "user") {
+        state.userExtensionTeardowns.push(off);
       }
       return off;
     },

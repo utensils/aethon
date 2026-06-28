@@ -218,13 +218,19 @@ export async function loadAethonExtensionPackages(
       }
       const prevScope = state.currentExtensionLoadScope;
       const prevExtName = state.currentExtensionName;
+      const prevHandlerOrdinals = new Map(state.currentExtensionHandlerOrdinals);
       state.currentExtensionLoadScope = "user";
       state.currentExtensionName = c.name;
+      state.currentExtensionHandlerOrdinals.clear();
       try {
         await register(api);
       } finally {
         state.currentExtensionLoadScope = prevScope;
         state.currentExtensionName = prevExtName;
+        state.currentExtensionHandlerOrdinals.clear();
+        for (const [k, v] of prevHandlerOrdinals) {
+          state.currentExtensionHandlerOrdinals.set(k, v);
+        }
       }
       registry.set(c.name, "extension-package");
       options?.onLoaded?.(c.name);

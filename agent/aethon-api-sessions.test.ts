@@ -576,9 +576,106 @@ describe("aethon.sessions API", () => {
     ]);
   });
 
+  it("preserves unscoped same-source session handlers", async () => {
+    const { state, api } = await makeFixture();
+    const calls: unknown[] = [];
+
+    api.sessions.on("messageAppended", (payload) => calls.push(payload));
+    api.sessions.on("messageAppended", (payload) => calls.push(payload));
+
+    emitSessionEvent(state, "messageAppended", {
+      sessionId: "live",
+      message: { id: "m", role: "user", content: "hi" },
+    });
+    await Promise.resolve();
+
+    expect(calls).toHaveLength(2);
+    expect(state.sessionEventHandlers.get("messageAppended")?.size).toBe(2);
+    expect(state.registeredHandlerKeys.size).toBe(0);
+  });
+
+  it("dedupes logically identical session handlers across extension reruns", async () => {
+    const { state, api } = await makeFixture();
+    state.currentExtensionLoadScope = "project";
+    state.currentExtensionName = "dup-ext";
+    const calls: unknown[] = [];
+
+    api.sessions.on("messageAppended", (payload) => calls.push(payload));
+    state.currentExtensionHandlerOrdinals.clear();
+    const rerunOff = api.sessions.on("messageAppended", (payload) =>
+      calls.push(payload),
+    );
+
+    emitSessionEvent(state, "messageAppended", {
+      sessionId: "live",
+      message: { id: "m", role: "user", content: "hi" },
+    });
+    await Promise.resolve();
+
+    expect(calls).toHaveLength(1);
+    expect(state.sessionEventHandlers.get("messageAppended")?.size).toBe(1);
+    expect(state.registeredHandlerKeys.size).toBe(1);
+
+    rerunOff();
+    emitSessionEvent(state, "messageAppended", {
+      sessionId: "live",
+      message: { id: "m2", role: "user", content: "again" },
+    });
+    await Promise.resolve();
+
+    expect(calls).toHaveLength(1);
+    expect(state.sessionEventHandlers.has("messageAppended")).toBe(false);
+    expect(state.registeredHandlerKeys.size).toBe(0);
+  });
+
+  it("re-registers when a scoped dedupe key has no teardown", async () => {
+    const { state, api } = await makeFixture();
+    state.currentExtensionLoadScope = "project";
+    state.currentExtensionName = "stale-ext";
+    const calls: unknown[] = [];
+
+    api.sessions.on("messageAppended", (payload) => calls.push(payload));
+    state.sessionEventHandlerTeardowns.clear();
+    state.sessionEventHandlers.clear();
+    state.currentExtensionHandlerOrdinals.clear();
+
+    api.sessions.on("messageAppended", (payload) => calls.push(payload));
+    emitSessionEvent(state, "messageAppended", {
+      sessionId: "live",
+      message: { id: "m", role: "user", content: "hi" },
+    });
+    await Promise.resolve();
+
+    expect(calls).toHaveLength(1);
+    expect(state.sessionEventHandlers.get("messageAppended")?.size).toBe(1);
+    expect(state.sessionEventHandlerTeardowns.size).toBe(1);
+    expect(state.registeredHandlerKeys.size).toBe(1);
+  });
+
+  it("preserves distinct same-source session handlers in one extension run", async () => {
+    const { state, api } = await makeFixture();
+    state.currentExtensionLoadScope = "project";
+    state.currentExtensionName = "multi-ext";
+    const calls: unknown[] = [];
+
+    api.sessions.on("messageAppended", (payload) => calls.push(payload));
+    api.sessions.on("messageAppended", (payload) => calls.push(payload));
+
+    emitSessionEvent(state, "messageAppended", {
+      sessionId: "live",
+      message: { id: "m", role: "user", content: "hi" },
+    });
+    await Promise.resolve();
+
+    expect(calls).toHaveLength(2);
+    expect(state.sessionEventHandlers.get("messageAppended")?.size).toBe(2);
+    expect(state.registeredHandlerKeys.size).toBe(2);
+  });
+
   it("registers project-scoped subscriptions for project unload cleanup", async () => {
     const { state, api } = await makeFixture();
     state.currentExtensionLoadScope = "project";
+    state.currentExtensionName = "cleanup-ext";
     const handler = () => {};
 
     const off = api.sessions.on("messageAppended", handler);
@@ -589,8 +686,9 @@ describe("aethon.sessions API", () => {
     expect(state.projectExtensionTeardowns).toHaveLength(1);
     state.projectExtensionTeardowns[0]?.();
     expect(
-      state.sessionEventHandlers.get("messageAppended")?.has(handler),
+      state.sessionEventHandlers.get("messageAppended")?.has(handler) ?? false,
     ).toBe(false);
+    expect(state.registeredHandlerKeys.size).toBe(0);
     off();
   });
 

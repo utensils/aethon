@@ -171,14 +171,20 @@ export async function loadAethonExtensionDirectory(
       // teardowns fire on project switch; user-level teardowns persist.
       const prevScope = state.currentExtensionLoadScope;
       const prevExtName = state.currentExtensionName;
+      const prevHandlerOrdinals = new Map(state.currentExtensionHandlerOrdinals);
       state.currentExtensionLoadScope =
         options.source === "project-directory" ? "project" : "user";
       state.currentExtensionName = displayName;
+      state.currentExtensionHandlerOrdinals.clear();
       try {
         await register(api);
       } finally {
         state.currentExtensionLoadScope = prevScope;
         state.currentExtensionName = prevExtName;
+        state.currentExtensionHandlerOrdinals.clear();
+        for (const [k, v] of prevHandlerOrdinals) {
+          state.currentExtensionHandlerOrdinals.set(k, v);
+        }
       }
       registry.set(displayName, options.source);
       options.loadedFiles?.add(file);
