@@ -54,9 +54,44 @@ export function defaultWorkspacePath(
   if (root) {
     const sep = root.includes("\\") && !root.includes("/") ? "\\" : "/";
     const repoName = safePathSegment(pathBasename(projectPath), "repo");
-    return `${trimTrailingSeparators(root)}${sep}${repoName}${sep}${workspaceName}`;
+    const projectKey = `${repoName}-${stablePathHash(projectPath)}`;
+    return `${trimTrailingSeparators(root)}${sep}worktrees${sep}${projectKey}${sep}${workspaceName}`;
   }
   return `${projectPath.replace(/[\\/]+$/, "")}-${workspaceName}`;
+}
+
+function uniqueWorkspacePath(
+  projects: ProjectsState,
+  proposedPath: string,
+): string {
+  const used = new Set<string>();
+  for (const list of Object.values(projects.workspacesByProject)) {
+    for (const workspace of list) {
+      used.add(workspacePathKey(workspace.path));
+    }
+  }
+  if (!used.has(workspacePathKey(proposedPath))) return proposedPath;
+
+  let suffix = 2;
+  let candidate = `${proposedPath}-${suffix}`;
+  while (used.has(workspacePathKey(candidate))) {
+    suffix += 1;
+    candidate = `${proposedPath}-${suffix}`;
+  }
+  return candidate;
+}
+
+function workspacePathKey(path: string): string {
+  return trimTrailingSeparators(path).replace(/\\/g, "/").toLowerCase();
+}
+
+function stablePathHash(path: string): string {
+  let hash = 0x811c9dc5;
+  for (const char of workspacePathKey(path)) {
+    hash ^= char.charCodeAt(0);
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return hash.toString(36).padStart(7, "0");
 }
 
 function trimTrailingSeparators(path: string): string {
@@ -217,9 +252,12 @@ export async function createWorkspaceWithParams(
     typeof deps.stateRef?.current.aethonRoot === "string"
       ? deps.stateRef.current.aethonRoot
       : undefined;
-  const targetPath =
-    opts.targetPath?.trim() ||
-    defaultWorkspacePath(project.path, branch, aethonRoot);
+  const targetPath = opts.targetPath?.trim()
+    ? opts.targetPath.trim()
+    : uniqueWorkspacePath(
+        deps.projectsRef.current,
+        defaultWorkspacePath(project.path, branch, aethonRoot),
+      );
   const pending = newPendingWorkspace(opts.projectId, branch, targetPath);
   const baseBranch = resolveWorkspaceBaseBranch(project, opts.baseBranch);
   const before =
