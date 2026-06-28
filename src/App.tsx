@@ -480,7 +480,6 @@ export default function App() {
   } = useFocus({
     setState,
     stateRef,
-    newShellTabOnOverviewOpen: () => newShellTab(),
   });
 
   const {

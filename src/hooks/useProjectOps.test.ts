@@ -734,7 +734,12 @@ describe("useProjectOps overview terminal project switches", () => {
     expect(newShellTab).not.toHaveBeenCalled();
   });
 
-  it("spawns an overview shell when switching into an empty project bucket with the terminal open", () => {
+  it("does NOT spawn a shell when switching into an empty project bucket with the terminal open", () => {
+    // Regression: switching workspace/project buckets must never auto-spawn an
+    // interactive shell. Dispatching agents from GitHub issues churns bucket
+    // switches; each one used to leave a stuck "Shell N starting" tab the user
+    // never asked for. Opening the panel surfaces the read-only agent-bash
+    // stream (or the empty-state placeholder) — not a new PTY.
     const newShellTab = vi.fn();
     const { result, stateRef } = renderProjectOps(twoProjectState(), {
       newShellTab,
@@ -752,7 +757,7 @@ describe("useProjectOps overview terminal project switches", () => {
 
     expect(stateRef.current.activeTabId).toBeUndefined();
     expect(stateRef.current.tabs).toEqual([]);
-    expect(newShellTab).toHaveBeenCalledTimes(1);
+    expect(newShellTab).not.toHaveBeenCalled();
   });
 
   it("does not spawn another shell when the destination bucket already has one", () => {

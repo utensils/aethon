@@ -81,7 +81,6 @@ export function useProjectOps(ctx: UseProjectOpsContext): UseProjectOpsActions {
     dispatchTerminalReplay,
     autoRestoreDiscoveredSessions,
     closeTabNow,
-    newShellTab,
     workspacePrompts,
   } = ctx;
 
@@ -127,20 +126,10 @@ export function useProjectOps(ctx: UseProjectOpsContext): UseProjectOpsActions {
       toKey,
       opts,
     );
-    maybeSpawnOverviewShell();
+    // Switching buckets must not auto-spawn a shell — interactive shells are
+    // created only by explicit user action. The panel falls back to the
+    // read-only agent-bash stream / empty-state placeholder otherwise.
     return nextTabId;
-  }
-
-  function maybeSpawnOverviewShell(): void {
-    if (!newShellTab) return;
-    const state = stateRef.current;
-    const terminal = state.terminal as { open?: boolean } | undefined;
-    if (terminal?.open !== true) return;
-    const activeTabId = state.activeTabId as string | undefined;
-    if (!isOverviewActive(activeTabId)) return;
-    const tabs = (state.tabs as Tab[] | undefined) ?? [];
-    if (tabs.some((t) => t.kind === "shell")) return;
-    newShellTab();
   }
 
   async function openProjectFromPicker(): Promise<string | null> {
