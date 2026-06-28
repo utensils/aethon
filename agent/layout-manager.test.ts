@@ -66,6 +66,12 @@ describe("patchLayoutTree", () => {
     expect(Array.isArray(patched.items)).toBe(true);
   });
 
+  it("materializes missing numeric branches as arrays", () => {
+    expect(patchLayoutTree({}, "/items/0/x", 1)).toEqual({
+      items: [{ x: 1 }],
+    });
+  });
+
   it("decodes ~0/~1 escapes per RFC 6901", () => {
     const tree = { "a/b": { "~c": 1 } };
     const patched = patchLayoutTree(tree, "/a~1b/~0c", 42) as Record<
