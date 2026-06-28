@@ -129,12 +129,11 @@ pub struct UpdatesConfig {
 
 #[derive(Default, Deserialize)]
 pub struct ServerConfig {
-    /// Whether to advertise this host over mDNS (`_aethon._tcp.local.`) on
-    /// boot. Default `true`. Set `false` to stop the LAN announcement — and
-    /// the "No route to host" send-failure log churn it can produce on
-    /// networks without multicast — while keeping peer *discovery* (the
+    /// Whether to start the unauthenticated local HTTP listener and advertise
+    /// this host over mDNS (`_aethon._tcp.local.`) on boot. Default `true`.
+    /// Set `false` to stop LAN exposure while keeping peer *discovery* (the
     /// browser) running, since that's read-only. The `server_start` IPC
-    /// (explicit user action) always advertises regardless of this flag.
+    /// (explicit user action) starts and advertises regardless of this flag.
     pub enabled: Option<bool>,
 }
 
