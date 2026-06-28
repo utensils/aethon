@@ -218,9 +218,13 @@ fn apply_user_env(app: &AppHandle, command: &mut Command) {
     let user_dir = helpers::aethon_dir(Some(home.clone())).unwrap_or_else(|| home.join(".aethon"));
     let state_file = user_dir.join("state.json");
     let sessions_dir = user_dir.join("sessions");
+    let db_file = user_dir.join("state").join("aethon.sqlite3");
+    let projects_dir = user_dir.join("projects");
     command.env("AETHON_USER_DIR", &user_dir);
     command.env("AETHON_STATE_FILE", &state_file);
     command.env("AETHON_SESSIONS_DIR", &sessions_dir);
+    command.env("AETHON_DB_FILE", &db_file);
+    command.env("AETHON_PROJECTS_DIR", &projects_dir);
 
     let cfg_path = user_dir.join("config.toml");
     let raw = std::fs::read_to_string(&cfg_path).unwrap_or_default();

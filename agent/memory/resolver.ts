@@ -5,6 +5,7 @@ import { basename, dirname, join, resolve, sep } from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import type { ProjectMemoryIdentity, ResolvedMemoryContext, ResolvedMemoryScope } from "./types";
+import { readSqliteStateValue } from "../session-sqlite";
 
 interface PersistedProject {
   id?: unknown;
@@ -159,6 +160,8 @@ export function projectIdentityFromProjectsJson(
 }
 
 async function defaultReadProjectsJson(userDir: string): Promise<string | undefined> {
+  const sqliteProjects = readSqliteStateValue("projects.json");
+  if (sqliteProjects !== undefined) return sqliteProjects;
   try {
     return await readFile(join(userDir, "projects.json"), "utf8");
   } catch {

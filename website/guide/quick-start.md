@@ -15,7 +15,8 @@ To open a different project:
 - **Command palette** → `Cmd+Shift+P` → search the project name → press Enter.
 - **Slash command** → type `/project /path/to/repo` in the chat composer.
 
-The project list lives at `~/.aethon/projects.json` (MRU-ordered, max 16).
+The project list lives in `~/.aethon/state/aethon.sqlite3` (MRU-ordered,
+max 16), with generated project data under `~/.aethon/projects/<projectId>/`.
 Switching the active project affects **new tabs only** — existing tabs
 keep the cwd they were created with.
 

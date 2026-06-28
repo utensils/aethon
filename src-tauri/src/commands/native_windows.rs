@@ -171,6 +171,14 @@ fn store_path(app: &AppHandle) -> Result<PathBuf, String> {
 }
 
 fn load_store(app: &AppHandle) -> NativeWindowsStore {
+    if let Ok(Some(s)) = crate::storage::read_state_value(app, STORE_FILE)
+        && !s.trim().is_empty()
+    {
+        return serde_json::from_str::<NativeWindowsStore>(&s).unwrap_or_else(|e| {
+            tracing::warn!(target: "aethon::native_windows", "parse sqlite {STORE_FILE}: {e}");
+            NativeWindowsStore::default()
+        });
+    }
     let Ok(path) = store_path(app) else {
         return NativeWindowsStore::default();
     };
@@ -201,9 +209,12 @@ fn save_persisted(app: &AppHandle, state: &NativeWindowsState) -> Result<(), Str
         version: 1,
         windows: records,
     };
-    let path = store_path(app)?;
     let body = serde_json::to_string_pretty(&store).map_err(|e| format!("serialize: {e}"))?;
-    std::fs::write(&path, body).map_err(|e| format!("write {}: {e}", path.display()))
+    crate::storage::write_state_value(app, STORE_FILE, &body).or_else(|err| {
+        tracing::warn!(target: "aethon::native_windows", "sqlite write failed: {err}; writing legacy file");
+        let path = store_path(app)?;
+        std::fs::write(&path, body).map_err(|e| format!("write {}: {e}", path.display()))
+    })
 }
 
 fn upsert_record(

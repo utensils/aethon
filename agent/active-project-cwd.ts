@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
+import { readSqliteStateValue } from "./session-sqlite";
 
 interface PersistedProject {
   id?: unknown;
@@ -71,6 +72,10 @@ export function activeProjectCwdFromJson(text: string): string | undefined {
 export async function readActiveProjectCwd(
   userDir: string,
 ): Promise<string | undefined> {
+  const sqliteProjects = readSqliteStateValue("projects.json");
+  if (sqliteProjects !== undefined) {
+    return activeProjectCwdFromJson(sqliteProjects);
+  }
   try {
     return activeProjectCwdFromJson(
       await readFile(join(userDir, "projects.json"), "utf8"),

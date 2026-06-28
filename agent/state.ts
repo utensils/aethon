@@ -373,6 +373,8 @@ export interface PendingMutation {
 export interface AethonAgentStateOptions {
   userDir: string;
   stateFile: string;
+  dbFile: string | undefined;
+  projectsDir: string | undefined;
   sessionsDir: string;
   docsDir: string | undefined;
   projectRoot: string | undefined;
@@ -413,6 +415,8 @@ export class AethonAgentState {
   // -- Configuration (read-only at boot) -----------------------------------
   readonly userDir: string;
   readonly stateFile: string;
+  readonly dbFile: string | undefined;
+  readonly projectsDir: string | undefined;
   readonly sessionsDir: string;
   readonly docsDir: string | undefined;
   readonly projectRoot: string | undefined;
@@ -657,6 +661,8 @@ export class AethonAgentState {
   constructor(opts: AethonAgentStateOptions) {
     this.userDir = opts.userDir;
     this.stateFile = opts.stateFile;
+    this.dbFile = opts.dbFile;
+    this.projectsDir = opts.projectsDir;
     this.sessionsDir = opts.sessionsDir;
     this.docsDir = opts.docsDir;
     this.projectRoot = opts.projectRoot;

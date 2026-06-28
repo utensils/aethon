@@ -139,24 +139,13 @@ fn path_contains(parent: &Path, child: &Path) -> bool {
 }
 
 fn read_project_registry(app: &AppHandle) -> Option<ProjectRegistry> {
-    let path = match crate::commands::config::aethon_state_path(app, "projects.json") {
-        Ok(path) => path,
+    let text = match crate::storage::read_state_value(app, "projects.json") {
+        Ok(Some(text)) if !text.trim().is_empty() => text,
+        Ok(_) => return None,
         Err(err) => {
             tracing::warn!(
                 target: "aethon::startup",
-                "resolve projects.json failed: {err}; project startup auto-approve disabled"
-            );
-            return None;
-        }
-    };
-    let text = match std::fs::read_to_string(&path) {
-        Ok(text) => text,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return None,
-        Err(e) => {
-            tracing::warn!(
-                target: "aethon::startup",
-                "read {} failed: {e}; project startup auto-approve disabled",
-                path.display()
+                "read projects.json state failed: {err}; project startup auto-approve disabled"
             );
             return None;
         }
@@ -166,8 +155,7 @@ fn read_project_registry(app: &AppHandle) -> Option<ProjectRegistry> {
         Err(err) => {
             tracing::warn!(
                 target: "aethon::startup",
-                "parse {} failed: {err}; project startup auto-approve disabled",
-                path.display()
+                "parse projects.json state failed: {err}; project startup auto-approve disabled"
             );
             None
         }

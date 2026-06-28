@@ -12,6 +12,10 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { logger } from "../logger";
 import { latestSessionLog, readSessionMetadata } from "../session-history";
+import {
+  importLegacySessionsDir,
+  listSqliteDiscoveredTabs,
+} from "../session-sqlite";
 import type {
   AethonAgentState,
   DiscoveredTab,
@@ -65,6 +69,9 @@ export async function discoverPiAethonExtensions(
 export async function discoverPersistedTabs(
   state: AethonAgentState,
 ): Promise<DiscoveredTab[]> {
+  importLegacySessionsDir(state.sessionsDir);
+  const sqliteTabs = listSqliteDiscoveredTabs();
+  if (sqliteTabs && sqliteTabs.length > 0) return sqliteTabs;
   let entries: string[];
   try {
     entries = await readdir(state.sessionsDir);
@@ -96,6 +103,9 @@ export async function discoverPersistedTabs(
 export async function refreshPersistedTabs(
   state: AethonAgentState,
 ): Promise<DiscoveredTab[]> {
+  importLegacySessionsDir(state.sessionsDir);
+  const sqliteTabs = listSqliteDiscoveredTabs();
+  if (sqliteTabs && sqliteTabs.length > 0) return sqliteTabs;
   let entries: string[];
   try {
     entries = await readdir(state.sessionsDir);

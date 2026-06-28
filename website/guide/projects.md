@@ -24,8 +24,9 @@ Three ways to register a new project:
 2. **Command palette** (`Cmd+Shift+P`) → search "project" → **Add project…**
 3. **Slash command** → `/project /absolute/path/to/repo` — adds and activates.
 
-The project list is persisted at `~/.aethon/projects.json`. Maximum
-**16 entries**, MRU-ordered: opening a project moves it to the top.
+The project list is persisted in `~/.aethon/state/aethon.sqlite3`. Maximum
+**16 entries**, MRU-ordered: opening a project moves it to the top. Aethon
+stores generated per-project data under `~/.aethon/projects/<projectId>/`.
 
 ## Active project vs tab project
 

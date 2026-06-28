@@ -19,6 +19,13 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { join } from "node:path";
+import {
+  appendSqliteLocalChatMessage,
+  readSqliteSessionLabel,
+  sessionTabIdFromDir,
+  truncateSqliteLocalChatAfter,
+  writeSqliteSessionLabel,
+} from "../session-sqlite";
 import { parseLocalChatLines } from "./parse-local";
 import {
   LABEL_FILE,
@@ -44,6 +51,8 @@ export function normalizeSessionLabel(label: string): string {
 export async function readSessionLabel(
   sessionDir: string,
 ): Promise<string | undefined> {
+  const sqliteLabel = readSqliteSessionLabel(sessionTabIdFromDir(sessionDir));
+  if (sqliteLabel !== undefined) return sqliteLabel;
   try {
     const text = await readFile(join(sessionDir, LABEL_FILE), "utf8");
     const trimmed = text.trim();
@@ -88,6 +97,15 @@ export async function writeSessionLabel(
   label: string,
   metadata: SessionLabelMetadata = {},
 ): Promise<void> {
+  if (
+    writeSqliteSessionLabel(
+      sessionTabIdFromDir(sessionDir),
+      label,
+      metadata.cwd,
+    )
+  ) {
+    return;
+  }
   await mkdir(sessionDir, { recursive: true });
   const trimmed = normalizeSessionLabel(label);
   const path = join(sessionDir, LABEL_FILE);
@@ -111,6 +129,9 @@ export async function appendLocalChatMessage(
   sessionDir: string,
   message: RestoredChatMessage,
 ): Promise<void> {
+  if (appendSqliteLocalChatMessage(sessionTabIdFromDir(sessionDir), message)) {
+    return;
+  }
   if (!isChatRole(message.role)) return;
   const text = typeof message.text === "string" ? trimText(message.text) : "";
   const thinking =
@@ -200,6 +221,9 @@ export async function truncateLocalChatAfterEntry(
   sessionDir: string,
   cutoffMs: number,
 ): Promise<void> {
+  if (truncateSqliteLocalChatAfter(sessionTabIdFromDir(sessionDir), cutoffMs)) {
+    return;
+  }
   const path = join(sessionDir, LOCAL_CHAT_FILE);
   try {
     const raw = await readFile(path, "utf8");

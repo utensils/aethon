@@ -123,8 +123,10 @@ extension keeps running.
 
 ## Runtime snapshot
 
-`aethon.getRuntimeSnapshot()` returns the same data Aethon writes to
-`~/.aethon/state.json` on every change (debounced 200 ms). It contains:
+`aethon.getRuntimeSnapshot()` returns the same data Aethon exports to
+`~/.aethon/state.json` on every change (debounced 200 ms). SQLite at
+`~/.aethon/state/aethon.sqlite3` is the canonical app-state store; this JSON
+file is a compatibility/debug snapshot. It contains:
 
 - Loaded extensions, themes, custom components.
 - Active layout summary.
