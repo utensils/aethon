@@ -4,6 +4,26 @@ All notable changes to Aethon. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 [SemVer](https://semver.org/).
 
+## [0.11.2](https://github.com/utensils/aethon/compare/v0.11.1...v0.11.2) (2026-06-28)
+
+
+### Bug Fixes
+
+* **a2ui:** scope observer overlays by pointer ([5b88c0d](https://github.com/utensils/aethon/commit/5b88c0d4204dcb52317ca9d5ac59081916bb0e91)), closes [#431](https://github.com/utensils/aethon/issues/431)
+* **agent:** dedupe sessions event handlers ([e16cb75](https://github.com/utensils/aethon/commit/e16cb75a87c270d5478d2413b21d651dafcd4dd1))
+* **agent:** preserve dirty runtime snapshot writes ([c41094d](https://github.com/utensils/aethon/commit/c41094def7de3488d6fc8b76460ef392a198823a))
+* **devshell:** refresh generated direnv env before ready ([1105be3](https://github.com/utensils/aethon/commit/1105be32e5fdb438630f40a24138a950f5748cc4))
+* duplicate tool cards, auto-spawned shells, and test-polluted bridge log ([#443](https://github.com/utensils/aethon/issues/443)) ([4344a61](https://github.com/utensils/aethon/commit/4344a61d9075ec2a7bd813dce5200d094448f79e))
+* **fs:** hide file manager path-probe details ([227be9f](https://github.com/utensils/aethon/commit/227be9fa50719687d36f6054462805bc171f0465)), closes [#427](https://github.com/utensils/aethon/issues/427)
+* **git:** guard worktree add target paths ([2137d2b](https://github.com/utensils/aethon/commit/2137d2b90cfa9cf03d323ee358a7994e2a562280)), closes [#425](https://github.com/utensils/aethon/issues/425)
+* **layout:** materialize numeric patch branches as arrays ([3d6d4b6](https://github.com/utensils/aethon/commit/3d6d4b680ed028b991bf8b08648a5f2ba9cd0065))
+* **mcp:** load workspace MCP config for native slash commands ([#420](https://github.com/utensils/aethon/issues/420)) ([1da511a](https://github.com/utensils/aethon/commit/1da511a520162ac855c9551b1135148a8b79130a))
+* **queue:** drain queued messages for background workspaces ([#423](https://github.com/utensils/aethon/issues/423)) ([3749c88](https://github.com/utensils/aethon/commit/3749c88f7ce0a38a162df306e9c219b024a1bbdb))
+* **server:** honor disabled config for boot listener ([ca74372](https://github.com/utensils/aethon/commit/ca743725f5c95a377a422909c80370b0c7c71c66)), closes [#426](https://github.com/utensils/aethon/issues/426)
+* **session:** persist system status messages ([#417](https://github.com/utensils/aethon/issues/417)) ([f2540b2](https://github.com/utensils/aethon/commit/f2540b207eeb162ecd0aebe21771d58a03af53ce))
+* **session:** preserve generated tab titles ([#421](https://github.com/utensils/aethon/issues/421)) ([bd63e85](https://github.com/utensils/aethon/commit/bd63e85f068342760cd90db6cd6602947e30de64))
+* **workspaces:** namespace managed worktree paths ([458cbf0](https://github.com/utensils/aethon/commit/458cbf034fb0bf82257f0a88b58e5c074de98436))
+
 ## [0.11.1](https://github.com/utensils/aethon/compare/v0.11.0...v0.11.1) (2026-06-26)
 
 
