@@ -82,6 +82,46 @@ describe("autoRestoreDiscoveredSessions", () => {
     });
   });
 
+  it("does not restore legacy top-level .aethon state sessions", () => {
+    const newTab = vi.fn();
+    const autoRestore = useAutoRestoreDiscoveredSessions({
+      stateRef: ref({ tabs: [], closedSessionIds: [] }),
+      autoRestoredSessionIdsRef: ref(new Set<string>()),
+      pushNotification: vi.fn(),
+      newTab,
+    });
+
+    autoRestore(
+      [
+        {
+          tabId: "state-root",
+          lastModified: 1,
+          firstUserMessage: "Old state root",
+          cwd: "/Users/jamesbrink/.aethon",
+        },
+        {
+          tabId: "legacy-project",
+          lastModified: 2,
+          firstUserMessage: "Old project mirror",
+          cwd: "/Users/jamesbrink/.aethon/aethon/fix-old-worktree",
+        },
+        {
+          tabId: "managed-project",
+          lastModified: 3,
+          firstUserMessage: "Managed project",
+          cwd: "/Users/jamesbrink/.aethon/projects/project-id/worktree",
+        },
+      ],
+      new Set(),
+    );
+
+    expect(newTab).toHaveBeenCalledTimes(1);
+    expect(newTab).toHaveBeenCalledWith("managed-project", "Managed project", {
+      restoredSession: true,
+      cwd: "/Users/jamesbrink/.aethon/projects/project-id/worktree",
+    });
+  });
+
   it("does not restore already-open local tabs", () => {
     const newTab = vi.fn();
     const autoRestore = useAutoRestoreDiscoveredSessions({

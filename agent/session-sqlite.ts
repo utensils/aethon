@@ -67,6 +67,10 @@ function sqliteDatabaseCtor(): DatabaseCtor | undefined {
   }
 }
 
+export function setSqliteDatabaseCtorForTests(ctor: DatabaseCtor | undefined): void {
+  databaseCtor = ctor;
+}
+
 function dbPath(): string | undefined {
   const path = process.env.AETHON_DB_FILE;
   return typeof path === "string" && path.length > 0 ? path : undefined;
@@ -187,6 +191,16 @@ function rowNumber(row: Record<string, unknown> | null, key: string): number | u
 function normalizeOptionalCwd(cwd: string | undefined): string | undefined {
   const normalized = normalizeCwd(cwd);
   return normalized && normalized.length > 0 ? normalized : undefined;
+}
+
+function cwdExists(cwd: string | undefined): boolean | undefined {
+  const normalized = normalizeOptionalCwd(cwd);
+  if (!normalized) return undefined;
+  try {
+    return statSync(normalized).isDirectory();
+  } catch {
+    return false;
+  }
 }
 
 function sessionMatchesCwd(sessionCwd: string | undefined, expectedCwd: string | undefined): boolean {
@@ -584,9 +598,11 @@ export function readSqliteSessionMetadata(tabId: string): SessionLogMetadata | n
   if (!db) return null;
   const row = db.query("SELECT cwd, custom_label, first_user_message, last_modified FROM session_tabs WHERE tab_id = ?").get(tabId);
   if (!row) return null;
+  const cwd = rowString(row, "cwd");
+  const exists = cwdExists(cwd);
   return {
     lastModified: typeof row.last_modified === "number" ? row.last_modified : nowMs(),
-    ...(rowString(row, "cwd") ? { cwd: rowString(row, "cwd") } : {}),
+    ...(cwd ? { cwd, cwdExists: exists } : {}),
     ...(rowString(row, "first_user_message") ? { firstUserMessage: rowString(row, "first_user_message") } : {}),
     ...(rowString(row, "custom_label") ? { customLabel: rowString(row, "custom_label") } : {}),
   };
@@ -601,10 +617,12 @@ export function listSqliteDiscoveredTabs(): Array<{ tabId: string } & SessionLog
     .flatMap((row) => {
       const tabId = rowString(row, "tab_id");
       if (!tabId) return [];
+      const cwd = rowString(row, "cwd");
+      const exists = cwdExists(cwd);
       return [{
         tabId,
         lastModified: typeof row.last_modified === "number" ? row.last_modified : nowMs(),
-        ...(rowString(row, "cwd") ? { cwd: rowString(row, "cwd") } : {}),
+        ...(cwd ? { cwd, cwdExists: exists } : {}),
         ...(rowString(row, "first_user_message") ? { firstUserMessage: rowString(row, "first_user_message") } : {}),
         ...(rowString(row, "custom_label") ? { customLabel: rowString(row, "custom_label") } : {}),
       }];

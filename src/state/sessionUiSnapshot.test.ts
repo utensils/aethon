@@ -3,6 +3,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { makeEmptyTab } from "../types/tab";
 import {
+  isLegacyAethonStateCwd,
   loadSessionUiSnapshot,
   parseSessionUiSnapshot,
   saveSessionUiSnapshot,
@@ -219,6 +220,109 @@ describe("sessionUiSnapshot", () => {
     expect(loaded?.buckets?.["project-1::workspace::wt-1"]?.tabs).toMatchObject(
       [{ id: "empty-bucket", label: "Empty Bucket", messages: [] }],
     );
+  });
+
+  it("drops restored session tabs from legacy top-level .aethon project paths", () => {
+    const parsed = parseSessionUiSnapshot(
+      JSON.stringify({
+        tabs: [
+          {
+            ...makeEmptyTab("legacy", "Legacy"),
+            cwd: "/Users/jamesbrink/.aethon/aethon/fix-old-worktree",
+          },
+          {
+            ...makeEmptyTab("state-root", "State Root", null, "shell"),
+            shell: {
+              cwd: "/Users/jamesbrink/.aethon",
+              command: "",
+              args: [],
+              shareMode: "private",
+              shellState: "running",
+            },
+          },
+          {
+            ...makeEmptyTab("managed", "Managed"),
+            cwd: "/Users/jamesbrink/.aethon/projects/project-id/worktree",
+          },
+          {
+            ...makeEmptyTab("managed-root", "Managed Root"),
+            cwd: "/Users/jamesbrink/.aethon/projects",
+          },
+          {
+            ...makeEmptyTab("normal", "Normal"),
+            cwd: "/Users/jamesbrink/Projects/utensils/aethon",
+          },
+        ],
+        activeTabId: "legacy",
+        savedAt: 1,
+      }),
+    );
+
+    expect(parsed?.tabs.map((tab) => tab.id)).toEqual([
+      "managed",
+      "managed-root",
+      "normal",
+    ]);
+    expect(parsed?.activeTabId).toBe("managed");
+  });
+
+  it("does not treat project-local .aethon folders as legacy app state", () => {
+    expect(isLegacyAethonStateCwd("/Users/jamesbrink/.aethon")).toBe(true);
+    expect(isLegacyAethonStateCwd("/home/james/.aethon/aethon/old")).toBe(
+      true,
+    );
+    expect(isLegacyAethonStateCwd("/Users/jamesbrink/.aethon/projects")).toBe(
+      false,
+    );
+    expect(
+      isLegacyAethonStateCwd("/Users/jamesbrink/.aethon/projects/project-id"),
+    ).toBe(false);
+    expect(
+      isLegacyAethonStateCwd("/Users/jamesbrink/Projects/foo/.aethon/sandbox"),
+    ).toBe(false);
+    expect(isLegacyAethonStateCwd("/tmp/.aethon/sandbox")).toBe(false);
+  });
+
+  it("drops legacy .aethon cwd tabs from persisted buckets", () => {
+    const parsed = parseSessionUiSnapshot(
+      JSON.stringify({
+        tabs: [],
+        activeTabId: "__overview__",
+        buckets: {
+          "project::workspace::legacy": {
+            activeTabId: "legacy-bucket",
+            tabs: [
+              {
+                ...makeEmptyTab("legacy-bucket", "Legacy Bucket"),
+                cwd: "/Users/jamesbrink/.aethon/mold/fix-old-worktree",
+              },
+            ],
+          },
+          "project::workspace::valid": {
+            activeTabId: "valid-bucket",
+            tabs: [
+              {
+                ...makeEmptyTab("valid-bucket", "Valid Bucket"),
+                cwd: "/Users/jamesbrink/Projects/utensils/mold",
+              },
+            ],
+          },
+        },
+        savedAt: 1,
+      }),
+    );
+
+    expect(parsed?.buckets).toEqual({
+      "project::workspace::valid": {
+        activeTabId: "valid-bucket",
+        tabs: [
+          expect.objectContaining({
+            id: "valid-bucket",
+            cwd: "/Users/jamesbrink/Projects/utensils/mold",
+          }),
+        ],
+      },
+    });
   });
 
   it("repairs timestamped message order and drops stale stop notices on restore", () => {

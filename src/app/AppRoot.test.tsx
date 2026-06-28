@@ -134,4 +134,38 @@ describe("AppRoot workspace startup overlay", () => {
     expect(canvasCell?.contains(startupHost)).toBe(true);
     expect(sidebarCell?.contains(startup)).toBe(false);
   });
+
+  it("does not render workspace startup as the full-window boot curtain", () => {
+    render(
+      <AppRoot
+        registry={registry()}
+        layout={layoutPayload()}
+        renderState={{}}
+        setState={noop}
+        onEvent={noop}
+        activeTabId="default"
+        notificationsOpen={false}
+        paletteOpen={false}
+        settingsOpen={false}
+        searchOpen={false}
+        authProfilesOpen={false}
+        scheduledTasksOpen={false}
+        chromeReady={false}
+        startupLogoUrl="/logo.svg"
+        workspaceStartup={{
+          output: "",
+          entry: {
+            root: "/repo",
+            fingerprint: "abc",
+            state: "running",
+            approved: true,
+            commands: [],
+          },
+        }}
+      />,
+    );
+
+    expect(screen.queryByText("Preparing Workspace")).toBeNull();
+    expect(screen.queryByText("/repo")).toBeNull();
+  });
 });

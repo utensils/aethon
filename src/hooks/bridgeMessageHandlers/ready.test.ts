@@ -540,7 +540,7 @@ describe("handleReady", () => {
       "default",
       "/tmp/p1",
     );
-    expect(mocks.markStartupChromeReady).not.toHaveBeenCalled();
+    expect(mocks.markStartupChromeReady).toHaveBeenCalledTimes(1);
   });
 
   it("does not re-announce the active project when ready already reports that cwd", () => {
