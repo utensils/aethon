@@ -2,6 +2,7 @@ use std::path::{Component, Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
 use crate::env;
+use crate::helpers::paths::aethon_dir;
 
 use super::common::read_only_git_command;
 
@@ -145,7 +146,11 @@ pub async fn git_worktree_add(
     if !dir.is_dir() {
         return Err(format!("not a directory: {project_path}"));
     }
-    let target = PathBuf::from(&target_path);
+    let target = validate_worktree_add_target(
+        &dir,
+        &PathBuf::from(&target_path),
+        aethon_dir(worktree_add_home_dir()),
+    )?;
     if let Some(parent) = target.parent()
         && !parent.as_os_str().is_empty()
     {
@@ -164,12 +169,12 @@ pub async fn git_worktree_add(
     let mut cmd = env::command("git");
     cmd.arg("-C").arg(&dir).args(["worktree", "add"]);
     if !exists {
-        cmd.arg("-b").arg(&branch).arg(&target_path);
+        cmd.arg("-b").arg(&branch).arg(&target);
         if let Some(b) = base.as_ref() {
             cmd.arg(b);
         }
     } else {
-        cmd.arg(&target_path).arg(&branch);
+        cmd.arg(&target).arg(&branch);
     }
     let output = cmd.output().map_err(|e| format!("git worktree add: {e}"))?;
     if !output.status.success() {
@@ -178,12 +183,146 @@ pub async fn git_worktree_add(
     // Re-list so we hand back an accurate record (canonical path may
     // differ from what was passed in, HEAD will be set, etc.).
     let list = git_worktrees(project_path.clone()).await?;
-    let canonical = std::fs::canonicalize(&target_path)
+    let canonical = std::fs::canonicalize(&target)
         .ok()
         .map(|p| p.to_string_lossy().to_string());
+    let target_string = target.to_string_lossy().to_string();
     list.into_iter()
-        .find(|w| w.path == target_path || canonical.as_deref().is_some_and(|c| c == w.path))
+        .find(|w| w.path == target_string || canonical.as_deref().is_some_and(|c| c == w.path))
         .ok_or_else(|| "worktree created but missing from git worktree list".to_string())
+}
+
+fn validate_worktree_add_target(
+    project: &Path,
+    target: &Path,
+    aethon_user_dir: Option<PathBuf>,
+) -> Result<PathBuf, String> {
+    if !target.is_absolute() {
+        return Err("worktree target path must be absolute".to_string());
+    }
+    let project_norm = normalize_path(project)
+        .ok_or_else(|| format!("invalid project path: {}", project.display()))?;
+    let project_canon =
+        std::fs::canonicalize(project).map_err(|e| format!("resolve project path: {e}"))?;
+    let target_norm = normalize_path(target).ok_or_else(|| {
+        format!(
+            "worktree target escapes filesystem root: {}",
+            target.display()
+        )
+    })?;
+
+    let roots = worktree_add_allowed_roots(&project_norm, &project_canon, aethon_user_dir);
+    let root = roots
+        .iter()
+        .find(|root| target_norm != root.path && target_norm.starts_with(&root.path))
+        .ok_or_else(|| {
+            format!(
+                "worktree target must be inside an Aethon-managed worktree root: {}",
+                target.display()
+            )
+        })?;
+    validate_existing_target_ancestors(&root.anchor, &target_norm)?;
+    Ok(target_norm)
+}
+
+fn worktree_add_home_dir() -> Option<PathBuf> {
+    std::env::var_os("HOME")
+        .or_else(|| std::env::var_os("USERPROFILE"))
+        .map(PathBuf::from)
+}
+
+struct ManagedWorktreeRoot {
+    path: PathBuf,
+    anchor: PathBuf,
+}
+
+fn worktree_add_allowed_roots(
+    project_norm: &Path,
+    project_canon: &Path,
+    aethon_user_dir: Option<PathBuf>,
+) -> Vec<ManagedWorktreeRoot> {
+    let mut roots = Vec::new();
+    for root in [
+        project_norm.join(".aethon").join("worktrees"),
+        project_norm.join(".claude").join("worktrees"),
+    ] {
+        if let Some(path) = normalize_path(&root) {
+            roots.push(ManagedWorktreeRoot {
+                path,
+                anchor: project_canon.to_path_buf(),
+            });
+        }
+    }
+    if let Some(user_dir) = aethon_user_dir
+        && user_dir.is_absolute()
+        && let Some(anchor) = normalize_path(&user_dir)
+    {
+        let repo_name = project_norm
+            .file_name()
+            .and_then(|name| name.to_str())
+            .map(|name| safe_worktree_path_segment(name, "repo"))
+            .unwrap_or_else(|| "repo".to_string());
+        if let Some(path) = normalize_path(&anchor.join(repo_name)) {
+            roots.push(ManagedWorktreeRoot { path, anchor });
+        }
+    }
+    roots
+}
+
+fn safe_worktree_path_segment(value: &str, fallback: &str) -> String {
+    let sanitized = value
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || matches!(ch, '.' | '_' | '-') {
+                ch
+            } else {
+                '-'
+            }
+        })
+        .collect::<String>()
+        .trim_matches('-')
+        .to_string();
+    if sanitized.is_empty() {
+        fallback.to_string()
+    } else {
+        sanitized
+    }
+}
+
+fn validate_existing_target_ancestors(anchor: &Path, target: &Path) -> Result<(), String> {
+    let target_existing = nearest_existing_ancestor(target).ok_or_else(|| {
+        format!(
+            "no existing ancestor for worktree target: {}",
+            target.display()
+        )
+    })?;
+    let anchor_canon = std::fs::canonicalize(anchor)
+        .map_err(|e| format!("resolve worktree root ancestor {}: {e}", anchor.display()))?;
+    let target_existing_canon = std::fs::canonicalize(&target_existing).map_err(|e| {
+        format!(
+            "resolve worktree target ancestor {}: {e}",
+            target_existing.display()
+        )
+    })?;
+    if !target_existing_canon.starts_with(&anchor_canon) {
+        return Err(format!(
+            "worktree target resolves outside managed root: {}",
+            target.display()
+        ));
+    }
+    Ok(())
+}
+
+fn nearest_existing_ancestor(path: &Path) -> Option<PathBuf> {
+    let mut cur = path.to_path_buf();
+    loop {
+        if cur.exists() {
+            return Some(cur);
+        }
+        if !cur.pop() {
+            return None;
+        }
+    }
 }
 
 /// Remove a git worktree. Refuses to remove the main worktree.
@@ -488,10 +627,13 @@ mod tests {
     #[tokio::test]
     async fn add_and_remove_worktree_round_trip() {
         let dir = tempfile::tempdir().expect("tempdir");
-        let parent = tempfile::tempdir().expect("tempdir");
         init_repo(dir.path());
         let project_path = dir.path().to_string_lossy().to_string();
-        let target = parent.path().join("feature-x");
+        let target = dir
+            .path()
+            .join(".aethon")
+            .join("worktrees")
+            .join("feature-x");
         let target_str = target.to_string_lossy().to_string();
         let wt = git_worktree_add(
             project_path.clone(),
@@ -514,10 +656,14 @@ mod tests {
     #[tokio::test]
     async fn add_worktree_creates_missing_parent_directory() {
         let dir = tempfile::tempdir().expect("tempdir");
-        let parent = tempfile::tempdir().expect("tempdir");
         init_repo(dir.path());
         let project_path = dir.path().to_string_lossy().to_string();
-        let target = parent.path().join("aethon").join("feature-y");
+        let target = dir
+            .path()
+            .join(".aethon")
+            .join("worktrees")
+            .join("nested")
+            .join("feature-y");
         assert!(!target.parent().expect("target parent").exists());
 
         let wt = git_worktree_add(
@@ -534,6 +680,51 @@ mod tests {
         git_worktree_remove(project_path, target.to_string_lossy().to_string(), false)
             .await
             .expect("worktree remove");
+    }
+
+    #[tokio::test]
+    async fn add_worktree_rejects_unmanaged_target_without_creating_parent() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let outside = tempfile::tempdir().expect("tempdir");
+        init_repo(dir.path());
+        let project_path = dir.path().to_string_lossy().to_string();
+        let target = outside.path().join("unmanaged").join("feature-z");
+        let parent = target.parent().expect("target parent").to_path_buf();
+        assert!(!parent.exists());
+
+        let err = git_worktree_add(
+            project_path,
+            target.to_string_lossy().to_string(),
+            "feature-z".to_string(),
+            None,
+        )
+        .await
+        .expect_err("unmanaged target must be rejected");
+
+        assert!(err.contains("Aethon-managed worktree root"), "got: {err}");
+        assert!(!parent.exists(), "rejected add must not create parents");
+        assert!(!target.exists(), "rejected add must not create target");
+    }
+
+    #[tokio::test]
+    async fn add_worktree_allows_managed_aethon_user_root() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let aethon = tempfile::tempdir().expect("tempdir");
+        init_repo(dir.path());
+        let repo_name = safe_worktree_path_segment(
+            dir.path()
+                .file_name()
+                .and_then(|name| name.to_str())
+                .expect("tempdir name"),
+            "repo",
+        );
+        let target = aethon.path().join(repo_name).join("feature-user-root");
+
+        let resolved =
+            validate_worktree_add_target(dir.path(), &target, Some(aethon.path().to_path_buf()))
+                .expect("managed aethon user root should be allowed");
+
+        assert_eq!(resolved, target);
     }
 
     #[tokio::test]
@@ -555,10 +746,9 @@ mod tests {
         // its `.git/worktrees/<name>/` entry was pruned externally,
         // but the on-disk dir survives.
         let dir = tempfile::tempdir().expect("tempdir");
-        let parent = tempfile::tempdir().expect("tempdir");
         init_repo(dir.path());
         let project_path = dir.path().to_string_lossy().to_string();
-        let target = parent.path().join("orphan");
+        let target = dir.path().join(".aethon").join("worktrees").join("orphan");
         let target_str = target.to_string_lossy().to_string();
         git_worktree_add(
             project_path.clone(),
@@ -702,10 +892,9 @@ mod tests {
     #[tokio::test]
     async fn remove_orphan_refuses_live_worktree() {
         let dir = tempfile::tempdir().expect("tempdir");
-        let parent = tempfile::tempdir().expect("tempdir");
         init_repo(dir.path());
         let project_path = dir.path().to_string_lossy().to_string();
-        let target = parent.path().join("alive");
+        let target = dir.path().join(".aethon").join("worktrees").join("alive");
         let target_str = target.to_string_lossy().to_string();
         git_worktree_add(
             project_path.clone(),
