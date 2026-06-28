@@ -10,8 +10,8 @@
 //! Lifecycle: `boot(app)` binds HTTP and registers mDNS advertisement only
 //! when `[server] enabled` is true (the default). The mDNS browser runs even
 //! when the local server is disabled — discovery is read-only and useful in
-//! isolation. `shutdown(state)` aborts the join handles and drops both
-//! `ServiceDaemon`s.
+//! isolation. `ServerState::stop` (via `server_stop`) aborts the HTTP task
+//! and drops the advertisement daemon.
 
 use std::future::Future;
 use std::sync::Arc;

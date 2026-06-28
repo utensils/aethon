@@ -489,13 +489,13 @@ port in TXT, the other **browses** and emits Tauri events
 auth, no TLS** — this is explicit scaffolding for an upcoming pairing
 PR; do not lean on it for trusted IPC. `commands/server.rs` exposes
 `server_start` / `server_stop`; `commands/host.rs` surfaces discovered
-peers to the frontend. The mDNS **advertiser** is gated on `[server]
-enabled` (default true) via `server_advertise_enabled()` in
-`server/mod.rs`; `boot()` reads it during Tauri `setup()` and skips the
-announcement when it's `false`. The HTTP server and the mDNS **browser**
-are NOT gated — they always run, so peer discovery stays read-only and
-useful even with the advertiser off. An explicit `server_start` IPC
-always advertises regardless of the flag.
+peers to the frontend. The boot-time HTTP listener and mDNS **advertiser**
+are gated on `[server] enabled` (default true) via `server_enabled()` in
+`server/mod.rs`; `boot()` reads it during Tauri `setup()` and skips local
+listening/advertisement when it's `false`. The mDNS **browser** is NOT
+gated — it always runs, so peer discovery stays read-only and useful even
+with the local server off. An explicit `server_start` IPC always starts the
+listener and advertises regardless of the flag.
 
 ### Voice-to-text input
 
