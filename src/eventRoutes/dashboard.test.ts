@@ -403,6 +403,31 @@ describe("handleProjectDashboard", () => {
 });
 
 describe("handleTaskLauncher", () => {
+  it("projects-dashboard start-task launches a host tab", async () => {
+    const { ctx, mocks } = buildRouteFixture();
+    const handled = await handleProjectsDashboard(
+      {
+        component: { id: "projects-dashboard", type: "projects-dashboard" },
+        eventType: "start-task",
+        data: {
+          target: "host",
+          prompt: "check the host",
+        },
+      },
+      ctx,
+    );
+
+    expect(handled).toBe(true);
+    expect(mocks.newTab).toHaveBeenCalledOnce();
+    const tabId = mocks.newTab.mock.calls[0]?.[0];
+    expect(typeof tabId).toBe("string");
+    expect(mocks.sendChat).toHaveBeenCalledWith("check the host", {
+      tabId,
+      attachments: undefined,
+    });
+    expect(ctx.startTaskInProject).not.toHaveBeenCalled();
+  });
+
   it("start-task calls ctx.startTaskInProject with the full payload", async () => {
     const { ctx } = buildRouteFixture();
     const handled = await handleTaskLauncher(

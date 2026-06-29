@@ -104,6 +104,12 @@ export const handleProjectsDashboard: EventRouteHandler = (
       ctx,
     );
   }
+  if (eventType === "start-task" || eventType === "paste-image-failed") {
+    return handleTaskLauncher(
+      { component: { id: "", type: "task-launcher" }, eventType, data },
+      ctx,
+    );
+  }
   return false;
 };
 

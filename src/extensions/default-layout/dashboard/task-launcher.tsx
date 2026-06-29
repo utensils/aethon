@@ -31,9 +31,17 @@ import { saveClipboardImageAttachment } from "../../../utils/imageAttachments";
 import { ImageAttachmentImage } from "../image-attachment-image";
 import { ImageLightbox } from "../image-lightbox";
 import { AtPicker } from "../at-picker";
+import { SlashPicker } from "../slash-picker";
 import { useAtMentionTextarea } from "../use-at-mention-textarea";
 import { useTextareaVoiceInput } from "../use-textarea-voice-input";
 import { VoiceInputButton, VoiceStatus } from "../voice-controls";
+import {
+  type ArgMatch,
+  type CommandMatch,
+  type PickerMatch,
+  type SlashCommandSource,
+  useSlashMatching,
+} from "../use-slash-matching";
 
 interface ProjectLite {
   id: string;
@@ -110,6 +118,7 @@ export function TaskLauncher({
         prompt?: unknown;
         showProjectSelector?: boolean;
         defaultTarget?: "host" | "project";
+        commands?: SlashCommandSource;
       }
     | undefined;
   const showProjectSelector = props?.showProjectSelector === true;
@@ -314,6 +323,12 @@ export function TaskLauncher({
   // workspace, else the project root (a "+ New workspace" forks from the
   // project, so its files are the right suggestions too).
   const launcherRef = useRef<HTMLDivElement | null>(null);
+  const { slashMatch, highlightIdx, setHighlightIdx, dismissPicker } =
+    useSlashMatching({
+      value: promptText,
+      commandsRaw: props?.commands ?? { $ref: "/slashCommands" },
+      state,
+    });
   const atRoot =
     !hostSelected && workspaceChoice.kind === "existing"
       ? workspaceChoice.path
@@ -331,7 +346,7 @@ export function TaskLauncher({
     onValueCommit: () => setTouched(true),
     textareaRef,
     root: atRoot,
-    enabled: !submitting,
+    enabled: !submitting && !slashMatch,
   });
 
   const submitPrompt = useCallback((rawPrompt: string) => {
@@ -394,6 +409,22 @@ export function TaskLauncher({
     submitPrompt(promptText);
   }, [promptText, submitPrompt]);
 
+  const insertSlashMatch = (match: PickerMatch) => {
+    const text =
+      match.kind === "command"
+        ? `/${match.cmd.name} `
+        : `/${match.cmd.name} ${match.choice.value}`;
+    setPromptText(text);
+    setTouched(true);
+  };
+
+  const submitSlashArgMatch = (match: ArgMatch) => {
+    const text = `/${match.cmd.name} ${match.choice.value}`;
+    setPromptText(text);
+    setTouched(true);
+    submitPrompt(text);
+  };
+
   // The dashboard task-launcher and the composer both mount at once — the
   // layout grid hides cells with display:none rather than unmounting — so each
   // registers the same global voice hotkey against one shared mic. Track
@@ -432,7 +463,52 @@ export function TaskLauncher({
     });
 
   const onKey = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (handleAtMentionKeyDown(e)) return;
+    if (slashMatch) {
+      const list = slashMatch.matches;
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setHighlightIdx((i) => (i + 1) % list.length);
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setHighlightIdx((i) => (i - 1 + list.length) % list.length);
+        return;
+      }
+      if (e.key === "Tab") {
+        e.preventDefault();
+        const match = list[highlightIdx] ?? list[0];
+        if (match) insertSlashMatch(match);
+        return;
+      }
+      if (e.key === "Escape") {
+        e.preventDefault();
+        dismissPicker();
+        return;
+      }
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        const value = (e.target as HTMLTextAreaElement).value;
+        if (slashMatch.mode === "arg") {
+          const match = list[highlightIdx] ?? list[0];
+          if (match) submitSlashArgMatch(match as ArgMatch);
+          return;
+        }
+        const exact = (list as CommandMatch[]).find(
+          (candidate) =>
+            value === `/${candidate.cmd.name}` ||
+            value.startsWith(`/${candidate.cmd.name} `),
+        );
+        if (exact && value.trim().length > 0) {
+          submitPrompt(value);
+          return;
+        }
+        const match = list[highlightIdx] ?? list[0];
+        if (match) insertSlashMatch(match);
+        return;
+      }
+    }
+    if (!slashMatch && handleAtMentionKeyDown(e)) return;
     // Plain Enter submits; Shift+Enter adds a newline. Matches the main
     // chat composer. Cmd/Ctrl+Enter also submits for users who hold
     // modifiers out of habit.
@@ -505,6 +581,14 @@ export function TaskLauncher({
         onKeyDown={onKey}
         disabled={submitting}
         aria-label="Task prompt"
+      />
+      <SlashPicker
+        anchorRef={launcherRef}
+        slashMatch={slashMatch}
+        highlightIdx={highlightIdx}
+        setHighlightIdx={setHighlightIdx}
+        onInsert={insertSlashMatch}
+        onSubmitArg={submitSlashArgMatch}
       />
       <AtPicker
         anchorRef={launcherRef}

@@ -96,6 +96,18 @@ slice, and the relevant broader gate (`bunx vitest run`, `bun run typecheck`,
 gate exits 0 with existing warnings, report those warnings clearly; do not treat
 new warnings as acceptable without addressing or justifying them.
 
+## UI UAT Discipline
+
+For Aethon UI and interaction changes, verify the running dev app with the
+right tool for the job: use the `aethon-debug` skill for webview state,
+programmatic event dispatch, screenshots, and fast end-to-end probes; use the
+`computer-use` skill when visual/manual UI behavior matters, such as clicking,
+typing, focus, menus, or layout as the user sees it. Prefer the narrower debug
+probe first when diagnosing state, then confirm user-facing behavior with
+Computer Use when the fix depends on rendered interaction. Never UAT against
+`/Applications/Aethon.app` or any release bundle unless the user explicitly asks
+for release testing; use the running dev app only.
+
 ## Architecture
 
 ### Layer responsibilities

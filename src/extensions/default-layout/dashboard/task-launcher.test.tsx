@@ -141,6 +141,57 @@ describe("TaskLauncher", () => {
     );
   });
 
+  it("shows slash commands in the host-level launcher", async () => {
+    render(
+      <TaskLauncher
+        component={launcher({
+          project: { id: "p1", label: "aethon", path: "/a" },
+          projects: [{ id: "p1", label: "aethon", path: "/a" }],
+          showProjectSelector: true,
+          defaultTarget: "host",
+        })}
+        state={{
+          slashCommands: [
+            { name: "clear", description: "Clear the active chat" },
+          ],
+        }}
+        onEvent={() => {}}
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText("Task prompt"), {
+      target: { value: "/" },
+    });
+
+    await screen.findByText("/clear");
+    fireEvent.keyDown(screen.getByLabelText("Task prompt"), { key: "Tab" });
+    expect(screen.getByLabelText<HTMLTextAreaElement>("Task prompt").value).toBe(
+      "/clear ",
+    );
+  });
+
+  it("shows slash commands in the project overview launcher", async () => {
+    render(
+      <TaskLauncher
+        component={launcher({
+          project: { id: "p1", label: "aethon", path: "/a" },
+        })}
+        state={{
+          slashCommands: [
+            { name: "theme", description: "Switch theme", usage: "<id>" },
+          ],
+        }}
+        onEvent={() => {}}
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText("Task prompt"), {
+      target: { value: "/th" },
+    });
+
+    expect(await screen.findByText("/theme")).toBeTruthy();
+  });
+
   it("resets workspace and base branch when a host-level selected project disappears", async () => {
     const onEvent = vi.fn();
     const { rerender } = render(
