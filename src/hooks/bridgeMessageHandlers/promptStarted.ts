@@ -1,5 +1,6 @@
 import { markControlTurnStarted } from "../controlWaitRegistry";
 import type { BridgeMessageHandler } from "./types";
+import { clearAgentActivity } from "./agentActivity";
 import { armHangWarn } from "./hangWarn";
 
 /** Bridge tells us a prompt has begun. Sent for handler-driven
@@ -19,6 +20,7 @@ export const handlePromptStarted: BridgeMessageHandler = (data, ctx) => {
   // Record turn start so response_end can compute duration and decide
   // whether to fire the OS completion notification.
   ctx.turnStartedAtRef.current.set(tabId, Date.now());
+  clearAgentActivity(ctx, tabId);
   ctx.updateTab(tabId, (tab) => {
     // queueCount mirrors the CLIENT-held queue now (Claudette-style
     // queued-messages popover). The bridge's `data.queued` field came

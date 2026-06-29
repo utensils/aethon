@@ -1,4 +1,5 @@
 import { closeRunningToolCards } from "../../utils/agentBusy";
+import { clearAgentActivity } from "./agentActivity";
 import { clearHangWarn } from "./hangWarn";
 import type { BridgeMessageHandler } from "./types";
 
@@ -7,12 +8,14 @@ export const handleResponse: BridgeMessageHandler = (data, ctx) => {
   const content = (data.content as string) ?? "";
   const tabId = (data.tabId as string | undefined) ?? "default";
   if (content) {
+    clearAgentActivity(ctx, tabId);
     ctx.appendMessage(
       { id: crypto.randomUUID(), role: "agent", text: content },
       tabId,
     );
   }
   if (data.done) {
+    clearAgentActivity(ctx, tabId);
     ctx.updateTab(tabId, (tab) => {
       const closedTools = closeRunningToolCards(tab.messages);
       return {

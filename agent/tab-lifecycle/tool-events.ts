@@ -2,6 +2,7 @@ import {
   addLiveContextUsageEstimate,
   emitContextUsageThrottled,
 } from "../context-usage";
+import { activityForTool } from "../activity-summary";
 import { isSilentTool } from "../silent-tools";
 import type { AethonAgentState, TabRecord } from "../state";
 import { consumeBashTerminalSnapshot } from "../terminal-stream";
@@ -30,6 +31,19 @@ function summarizeToolResult(result: unknown): string {
   } catch {
     return String(result).slice(0, 16_384);
   }
+}
+
+function emitAgentActivity(
+  deps: TabLifecycleDeps,
+  tabId: string,
+  toolName: string,
+  args: unknown,
+): void {
+  deps.send({
+    type: "agent_activity",
+    tabId,
+    activity: activityForTool(toolName, args),
+  });
 }
 
 export function handleToolExecutionStart(
@@ -77,6 +91,7 @@ export function handleToolExecutionStart(
     rootPath,
     startedAt,
   });
+  emitAgentActivity(deps, tabId, ev.toolName, ev.args);
   deps.send({ type: "a2ui", tabId, id: uiId, payload });
   addLiveContextUsageEstimate(rec, `${ev.toolName} ${summary}`);
   emitContextUsageThrottled(state, deps, tabId, rec);

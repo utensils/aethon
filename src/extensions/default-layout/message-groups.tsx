@@ -4,6 +4,8 @@ import A2UIRenderer, {
 } from "../../components/A2UIRenderer";
 import type { ConversationTurn } from "../../utils/transcriptRows";
 import type { ToolCallsMode, VisibilityMode } from "../../config";
+import type { AgentActivityState } from "../../agentActivity";
+import { useDelayedAgentActivity } from "../../agentActivity";
 import { ChatMessageRow, TypingIndicator } from "./message-row";
 import { branchTargetForTurn } from "./turn-action-helpers";
 import { TurnBranchActions } from "./turn-actions";
@@ -12,6 +14,7 @@ import { hasDisplayableAgentContent } from "./turn-activity-helpers";
 
 export interface CanvasFooterContext {
   liveSubtree: { components: A2UIComponent[] } | null;
+  agentActivity?: AgentActivityState | null;
   showTyping: boolean;
   typingLabel?: string;
   typingDetail?: string;
@@ -24,6 +27,9 @@ export interface CanvasFooterContext {
 // canvas subtree + typing indicator scroll and follow with the messages. Passed
 // dynamic data via Virtuoso's `context` so its component identity stays stable.
 export function CanvasFooter({ context }: { context?: CanvasFooterContext }) {
+  const visibleActivity = useDelayedAgentActivity(
+    context?.agentActivity ?? null,
+  );
   if (!context) return null;
   const {
     liveSubtree,
@@ -34,7 +40,7 @@ export function CanvasFooter({ context }: { context?: CanvasFooterContext }) {
     tabId,
     rowClassName = "a2ui-chat-message",
   } = context;
-  if (!liveSubtree && !showTyping) return null;
+  if (!liveSubtree && !showTyping && !visibleActivity) return null;
   return (
     <>
       {liveSubtree && (
@@ -42,7 +48,18 @@ export function CanvasFooter({ context }: { context?: CanvasFooterContext }) {
           <A2UIRenderer payload={liveSubtree} state={state} tabId={tabId} />
         </div>
       )}
-      {showTyping && (
+      {visibleActivity ? (
+        <div className="a2ui-msg-row a2ui-msg-row-footer">
+          <div className="ae-conversation-turn">
+            <div className={`${rowClassName} agent ae-typing-message`}>
+              <TypingIndicator
+                label={visibleActivity.label}
+                detail={visibleActivity.detail}
+              />
+            </div>
+          </div>
+        </div>
+      ) : showTyping ? (
         <div className="a2ui-msg-row a2ui-msg-row-footer">
           <div className="ae-conversation-turn">
             <div className={`${rowClassName} agent ae-typing-message`}>
@@ -50,7 +67,7 @@ export function CanvasFooter({ context }: { context?: CanvasFooterContext }) {
             </div>
           </div>
         </div>
-      )}
+      ) : null}
     </>
   );
 }

@@ -9,7 +9,6 @@ import {
 import type { ConversationTurn } from "../../utils/transcriptRows";
 import type { ToolCallsMode, VisibilityMode } from "../../config";
 import { Chevron } from "./sidebar/chevron";
-import { LiveActivityCard } from "./live-activity-card";
 import { ChatMessageRow } from "./message-row";
 import { hasDisplayableAgentContent } from "./turn-activity-helpers";
 import {
@@ -20,7 +19,6 @@ import {
   fileChangeStatsLabel,
   hasFileChange,
   hasToolCardChildren,
-  liveActivitySummary,
   summaryWithFileEntries,
   toolDurationLabel,
   toolStateLabel,
@@ -173,9 +171,6 @@ export function TurnActivity({
     summary.failed === 0 &&
     summary.cancelled === 0;
   const liveOnlyActivity = live && !showGenericTools && runningTools.length > 0;
-  const hiddenLiveSummary = liveOnlyActivity
-    ? liveActivitySummary(runningTools)
-    : null;
   const defaultDetailsOpen =
     expanded || toolCallsVisibility === "show" || completedFileActivity;
   const detailsOpen = forceOpen || (manualOpen ?? defaultDetailsOpen);
@@ -236,6 +231,7 @@ export function TurnActivity({
   }, [detailsBodyVisible]);
 
   if (!hasActivity) return null;
+  if (liveOnlyActivity) return null;
   const label = activityLabel({
     summary,
     progressCount: progressMessages.length,
@@ -275,21 +271,6 @@ export function TurnActivity({
     setManualOpen(!detailsOpen);
     onToggle();
   };
-
-  if (hiddenLiveSummary) {
-    return (
-      <div
-        ref={turnRef}
-        className="ae-turn-activity ae-turn-activity-live-only"
-        data-expanded="false"
-      >
-        <LiveActivityCard
-          label={hiddenLiveSummary.label}
-          detail={hiddenLiveSummary.detail}
-        />
-      </div>
-    );
-  }
 
   return (
     <div

@@ -11,20 +11,11 @@ import { resolveString } from "../../utils/dataBinding";
 import { resolvePointer } from "../../utils/jsonPointer";
 import { isRunningToolCard } from "../../utils/toolCardGrouping";
 import { resolveVisibility } from "../../utils/visibilityResolver";
+import { agentActivityForTab } from "../../agentActivity";
 import { VirtualMessageFeed } from "./virtual-message-feed";
-import { hasDisplayableAgentContent } from "./turn-activity-helpers";
 import type { CanvasFooterContext } from "./message-groups";
 
 export { ChatMessageRow } from "./message-row";
-
-function latestMessageHasVisibleAgentContent(messages: readonly ChatMessage[]) {
-  const latest = messages.at(-1);
-  return (
-    latest?.role === "agent" &&
-    hasDisplayableAgentContent(latest, "show") &&
-    !isRunningToolCard(latest)
-  );
-}
 
 export function ChatHistory({
   component,
@@ -135,14 +126,16 @@ export function MainCanvas({
     );
   }
 
+  const agentActivity = agentActivityForTab(state, tabId);
   const footerContext: CanvasFooterContext = {
     liveSubtree,
+    agentActivity,
     showTyping:
       state.waiting === true &&
       !liveSubtree &&
       messages.length > 0 &&
-      !messages.some(isRunningToolCard) &&
-      !latestMessageHasVisibleAgentContent(messages),
+      !agentActivity &&
+      !messages.some(isRunningToolCard),
     state,
     tabId,
   };

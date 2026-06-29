@@ -2644,6 +2644,14 @@ body.ae-resizing-composer * {
   background: var(--accent);
   flex-shrink: 0;
 }
+.a2ui-status-left.is-agent-active {
+  color: var(--text);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .a2ui-status-left.is-agent-active::before {
+    animation: ae-live-tool-pulse 1.35s var(--ease-out-strong) infinite;
+  }
+}
 
 .a2ui-status-center {
   text-align: left;

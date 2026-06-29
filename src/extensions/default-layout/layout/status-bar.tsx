@@ -12,6 +12,10 @@ import type { BuiltinComponentProps } from "../../../components/A2UIRenderer";
 import type { StringValue } from "../../../types/a2ui";
 import type { DevshellEntry } from "../../../hooks/useDevshell";
 import type { ContextUsageState } from "../../../types/tab";
+import {
+  agentActivityForTab,
+  useDelayedAgentActivity,
+} from "../../../agentActivity";
 
 export function StatusBar({ component, state }: BuiltinComponentProps) {
   const props = component.props as {
@@ -32,6 +36,22 @@ export function StatusBar({ component, state }: BuiltinComponentProps) {
   const contextUsage = props.context
     ? contextUsageFromValue(resolveValue(state, props.context.$ref))
     : null;
+  const visibleAgentActivity = useDelayedAgentActivity(
+    agentActivityForTab(state),
+  );
+  const genericAgentActivity =
+    !visibleAgentActivity && state.waiting === true
+      ? {
+          label: "Thinking through next step",
+          detail: "Waiting for the next update",
+        }
+      : null;
+  const statusAgentActivity = visibleAgentActivity ?? genericAgentActivity;
+  const leftLabel = statusAgentActivity?.label ?? left;
+  const leftTitle = statusAgentActivity?.detail ?? undefined;
+  const leftClassName = `a2ui-status-left${
+    statusAgentActivity ? " is-agent-active" : ""
+  }`;
 
   // Project / workspace / branch chip — derived from the live sidebar
   // projects list so a single source of truth drives both the sidebar
@@ -98,7 +118,9 @@ export function StatusBar({ component, state }: BuiltinComponentProps) {
 
   return (
     <footer className="a2ui-status-bar">
-      <span className="a2ui-status-left">{left}</span>
+      <span className={leftClassName} title={leftTitle}>
+        {leftLabel}
+      </span>
       {showChip ? (
         <span
           className="a2ui-status-project-chip"
