@@ -455,6 +455,76 @@ describe("handleTaskLauncher", () => {
     });
   });
 
+  it("start-task defaults new workspaces to the project base branch", async () => {
+    const { ctx } = buildRouteFixture({
+      state: {
+        projects: [
+          {
+            id: "p1",
+            label: "nyc-real-estate",
+            path: "/repo/nyc-real-estate",
+            workspaceBaseBranch: "upstream/trunk",
+          },
+        ],
+      },
+    });
+    const handled = await handleTaskLauncher(
+      {
+        component: { id: "x", type: "task-launcher" },
+        eventType: "start-task",
+        data: {
+          projectId: "p1",
+          prompt: "fix the bug",
+          newWorkspace: true,
+          branch: "fix/issue-664-crexi-duplicate",
+        },
+      },
+      ctx,
+    );
+    expect(handled).toBe(true);
+    expect(ctx.startTaskInProject).toHaveBeenCalledWith(
+      expect.objectContaining({
+        projectId: "p1",
+        newWorkspace: true,
+        baseBranch: "upstream/trunk",
+      }),
+    );
+  });
+
+  it("start-task defaults new workspaces to origin/main when no project override exists", async () => {
+    const { ctx } = buildRouteFixture({
+      state: {
+        projects: [
+          {
+            id: "p1",
+            label: "nyc-real-estate",
+            path: "/repo/nyc-real-estate",
+          },
+        ],
+      },
+    });
+    await handleTaskLauncher(
+      {
+        component: { id: "x", type: "task-launcher" },
+        eventType: "start-task",
+        data: {
+          projectId: "p1",
+          prompt: "fix the bug",
+          newWorkspace: true,
+          branch: "fix/issue-664-crexi-duplicate",
+        },
+      },
+      ctx,
+    );
+    expect(ctx.startTaskInProject).toHaveBeenCalledWith(
+      expect.objectContaining({
+        projectId: "p1",
+        newWorkspace: true,
+        baseBranch: "origin/main",
+      }),
+    );
+  });
+
   it("start-task forwards GitHub issue origin metadata", async () => {
     const { ctx } = buildRouteFixture();
     await handleTaskLauncher(

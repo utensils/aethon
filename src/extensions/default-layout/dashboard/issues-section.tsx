@@ -31,6 +31,7 @@ import {
 import { openUrl } from "@tauri-apps/plugin-opener";
 import type { BuiltinComponentProps } from "../../../components/A2UIRenderer";
 import { resolvePointer } from "../../../utils/jsonPointer";
+import { DEFAULT_WORKSPACE_BASE_BRANCH } from "../../../projects";
 import {
   type GhIssue,
   getIssueDetail,
@@ -49,6 +50,7 @@ interface ProjectInfo {
   id: string;
   label: string;
   path: string;
+  workspaceBaseBranch?: string;
 }
 
 interface IssueSectionProps {
@@ -343,6 +345,9 @@ export function IssuesSection({
             prompt: task.prompt,
             newWorkspace: task.newWorkspace,
             branch: task.branch,
+            baseBranch: task.newWorkspace
+              ? (project.workspaceBaseBranch ?? DEFAULT_WORKSPACE_BASE_BRANCH)
+              : undefined,
             workspaceId,
             // Tag the payload so the route can associate this issue
             // with the launched session and guard future duplicate clicks.

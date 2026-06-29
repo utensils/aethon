@@ -76,7 +76,12 @@ function renderIssues(
         id: "issues",
         type: "issues-section",
         props: {
-          project: { id: "p1", label: "aethon", path: "/repo/aethon" },
+          project: {
+            id: "p1",
+            label: "aethon",
+            path: "/repo/aethon",
+            workspaceBaseBranch: "origin/main",
+          },
         },
       },
       state: {
@@ -385,6 +390,7 @@ describe("IssuesSection", () => {
           projectId: "p1",
           newWorkspace: true,
           branch: expect.stringMatching(/^fix\/issue-85-/),
+          baseBranch: "origin/main",
           source: "github-issue",
           issueNumber: 85,
         }),

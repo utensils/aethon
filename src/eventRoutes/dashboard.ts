@@ -23,6 +23,7 @@ import {
 } from "./sidebar";
 import { restoreSessionFromSelection } from "./sessionRestore";
 import { firstIssueSessionTab } from "../extensions/default-layout/dashboard/issue-sessions";
+import { DEFAULT_WORKSPACE_BASE_BRANCH } from "../projects";
 
 function issueSourceFromStartTask(data: {
   projectId?: string;
@@ -55,6 +56,31 @@ function issueSourceFromStartTask(data: {
     ...(data.workspaceId ? { workspaceId: data.workspaceId } : {}),
     createdAt: Date.now(),
   };
+}
+
+function projectBaseBranchFromState(
+  state: Record<string, unknown>,
+  projectId: string,
+): string {
+  const projects = state.projects;
+  if (Array.isArray(projects)) {
+    const project = projects.find(
+      (candidate): candidate is { id: string; workspaceBaseBranch?: unknown } =>
+        Boolean(
+          candidate &&
+            typeof candidate === "object" &&
+            "id" in candidate &&
+            candidate.id === projectId,
+        ),
+    );
+    if (
+      typeof project?.workspaceBaseBranch === "string" &&
+      project.workspaceBaseBranch.trim().length > 0
+    ) {
+      return project.workspaceBaseBranch.trim();
+    }
+  }
+  return DEFAULT_WORKSPACE_BASE_BRANCH;
 }
 
 /** New-tab / Open Project… / restore-session / select-project-card
@@ -278,7 +304,11 @@ export const handleTaskLauncher: EventRouteHandler = (
       newWorkspace: sel.newWorkspace === true,
       attachments,
       branch: sel.branch,
-      baseBranch: sel.baseBranch,
+      baseBranch:
+        sel.newWorkspace === true
+          ? (sel.baseBranch?.trim() ||
+            projectBaseBranchFromState(ctx.stateRef.current, sel.projectId))
+          : sel.baseBranch,
       workspaceId: sel.workspaceId,
       ...(typeof sel.model === "string" && sel.model.length > 0
         ? { model: sel.model }
