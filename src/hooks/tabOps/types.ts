@@ -8,9 +8,8 @@ import type {
 import type { ProjectsState } from "../../projects";
 import type { TabBucket } from "../projectOps/types";
 
-/** Bridge-discovered persistent session awaiting restore.
- *  Surfaced by useProjectOps; useTabs.autoRestoreDiscoveredSessions
- *  consumes them to pre-open recent tabs on boot. */
+/** Bridge-discovered persistent session.
+ *  Surfaced in recent-session lists so users can resume it explicitly. */
 export interface DiscoveredSession {
   tabId: string;
   lastModified: number;
@@ -77,9 +76,6 @@ export interface UseTabsActions {
   /** In-flight tab_open promises keyed by tabId. sendChat awaits this so
    *  the bridge can't race-create the tab via the chat path. */
   pendingTabOpens: MutableRefObject<Map<string, Promise<unknown>>>;
-  /** Tab ids the auto-restore path has already opened in this session.
-   *  Prevents a second restore wave from re-opening the same tab. */
-  autoRestoredSessionIdsRef: MutableRefObject<Set<string>>;
 
   updateTab: (tabId: string, mutator: (tab: Tab) => Tab) => void;
   updateActiveTab: (mutator: (tab: Tab) => Tab) => void;
@@ -127,11 +123,6 @@ export interface UseTabsActions {
    *  a descendant when `kind === "dir"`). See implementation notes
    *  inside tabOps/closeTab.ts. */
   closeEditorTabsForPath: (path: string, kind: string) => void;
-  autoRestoreDiscoveredSessions: (
-    discovered: DiscoveredSession[],
-    knownIds: Set<string>,
-  ) => void;
-
   pushClosedTab: (tab: Tab) => void;
   reopenLastClosedTab: () => void;
   closeTab: (tabId: string) => void;

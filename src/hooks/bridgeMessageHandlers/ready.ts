@@ -193,14 +193,11 @@ export const handleReady: BridgeMessageHandler = (data, ctx) => {
   // restorable). Format the lastModified into a "10m ago"-style label
   // for the row's right-hand meta.
   const localKnownIds = ctx.knownTabIds();
-  const bridgeKnownIds = ctx.knownTabIds(
-    (data.tabs as { id: string }[] | undefined) ?? [],
-  );
   const scopedDiscTabs = ctx.scopedDiscoveredSessions(discTabs);
   const recentSessions = ctx.recentSessionItems(scopedDiscTabs, localKnownIds);
-  if (ctx.projectsLoadedRef.current) {
-    ctx.autoRestoreDiscoveredSessions(scopedDiscTabs, bridgeKnownIds);
-  }
+  // Discovered sessions are history, not live UI intent. Keep them in
+  // recentSessions so the user can resume explicitly, but do not auto-open
+  // historical rows into tabs on every bridge ready/project activation.
   // Restore any extension-supplied layout, then replay queued patches.
   // Falls back to the boot layout when none is reported so a removed /
   // disabled extension stops bleeding stale chrome across agent reloads.

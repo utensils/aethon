@@ -455,22 +455,30 @@ describe("handleReady", () => {
     });
   });
 
-  it("calls auto-restore only after projects are loaded", () => {
+  it("keeps discovered sessions in recents without auto-opening them", () => {
     const { ctx, mocks } = buildHandlerFixture();
-    handleReady({ type: "ready", tabs: [], discoveredTabs: [] }, ctx);
-    expect(mocks.autoRestoreDiscoveredSessions).not.toHaveBeenCalled();
-
-    const second = buildHandlerFixture();
-    second.ctx.projectsLoadedRef.current = true;
+    ctx.projectsLoadedRef.current = true;
+    const discovered = [{ tabId: "x", lastModified: 1, cwd: "/repo/app" }];
+    mocks.recentSessionItems.mockReturnValue([
+      {
+        id: "x",
+        label: "Resume me manually",
+        lastModified: "2m ago",
+        cwd: "/repo/app",
+      },
+    ]);
     handleReady(
       {
         type: "ready",
         tabs: [],
-        discoveredTabs: [{ tabId: "x", lastModified: 1 }],
+        discoveredTabs: discovered,
       },
-      second.ctx,
+      ctx,
     );
-    expect(second.mocks.autoRestoreDiscoveredSessions).toHaveBeenCalledTimes(1);
+    expect(mocks.recentSessionItems).toHaveBeenCalledWith(
+      discovered,
+      new Set(["default"]),
+    );
   });
 
   it("keeps discovered sessions resumable when the bridge knows a tab the UI lost", () => {
@@ -509,10 +517,8 @@ describe("handleReady", () => {
       ctx,
     );
 
-    expect(mocks.knownTabIds).toHaveBeenNthCalledWith(1);
-    expect(mocks.knownTabIds).toHaveBeenNthCalledWith(2, [
-      { id: "lost-tab", model: "claude", cwd: "/repo/aethon-fix" },
-    ]);
+    expect(mocks.knownTabIds).toHaveBeenCalledTimes(1);
+    expect(mocks.knownTabIds).toHaveBeenCalledWith();
     expect(mocks.recentSessionItems).toHaveBeenCalledWith(
       discovered,
       new Set(["default"]),

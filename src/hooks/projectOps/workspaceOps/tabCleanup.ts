@@ -192,8 +192,8 @@ export function closeTabsForRemovedWorkspace(
       const result: Record<string, unknown> = { ...prev };
       if (nextPersisted !== null) result.persistedTabBuckets = nextPersisted;
       if (suppressed.size > 0) {
-        // Suppress the retired sessions from discovery-driven auto-restore.
-        // A deleted workspace's session must not resurrect into whatever
+        // Suppress the retired sessions from discovery-backed resume lists.
+        // A deleted workspace's session must not reappear under whatever
         // workspace happens to be active later.
         result.closedSessionIds = mergeClosedSessionIds(
           prev.closedSessionIds,

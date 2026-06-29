@@ -272,7 +272,7 @@ export default function App() {
   // Tab lifecycle (create / switch / update / close / undo-close), the
   // sub-tab switcher, the shell-/agent-tab-active mirror effect, and the
   // terminal replay dispatch all live in useTabs. The hook keeps closed-
-  // tab + auto-restore + pending-tab-open state internally.
+  // tab + pending-tab-open state internally.
   // ---------------------------------------------------------------------
   const {
     pendingTabOpens,
@@ -289,7 +289,6 @@ export default function App() {
     toggleEditorPreview,
     renameEditorTabsForPath,
     closeEditorTabsForPath,
-    autoRestoreDiscoveredSessions,
     reopenLastClosedTab,
     closeTab,
     closeTabNow,
@@ -414,7 +413,6 @@ export default function App() {
     watchProjectForBridge,
     unwatchProjectForBridge,
     dispatchTerminalReplay,
-    autoRestoreDiscoveredSessions,
     closeTabNow,
     newShellTab,
     workspacePrompts,
@@ -742,7 +740,6 @@ export default function App() {
     newEditorTab,
     prepareWorkspaceStartup,
     dispatchTerminalReplay,
-    autoRestoreDiscoveredSessions,
     hydrateThemes,
     hydrateExtensions,
     hydrateSlashCommands,

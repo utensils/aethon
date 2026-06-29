@@ -48,7 +48,6 @@ export interface HandlerFixture {
     hydrateFrontendModules: Mock;
     syncRecentSessionsToState: Mock;
     syncNativeWindowsToState: Mock;
-    autoRestoreDiscoveredSessions: Mock;
     dispatchTerminalReplay: Mock;
     announceProjectToBridge: Mock;
     routeShellWrite: Mock;
@@ -106,7 +105,6 @@ export function buildHandlerFixture(
   const hydrateFrontendModules = vi.fn();
   const syncRecentSessionsToState = vi.fn();
   const syncNativeWindowsToState = vi.fn();
-  const autoRestoreDiscoveredSessions = vi.fn();
   const dispatchTerminalReplay = vi.fn();
   const announceProjectToBridge = vi.fn();
   const routeShellWrite = vi.fn(() => Promise.resolve({ ok: true as const }));
@@ -139,7 +137,6 @@ export function buildHandlerFixture(
     newTab,
     newEditorTab,
     dispatchTerminalReplay,
-    autoRestoreDiscoveredSessions,
 
     hydrateThemes,
     hydrateExtensions,
@@ -224,7 +221,6 @@ export function buildHandlerFixture(
       hydrateFrontendModules,
       syncRecentSessionsToState,
       syncNativeWindowsToState,
-      autoRestoreDiscoveredSessions,
       dispatchTerminalReplay,
       announceProjectToBridge,
       routeShellWrite,

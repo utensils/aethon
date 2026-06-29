@@ -178,8 +178,16 @@ export function useProjectStore(deps: ProjectStoreDeps): ProjectStore {
     discovered: DiscoveredSession[],
     openIds: Set<string>,
   ): RecentSessionItem[] {
+    const closedIds = new Set(
+      Array.isArray(stateRef.current.closedSessionIds)
+        ? (stateRef.current.closedSessionIds as unknown[]).filter(
+            (id): id is string => typeof id === "string" && id.length > 0,
+          )
+        : [],
+    );
     return discovered
       .filter((d) => !openIds.has(d.tabId))
+      .filter((d) => !closedIds.has(d.tabId))
       .slice(0, 8)
       .map((d) => {
         const cwdBasename = d.cwd
