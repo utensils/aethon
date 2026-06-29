@@ -70,10 +70,21 @@ describe("conversation turn rollback/fork affordance", () => {
     ).toHaveLength(1);
     expect(screen.getByText("Rollback")).toBeTruthy();
     expect(screen.getByText("Fork")).toBeTruthy();
+    const rollback = screen.getByRole("button", {
+      name: "Rollback this turn",
+    });
+    const finalAnswer = screen.getByText("final answer");
+    const fork = screen.getByRole("button", { name: "Fork this turn" });
     expect(
-      screen
-        .getByRole("button", { name: "Fork this turn" })
-        .closest(".a2ui-chat-message"),
+      rollback.compareDocumentPosition(finalAnswer) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      finalAnswer.compareDocumentPosition(fork) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      fork.closest(".a2ui-chat-message"),
     ).toBeNull();
   });
 
@@ -160,13 +171,13 @@ describe("conversation turn rollback/fork affordance", () => {
     ).toBeNull();
   });
 
-  it("shows the affordance on a thinking-only turn", () => {
+  it("shows fork only on an assistant-only thinking turn", () => {
     turn([
       { id: "1", entryId: "e1", role: "agent", thinking: "let me reason" },
     ]);
     expect(
-      screen.getByRole("button", { name: "Rollback this turn" }),
-    ).toBeTruthy();
+      screen.queryByRole("button", { name: "Rollback this turn" }),
+    ).toBeNull();
     expect(screen.getByRole("button", { name: "Fork this turn" })).toBeTruthy();
   });
 
@@ -196,7 +207,7 @@ describe("conversation turn rollback/fork affordance", () => {
     expect(screen.queryByRole("button", { name: "Fork this turn" })).toBeNull();
   });
 
-  it("keeps affordances available when another tab is running", () => {
+  it("keeps fork available for assistant-only turns when another tab is running", () => {
     turn(
       [{ id: "1", entryId: "e1", role: "agent", text: "done" }],
       vi.fn(),
@@ -204,8 +215,8 @@ describe("conversation turn rollback/fork affordance", () => {
       { waiting: false, agentRunningTabs: { "tab-2": true } },
     );
     expect(
-      screen.getByRole("button", { name: "Rollback this turn" }),
-    ).toBeTruthy();
+      screen.queryByRole("button", { name: "Rollback this turn" }),
+    ).toBeNull();
     expect(screen.getByRole("button", { name: "Fork this turn" })).toBeTruthy();
   });
 
@@ -218,7 +229,7 @@ describe("conversation turn rollback/fork affordance", () => {
     expect(onEvent).not.toHaveBeenCalled();
     fireEvent.click(screen.getByText("Confirm rollback"));
     expect(onEvent).toHaveBeenCalledWith("rollback-to-here", {
-      entryId: "ea1",
+      entryId: "eu1",
       tabId: "tab-1",
     });
   });

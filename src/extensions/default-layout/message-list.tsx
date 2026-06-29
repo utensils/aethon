@@ -127,6 +127,10 @@ export function MainCanvas({
   }
 
   const agentActivity = agentActivityForTab(state, tabId);
+  const latestMessage = messages.at(-1);
+  const latestAgentProseVisible =
+    latestMessage?.role === "agent" &&
+    (Boolean(latestMessage.text) || Boolean(latestMessage.thinking));
   const footerContext: CanvasFooterContext = {
     liveSubtree,
     agentActivity,
@@ -134,6 +138,7 @@ export function MainCanvas({
       state.waiting === true &&
       !liveSubtree &&
       messages.length > 0 &&
+      !latestAgentProseVisible &&
       !agentActivity &&
       !messages.some(isRunningToolCard),
     state,

@@ -21,6 +21,10 @@ export function clearAgentActivity(
   ctx: BridgeMessageContext,
   tabId: string,
 ): void {
+  const currentMap = ctx.stateRef.current.agentActivityByTab as
+    | Record<string, unknown>
+    | undefined;
+  if (!currentMap?.[tabId]) return;
   ctx.setState((prev) => {
     const map = prev.agentActivityByTab as
       | Record<string, unknown>

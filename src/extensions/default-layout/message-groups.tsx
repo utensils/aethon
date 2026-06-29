@@ -7,7 +7,7 @@ import type { ToolCallsMode, VisibilityMode } from "../../config";
 import type { AgentActivityState } from "../../agentActivity";
 import { useDelayedAgentActivity } from "../../agentActivity";
 import { ChatMessageRow, TypingIndicator } from "./message-row";
-import { branchTargetForTurn } from "./turn-action-helpers";
+import { branchTargetsForTurn } from "./turn-action-helpers";
 import { TurnBranchActions } from "./turn-actions";
 import { TurnActivity } from "./turn-activity";
 import { hasDisplayableAgentContent } from "./turn-activity-helpers";
@@ -133,7 +133,7 @@ export function ConversationTurnRow({
     visibleAgentMessages.length > 0
       ? new Set(visibleAgentMessages.map((message) => message.id))
       : undefined;
-  const branchTarget = branchTargetForTurn(turn, visibleAgentMessages);
+  const branchTargets = branchTargetsForTurn(turn, visibleAgentMessages);
   const userIndex = turn.userMessage
     ? turn.messages.findIndex((message) => message.id === turn.userMessage?.id)
     : -1;
@@ -167,15 +167,23 @@ export function ConversationTurnRow({
         />
       ))}
       {turn.userMessage && (
-        <ChatMessageRow
-          message={turn.userMessage}
-          state={state}
-          tabId={tabId}
-          className={rowClassName}
-          onEvent={onEvent}
-          deliveryText={deliveryText}
-          thinkingVisibility={thinkingVisibility}
-        />
+        <>
+          <ChatMessageRow
+            message={turn.userMessage}
+            state={state}
+            tabId={tabId}
+            className={rowClassName}
+            onEvent={onEvent}
+            deliveryText={deliveryText}
+            thinkingVisibility={thinkingVisibility}
+          />
+          <TurnBranchActions
+            rollbackTarget={branchTargets.rollbackTarget}
+            state={state}
+            tabId={tabId}
+            onEvent={onEvent}
+          />
+        </>
       )}
       {visibleAgentMessages.map((message, index) => (
         <ChatMessageRow
@@ -218,7 +226,7 @@ export function ConversationTurnRow({
         />
       ))}
       <TurnBranchActions
-        target={branchTarget}
+        forkTarget={branchTargets.forkTarget}
         state={state}
         tabId={tabId}
         onEvent={onEvent}
