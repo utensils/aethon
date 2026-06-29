@@ -26,6 +26,51 @@ function latestMessageHasVisibleAgentContent(messages: readonly ChatMessage[]) {
   );
 }
 
+function textForActivityInference(messages: readonly ChatMessage[]): string {
+  return messages
+    .map((message) => message.text ?? "")
+    .filter(Boolean)
+    .join("\n")
+    .toLowerCase();
+}
+
+function streamingActivityCopy(messages: readonly ChatMessage[]):
+  | {
+      typingLabel: string;
+      typingDetail: string;
+    }
+  | undefined {
+  if (!latestMessageHasVisibleAgentContent(messages)) return undefined;
+  const text = textForActivityInference(messages);
+  if (
+    /\b(directory|directories|folder|folders|tree|files?)\b/.test(text) &&
+    /\b(explore|inspect|inventory|summari[sz]e|sample|read|drill|scan|list|count|size)\b/.test(
+      text,
+    )
+  ) {
+    return {
+      typingLabel: "Reading directory contents",
+      typingDetail: "Inspecting files and folders",
+    };
+  }
+  if (/\b(config|configuration|manifest|settings|preferences)\b/.test(text)) {
+    return {
+      typingLabel: "Inspecting configuration",
+      typingDetail: "Reviewing relevant files",
+    };
+  }
+  if (/\b(diff|branch|commit|changes?|git status)\b/.test(text)) {
+    return {
+      typingLabel: "Reviewing changes",
+      typingDetail: "Checking repository state",
+    };
+  }
+  return {
+    typingLabel: "Writing response",
+    typingDetail: "Streaming the answer",
+  };
+}
+
 export function ChatHistory({
   component,
   state,
@@ -142,12 +187,7 @@ export function MainCanvas({
       !liveSubtree &&
       messages.length > 0 &&
       !messages.some(isRunningToolCard),
-    ...(latestMessageHasVisibleAgentContent(messages)
-      ? {
-          typingLabel: "Writing response",
-          typingDetail: "Streaming the answer",
-        }
-      : {}),
+    ...streamingActivityCopy(messages),
     state,
     tabId,
   };

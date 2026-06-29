@@ -642,6 +642,28 @@ describe("ChatInput", () => {
     expect(screen.getByText("Streaming the answer")).toBeTruthy();
   });
 
+  it("uses task-specific footer activity for directory inspection turns", () => {
+    renderMainCanvas({
+      waiting: true,
+      messages: [
+        {
+          id: "1",
+          role: "user",
+          text: "Explore this directory and summarize it for me",
+        },
+        {
+          id: "2",
+          role: "agent",
+          text: "I’m going to sample the durable config versus cache/log state.",
+        },
+      ],
+    });
+
+    expect(screen.getByText("Reading directory contents")).toBeTruthy();
+    expect(screen.getByText("Inspecting files and folders")).toBeTruthy();
+    expect(screen.queryByText("Writing response")).toBeNull();
+  });
+
   it("does not show the footer activity indicator when running tool activity is visible", () => {
     renderMainCanvas({
       waiting: true,
