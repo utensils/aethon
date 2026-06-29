@@ -1120,6 +1120,43 @@ describe("handleSessionEvent", () => {
     });
   });
 
+  it("clears live tool activity only after the last running tool ends", () => {
+    const f = makeFixture();
+    const rec = fakeRec();
+    handleSessionEvent(f.state, f.deps, rec, "tab-1", {
+      type: "tool_execution_start",
+      toolCallId: "c1",
+      toolName: "bash",
+      args: { command: "find . -maxdepth 1 -type f" },
+    });
+    handleSessionEvent(f.state, f.deps, rec, "tab-1", {
+      type: "tool_execution_start",
+      toolCallId: "c2",
+      toolName: "bash",
+      args: { command: "du -sh ." },
+    });
+    handleSessionEvent(f.state, f.deps, rec, "tab-1", {
+      type: "tool_execution_end",
+      toolCallId: "c1",
+      toolName: "bash",
+      result: "done",
+    });
+    expect(
+      f.sent.filter((m) => m.type === "agent_activity" && m.clear === true),
+    ).toHaveLength(0);
+
+    handleSessionEvent(f.state, f.deps, rec, "tab-1", {
+      type: "tool_execution_end",
+      toolCallId: "c2",
+      toolName: "bash",
+      result: "done",
+    });
+
+    expect(
+      f.sent.filter((m) => m.type === "agent_activity" && m.clear === true),
+    ).toEqual([{ type: "agent_activity", tabId: "tab-1", clear: true }]);
+  });
+
   it("keeps session-title tool calls silent in the live transcript", () => {
     const f = makeFixture();
     const rec = fakeRec();

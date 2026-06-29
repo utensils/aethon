@@ -617,10 +617,12 @@ describe("ChatInput", () => {
     });
 
     const indicator = screen.getByRole("status", {
-      name: "Thinking through next step. Waiting for the next update",
+      name: "Waiting for model response. No tool calls are currently running",
     });
-    expect(screen.getByText("Thinking through next step")).toBeTruthy();
-    expect(screen.getByText("Waiting for the next update")).toBeTruthy();
+    expect(screen.getByText("Waiting for model response")).toBeTruthy();
+    expect(
+      screen.getByText("No tool calls are currently running"),
+    ).toBeTruthy();
     expect(indicator.querySelectorAll(".ae-typing-dot")).toHaveLength(0);
     expect(indicator.closest(".a2ui-msg-row-footer")).toBeTruthy();
     expect(indicator.closest(".ae-conversation-turn")).toBeTruthy();
@@ -637,7 +639,7 @@ describe("ChatInput", () => {
     });
 
     expect(screen.getByText("streaming update")).toBeTruthy();
-    expect(screen.queryByText("Thinking through next step")).toBeNull();
+    expect(screen.queryByText("Waiting for model response")).toBeNull();
     expect(screen.queryByText("Writing response")).toBeNull();
     expect(screen.queryByText("Streaming the answer")).toBeNull();
   });
@@ -720,7 +722,7 @@ describe("ChatInput", () => {
     });
 
     expect(screen.getByText("Searching files")).toBeTruthy();
-    expect(screen.queryByText("Thinking through next step")).toBeNull();
+    expect(screen.queryByText("Waiting for model response")).toBeNull();
   });
 
   it("labels hidden running directory tools as directory reading", () => {

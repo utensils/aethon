@@ -127,6 +127,12 @@ export function MainCanvas({
   }
 
   const agentActivity = agentActivityForTab(state, tabId);
+  const latestMessage = messages.at(-1);
+  const latestIsAgentProse =
+    latestMessage?.role === "agent" &&
+    typeof latestMessage.text === "string" &&
+    latestMessage.text.trim().length > 0 &&
+    !latestMessage.a2ui;
   const footerContext: CanvasFooterContext = {
     liveSubtree,
     agentActivity,
@@ -135,7 +141,10 @@ export function MainCanvas({
       !liveSubtree &&
       messages.length > 0 &&
       !agentActivity &&
+      !latestIsAgentProse &&
       !messages.some(isRunningToolCard),
+    typingLabel: "Waiting for model response",
+    typingDetail: "No tool calls are currently running",
     state,
     tabId,
   };
