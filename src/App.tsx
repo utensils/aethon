@@ -912,6 +912,7 @@ export default function App() {
     shellInheritEnvRef,
     updateTab,
     newShellTab,
+    activateTabAnywhere,
     nextTab,
     appendMessage,
     persistLocalChatMessage,

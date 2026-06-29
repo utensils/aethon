@@ -221,6 +221,7 @@ pub fn run() {
             commands::subagents::subagents_write,
             commands::subagents::subagents_delete,
             commands::extensions::set_extension_menu_items,
+            commands::extensions::set_tray_sessions,
             commands::extensions::install_aethon_extension,
             commands::extensions::watch_project_extensions,
             commands::extensions::unwatch_project_extensions,
@@ -377,7 +378,7 @@ pub fn run() {
                 let id = event.id().0.as_str();
                 let _ = app.emit("menu", id);
             });
-            commands::extensions::install_tray(app.handle(), &[])?;
+            commands::extensions::install_tray(app.handle(), &[], &[])?;
             // Initialize the extension menu store empty; the bridge
             // ships items via `extension_menu_items` events that the
             // frontend forwards to `set_extension_menu_items`, which
@@ -471,6 +472,15 @@ mod tests {
         assert!(
             src.contains("commands::extensions::set_extension_menu_items"),
             "set_extension_menu_items must be registered in the invoke_handler list",
+        );
+    }
+
+    #[test]
+    fn set_tray_sessions_is_wired_to_handler() {
+        let src = include_str!("lib.rs");
+        assert!(
+            src.contains("commands::extensions::set_tray_sessions"),
+            "set_tray_sessions must be registered in the invoke_handler list",
         );
     }
 

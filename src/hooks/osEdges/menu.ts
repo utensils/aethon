@@ -8,6 +8,7 @@ export interface MenuDeps {
   newTab: () => void;
   newShellTab: () => void;
   closeTab: (tabId: string) => void;
+  activateTabAnywhere: (tabId: string) => void;
   nextTab: (direction: 1 | -1) => void;
   toggleTerminal: () => void;
   toggleFilesSidebar: () => void;
@@ -40,6 +41,7 @@ export function subscribeMenu(deps: MenuDeps): () => void {
     newTab,
     newShellTab,
     closeTab,
+    activateTabAnywhere,
     nextTab,
     toggleTerminal,
     toggleFilesSidebar,
@@ -68,6 +70,10 @@ export function subscribeMenu(deps: MenuDeps): () => void {
       }).catch(() => {
         /* bridge gone or webview reload mid-flight */
       });
+      return;
+    }
+    if (id.startsWith("tray:session:")) {
+      activateTabAnywhere(id.slice("tray:session:".length));
       return;
     }
     switch (id) {
