@@ -19,7 +19,6 @@ import {
   fileChangeStatsLabel,
   hasFileChange,
   hasToolCardChildren,
-  liveActivitySummary,
   summaryWithFileEntries,
   toolDurationLabel,
   toolStateLabel,
@@ -29,7 +28,6 @@ import {
   ToolFileChangesCard,
   ToolFileChangeRow,
 } from "./tool-file-changes";
-import { LiveActivityCard } from "./live-activity-card";
 
 const ACTIVITY_DISCLOSURE_EXIT_MS = 240;
 
@@ -233,20 +231,7 @@ export function TurnActivity({
   }, [detailsBodyVisible]);
 
   if (!hasActivity) return null;
-  if (liveOnlyActivity) {
-    const liveSummary = liveActivitySummary(runningTools) ?? {
-      label: "Working",
-      detail: "Running tool activity",
-    };
-    return (
-      <div className="ae-turn-activity ae-turn-activity-live-only">
-        <LiveActivityCard
-          label={liveSummary.label}
-          detail={liveSummary.detail}
-        />
-      </div>
-    );
-  }
+  if (liveOnlyActivity) return null;
   const label = activityLabel({
     summary,
     progressCount: progressMessages.length,

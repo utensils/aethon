@@ -53,8 +53,8 @@ function shallowEqualExcept(
 }
 
 export function TypingIndicator({
-  label = "Waiting for model response",
-  detail = "No tool calls are currently running",
+  label = "Thinking through next step",
+  detail = "Waiting for the next update",
 }: {
   label?: string;
   detail?: string;

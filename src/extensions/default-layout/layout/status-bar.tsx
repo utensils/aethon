@@ -42,8 +42,8 @@ export function StatusBar({ component, state }: BuiltinComponentProps) {
   const genericAgentActivity =
     !visibleAgentActivity && state.waiting === true
       ? {
-          label: "Waiting for model response",
-          detail: "No tool calls are currently running",
+          label: "Thinking through next step",
+          detail: "Waiting for the next update",
         }
       : null;
   const statusAgentActivity = visibleAgentActivity ?? genericAgentActivity;

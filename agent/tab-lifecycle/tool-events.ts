@@ -46,14 +46,6 @@ function emitAgentActivity(
   });
 }
 
-function clearAgentActivity(deps: TabLifecycleDeps, tabId: string): void {
-  deps.send({
-    type: "agent_activity",
-    tabId,
-    clear: true,
-  });
-}
-
 export function handleToolExecutionStart(
   state: AethonAgentState,
   deps: TabLifecycleDeps,
@@ -238,9 +230,6 @@ export function handleToolExecutionEnd(
     addLiveContextUsageEstimate(rec, summarizeToolResult(ev.result));
   }
   rec.toolArgsCache.delete(ev.toolCallId);
-  if (rec.toolArgsCache.size === 0) {
-    clearAgentActivity(deps, tabId);
-  }
   rollResponseMessage(rec);
   emitContextUsageThrottled(state, deps, tabId, rec);
 }
