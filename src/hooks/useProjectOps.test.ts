@@ -653,6 +653,38 @@ describe("useProjectOps session scoping", () => {
       { tabId: "other-host-cwd", lastModified: 4, cwd: "/tmp/scratch" },
     ]);
   });
+
+  it("keeps explicitly closed discovered sessions out of recents", () => {
+    const { result, stateRef } = renderProjectOps(makeProjectsState());
+    stateRef.current = {
+      tabs: [makeEmptyTab("open-session", "Open")],
+      closedSessionIds: ["closed-session"],
+    };
+
+    expect(
+      result.current.recentSessionItems(
+        [
+          { tabId: "open-session", lastModified: 1, firstUserMessage: "Open" },
+          {
+            tabId: "closed-session",
+            lastModified: 2,
+            firstUserMessage: "Closed",
+          },
+          {
+            tabId: "resume-session",
+            lastModified: 3,
+            firstUserMessage: "Resume",
+          },
+        ],
+        result.current.knownTabIds(),
+      ),
+    ).toEqual([
+      expect.objectContaining({
+        id: "resume-session",
+        label: "Resume",
+      }),
+    ]);
+  });
 });
 
 describe("useProjectOps overview terminal project switches", () => {
