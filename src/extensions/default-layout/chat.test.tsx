@@ -627,7 +627,7 @@ describe("ChatInput", () => {
     expect(indicator.closest(".a2ui-canvas-message.agent")).toBeTruthy();
   });
 
-  it("names the footer activity while agent prose is streaming", () => {
+  it("hides the footer activity while agent prose is streaming", () => {
     renderMainCanvas({
       waiting: true,
       messages: [
@@ -638,11 +638,11 @@ describe("ChatInput", () => {
 
     expect(screen.getByText("streaming update")).toBeTruthy();
     expect(screen.queryByText("Thinking through next step")).toBeNull();
-    expect(screen.getByText("Writing response")).toBeTruthy();
-    expect(screen.getByText("Streaming the answer")).toBeTruthy();
+    expect(screen.queryByText("Writing response")).toBeNull();
+    expect(screen.queryByText("Streaming the answer")).toBeNull();
   });
 
-  it("uses task-specific footer activity for directory inspection turns", () => {
+  it("does not infer footer activity from planning prose", () => {
     renderMainCanvas({
       waiting: true,
       messages: [
@@ -659,8 +659,9 @@ describe("ChatInput", () => {
       ],
     });
 
-    expect(screen.getByText("Reading directory contents")).toBeTruthy();
-    expect(screen.getByText("Inspecting files and folders")).toBeTruthy();
+    expect(screen.getByText(/sample the durable config/)).toBeTruthy();
+    expect(screen.queryByText("Reading directory contents")).toBeNull();
+    expect(screen.queryByText("Inspecting files and folders")).toBeNull();
     expect(screen.queryByText("Writing response")).toBeNull();
   });
 
@@ -706,6 +707,7 @@ describe("ChatInput", () => {
                 type: "tool-card",
                 props: {
                   title: "bash",
+                  toolName: "bash",
                   description: "rg message-row",
                   startedAt: 1000,
                 },
@@ -719,6 +721,39 @@ describe("ChatInput", () => {
 
     expect(screen.getByText("Searching files")).toBeTruthy();
     expect(screen.queryByText("Thinking through next step")).toBeNull();
+  });
+
+  it("labels hidden running directory tools as directory reading", () => {
+    renderMainCanvas({
+      waiting: true,
+      messages: [
+        { id: "1", role: "user", text: "summarize this directory" },
+        { id: "2", role: "agent", text: "I’ll inspect the top-level shape." },
+        {
+          id: "3",
+          role: "agent",
+          a2ui: {
+            components: [
+              {
+                id: "tool-bash",
+                type: "tool-card",
+                props: {
+                  title: "bash",
+                  toolName: "bash",
+                  description: "find . -maxdepth 2 -type f | head -200",
+                  startedAt: 1000,
+                },
+              },
+            ],
+          },
+        },
+      ],
+      transcriptVisibility: { toolCalls: "hide" },
+    });
+
+    expect(screen.getByText("Reading directory contents")).toBeTruthy();
+    expect(screen.getByText("Inspecting files and folders")).toBeTruthy();
+    expect(screen.queryByText("Writing response")).toBeNull();
   });
 
   it("shows the pill and stops following when the user scrolls up", () => {

@@ -114,6 +114,63 @@ describe("tool activity summary helpers", () => {
     expect(`${activity?.label} ${activity?.detail}`).not.toMatch(/bash|rg/);
   });
 
+  it("classifies running directory inspection tools before generic search", () => {
+    const activity = liveActivitySummary([
+      {
+        id: "running",
+        role: "agent",
+        a2ui: {
+          components: [
+            {
+              id: "tool-running",
+              type: "tool-card",
+              props: {
+                title: "bash",
+                toolName: "bash",
+                description: "find . -maxdepth 2 -type f | head -200",
+                startedAt: 1000,
+              },
+            },
+          ],
+        },
+      },
+    ]);
+
+    expect(activity).toEqual({
+      label: "Reading directory contents",
+      detail: "Inspecting files and folders",
+    });
+  });
+
+  it("classifies running read tools from structured metadata", () => {
+    const activity = liveActivitySummary([
+      {
+        id: "running",
+        role: "agent",
+        a2ui: {
+          components: [
+            {
+              id: "tool-running",
+              type: "tool-card",
+              props: {
+                title: "read",
+                toolName: "read",
+                filePath: "src/App.tsx",
+                description: "src/App.tsx",
+                startedAt: 1000,
+              },
+            },
+          ],
+        },
+      },
+    ]);
+
+    expect(activity).toEqual({
+      label: "Reading files",
+      detail: "Inspecting file contents",
+    });
+  });
+
   it("combines repeated file changes without counting duplicate files", () => {
     const messages = [
       toolMessage("a", {

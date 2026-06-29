@@ -6,7 +6,9 @@ interface ToolCardMeta {
   isError: boolean;
   status?: string;
   title?: string;
+  toolName?: string;
   description?: string;
+  filePath?: string;
   startedAt?: number;
   endedAt?: number;
   fileChange?: ToolCardFileChange;
@@ -35,7 +37,9 @@ export interface ToolCardDetails {
   isError: boolean;
   status?: string;
   title?: string;
+  toolName?: string;
   description?: string;
+  filePath?: string;
   startedAt?: number;
   endedAt?: number;
   fileChange?: ToolCardFileChange;
@@ -99,7 +103,9 @@ function toolCardMetaSignature(
   return JSON.stringify([
     componentId ?? "",
     props?.title,
+    props?.toolName,
     props?.description,
+    props?.filePath,
     props?.status,
     props?.startedAt,
     props?.endedAt,
@@ -120,7 +126,9 @@ function readToolCardMeta(m: ChatMessage): ToolCardMeta {
   const cached = toolCardMetaCache.get(m);
   if (cached?.signature === signature) return cached.meta;
   const title = stringValue(props?.title);
+  const toolName = stringValue(props?.toolName);
   const description = stringValue(props?.description);
+  const filePath = stringValue(props?.filePath);
   const status = stringValue(props?.status);
   const startedAt = finiteNumber(props?.startedAt);
   const endedAt = finiteNumber(props?.endedAt);
@@ -132,7 +140,9 @@ function readToolCardMeta(m: ChatMessage): ToolCardMeta {
     isError: props?.isError === true,
     ...(status ? { status } : {}),
     ...(title ? { title } : {}),
+    ...(toolName ? { toolName } : {}),
     ...(description ? { description } : {}),
+    ...(filePath ? { filePath } : {}),
     ...(comp?.id ? { componentId: comp.id } : {}),
     ...(startedAt !== undefined ? { startedAt } : {}),
     ...(endedAt !== undefined ? { endedAt } : {}),

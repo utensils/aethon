@@ -161,8 +161,37 @@ export function liveActivitySummary(
       detail: "Applying changes to the workspace",
     };
   }
+  if (
+    details.some((detail) => {
+      if (detail.toolName === "ls") return true;
+      if (detail.toolName === "bash") {
+        return looksLikeDirectoryCommand(detail.description ?? "");
+      }
+      return false;
+    })
+  ) {
+    return {
+      label: "Reading directory contents",
+      detail: "Inspecting files and folders",
+    };
+  }
+  if (
+    details.some((detail) => {
+      if (detail.toolName === "read") return true;
+      if (detail.filePath) return true;
+      if (detail.toolName === "bash") {
+        return looksLikeFileReadCommand(detail.description ?? "");
+      }
+      return false;
+    })
+  ) {
+    return {
+      label: "Reading files",
+      detail: "Inspecting file contents",
+    };
+  }
   const haystack = details
-    .flatMap((detail) => [detail.title, detail.description])
+    .flatMap((detail) => [detail.toolName, detail.title, detail.description])
     .filter(Boolean)
     .join("\n")
     .toLowerCase();
@@ -206,6 +235,17 @@ export function liveActivitySummary(
     label: "Working",
     detail: "Gathering context",
   };
+}
+
+function looksLikeDirectoryCommand(command: string): boolean {
+  const first = command.trim().split(/\s+/)[0] ?? "";
+  if (/^(ls|tree|du|find|fd)$/i.test(first)) return true;
+  return /\b(find|fd)\b[\s\S]*\b(maxdepth|type\s+[df]|name)\b/i.test(command);
+}
+
+function looksLikeFileReadCommand(command: string): boolean {
+  const first = command.trim().split(/\s+/)[0] ?? "";
+  return /^(cat|sed|head|tail|nl|less|more|jq|yq)$/i.test(first);
 }
 
 export function hasFileChange(message: ChatMessage): boolean {
