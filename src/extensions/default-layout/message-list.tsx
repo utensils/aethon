@@ -34,6 +34,17 @@ function textForActivityInference(messages: readonly ChatMessage[]): string {
     .toLowerCase();
 }
 
+function latestAgentText(messages: readonly ChatMessage[]): string {
+  const latest = messages.at(-1);
+  return latest?.role === "agent" ? (latest.text ?? "") : "";
+}
+
+function looksLikeFinalAnswer(text: string): boolean {
+  return /(^|\n)\s*(key findings|configuration\/customization|overall:|summary:|result:|answer:)\b/i.test(
+    text,
+  );
+}
+
 function streamingActivityCopy(messages: readonly ChatMessage[]):
   | {
       typingLabel: string;
@@ -41,6 +52,7 @@ function streamingActivityCopy(messages: readonly ChatMessage[]):
     }
   | undefined {
   if (!latestMessageHasVisibleAgentContent(messages)) return undefined;
+  if (looksLikeFinalAnswer(latestAgentText(messages))) return undefined;
   const text = textForActivityInference(messages);
   if (
     /\b(directory|directories|folder|folders|tree|files?)\b/.test(text) &&
@@ -180,14 +192,16 @@ export function MainCanvas({
     );
   }
 
+  const typingCopy = streamingActivityCopy(messages);
   const footerContext: CanvasFooterContext = {
     liveSubtree,
     showTyping:
       state.waiting === true &&
       !liveSubtree &&
       messages.length > 0 &&
-      !messages.some(isRunningToolCard),
-    ...streamingActivityCopy(messages),
+      !messages.some(isRunningToolCard) &&
+      (!latestMessageHasVisibleAgentContent(messages) || Boolean(typingCopy)),
+    ...typingCopy,
     state,
     tabId,
   };

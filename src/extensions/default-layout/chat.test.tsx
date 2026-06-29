@@ -664,6 +664,32 @@ describe("ChatInput", () => {
     expect(screen.queryByText("Writing response")).toBeNull();
   });
 
+  it("clears footer activity when final answer prose is streaming", () => {
+    renderMainCanvas({
+      waiting: true,
+      messages: [
+        {
+          id: "1",
+          role: "user",
+          text: "Explore this directory and summarize it for me",
+        },
+        {
+          id: "2",
+          role: "agent",
+          text:
+            "/Users/jamesbrink/.aethon is your Aethon user data/config directory.\n\n" +
+            "Key findings:\n\n" +
+            "- Purpose: Stores runtime state, sessions, project registry, and extensions.\n" +
+            "- Not a git repo: No project source history here.",
+        },
+      ],
+    });
+
+    expect(screen.getByText(/Key findings/)).toBeTruthy();
+    expect(screen.queryByText("Reading directory contents")).toBeNull();
+    expect(screen.queryByText("Writing response")).toBeNull();
+  });
+
   it("does not show the footer activity indicator when running tool activity is visible", () => {
     renderMainCanvas({
       waiting: true,
