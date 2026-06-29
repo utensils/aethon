@@ -58,12 +58,12 @@ pub fn install_tray(
     fn session_label(item: &TraySessionItem) -> String {
         let mut label = trim_menu_text(&item.label, 56);
         let mut prefix = "";
-        if item.running {
+        if item.active {
+            prefix = "[current] ";
+        } else if item.running {
             prefix = "[running] ";
         } else if item.needs_attention {
             prefix = "[new] ";
-        } else if item.active {
-            prefix = "[current] ";
         } else if item.queued_count > 0 {
             prefix = "[queued] ";
         }
@@ -324,6 +324,25 @@ mod tests {
         assert!(
             src.contains("tray:session:"),
             "active session rows should route through tray:session:<tabId>",
+        );
+    }
+
+    #[test]
+    fn active_session_marker_wins_over_transient_state() {
+        let src = include_str!("tray.rs");
+        let src = &src[..src.find("#[cfg(test)]").unwrap_or(src.len())];
+        let active_pos = src
+            .find("if item.active")
+            .expect("session labels should test active state");
+        let running_pos = src
+            .find("else if item.running")
+            .expect("session labels should test running state");
+        let attention_pos = src
+            .find("else if item.needs_attention")
+            .expect("session labels should test attention state");
+        assert!(
+            active_pos < running_pos && running_pos < attention_pos,
+            "current session rows should keep the [current] marker even while running or unread",
         );
     }
 }

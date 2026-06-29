@@ -3,7 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import type { Tab } from "../types/tab";
 import { isAgentTabInFlight } from "../utils/agentBusy";
 
-export interface TraySessionItem {
+interface TraySessionItemWire {
   id: string;
   label: string;
   detail?: string;
@@ -68,7 +68,7 @@ function collectAgentTabs(state: Record<string, unknown>): CollectedTab[] {
 
 export function buildTraySessionItems(
   state: Record<string, unknown>,
-): TraySessionItem[] {
+): TraySessionItemWire[] {
   const activeTabId = state.activeTabId as string | undefined;
   const running = new Set(
     Object.keys(
@@ -82,7 +82,7 @@ export function buildTraySessionItems(
   );
 
   return collectAgentTabs(state)
-    .map(({ tab, visible }): TraySessionItem => {
+    .map(({ tab, visible }): TraySessionItemWire => {
       const isRunning =
         running.has(tab.id) || (visible && isAgentTabInFlight(tab));
       const queuedCount = Math.max(
@@ -100,7 +100,7 @@ export function buildTraySessionItems(
       };
     })
     .sort((a, b) => {
-      const rank = (item: TraySessionItem) =>
+      const rank = (item: TraySessionItemWire) =>
         item.active ? 0 : item.running ? 1 : item.needs_attention ? 2 : 3;
       const rankDiff = rank(a) - rank(b);
       if (rankDiff !== 0) return rankDiff;
