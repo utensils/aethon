@@ -99,20 +99,15 @@ export function ConversationTurnRow({
     hasStopNotice || (isLatest && !live && state.status === "stopped");
   const interruptedTail =
     !live && hasHiddenThinkingTail(turn, thinkingVisibility);
-  const preserveInterruptedProse = stopped || interruptedTail;
   const displayableAgentMessages = turn.agentMessages.filter((message) =>
     hasDisplayableAgentContent(message, thinkingVisibility),
   );
-  const visibleFinalMessage = displayableAgentMessages.at(-1);
-  const visibleAgentMessages = live
-    ? displayableAgentMessages
-    : preserveInterruptedProse
+  const visibleAgentMessages =
+    displayableAgentMessages.length > 0
       ? displayableAgentMessages
-      : visibleFinalMessage
-        ? [visibleFinalMessage]
-        : turn.progressMessages.filter((message) =>
-            hasDisplayableAgentContent(message, thinkingVisibility),
-          );
+      : turn.progressMessages.filter((message) =>
+          hasDisplayableAgentContent(message, thinkingVisibility),
+        );
   const visibleAgentMessageIds =
     visibleAgentMessages.length > 0
       ? new Set(visibleAgentMessages.map((message) => message.id))

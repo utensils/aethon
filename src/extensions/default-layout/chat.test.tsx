@@ -2067,17 +2067,18 @@ describe("ChatHistory turn activity feed (mocked Virtuoso renders rows)", () => 
     expect(screen.queryByText(/read · bash/)).toBeNull();
   });
 
-  it("group-block keeps the final answer visible and folds earlier work", () => {
+  it("group-block keeps agent prose chronological and groups tool activity", () => {
     renderGroupedHistory({
       messages: toolMessages,
       transcriptVisibility: { toolCalls: "group-block" },
     });
+    expect(screen.getByText("reading files")).toBeTruthy();
     expect(screen.getByText("done")).toBeTruthy();
-    expect(screen.queryByText("reading files")).toBeNull();
     expect(screen.getByText(/2 tool calls/)).toBeTruthy();
     expect(screen.queryByText(/1 update/)).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: /2 tool calls/ }));
-    expect(screen.getByText("reading files")).toBeTruthy();
+    expect(screen.getByText("read")).toBeTruthy();
+    expect(screen.getByText("bash")).toBeTruthy();
   });
 
   it("expands completed file tools as one compact edit artifact", () => {
@@ -3118,7 +3119,7 @@ describe("ChatHistory turn activity feed (mocked Virtuoso renders rows)", () => 
     expect(enteredRows[0].textContent).toContain("new request");
   });
 
-  it("hide drops tool cards while keeping final prose and progress disclosure", () => {
+  it("hide drops tool cards while keeping agent prose chronological", () => {
     renderGroupedHistory({
       messages: toolMessages,
       transcriptVisibility: { toolCalls: "hide" },
@@ -3126,11 +3127,12 @@ describe("ChatHistory turn activity feed (mocked Virtuoso renders rows)", () => 
     expect(screen.queryByText("2 tool calls")).toBeNull();
     expect(screen.queryByText("read")).toBeNull();
     expect(screen.queryByText("bash")).toBeNull();
-    expect(screen.getByText("done")).toBeTruthy();
-    expect(screen.queryByText("reading files")).toBeNull();
-    expect(screen.queryByRole("button", { name: /1 update/ })).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: /Earlier progress/ }));
     expect(screen.getByText("reading files")).toBeTruthy();
+    expect(screen.getByText("done")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /1 update/ })).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: /Earlier progress/ }),
+    ).toBeNull();
   });
 
   it("hide still surfaces live running tool activity without persisting tool details", () => {
