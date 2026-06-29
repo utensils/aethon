@@ -2,10 +2,12 @@ import { describe, expect, it } from "vitest";
 import type { ChatMessage } from "../../types/a2ui";
 import { summarizeToolMessages } from "../../utils/toolCardGrouping";
 import {
+  activityLabel,
   collectFileChangeEntries,
   compactDuration,
   fileChangeLabel,
   lineTone,
+  liveActivitySummary,
   previewLines,
   summaryWithFileEntries,
 } from "./tool-activity-summary";
@@ -43,6 +45,73 @@ describe("tool activity summary helpers", () => {
     expect(compactDuration(61_000)).toBe("1m 1s");
     expect(compactDuration(3_600_000)).toBe("1h");
     expect(compactDuration(7_260_000)).toBe("2h 1m");
+  });
+
+  it("names the running tool in the live activity label", () => {
+    const summary = summaryWithFileEntries(
+      summarizeToolMessages([
+        toolMessage("a", {
+          kind: "edited",
+          path: "src/message-groups.tsx",
+          rootPath: "/repo",
+        }),
+      ]),
+      [],
+    );
+
+    expect(summary.running).toBe(0);
+
+    const running = summarizeToolMessages([
+      {
+        id: "running",
+        role: "agent",
+        a2ui: {
+          components: [
+            {
+              id: "tool-running",
+              type: "tool-card",
+              props: {
+                title: "bash",
+                description: "rg message-row",
+                startedAt: 1000,
+              },
+            },
+          ],
+        },
+      },
+    ]);
+
+    expect(activityLabel({ summary: running, progressCount: 0 })).toBe(
+      "Running bash",
+    );
+  });
+
+  it("summarizes hidden live tool activity without exposing commands", () => {
+    const activity = liveActivitySummary([
+      {
+        id: "running",
+        role: "agent",
+        a2ui: {
+          components: [
+            {
+              id: "tool-running",
+              type: "tool-card",
+              props: {
+                title: "bash",
+                description: "rg message-row",
+                startedAt: 1000,
+              },
+            },
+          ],
+        },
+      },
+    ]);
+
+    expect(activity).toEqual({
+      label: "Searching files",
+      detail: "Looking for relevant matches",
+    });
+    expect(`${activity?.label} ${activity?.detail}`).not.toMatch(/bash|rg/);
   });
 
   it("combines repeated file changes without counting duplicate files", () => {

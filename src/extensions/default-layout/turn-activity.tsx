@@ -9,6 +9,7 @@ import {
 import type { ConversationTurn } from "../../utils/transcriptRows";
 import type { ToolCallsMode, VisibilityMode } from "../../config";
 import { Chevron } from "./sidebar/chevron";
+import { LiveActivityCard } from "./live-activity-card";
 import { ChatMessageRow } from "./message-row";
 import { hasDisplayableAgentContent } from "./turn-activity-helpers";
 import {
@@ -19,6 +20,7 @@ import {
   fileChangeStatsLabel,
   hasFileChange,
   hasToolCardChildren,
+  liveActivitySummary,
   summaryWithFileEntries,
   toolDurationLabel,
   toolStateLabel,
@@ -151,25 +153,29 @@ export function TurnActivity({
             !visibleAgentMessageIds?.has(message.id) &&
             hasDisplayableAgentContent(message, thinkingVisibility),
         );
-  const allToolMessages = turn.toolMessages;
   const showGenericTools = toolCallsVisibility !== "hide";
+  const allToolMessages = turn.toolMessages;
+  const runningTools = allToolMessages.filter(isRunningToolCard);
   const summarizedToolMessages = showGenericTools
     ? allToolMessages
-    : allToolMessages.filter(hasFileChange);
+    : live
+      ? runningTools
+      : allToolMessages.filter(hasFileChange);
   const allFileChangeEntries = collectFileChangeEntries(summarizedToolMessages);
   const summary = summaryWithFileEntries(
     summarizeToolMessages(summarizedToolMessages),
     allFileChangeEntries,
   );
-  const runningTools = showGenericTools
-    ? allToolMessages.filter(isRunningToolCard)
-    : [];
   const completedFileActivity =
     !live &&
     summary.fileChanges.total > 0 &&
     summary.running === 0 &&
     summary.failed === 0 &&
     summary.cancelled === 0;
+  const liveOnlyActivity = live && !showGenericTools && runningTools.length > 0;
+  const hiddenLiveSummary = liveOnlyActivity
+    ? liveActivitySummary(runningTools)
+    : null;
   const defaultDetailsOpen =
     expanded || toolCallsVisibility === "show" || completedFileActivity;
   const detailsOpen = forceOpen || (manualOpen ?? defaultDetailsOpen);
@@ -199,16 +205,18 @@ export function TurnActivity({
     ? []
     : collectFileChangeEntries(allToolMessages.filter(hasFileChange));
   const detailToolRows =
-    showOriginalToolCards || !showGenericTools
-      ? []
-      : detailTools.filter(
-          (message) =>
-            !hasFileChange(message) && !originalToolCardIds.has(message.id),
-        );
+    liveOnlyActivity && detailsBodyVisible
+      ? runningTools
+      : showOriginalToolCards || !showGenericTools
+        ? []
+        : detailTools.filter(
+            (message) =>
+              !hasFileChange(message) && !originalToolCardIds.has(message.id),
+          );
   const hasActivity =
     progressMessages.length > 0 ||
     summary.fileChanges.total > 0 ||
-    (showGenericTools && allToolMessages.length > 0) ||
+    summarizedToolMessages.length > 0 ||
     runningTools.length > 0;
 
   useEffect(
@@ -267,6 +275,21 @@ export function TurnActivity({
     setManualOpen(!detailsOpen);
     onToggle();
   };
+
+  if (hiddenLiveSummary) {
+    return (
+      <div
+        ref={turnRef}
+        className="ae-turn-activity ae-turn-activity-live-only"
+        data-expanded="false"
+      >
+        <LiveActivityCard
+          label={hiddenLiveSummary.label}
+          detail={hiddenLiveSummary.detail}
+        />
+      </div>
+    );
+  }
 
   return (
     <div

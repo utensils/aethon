@@ -15,6 +15,11 @@ export interface LineChangeStats {
   deletions: number;
 }
 
+export interface LiveActivitySummary {
+  label: string;
+  detail: string;
+}
+
 export function compactDuration(ms: number): string {
   if (ms <= 0) return "";
   const seconds = Math.max(1, Math.round(ms / 1000));
@@ -64,12 +69,19 @@ export function activityLabel({
   progressCount: number;
 }): string {
   if (summary.running > 0) {
+    const runningNames = summary.names.slice(0, summary.running);
+    if (summary.running === 1 && runningNames[0]) {
+      return `Running ${runningNames[0]}`;
+    }
+    if (summary.running === 2 && runningNames.length === 2) {
+      return `Running ${runningNames.join(" + ")}`;
+    }
     return `${summary.running} ${summary.running === 1 ? "tool" : "tools"} running`;
   }
   const fileLabel = fileChangeLabel(summary);
   if (fileLabel) return fileLabel;
   if (summary.total > 0) return workedLabel(summary);
-  return `${progressCount} ${progressCount === 1 ? "update" : "updates"}`;
+  return progressCount > 0 ? "Earlier progress" : "Activity";
 }
 
 export function activityMeta(summary: ToolMessageSummary): string {
@@ -134,6 +146,66 @@ export function collectFileChangeEntries(
     });
   }
   return Array.from(entries.values());
+}
+
+export function liveActivitySummary(
+  messages: readonly ChatMessage[],
+): LiveActivitySummary | null {
+  const details = messages.map(toolCardDetails).filter((detail) => {
+    return detail.isToolCard && detail.isRunning;
+  });
+  if (details.length === 0) return null;
+  if (details.some((detail) => Boolean(detail.fileChange?.path))) {
+    return {
+      label: "Editing files",
+      detail: "Applying changes to the workspace",
+    };
+  }
+  const haystack = details
+    .flatMap((detail) => [detail.title, detail.description])
+    .filter(Boolean)
+    .join("\n")
+    .toLowerCase();
+  if (/\b(git|gh)\s+(diff|status|log|show|branch|fetch)\b/.test(haystack)) {
+    return {
+      label: "Checking git state",
+      detail: "Reviewing repository changes",
+    };
+  }
+  if (/\b(vitest|test|check|lint|tsc|eslint|cargo test|bun test)\b/.test(haystack)) {
+    return {
+      label: "Running checks",
+      detail: "Waiting for results",
+    };
+  }
+  if (/\b(rg|grep|find|fd|ls|glob|search)\b/.test(haystack)) {
+    return {
+      label: "Searching files",
+      detail: "Looking for relevant matches",
+    };
+  }
+  if (/\b(cat|sed|head|tail|nl|read|open)\b/.test(haystack)) {
+    return {
+      label: "Reading files",
+      detail: "Inspecting file contents",
+    };
+  }
+  if (/\b(curl|wget|http|fetch)\b/.test(haystack)) {
+    return {
+      label: "Fetching data",
+      detail: "Waiting on an external response",
+    };
+  }
+  if (details.length > 1) {
+    return {
+      label: "Working through steps",
+      detail: "Running background activity",
+    };
+  }
+  return {
+    label: "Working",
+    detail: "Gathering context",
+  };
 }
 
 export function hasFileChange(message: ChatMessage): boolean {

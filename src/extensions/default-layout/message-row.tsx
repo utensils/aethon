@@ -11,6 +11,7 @@ import {
   CHAT_MARKDOWN_PROPS,
   CHAT_STREAMING_MARKDOWN_PROPS,
 } from "./markdown-adapter";
+import { LiveActivityCard } from "./live-activity-card";
 import { ImageAttachmentImage } from "./image-attachment-image";
 import { ImageLightbox } from "./image-lightbox";
 import { forwardNestedA2UIEvent } from "./message-rendering-utils";
@@ -53,17 +54,10 @@ function shallowEqualExcept(
 
 export function TypingIndicator() {
   return (
-    <div
-      role="status"
-      aria-label="Agent is thinking"
-      className="ae-typing-indicator"
-    >
-      <span className="ae-typing-dots" aria-hidden="true">
-        <span className="ae-typing-dot" />
-        <span className="ae-typing-dot" />
-        <span className="ae-typing-dot" />
-      </span>
-    </div>
+    <LiveActivityCard
+      label="Thinking through next step"
+      detail="Waiting for the next update"
+    />
   );
 }
 

@@ -9,6 +9,7 @@ import A2UIRenderer, {
 } from "../../components/A2UIRenderer";
 import { resolveString } from "../../utils/dataBinding";
 import { resolvePointer } from "../../utils/jsonPointer";
+import { isRunningToolCard } from "../../utils/toolCardGrouping";
 import { resolveVisibility } from "../../utils/visibilityResolver";
 import { VirtualMessageFeed } from "./virtual-message-feed";
 import type { CanvasFooterContext } from "./message-groups";
@@ -126,7 +127,11 @@ export function MainCanvas({
 
   const footerContext: CanvasFooterContext = {
     liveSubtree,
-    showTyping: state.waiting === true && !liveSubtree && messages.length > 0,
+    showTyping:
+      state.waiting === true &&
+      !liveSubtree &&
+      messages.length > 0 &&
+      !messages.some(isRunningToolCard),
     state,
     tabId,
   };

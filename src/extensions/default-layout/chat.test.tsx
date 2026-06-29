@@ -610,7 +610,7 @@ describe("ChatInput", () => {
     expect(virtuosoMockState.alignToBottom).toBeUndefined();
   });
 
-  it("renders the typing indicator inside the transcript row column", () => {
+  it("renders a textual live activity indicator inside the transcript row column", () => {
     renderMainCanvas({
       waiting: true,
       messages: [
@@ -620,13 +620,45 @@ describe("ChatInput", () => {
     });
 
     const indicator = screen.getByRole("status", {
-      name: "Agent is thinking",
+      name: "Thinking through next step. Waiting for the next update",
     });
-    expect(indicator.textContent).not.toContain("Thinking...");
-    expect(indicator.querySelectorAll(".ae-typing-dot")).toHaveLength(3);
+    expect(screen.getByText("Thinking through next step")).toBeTruthy();
+    expect(screen.getByText("Waiting for the next update")).toBeTruthy();
+    expect(indicator.querySelectorAll(".ae-typing-dot")).toHaveLength(0);
     expect(indicator.closest(".a2ui-msg-row-footer")).toBeTruthy();
     expect(indicator.closest(".ae-conversation-turn")).toBeTruthy();
     expect(indicator.closest(".a2ui-canvas-message.agent")).toBeTruthy();
+  });
+
+  it("does not show the footer activity indicator when running tool activity is visible", () => {
+    renderMainCanvas({
+      waiting: true,
+      messages: [
+        { id: "1", role: "user", text: "start" },
+        { id: "2", role: "agent", text: "I’ll search first." },
+        {
+          id: "3",
+          role: "agent",
+          a2ui: {
+            components: [
+              {
+                id: "tool-bash",
+                type: "tool-card",
+                props: {
+                  title: "bash",
+                  description: "rg message-row",
+                  startedAt: 1000,
+                },
+              },
+            ],
+          },
+        },
+      ],
+      transcriptVisibility: { toolCalls: "hide" },
+    });
+
+    expect(screen.getByText("Searching files")).toBeTruthy();
+    expect(screen.queryByText("Thinking through next step")).toBeNull();
   });
 
   it("shows the pill and stops following when the user scrolls up", () => {
@@ -3096,8 +3128,51 @@ describe("ChatHistory turn activity feed (mocked Virtuoso renders rows)", () => 
     expect(screen.queryByText("bash")).toBeNull();
     expect(screen.getByText("done")).toBeTruthy();
     expect(screen.queryByText("reading files")).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: /1 update/ }));
+    expect(screen.queryByRole("button", { name: /1 update/ })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /Earlier progress/ }));
     expect(screen.getByText("reading files")).toBeTruthy();
+  });
+
+  it("hide still surfaces live running tool activity without persisting tool details", () => {
+    const { container } = renderGroupedHistory({
+      messages: [
+        { id: "u1", role: "user", text: "inspect files" },
+        { id: "a1", role: "agent", text: "I’ll inspect the repo." },
+        {
+          id: "t1",
+          role: "agent",
+          a2ui: {
+            components: [
+              {
+                id: "tool-bash",
+                type: "tool-card",
+                props: {
+                  title: "bash",
+                  description: "rg message-row",
+                  startedAt: 1000,
+                },
+                children: [
+                  {
+                    id: "out",
+                    type: "code",
+                    props: { content: "raw running output" },
+                  },
+                ],
+              },
+            ],
+          },
+        },
+      ],
+      waiting: true,
+      transcriptVisibility: { toolCalls: "hide" },
+    });
+
+    expect(screen.getByText("Searching files")).toBeTruthy();
+    expect(screen.getByText("Looking for relevant matches")).toBeTruthy();
+    expect(screen.queryByText("bash")).toBeNull();
+    expect(screen.queryByText("rg message-row")).toBeNull();
+    expect(screen.queryByText("raw running output")).toBeNull();
+    expect(container.querySelector(".ae-live-activity-card")).toBeTruthy();
   });
 
   it("show expands activity by default", () => {
