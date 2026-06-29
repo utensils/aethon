@@ -85,6 +85,8 @@ type WorkspaceChoice =
   | { kind: "existing"; id: string; path: string; label: string }
   | { kind: "new" };
 
+const HOST_PROJECT_ID = "__aethon_host__";
+
 const codeInputProps = {
   autoCapitalize: "none",
   autoCorrect: "off",
@@ -107,9 +109,12 @@ export function TaskLauncher({
         placeholder?: string;
         prompt?: unknown;
         showProjectSelector?: boolean;
+        defaultTarget?: "host" | "project";
       }
     | undefined;
   const showProjectSelector = props?.showProjectSelector === true;
+  const defaultToHost =
+    showProjectSelector && props?.defaultTarget === "host";
 
   const data: LauncherData = useMemo(
     () => ({
@@ -149,14 +154,21 @@ export function TaskLauncher({
     return list;
   }, [data.project, data.projects, data.otherProjects]);
   const [selectedProjectId, setSelectedProjectId] = useState(
-    data.project?.id ?? selectableProjects[0]?.id ?? "",
+    defaultToHost
+      ? HOST_PROJECT_ID
+      : (data.project?.id ?? selectableProjects[0]?.id ?? ""),
   );
-  const selectedProject = showProjectSelector
-    ? (selectableProjects.find((p) => p.id === selectedProjectId) ??
-      data.project ??
-      selectableProjects[0] ??
-      null)
-    : data.project;
+  const hostSelected =
+    showProjectSelector && selectedProjectId === HOST_PROJECT_ID;
+  const selectedProject =
+    showProjectSelector && !hostSelected
+      ? (selectableProjects.find((p) => p.id === selectedProjectId) ??
+        data.project ??
+        selectableProjects[0] ??
+        null)
+      : showProjectSelector
+        ? null
+        : data.project;
   const selectedWorkspaces = useMemo(
     () =>
       showProjectSelector
@@ -240,6 +252,8 @@ export function TaskLauncher({
   // Only resets when the user hasn't started typing — typing a prompt
   // implies intent, so don't yank their selection out from under them.
   const [touched, setTouched] = useState(false);
+  const hostOverviewVisible = defaultToHost && state.emptyAndNoProject === true;
+  const wasHostOverviewVisibleRef = useRef(hostOverviewVisible);
   useEffect(() => {
     if (touched) return;
     queueMicrotask(() => setWorkspaceChoice(initialChoice));
@@ -251,6 +265,27 @@ export function TaskLauncher({
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
+    if (!defaultToHost) return;
+    const wasVisible = wasHostOverviewVisibleRef.current;
+    wasHostOverviewVisibleRef.current = hostOverviewVisible;
+    if (!hostOverviewVisible || wasVisible) return;
+    setSelectedProjectId(HOST_PROJECT_ID);
+    setWorkspaceChoice({ kind: "current" });
+    setBaseBranch(DEFAULT_WORKSPACE_BASE_BRANCH);
+    setTouched(false);
+  }, [defaultToHost, hostOverviewVisible]);
+
+  useEffect(() => {
+    if (defaultToHost) {
+      if (selectedProjectId === HOST_PROJECT_ID) return;
+      if (selectableProjects.some((p) => p.id === selectedProjectId)) return;
+      queueMicrotask(() => {
+        setSelectedProjectId(HOST_PROJECT_ID);
+        setWorkspaceChoice({ kind: "current" });
+        setBaseBranch(DEFAULT_WORKSPACE_BASE_BRANCH);
+      });
+      return;
+    }
     const fallbackProject = data.project ?? selectableProjects[0] ?? null;
     if (!fallbackProject) return;
     if (selectableProjects.some((p) => p.id === selectedProjectId)) return;
@@ -261,7 +296,7 @@ export function TaskLauncher({
         fallbackProject.workspaceBaseBranch ?? DEFAULT_WORKSPACE_BASE_BRANCH,
       );
     });
-  }, [data.project, selectableProjects, selectedProjectId]);
+  }, [data.project, defaultToHost, selectableProjects, selectedProjectId]);
 
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   useEffect(() => {
@@ -280,7 +315,7 @@ export function TaskLauncher({
   // project, so its files are the right suggestions too).
   const launcherRef = useRef<HTMLDivElement | null>(null);
   const atRoot =
-    workspaceChoice.kind === "existing"
+    !hostSelected && workspaceChoice.kind === "existing"
       ? workspaceChoice.path
       : (selectedProject?.path ?? null);
   const {
@@ -303,23 +338,32 @@ export function TaskLauncher({
     if (submitting) return;
     const text = rawPrompt.trim();
     if (!text && attachments.length === 0) return;
-    if (!selectedProject) return;
+    if (!selectedProject && !hostSelected) return;
     setSubmitting(true);
     const baseTrimmed = baseBranch.trim();
     onEvent("start-task", {
-      projectId: selectedProject.id,
+      ...(hostSelected
+        ? { target: "host" }
+        : { projectId: selectedProject?.id }),
       prompt: text,
       attachments,
-      newWorkspace: workspaceChoice.kind === "new",
-      branch: workspaceChoice.kind === "new" ? newBranch.trim() : undefined,
+      newWorkspace: !hostSelected && workspaceChoice.kind === "new",
+      branch:
+        !hostSelected && workspaceChoice.kind === "new"
+          ? newBranch.trim()
+          : undefined,
       baseBranch:
-        workspaceChoice.kind === "new" && baseTrimmed.length > 0
+        !hostSelected &&
+        workspaceChoice.kind === "new" &&
+        baseTrimmed.length > 0
           ? baseTrimmed
           : undefined,
       // Existing workspace case: we send the workspaceId so the route
       // handler can activate it before spawning the tab.
       workspaceId:
-        workspaceChoice.kind === "existing" ? workspaceChoice.id : undefined,
+        !hostSelected && workspaceChoice.kind === "existing"
+          ? workspaceChoice.id
+          : undefined,
       // Per-launch model. Falls back to the resolved default so the
       // session always boots with a concrete model even before `ready`.
       model: selectedModel || defaultModelId || undefined,
@@ -337,6 +381,7 @@ export function TaskLauncher({
     submitting,
     attachments,
     selectedProject,
+    hostSelected,
     workspaceChoice,
     newBranch,
     baseBranch,
@@ -355,7 +400,9 @@ export function TaskLauncher({
   // whether this dashboard actually owns the canvas (mirrors the
   // project-dashboard's `visible: /emptyAndProject` binding) so it neither
   // starts while hidden nor keeps holding the slot after being hidden.
-  const voiceSurfaceVisible = !!state.emptyAndProject;
+  const voiceSurfaceVisible = defaultToHost
+    ? state.emptyAndNoProject === true
+    : state.emptyAndProject === true;
   const voiceConfig = (state.voice as
     | {
         toggleHotkey?: string | null;
@@ -422,7 +469,7 @@ export function TaskLauncher({
       });
   };
 
-  if (!selectedProject) return null;
+  if (!selectedProject && !hostSelected) return null;
 
   const workspaceLabel =
     workspaceChoice.kind === "current"
@@ -442,7 +489,9 @@ export function TaskLauncher({
         className="a2ui-task-launcher-input"
         placeholder={
           props?.placeholder ??
-          `Start a task in ${selectedProject.label}… use @<subagent> or @path`
+          (hostSelected
+            ? "Start a task on this host… use @<subagent> or @path"
+            : `Start a task in ${selectedProject!.label}… use @<subagent> or @path`)
         }
         value={promptText}
         rows={3}
@@ -523,14 +572,25 @@ export function TaskLauncher({
         )}
         {showProjectSelector && selectableProjects.length > 0 && (
           <ChipMenu
-            label={selectedProject.label}
+            label={hostSelected ? "host" : (selectedProject?.label ?? "project")}
             icon="◰"
             ariaLabel="Project"
-            items={selectableProjects.map((p) => ({
-              id: p.id,
-              label: p.label,
-              current: p.id === selectedProject.id,
-            }))}
+            items={[
+              ...(defaultToHost
+                ? [
+                    {
+                      id: HOST_PROJECT_ID,
+                      label: "host",
+                      current: hostSelected,
+                    },
+                  ]
+                : []),
+              ...selectableProjects.map((p) => ({
+                id: p.id,
+                label: p.label,
+                current: !hostSelected && p.id === selectedProject?.id,
+              })),
+            ]}
             onSelect={(id) => {
               const project = selectableProjects.find((p) => p.id === id);
               setSelectedProjectId(id);
@@ -542,45 +602,47 @@ export function TaskLauncher({
             }}
           />
         )}
-        <ChipMenu
-          label={workspaceLabel}
-          icon="⌥"
-          ariaLabel="Workspace"
-          items={[
-            {
-              id: "current",
-              label: `project root (${selectedProject.label})`,
-              current: workspaceChoice.kind === "current",
-            },
-            ...selectedWorkspaces.map((w) => ({
-              id: w.id,
-              label: w.label || w.branch || "workspace",
-              current:
-                workspaceChoice.kind === "existing" &&
-                workspaceChoice.id === w.id,
-            })),
-            {
-              id: "__new__",
-              label: "+ New workspace",
-              current: workspaceChoice.kind === "new",
-            },
-          ]}
-          onSelect={(id) => {
-            setTouched(true);
-            if (id === "current") setWorkspaceChoice({ kind: "current" });
-            else if (id === "__new__") setWorkspaceChoice({ kind: "new" });
-            else {
-              const found = selectedWorkspaces.find((w) => w.id === id);
-              if (found)
-                setWorkspaceChoice({
-                  kind: "existing",
-                  id: found.id,
-                  path: found.path,
-                  label: found.label || found.branch || "workspace",
-                });
-            }
-          }}
-        />
+        {!hostSelected && selectedProject && (
+          <ChipMenu
+            label={workspaceLabel}
+            icon="⌥"
+            ariaLabel="Workspace"
+            items={[
+              {
+                id: "current",
+                label: `project root (${selectedProject.label})`,
+                current: workspaceChoice.kind === "current",
+              },
+              ...selectedWorkspaces.map((w) => ({
+                id: w.id,
+                label: w.label || w.branch || "workspace",
+                current:
+                  workspaceChoice.kind === "existing" &&
+                  workspaceChoice.id === w.id,
+              })),
+              {
+                id: "__new__",
+                label: "+ New workspace",
+                current: workspaceChoice.kind === "new",
+              },
+            ]}
+            onSelect={(id) => {
+              setTouched(true);
+              if (id === "current") setWorkspaceChoice({ kind: "current" });
+              else if (id === "__new__") setWorkspaceChoice({ kind: "new" });
+              else {
+                const found = selectedWorkspaces.find((w) => w.id === id);
+                if (found)
+                  setWorkspaceChoice({
+                    kind: "existing",
+                    id: found.id,
+                    path: found.path,
+                    label: found.label || found.branch || "workspace",
+                  });
+              }
+            }}
+          />
+        )}
         {workspaceChoice.kind === "new" && (
           <>
             <input

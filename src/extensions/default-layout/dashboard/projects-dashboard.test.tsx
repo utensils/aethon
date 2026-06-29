@@ -89,7 +89,10 @@ describe("ProjectsDashboard", () => {
 
     expect(screen.getByLabelText("Task prompt")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Project" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Workspace" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Project" }).textContent).toContain(
+      "host",
+    );
+    expect(screen.queryByRole("button", { name: "Workspace" })).toBeNull();
   });
 
   it("routes the host-level task launcher through the extension registry", () => {

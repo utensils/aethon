@@ -230,6 +230,7 @@ export const handleTaskLauncher: EventRouteHandler = (
           baseBranch?: string;
           workspaceId?: string;
           model?: string;
+          target?: string;
           source?: string;
           issueNumber?: unknown;
           issueUrl?: unknown;
@@ -238,7 +239,21 @@ export const handleTaskLauncher: EventRouteHandler = (
           issueTemplateLabel?: string;
         }
       | undefined;
-    if (!sel?.projectId || !sel.prompt) return true;
+    const attachments = Array.isArray(sel?.attachments)
+      ? sel.attachments
+      : undefined;
+    const prompt = typeof sel?.prompt === "string" ? sel.prompt : "";
+    const hasPayload = prompt.length > 0 || (attachments?.length ?? 0) > 0;
+    if (sel?.target === "host" && hasPayload) {
+      const tabId = crypto.randomUUID();
+      ctx.newTab(tabId);
+      void ctx.sendChat(prompt, {
+        tabId,
+        attachments,
+      });
+      return true;
+    }
+    if (!sel?.projectId || !hasPayload) return true;
     const sourceIssue = issueSourceFromStartTask(sel);
     if (sourceIssue) {
       const existing = firstIssueSessionTab(
@@ -253,9 +268,9 @@ export const handleTaskLauncher: EventRouteHandler = (
     }
     void ctx.startTaskInProject({
       projectId: sel.projectId,
-      prompt: sel.prompt,
+      prompt,
       newWorkspace: sel.newWorkspace === true,
-      attachments: Array.isArray(sel.attachments) ? sel.attachments : undefined,
+      attachments,
       branch: sel.branch,
       baseBranch: sel.baseBranch,
       workspaceId: sel.workspaceId,
