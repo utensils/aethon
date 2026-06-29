@@ -1,6 +1,6 @@
-//! Extension-registered menu items: the wire type, the persisted
-//! store, and the `set_extension_menu_items` Tauri command that
-//! rebuilds both the App menu and the tray on every push.
+//! Native menu/tray state: extension-registered menu items, active
+//! tray sessions, and the commands that rebuild native surfaces when
+//! the frontend pushes a new snapshot.
 
 use std::sync::Mutex;
 
@@ -28,12 +28,32 @@ pub struct ExtensionMenuItem {
     pub parent: Option<String>,
 }
 
-/// App-state container for extension menu items. The bridge can register
-/// items at any time; the frontend forwards each delta into
-/// `set_extension_menu_items`, which persists the latest list here and
-/// rebuilds the native menu.
+/// Frontend-supplied active agent session row for the tray menu.
+/// The Rust side only renders and dispatches the row; session
+/// ownership/routing stays in the React project/workspace model.
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+pub struct TraySessionItem {
+    pub id: String,
+    pub label: String,
+    pub detail: Option<String>,
+    pub active: bool,
+    pub running: bool,
+    pub needs_attention: bool,
+    pub queued_count: u32,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct NativeMenuState {
+    pub extension_items: Vec<ExtensionMenuItem>,
+    pub tray_sessions: Vec<TraySessionItem>,
+}
+
+/// App-state container for native menu/tray inputs. Extension menu
+/// replays and session snapshot updates arrive independently, so keep
+/// both slices in one mutex and rebuild the affected surface from the
+/// combined latest state.
 #[derive(Default)]
-pub struct ExtensionMenuStore(pub Mutex<Vec<ExtensionMenuItem>>);
+pub struct ExtensionMenuStore(pub Mutex<NativeMenuState>);
 
 /// Replace the persisted set of extension-registered menu items and
 /// rebuild both the App menu and the tray menu so the new entries
@@ -47,12 +67,30 @@ pub fn set_extension_menu_items(
     store: State<'_, ExtensionMenuStore>,
 ) -> Result<(), String> {
     let mut guard = store.0.lock().map_err(|e| format!("lock: {e}"))?;
-    if *guard == items {
+    if guard.extension_items == items {
         return Ok(());
     }
     install_app_menu(&app, &items).map_err(|e| format!("install_app_menu: {e}"))?;
-    install_tray(&app, &items).map_err(|e| format!("install_tray: {e}"))?;
-    *guard = items;
+    install_tray(&app, &items, &guard.tray_sessions).map_err(|e| format!("install_tray: {e}"))?;
+    guard.extension_items = items;
+    Ok(())
+}
+
+/// Replace the active-session rows shown in the tray while preserving
+/// extension-registered tray items. The frontend sends a compact
+/// snapshot whenever tab/activity state changes.
+#[tauri::command]
+pub fn set_tray_sessions(
+    items: Vec<TraySessionItem>,
+    app: AppHandle,
+    store: State<'_, ExtensionMenuStore>,
+) -> Result<(), String> {
+    let mut guard = store.0.lock().map_err(|e| format!("lock: {e}"))?;
+    if guard.tray_sessions == items {
+        return Ok(());
+    }
+    install_tray(&app, &guard.extension_items, &items).map_err(|e| format!("install_tray: {e}"))?;
+    guard.tray_sessions = items;
     Ok(())
 }
 
@@ -85,7 +123,7 @@ mod tests {
             .unwrap_or(src.len());
         let body = &src[body_start..body_end];
         assert!(
-            body.contains("if *guard == items"),
+            body.contains("if guard.extension_items == items"),
             "set_extension_menu_items must return early when the frontend replays an unchanged menu payload",
         );
         assert!(
@@ -93,10 +131,35 @@ mod tests {
             "changed tray entries still need to reach install_tray so extension items appear",
         );
         let install_pos = body.find("install_tray(").unwrap();
-        let store_pos = body.find("*guard = items").unwrap();
+        let store_pos = body.find("guard.extension_items = items").unwrap();
         assert!(
             install_pos < store_pos,
             "the cached payload must be updated only after native menu/tray installation succeeds so retries are not skipped after an error",
+        );
+    }
+
+    #[test]
+    fn set_tray_sessions_preserves_extension_items() {
+        let src = include_str!("menu_items.rs");
+        let body_start = src.find("pub fn set_tray_sessions(").unwrap();
+        let body_end = src[body_start..]
+            .find("\nfn ")
+            .or_else(|| src[body_start..].find("\npub fn "))
+            .or_else(|| src[body_start..].find("\n#[cfg(test)]"))
+            .map(|n| body_start + n)
+            .unwrap_or(src.len());
+        let body = &src[body_start..body_end];
+        assert!(
+            body.contains("guard.tray_sessions == items"),
+            "unchanged tray session snapshots should be skipped",
+        );
+        assert!(
+            body.contains("install_tray(&app, &guard.extension_items, &items)"),
+            "session updates must rebuild the tray with the latest extension items",
+        );
+        assert!(
+            body.contains("guard.tray_sessions = items"),
+            "the cached tray session snapshot should update after install succeeds",
         );
     }
 }

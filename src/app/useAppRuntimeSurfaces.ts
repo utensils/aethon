@@ -10,6 +10,7 @@ import {
   usePersistEditorTabs,
   type UsePersistEditorTabsContext,
 } from "../hooks/usePersistEditorTabs";
+import { useTraySessionsSync } from "../hooks/traySessions";
 import {
   useWindowApi,
   type UseWindowApiContext,
@@ -39,5 +40,6 @@ export function useAppRuntimeSurfaces(
   useWindowApi(ctx);
   useFrontendStateMirror(ctx);
   usePersistEditorTabs(ctx);
+  useTraySessionsSync(ctx.state);
   useOsEdges(ctx);
 }

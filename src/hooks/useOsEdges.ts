@@ -87,6 +87,7 @@ export function useOsEdges(ctx: UseOsEdgesContext): void {
         newTab: ctx.newTab,
         newShellTab: ctx.newShellTab,
         closeTab: ctx.closeTab,
+        activateTabAnywhere: ctx.activateTabAnywhere,
         nextTab: ctx.nextTab,
         toggleTerminal: ctx.toggleTerminal,
         toggleFilesSidebar: ctx.toggleFilesSidebar,

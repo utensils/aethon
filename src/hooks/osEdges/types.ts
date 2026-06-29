@@ -29,6 +29,7 @@ export interface UseOsEdgesContext {
   newTab: () => void;
   newShellTab: () => void;
   closeTab: (tabId: string) => void;
+  activateTabAnywhere: (tabId: string) => void;
   nextTab: (direction: 1 | -1) => void;
 
   // Chat helpers (from useChat).
