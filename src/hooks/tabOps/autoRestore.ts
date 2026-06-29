@@ -1,5 +1,6 @@
 import type { MutableRefObject } from "react";
 import type { Tab } from "../../types/tab";
+import { isLegacyAethonStateCwd } from "../../state/sessionUiSnapshot";
 import { sessionLabel } from "./helpers";
 import type { DiscoveredSession, NotificationInput } from "./types";
 
@@ -40,6 +41,7 @@ export function useAutoRestoreDiscoveredSessions(deps: AutoRestoreDeps) {
       .filter((d) => !closedSessionIds.has(d.tabId))
       .filter((d) => !autoRestoredSessionIdsRef.current.has(d.tabId))
       .filter((d) => d.cwdExists !== false)
+      .filter((d) => !d.cwd || !isLegacyAethonStateCwd(d.cwd))
       .slice(0, 8);
     if (toRestore.length === 0) return;
     // Open oldest first so the most recent session ends up active.

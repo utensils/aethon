@@ -77,6 +77,46 @@ describe("runReadyEffects", () => {
     );
   });
 
+  it("does not replay restored tabs rooted in legacy top-level .aethon state", async () => {
+    const { ctx } = buildHandlerFixture({
+      state: {
+        tabs: [
+          {
+            id: "state-root",
+            label: "State Root",
+            cwd: "/Users/jamesbrink/.aethon",
+          },
+          {
+            id: "legacy-project",
+            label: "Legacy Project",
+            cwd: "/Users/jamesbrink/.aethon/aethon/fix-old-worktree",
+          },
+          {
+            id: "managed-project",
+            label: "Managed Project",
+            cwd: "/Users/jamesbrink/.aethon/projects/project-id/worktree",
+          },
+        ],
+      },
+    });
+    ctx.prepareWorkspaceStartup = vi.fn().mockResolvedValue(true);
+
+    runReadyEffects(ctx, {
+      currentProjectCwd: null,
+      priorActiveTabCwd: null,
+      priorActiveTabId: "default",
+    });
+
+    expect(ctx.pendingTabOpens.current.has("state-root")).toBe(false);
+    expect(ctx.pendingTabOpens.current.has("legacy-project")).toBe(false);
+    expect(ctx.pendingTabOpens.current.has("managed-project")).toBe(true);
+    await ctx.pendingTabOpens.current.get("managed-project");
+    expect(ctx.prepareWorkspaceStartup).toHaveBeenCalledTimes(1);
+    expect(ctx.prepareWorkspaceStartup).toHaveBeenCalledWith(
+      "/Users/jamesbrink/.aethon/projects/project-id/worktree",
+    );
+  });
+
   it("re-announces the active path or marks startup chrome ready", () => {
     const { ctx, mocks } = buildHandlerFixture();
     ctx.projectsRef.current = {
@@ -97,15 +137,43 @@ describe("runReadyEffects", () => {
       "default",
       "/repo/p1",
     );
-    expect(mocks.markStartupChromeReady).not.toHaveBeenCalled();
+    expect(mocks.markStartupChromeReady).toHaveBeenCalledTimes(1);
 
     mocks.announceProjectToBridge.mockClear();
+    mocks.markStartupChromeReady.mockClear();
     runReadyEffects(ctx, {
       currentProjectCwd: "/repo/p1",
       priorActiveTabCwd: null,
       priorActiveTabId: "default",
     });
     expect(mocks.announceProjectToBridge).not.toHaveBeenCalled();
+    expect(mocks.markStartupChromeReady).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not re-announce a prior active tab rooted in legacy top-level .aethon state", () => {
+    const { ctx, mocks } = buildHandlerFixture();
+    ctx.projectsRef.current = {
+      activeId: "p1",
+      activeWorkspaceId: null,
+      activeHostId: null,
+      projects: [{ id: "p1", label: "p1", path: "/repo/p1", lastUsed: 1 }],
+      workspacesByProject: {},
+    };
+
+    runReadyEffects(ctx, {
+      currentProjectCwd: "/wrong",
+      priorActiveTabCwd: "/Users/jamesbrink/.aethon",
+      priorActiveTabId: "state-root",
+    });
+
+    expect(mocks.announceProjectToBridge).toHaveBeenCalledWith(
+      "state-root",
+      "/repo/p1",
+    );
+    expect(mocks.announceProjectToBridge).not.toHaveBeenCalledWith(
+      "state-root",
+      "/Users/jamesbrink/.aethon",
+    );
     expect(mocks.markStartupChromeReady).toHaveBeenCalledTimes(1);
   });
 });

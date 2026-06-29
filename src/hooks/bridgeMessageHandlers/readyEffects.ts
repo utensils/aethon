@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { activeCwd } from "../../projects";
+import { isLegacyAethonStateCwd } from "../../state/sessionUiSnapshot";
 import type { Tab } from "../../types/tab";
 import type { BridgeMessageContext } from "./types";
 
@@ -18,6 +19,7 @@ function replayRestoredAgentTabs(ctx: BridgeMessageContext): void {
       ? ctx.projectsRef.current.projects.find((p) => p.id === t.projectId)
       : null;
     const restoredCwd = t.cwd ?? tabProject?.path;
+    if (restoredCwd && isLegacyAethonStateCwd(restoredCwd)) continue;
     const opening = (async () => {
       if (restoredCwd && ctx.prepareWorkspaceStartup) {
         const ready = await ctx.prepareWorkspaceStartup(restoredCwd);
@@ -51,12 +53,15 @@ function finishProjectAnnouncement(
   input: ReadyEffectsInput,
 ): void {
   const projectActivePath = activeCwd(ctx.projectsRef.current);
+  const priorActiveTabCwd =
+    input.priorActiveTabCwd && !isLegacyAethonStateCwd(input.priorActiveTabCwd)
+      ? input.priorActiveTabCwd
+      : null;
   const activePath = ctx.projectsRef.current.activeWorkspaceId
     ? projectActivePath
-    : (input.priorActiveTabCwd ?? projectActivePath);
+    : (priorActiveTabCwd ?? projectActivePath);
   if (activePath && input.currentProjectCwd !== activePath) {
     ctx.announceProjectToBridge(input.priorActiveTabId, activePath);
-    return;
   }
   ctx.markStartupChromeReady();
 }

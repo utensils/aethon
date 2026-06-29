@@ -126,9 +126,10 @@ export function useWorkspaceStartup({
           workspaceStartup: {
             ...slice,
             activeRoot:
-              isVisibleStartupState(status.state) ||
-              slice.activeRoot === status.root
+              isVisibleStartupState(status.state)
                 ? status.root
+                : slice.activeRoot === status.root
+                  ? null
                 : slice.activeRoot,
             entries,
           },
@@ -301,7 +302,11 @@ function applyStartupEvent(
       ...prev,
       workspaceStartup: {
         ...slice,
-        activeRoot: isVisibleStartupState(state) ? root : slice.activeRoot,
+        activeRoot: isVisibleStartupState(state)
+          ? root
+          : slice.activeRoot === root
+            ? null
+            : slice.activeRoot,
         entries,
       },
     };

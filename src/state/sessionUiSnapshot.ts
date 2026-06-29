@@ -94,6 +94,7 @@ function durableQueuedMessages(
 }
 
 function shouldPersistTab(tab: Tab): boolean {
+  if (hasNonRestorableSessionCwd(tab)) return false;
   if (tab.kind === "shell") return tab.shell != null;
   // Editor tabs persist so the user reopens to the same files. The
   // on-disk content is the source of truth on restore — dirty buffers
@@ -101,6 +102,32 @@ function shouldPersistTab(tab: Tab): boolean {
   // could surprise the user on next launch).
   if (tab.kind === "editor") return tab.editor?.filePath != null;
   return true;
+}
+
+function sessionCwd(tab: Tab): string | undefined {
+  return tab.kind === "shell" ? tab.shell?.cwd : tab.cwd;
+}
+
+function hasNonRestorableSessionCwd(tab: Tab): boolean {
+  if (tab.kind === "editor") return false;
+  const cwd = sessionCwd(tab);
+  return typeof cwd === "string" && isLegacyAethonStateCwd(cwd);
+}
+
+export function isLegacyAethonStateCwd(cwd: string): boolean {
+  const normalized = cwd.replace(/\\/g, "/").replace(/\/+$/, "");
+  const match =
+    /^((?:\/Users\/[^/]+|\/home\/[^/]+|[A-Za-z]:\/Users\/[^/]+)\/\.aethon)(?:\/|$)/.exec(
+      normalized,
+    );
+  if (!match) return false;
+  const after = normalized.slice(match[1].length);
+  return (
+    after === "" ||
+    (after.startsWith("/") &&
+      after !== "/projects" &&
+      !after.startsWith("/projects/"))
+  );
 }
 
 function restoreShellTab(tab: Tab, restartShellTabs: boolean): Tab {
@@ -317,14 +344,16 @@ function serializePersistedBuckets(
 /** Minimal structural validation for a persisted tab record. */
 function validTabsFrom(value: unknown): Tab[] {
   return Array.isArray(value)
-    ? value.filter((t): t is Tab => {
-        const candidate = t as Partial<Tab>;
-        return (
-          typeof candidate.id === "string" &&
-          typeof candidate.label === "string" &&
-          Array.isArray(candidate.messages)
-        );
-      })
+    ? value
+        .filter((t): t is Tab => {
+          const candidate = t as Partial<Tab>;
+          return (
+            typeof candidate.id === "string" &&
+            typeof candidate.label === "string" &&
+            Array.isArray(candidate.messages)
+          );
+        })
+        .filter((tab) => !hasNonRestorableSessionCwd(tab))
     : [];
 }
 

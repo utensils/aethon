@@ -147,7 +147,6 @@ export function AppRoot({
         ) : (
           <StartupCurtain
             logoUrl={startupLogoUrl}
-            startup={workspaceStartup}
             onApprove={onStartupApprove}
             onRetry={onStartupRetry}
             onContinue={onStartupContinue}
