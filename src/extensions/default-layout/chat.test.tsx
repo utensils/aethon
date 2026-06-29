@@ -610,13 +610,10 @@ describe("ChatInput", () => {
     expect(virtuosoMockState.alignToBottom).toBeUndefined();
   });
 
-  it("renders a textual live activity indicator inside the transcript row column", () => {
+  it("renders a textual live activity indicator before visible agent output", () => {
     renderMainCanvas({
       waiting: true,
-      messages: [
-        { id: "1", role: "user", text: "start" },
-        { id: "2", role: "agent", text: "streaming update" },
-      ],
+      messages: [{ id: "1", role: "user", text: "start" }],
     });
 
     const indicator = screen.getByRole("status", {
@@ -628,6 +625,19 @@ describe("ChatInput", () => {
     expect(indicator.closest(".a2ui-msg-row-footer")).toBeTruthy();
     expect(indicator.closest(".ae-conversation-turn")).toBeTruthy();
     expect(indicator.closest(".a2ui-canvas-message.agent")).toBeTruthy();
+  });
+
+  it("hides the footer activity indicator while agent prose is streaming", () => {
+    renderMainCanvas({
+      waiting: true,
+      messages: [
+        { id: "1", role: "user", text: "start" },
+        { id: "2", role: "agent", text: "streaming update" },
+      ],
+    });
+
+    expect(screen.getByText("streaming update")).toBeTruthy();
+    expect(screen.queryByText("Thinking through next step")).toBeNull();
   });
 
   it("does not show the footer activity indicator when running tool activity is visible", () => {
