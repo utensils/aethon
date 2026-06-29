@@ -5,7 +5,6 @@ import { useNewTab } from "./tabOps/agentTab";
 import { useNewShellTab } from "./tabOps/shellTab";
 import { useEditorTabActions } from "./tabOps/editorTab";
 import { useCloseTabActions } from "./tabOps/closeTab";
-import { useAutoRestoreDiscoveredSessions } from "./tabOps/autoRestore";
 import type { UseTabsActions, UseTabsContext } from "./tabOps/types";
 
 export { TAB_MIRROR_KEYS, TERMINAL_REPLAY_MAX } from "./tabOps/constants";
@@ -40,9 +39,6 @@ export type { UseTabsActions, UseTabsContext } from "./tabOps/types";
  *                 disposal, and the path-based bulk close
  *                 (`closeEditorTabsForPath`) routed through `closeTab`
  *                 to honor the dirty-buffer confirm prompt
- * - `autoRestore` — boot-time discovered-session restore (≤ 8, oldest
- *                   first so the newest lands active)
- *
  * The hook keeps its state local in refs; project bucket swap and
  * orchestration-level wiring (chat-input dispatch, sidebar history,
  * keyboard shortcuts) stays in App.tsx and reaches in via ctx
@@ -57,7 +53,6 @@ export type { UseTabsActions, UseTabsContext } from "./tabOps/types";
 export function useTabs(ctx: UseTabsContext): UseTabsActions {
   const pendingTabOpens = useRef(new Map<string, Promise<unknown>>());
   const closedTabsRef = useRef<ClosedTabEntry[]>([]);
-  const autoRestoredSessionIdsRef = useRef(new Set<string>());
 
   // Mirror writes + active-tab switching come first; they have no
   // dependencies beyond setState/stateRef and everything else calls
@@ -119,16 +114,8 @@ export function useTabs(ctx: UseTabsContext): UseTabsActions {
     newEditorTab: editor.newEditorTab,
   });
 
-  const autoRestoreDiscoveredSessions = useAutoRestoreDiscoveredSessions({
-    stateRef: ctx.stateRef,
-    autoRestoredSessionIdsRef,
-    pushNotification: ctx.pushNotification,
-    newTab,
-  });
-
   return {
     pendingTabOpens,
-    autoRestoredSessionIdsRef,
     updateTab: mutations.updateTab,
     updateActiveTab: mutations.updateActiveTab,
     applyShareModeToTab: mutations.applyShareModeToTab,
@@ -142,7 +129,6 @@ export function useTabs(ctx: UseTabsContext): UseTabsActions {
     toggleEditorPreview: editor.toggleEditorPreview,
     renameEditorTabsForPath: editor.renameEditorTabsForPath,
     closeEditorTabsForPath: close.closeEditorTabsForPath,
-    autoRestoreDiscoveredSessions,
     pushClosedTab: close.pushClosedTab,
     reopenLastClosedTab: close.reopenLastClosedTab,
     closeTab: close.closeTab,

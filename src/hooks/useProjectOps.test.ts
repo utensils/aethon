@@ -122,7 +122,6 @@ function renderProjectOps(
     watchProjectForBridge: vi.fn(),
     unwatchProjectForBridge: vi.fn(),
     dispatchTerminalReplay: vi.fn(),
-    autoRestoreDiscoveredSessions: vi.fn(),
     closeTabNow,
     workspacePrompts,
     ...overrides,
@@ -550,7 +549,6 @@ describe("useProjectOps session scoping", () => {
       watchProjectForBridge,
       unwatchProjectForBridge,
       dispatchTerminalReplay: vi.fn(),
-      autoRestoreDiscoveredSessions: vi.fn(),
       closeTabNow: vi.fn(),
       workspacePrompts: {
         promptRemoveWorkspace: vi.fn(() => Promise.resolve(true)),
@@ -1409,7 +1407,7 @@ describe("useProjectOps workspace refresh", () => {
 
     // The reconcile prune retires the workspace's tabs exactly like an
     // in-app removal: visible tab closed, stored bucket dropped, hidden
-    // session suppressed from auto-restore, worker told to retire.
+    // session suppressed from explicit resume lists, worker told to retire.
     expect(closeTabNow).toHaveBeenCalledWith("visible-archived-tab");
     expect(result.current.tabBucketsRef.current.has(removedKey)).toBe(false);
     expect(stateRef.current.closedSessionIds).toContain("hidden-archived-tab");
@@ -2008,8 +2006,8 @@ describe("useProjectOps workspace removal", () => {
 
     // The shell tab anchored in the removed worktree closes with it.
     await waitFor(() => expect(closeTabNow).toHaveBeenCalledWith("shell-tab"));
-    // Hidden bucket sessions are suppressed from discovery auto-restore
-    // and their background workers are told to retire.
+    // Hidden bucket sessions are suppressed from discovery-backed resume
+    // lists and their background workers are told to retire.
     await waitFor(() =>
       expect(stateRef.current.closedSessionIds).toContain("hidden-issue-tab"),
     );

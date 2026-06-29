@@ -174,10 +174,9 @@ export async function refreshProjectWorkspaces(
     // workspace means its worktree was removed outside the app (a task
     // runner archiving its branch, a manual `git worktree remove`, …).
     // Retire its tabs, buckets, and session discoverability exactly like
-    // an in-app removal — otherwise the dropped workspace's sessions
-    // squat in whatever workspace is active and auto-restore can
-    // resurrect them later. Pending rows are skipped: they're still
-    // in-flight on the create/remove state machines.
+    // an in-app removal — otherwise the dropped workspace's sessions can
+    // squat in whatever workspace is active later. Pending rows are skipped:
+    // they're still in-flight on the create/remove state machines.
     if (deps.tabCleanup) {
       const nextIds = new Set(next.map((w) => w.id));
       const pruned = prior.filter(

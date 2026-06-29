@@ -61,12 +61,6 @@ export interface UseProjectOpsContext {
    *  buffer. Provided by useTabs so this hook doesn't have to import
    *  from xterm internals. */
   dispatchTerminalReplay: (buffer: string) => void;
-  /** From useTabs: auto-restore previously-discovered sessions for the
-   *  active project after the project list loads. */
-  autoRestoreDiscoveredSessions: (
-    discovered: DiscoveredSession[],
-    knownIds: Set<string>,
-  ) => void;
   /** From useTabs: force-close visible tabs after their backing workspace
    *  is removed. Workspace deletion is already destructive, so there is
    *  no separate close confirmation for those session tabs. */

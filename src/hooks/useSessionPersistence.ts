@@ -160,8 +160,8 @@ export function useSessionPersistence({
         // backgrounded workspace are empty. A buckets-only snapshot (the user
         // closed on an overview while agents ran in workspaces) must still
         // restore its buckets — otherwise the next persist wipes them. A
-        // closed-ids-only snapshot still matters too: it suppresses
-        // auto-restore for sessions the user explicitly closed.
+        // closed-ids-only snapshot still matters too: it keeps explicitly
+        // closed sessions out of discovery-backed resume lists.
         if (tabs.length === 0 && !hasBuckets && closedSessionIds.length === 0) {
           return prev;
         }

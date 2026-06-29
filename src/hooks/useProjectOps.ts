@@ -79,7 +79,6 @@ export function useProjectOps(ctx: UseProjectOpsContext): UseProjectOpsActions {
     watchProjectForBridge,
     unwatchProjectForBridge,
     dispatchTerminalReplay,
-    autoRestoreDiscoveredSessions,
     closeTabNow,
     workspacePrompts,
   } = ctx;
@@ -314,9 +313,9 @@ export function useProjectOps(ctx: UseProjectOpsContext): UseProjectOpsActions {
           return { ...prev, tabs };
         });
       }
-      // Retire tabs whose backing workspace no longer exists BEFORE
-      // auto-restore runs, so their session ids are suppressed by the
-      // time discovery could resurrect them.
+      // Retire tabs whose backing workspace no longer exists before syncing
+      // recent sessions, so removed workspace sessions are suppressed from
+      // user-initiated resume lists.
       sweepOrphanWorkspaceTabs({
         setState,
         stateRef,
@@ -325,8 +324,6 @@ export function useProjectOps(ctx: UseProjectOpsContext): UseProjectOpsActions {
         closeTabNow,
         syncRecentSessionsToState,
       });
-      const scoped = scopedDiscoveredSessions(allDiscoveredSessionsRef.current);
-      autoRestoreDiscoveredSessions(scoped, knownTabIds());
       syncRecentSessionsToState();
       if (active) await restoreEditorTabs(active.id, active.path);
     })();

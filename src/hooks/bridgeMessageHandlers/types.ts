@@ -105,10 +105,6 @@ export interface BridgeMessageContext {
   ) => void;
   dispatchTerminalReplay: (buffer: string) => void;
   prepareWorkspaceStartup?: (cwd: string) => Promise<boolean>;
-  autoRestoreDiscoveredSessions: (
-    discovered: DiscoveredSession[],
-    knownIds: Set<string>,
-  ) => void;
 
   // ─── Extension hydration (from useExtensionsHydration) ──────────────
   hydrateThemes: (list: ExtensionTheme[]) => void;

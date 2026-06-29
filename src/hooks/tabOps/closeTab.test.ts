@@ -148,7 +148,7 @@ describe("closeTabNow → overview fallback", () => {
     expect(next.activeTabId).toBe("agent-1");
   });
 
-  it("marks closed agent sessions so reload auto-restore keeps them closed", () => {
+  it("marks closed agent sessions so discovery-backed resume keeps them closed", () => {
     const t1 = makeTab("agent-1", "agent");
     const t2 = makeTab("agent-2", "agent");
     const flushSpy = vi.fn();
