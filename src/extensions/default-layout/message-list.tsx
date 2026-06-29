@@ -141,8 +141,13 @@ export function MainCanvas({
       state.waiting === true &&
       !liveSubtree &&
       messages.length > 0 &&
-      !messages.some(isRunningToolCard) &&
-      !latestMessageHasVisibleAgentContent(messages),
+      !messages.some(isRunningToolCard),
+    ...(latestMessageHasVisibleAgentContent(messages)
+      ? {
+          typingLabel: "Writing response",
+          typingDetail: "Streaming the answer",
+        }
+      : {}),
     state,
     tabId,
   };

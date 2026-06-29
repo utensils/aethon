@@ -13,6 +13,8 @@ import { hasDisplayableAgentContent } from "./turn-activity-helpers";
 export interface CanvasFooterContext {
   liveSubtree: { components: A2UIComponent[] } | null;
   showTyping: boolean;
+  typingLabel?: string;
+  typingDetail?: string;
   state: Record<string, unknown>;
   tabId?: string;
   rowClassName?: string;
@@ -26,6 +28,8 @@ export function CanvasFooter({ context }: { context?: CanvasFooterContext }) {
   const {
     liveSubtree,
     showTyping,
+    typingLabel,
+    typingDetail,
     state,
     tabId,
     rowClassName = "a2ui-chat-message",
@@ -42,7 +46,7 @@ export function CanvasFooter({ context }: { context?: CanvasFooterContext }) {
         <div className="a2ui-msg-row a2ui-msg-row-footer">
           <div className="ae-conversation-turn">
             <div className={`${rowClassName} agent ae-typing-message`}>
-              <TypingIndicator />
+              <TypingIndicator label={typingLabel} detail={typingDetail} />
             </div>
           </div>
         </div>

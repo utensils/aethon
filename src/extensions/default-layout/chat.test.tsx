@@ -627,7 +627,7 @@ describe("ChatInput", () => {
     expect(indicator.closest(".a2ui-canvas-message.agent")).toBeTruthy();
   });
 
-  it("hides the footer activity indicator while agent prose is streaming", () => {
+  it("names the footer activity while agent prose is streaming", () => {
     renderMainCanvas({
       waiting: true,
       messages: [
@@ -638,6 +638,8 @@ describe("ChatInput", () => {
 
     expect(screen.getByText("streaming update")).toBeTruthy();
     expect(screen.queryByText("Thinking through next step")).toBeNull();
+    expect(screen.getByText("Writing response")).toBeTruthy();
+    expect(screen.getByText("Streaming the answer")).toBeTruthy();
   });
 
   it("does not show the footer activity indicator when running tool activity is visible", () => {

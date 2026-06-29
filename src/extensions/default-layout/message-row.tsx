@@ -52,11 +52,17 @@ function shallowEqualExcept(
   return true;
 }
 
-export function TypingIndicator() {
+export function TypingIndicator({
+  label = "Thinking through next step",
+  detail = "Waiting for the next update",
+}: {
+  label?: string;
+  detail?: string;
+}) {
   return (
     <LiveActivityCard
-      label="Thinking through next step"
-      detail="Waiting for the next update"
+      label={label}
+      detail={detail}
     />
   );
 }
