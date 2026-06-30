@@ -43,7 +43,7 @@ export function fallbackAgentActivityForTab(
   const latestAgentThinkingPresent =
     latestMessage?.role === "agent" &&
     typeof latestMessage.thinking === "string" &&
-    latestMessage.thinking.length > 0;
+    latestMessage.thinking.trim().length > 0;
   const latestAgentThinkingVisible =
     thinkingVisibility === "show" && latestAgentThinkingPresent;
   if (

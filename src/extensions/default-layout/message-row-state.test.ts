@@ -103,6 +103,23 @@ describe("fallbackAgentActivityForTab", () => {
     ).toBeNull();
   });
 
+  it("ignores whitespace-only thinking when choosing fallback activity", () => {
+    expect(
+      fallbackAgentActivityForTab(
+        { waiting: true, activeTabId: "tab-1" },
+        "tab-1",
+        [
+          { role: "user", text: "start" },
+          { role: "agent", thinking: "   \n\t  " },
+        ],
+        { thinkingVisibility: "hide" },
+      ),
+    ).toEqual({
+      label: "Thinking through next step",
+      detail: "Waiting for the next update",
+    });
+  });
+
   it("does not derive fallback activity from hidden embedded thinking-only text", () => {
     expect(
       fallbackAgentActivityForTab(
