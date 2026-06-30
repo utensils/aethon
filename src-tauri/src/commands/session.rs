@@ -5,7 +5,7 @@
 //! Snippet building lives here so UTF-16 / multibyte indexing pitfalls stay
 //! Rust-side.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -384,13 +384,20 @@ fn entry_path_to_leaf(rows: &[SessionEntryRow], leaf_id: &str) -> Option<Vec<Ses
         .map(|row| (row.entry_id.as_str(), row))
         .collect();
     let mut out = Vec::new();
+    let mut seen = HashSet::new();
     let mut current = by_id.get(leaf_id).copied();
     while let Some(row) = current {
+        if !seen.insert(row.entry_id.as_str()) {
+            return None;
+        }
         out.push(row.clone());
-        current = row
-            .parent_entry_id
-            .as_deref()
-            .and_then(|parent| by_id.get(parent).copied());
+        current = match row.parent_entry_id.as_deref() {
+            Some(parent) => by_id.get(parent).copied(),
+            None => None,
+        };
+        if row.parent_entry_id.is_some() && current.is_none() {
+            return None;
+        }
     }
     if out.is_empty() {
         None
@@ -611,7 +618,10 @@ pub fn export_chat_markdown(
 
 #[cfg(test)]
 mod tests {
-    use super::{delete_session_dir, escape_like, validate_session_tab_id};
+    use super::{
+        SessionEntryRow, delete_session_dir, entry_path_to_leaf, escape_like,
+        validate_session_entry_id, validate_session_tab_id,
+    };
 
     #[test]
     fn validate_session_tab_id_allows_default() {
@@ -623,6 +633,45 @@ mod tests {
         assert!(validate_session_tab_id("../default").is_err());
         assert!(validate_session_tab_id("nested/default").is_err());
         assert!(validate_session_tab_id("").is_err());
+    }
+
+    #[test]
+    fn validate_session_entry_id_rejects_unsafe_ids() {
+        assert!(validate_session_entry_id("entry_123-abc").is_ok());
+        assert!(validate_session_entry_id("").is_err());
+        assert!(validate_session_entry_id("../entry").is_err());
+        assert!(validate_session_entry_id("nested/entry").is_err());
+        assert!(validate_session_entry_id(&"x".repeat(129)).is_err());
+    }
+
+    #[test]
+    fn entry_path_to_leaf_returns_ordered_root_to_leaf_path() {
+        let rows = vec![
+            session_entry_row("root", None),
+            session_entry_row("middle", Some("root")),
+            session_entry_row("leaf", Some("middle")),
+            session_entry_row("sibling", Some("root")),
+        ];
+
+        let path = entry_path_to_leaf(&rows, "leaf").expect("path to leaf");
+
+        assert_eq!(
+            path.iter()
+                .map(|row| row.entry_id.as_str())
+                .collect::<Vec<_>>(),
+            ["root", "middle", "leaf"],
+        );
+    }
+
+    #[test]
+    fn entry_path_to_leaf_rejects_missing_leaf_missing_parent_and_cycles() {
+        assert!(entry_path_to_leaf(&[session_entry_row("root", None)], "missing").is_none());
+        assert!(
+            entry_path_to_leaf(&[session_entry_row("leaf", Some("missing"))], "leaf").is_none()
+        );
+        assert!(
+            entry_path_to_leaf(&[session_entry_row("cycle", Some("cycle"))], "cycle").is_none()
+        );
     }
 
     #[test]
@@ -642,5 +691,17 @@ mod tests {
     #[test]
     fn escape_like_escapes_wildcards_and_escape_character() {
         assert_eq!(escape_like(r"a\b%c_d"), r"a\\b\%c\_d");
+    }
+
+    fn session_entry_row(entry_id: &str, parent_entry_id: Option<&str>) -> SessionEntryRow {
+        SessionEntryRow {
+            entry_id: entry_id.to_string(),
+            parent_entry_id: parent_entry_id.map(ToOwned::to_owned),
+            entry_type: "message".to_string(),
+            role: Some("user".to_string()),
+            text: Some(entry_id.to_string()),
+            timestamp: Some(1),
+            payload_json: "{}".to_string(),
+        }
     }
 }

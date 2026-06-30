@@ -67,7 +67,9 @@ function sqliteDatabaseCtor(): DatabaseCtor | undefined {
   }
 }
 
-export function setSqliteDatabaseCtorForTests(ctor: DatabaseCtor | undefined): void {
+export function setSqliteDatabaseCtorForTests(
+  ctor: DatabaseCtor | undefined,
+): void {
   databaseCtor = ctor;
 }
 
@@ -160,7 +162,9 @@ function parseTime(value: unknown): number | undefined {
 function sessionText(entry: SessionEntry): string {
   if (entry.type === "message") return textFromContent(entry.message.content);
   if (entry.type === "custom_message") {
-    return typeof entry.content === "string" ? entry.content : textFromContent(entry.content);
+    return typeof entry.content === "string"
+      ? entry.content
+      : textFromContent(entry.content);
   }
   if (entry.type === "compaction" || entry.type === "branch_summary") {
     return entry.summary;
@@ -178,14 +182,22 @@ function sessionRole(entry: SessionEntry): string | undefined {
   return typeof role === "string" ? role : undefined;
 }
 
-function rowString(row: Record<string, unknown> | null, key: string): string | undefined {
+function rowString(
+  row: Record<string, unknown> | null,
+  key: string,
+): string | undefined {
   const value = row?.[key];
   return typeof value === "string" ? value : undefined;
 }
 
-function rowNumber(row: Record<string, unknown> | null, key: string): number | undefined {
+function rowNumber(
+  row: Record<string, unknown> | null,
+  key: string,
+): number | undefined {
   const value = row?.[key];
-  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+  return typeof value === "number" && Number.isFinite(value)
+    ? value
+    : undefined;
 }
 
 function normalizeOptionalCwd(cwd: string | undefined): string | undefined {
@@ -203,13 +215,18 @@ function cwdExists(cwd: string | undefined): boolean | undefined {
   }
 }
 
-function sessionMatchesCwd(sessionCwd: string | undefined, expectedCwd: string | undefined): boolean {
+function sessionMatchesCwd(
+  sessionCwd: string | undefined,
+  expectedCwd: string | undefined,
+): boolean {
   const expected = canonicalCwdForComparison(expectedCwd);
   if (expected === undefined) return true;
   return canonicalCwdForComparison(sessionCwd) === expected;
 }
 
-function canonicalCwdForComparison(cwd: string | undefined): string | undefined {
+function canonicalCwdForComparison(
+  cwd: string | undefined,
+): string | undefined {
   const normalized = normalizeOptionalCwd(cwd);
   if (!normalized) return undefined;
   const hit = cwdComparisonCache.get(normalized);
@@ -237,14 +254,21 @@ function parseSessionLine(line: string): FileEntry | undefined {
 }
 
 function isSessionHeader(entry: FileEntry | undefined): entry is SessionHeader {
-  return Boolean(entry && entry.type === "session" && typeof entry.id === "string");
+  return Boolean(
+    entry && entry.type === "session" && typeof entry.id === "string",
+  );
 }
 
 function isSessionEntry(entry: FileEntry | undefined): entry is SessionEntry {
-  return Boolean(entry && entry.type !== "session" && typeof entry.id === "string");
+  return Boolean(
+    entry && entry.type !== "session" && typeof entry.id === "string",
+  );
 }
 
-function activeSessionEntries(entries: SessionEntry[], currentLeafEntryId?: string): SessionEntry[] {
+function activeSessionEntries(
+  entries: SessionEntry[],
+  currentLeafEntryId?: string,
+): SessionEntry[] {
   if (!currentLeafEntryId) return entries;
   const byId = new Map(entries.map((entry) => [entry.id, entry] as const));
   const path: SessionEntry[] = [];
@@ -258,7 +282,11 @@ function activeSessionEntries(entries: SessionEntry[], currentLeafEntryId?: stri
   return path.length > 0 ? path : entries;
 }
 
-function loadSessionRows(db: Database, tabId: string, cwd: string): {
+function loadSessionRows(
+  db: Database,
+  tabId: string,
+  cwd: string,
+): {
   header: SessionHeader;
   entries: SessionEntry[];
   currentLeafEntryId?: string;
@@ -290,11 +318,17 @@ function loadSessionRows(db: Database, tabId: string, cwd: string): {
       `INSERT INTO sessions(session_id, tab_id, cwd, payload_json, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?)`,
     ).run(sessionId, tabId, cwd, JSON.stringify({ header }), nowMs(), nowMs());
-    session = { session_id: sessionId, current_leaf_entry_id: null, payload_json: JSON.stringify({ header }) };
+    session = {
+      session_id: sessionId,
+      current_leaf_entry_id: null,
+      payload_json: JSON.stringify({ header }),
+    };
   }
   const currentLeafEntryId = rowString(session, "current_leaf_entry_id");
   const payload = rowString(session, "payload_json");
-  const parsed = payload ? JSON.parse(payload) as { header?: SessionHeader } : {};
+  const parsed = payload
+    ? (JSON.parse(payload) as { header?: SessionHeader })
+    : {};
   const header = parsed.header ?? {
     type: "session",
     version: CURRENT_SESSION_VERSION,
@@ -358,7 +392,10 @@ function persistEntryAtOrdinal(
        SET current_leaf_entry_id = ?, updated_at = ?
        WHERE session_id = ?`,
     ).run(entry.id, touchedAt, sessionId);
-    db.query("UPDATE session_tabs SET last_modified = ? WHERE tab_id = ?").run(touchedAt, tabId);
+    db.query("UPDATE session_tabs SET last_modified = ? WHERE tab_id = ?").run(
+      touchedAt,
+      tabId,
+    );
   }
   if (text && options.index !== false) {
     db.query(
@@ -370,20 +407,42 @@ function persistEntryAtOrdinal(
       .query("SELECT first_user_message FROM session_tabs WHERE tab_id = ?")
       .get(tabId);
     if (!rowString(first, "first_user_message") && text) {
-      const label = text.length > MAX_LABEL_CHARS ? `${text.slice(0, MAX_LABEL_CHARS - 1)}...` : text;
-      db.query("UPDATE session_tabs SET first_user_message = ? WHERE tab_id = ?").run(label, tabId);
+      const label =
+        text.length > MAX_LABEL_CHARS
+          ? `${text.slice(0, MAX_LABEL_CHARS - 1)}...`
+          : text;
+      db.query(
+        "UPDATE session_tabs SET first_user_message = ? WHERE tab_id = ?",
+      ).run(label, tabId);
     }
   }
 }
 
-function persistEntry(db: Database, tabId: string, sessionId: string, entry: SessionEntry): void {
+function persistEntry(
+  db: Database,
+  tabId: string,
+  sessionId: string,
+  entry: SessionEntry,
+): void {
   const ordinalRow = db
-    .query("SELECT COALESCE(MAX(ordinal), -1) + 1 AS next FROM session_entries WHERE session_id = ?")
+    .query(
+      "SELECT COALESCE(MAX(ordinal), -1) + 1 AS next FROM session_entries WHERE session_id = ?",
+    )
     .get(sessionId);
-  persistEntryAtOrdinal(db, tabId, sessionId, entry, rowNumber(ordinalRow, "next") ?? 0);
+  persistEntryAtOrdinal(
+    db,
+    tabId,
+    sessionId,
+    entry,
+    rowNumber(ordinalRow, "next") ?? 0,
+  );
 }
 
-function rebuildSidecar(manager: SessionManager, header: SessionHeader, entries: SessionEntry[]): void {
+function rebuildSidecar(
+  manager: SessionManager,
+  header: SessionHeader,
+  entries: SessionEntry[],
+): void {
   const mutable = manager as unknown as {
     sessionId: string;
     cwd: string;
@@ -404,7 +463,11 @@ function rebuildSidecar(manager: SessionManager, header: SessionHeader, entries:
   mutable.flushed = true;
 }
 
-function importLegacyLocalMessages(db: Database, tabId: string, sessionDir: string): void {
+function importLegacyLocalMessages(
+  db: Database,
+  tabId: string,
+  sessionDir: string,
+): void {
   const path = join(sessionDir, LOCAL_CHAT_FILE);
   if (!existsSync(path)) return;
   const raw = readFileSync(path, "utf8");
@@ -415,17 +478,27 @@ function importLegacyLocalMessages(db: Database, tabId: string, sessionDir: stri
   rebuildLocalSearchIndex(db, tabId);
 }
 
-function importLegacySessionFile(db: Database, tabId: string, path: string, mtimeMs: number): void {
+function importLegacySessionFile(
+  db: Database,
+  tabId: string,
+  path: string,
+  mtimeMs: number,
+): void {
   const lines = readFileSync(path, "utf8").split(/\r?\n/);
   const header = parseSessionLine(lines[0] ?? "");
   if (!isSessionHeader(header)) return;
-  const existing = db.query("SELECT 1 FROM sessions WHERE session_id = ?").get(header.id);
+  const existing = db
+    .query("SELECT 1 FROM sessions WHERE session_id = ?")
+    .get(header.id);
   if (existing) return;
   const entries = lines.slice(1).flatMap((line) => {
     const entry = parseSessionLine(line);
     return isSessionEntry(entry) ? [entry] : [];
   });
-  const cwd = typeof header.cwd === "string" && header.cwd.length > 0 ? header.cwd : undefined;
+  const cwd =
+    typeof header.cwd === "string" && header.cwd.length > 0
+      ? header.cwd
+      : undefined;
   const createdAt = parseTime(header.timestamp) ?? mtimeMs;
   const lastEntry = entries[entries.length - 1];
   db.query(
@@ -486,7 +559,8 @@ export function importLegacySessionsDir(sessionsDir: string): boolean {
       if (!/^[A-Za-z0-9_-]{1,128}$/.test(name)) continue;
       const sessionDir = join(sessionsDir, name);
       try {
-        if (statSync(sessionDir).isDirectory()) importLegacySessionDir(sessionDir);
+        if (statSync(sessionDir).isDirectory())
+          importLegacySessionDir(sessionDir);
       } catch {
         /* best effort per tab */
       }
@@ -519,14 +593,30 @@ export function createSqliteBackedSessionManager(
     appendMessage: (message: Message | unknown) => string;
     appendThinkingLevelChange: (thinkingLevel: string) => string;
     appendModelChange: (provider: string, modelId: string) => string;
-    appendCompaction: <T>(summary: string, firstKeptEntryId: string, tokensBefore: number, details?: T, fromHook?: boolean) => string;
+    appendCompaction: <T>(
+      summary: string,
+      firstKeptEntryId: string,
+      tokensBefore: number,
+      details?: T,
+      fromHook?: boolean,
+    ) => string;
     appendCustomEntry: (customType: string, data?: unknown) => string;
     appendSessionInfo: (name: string) => string;
-    appendCustomMessageEntry: <T>(customType: string, content: string | unknown[], display: boolean, details?: T) => string;
+    appendCustomMessageEntry: <T>(
+      customType: string,
+      content: string | unknown[],
+      display: boolean,
+      details?: T,
+    ) => string;
     appendLabelChange?: (targetId: string, label: string | undefined) => string;
     branch: (branchFromId: string) => void;
     resetLeaf: () => void;
-    branchWithSummary: (branchFromId: string | null, summary: string, details?: unknown, fromHook?: boolean) => string;
+    branchWithSummary: (
+      branchFromId: string | null,
+      summary: string,
+      details?: unknown,
+      fromHook?: boolean,
+    ) => string;
     getTree: () => SessionTreeNode[];
     getSessionName: () => string | undefined;
   };
@@ -536,16 +626,34 @@ export function createSqliteBackedSessionManager(
     return id;
   };
   const originalAppendMessage = mutable.appendMessage.bind(manager);
-  mutable.appendMessage = (message) => persistById(originalAppendMessage(message));
+  mutable.appendMessage = (message) =>
+    persistById(originalAppendMessage(message));
   const originalThinking = mutable.appendThinkingLevelChange.bind(manager);
-  mutable.appendThinkingLevelChange = (thinkingLevel) => persistById(originalThinking(thinkingLevel));
+  mutable.appendThinkingLevelChange = (thinkingLevel) =>
+    persistById(originalThinking(thinkingLevel));
   const originalModel = mutable.appendModelChange.bind(manager);
-  mutable.appendModelChange = (provider, modelId) => persistById(originalModel(provider, modelId));
+  mutable.appendModelChange = (provider, modelId) =>
+    persistById(originalModel(provider, modelId));
   const originalCompaction = mutable.appendCompaction.bind(manager);
-  mutable.appendCompaction = (summary, firstKeptEntryId, tokensBefore, details, fromHook) =>
-    persistById(originalCompaction(summary, firstKeptEntryId, tokensBefore, details, fromHook));
+  mutable.appendCompaction = (
+    summary,
+    firstKeptEntryId,
+    tokensBefore,
+    details,
+    fromHook,
+  ) =>
+    persistById(
+      originalCompaction(
+        summary,
+        firstKeptEntryId,
+        tokensBefore,
+        details,
+        fromHook,
+      ),
+    );
   const originalCustom = mutable.appendCustomEntry.bind(manager);
-  mutable.appendCustomEntry = (customType, data) => persistById(originalCustom(customType, data));
+  mutable.appendCustomEntry = (customType, data) =>
+    persistById(originalCustom(customType, data));
   const originalInfo = mutable.appendSessionInfo.bind(manager);
   mutable.appendSessionInfo = (name) => persistById(originalInfo(name));
   const originalCustomMessage = mutable.appendCustomMessageEntry.bind(manager);
@@ -553,28 +661,28 @@ export function createSqliteBackedSessionManager(
     persistById(originalCustomMessage(customType, content, display, details));
   if (mutable.appendLabelChange) {
     const originalLabel = mutable.appendLabelChange.bind(manager);
-    mutable.appendLabelChange = (targetId, label) => persistById(originalLabel(targetId, label));
+    mutable.appendLabelChange = (targetId, label) =>
+      persistById(originalLabel(targetId, label));
   }
   const originalBranch = mutable.branch.bind(manager);
   mutable.branch = (branchFromId) => {
     originalBranch(branchFromId);
-    db.query("UPDATE sessions SET current_leaf_entry_id = ?, updated_at = ? WHERE session_id = ?").run(
-      branchFromId,
-      nowMs(),
-      header.id,
-    );
+    db.query(
+      "UPDATE sessions SET current_leaf_entry_id = ?, updated_at = ? WHERE session_id = ?",
+    ).run(branchFromId, nowMs(), header.id);
   };
   const originalResetLeaf = mutable.resetLeaf.bind(manager);
   mutable.resetLeaf = () => {
     originalResetLeaf();
-    db.query("UPDATE sessions SET current_leaf_entry_id = NULL, updated_at = ? WHERE session_id = ?").run(
-      nowMs(),
-      header.id,
-    );
+    db.query(
+      "UPDATE sessions SET current_leaf_entry_id = NULL, updated_at = ? WHERE session_id = ?",
+    ).run(nowMs(), header.id);
   };
   const originalBranchWithSummary = mutable.branchWithSummary.bind(manager);
   mutable.branchWithSummary = (branchFromId, summary, details, fromHook) =>
-    persistById(originalBranchWithSummary(branchFromId, summary, details, fromHook));
+    persistById(
+      originalBranchWithSummary(branchFromId, summary, details, fromHook),
+    );
   return manager;
 }
 
@@ -593,43 +701,67 @@ export function readSqliteStateValue(key: string): string | undefined {
   );
 }
 
-export function readSqliteSessionMetadata(tabId: string): SessionLogMetadata | null {
+export function readSqliteSessionMetadata(
+  tabId: string,
+): SessionLogMetadata | null {
   const db = openDb();
   if (!db) return null;
-  const row = db.query("SELECT cwd, custom_label, first_user_message, last_modified FROM session_tabs WHERE tab_id = ?").get(tabId);
+  const row = db
+    .query(
+      "SELECT cwd, custom_label, first_user_message, last_modified FROM session_tabs WHERE tab_id = ?",
+    )
+    .get(tabId);
   if (!row) return null;
   const cwd = rowString(row, "cwd");
   const exists = cwdExists(cwd);
   return {
-    lastModified: typeof row.last_modified === "number" ? row.last_modified : nowMs(),
+    lastModified:
+      typeof row.last_modified === "number" ? row.last_modified : nowMs(),
     ...(cwd ? { cwd, cwdExists: exists } : {}),
-    ...(rowString(row, "first_user_message") ? { firstUserMessage: rowString(row, "first_user_message") } : {}),
-    ...(rowString(row, "custom_label") ? { customLabel: rowString(row, "custom_label") } : {}),
+    ...(rowString(row, "first_user_message")
+      ? { firstUserMessage: rowString(row, "first_user_message") }
+      : {}),
+    ...(rowString(row, "custom_label")
+      ? { customLabel: rowString(row, "custom_label") }
+      : {}),
   };
 }
 
-export function listSqliteDiscoveredTabs(): Array<{ tabId: string } & SessionLogMetadata> | null {
+export function listSqliteDiscoveredTabs(): Array<
+  { tabId: string } & SessionLogMetadata
+> | null {
   const db = openDb();
   if (!db) return null;
   return db
-    .query("SELECT tab_id, cwd, custom_label, first_user_message, last_modified FROM session_tabs ORDER BY last_modified DESC")
+    .query(
+      "SELECT tab_id, cwd, custom_label, first_user_message, last_modified FROM session_tabs ORDER BY last_modified DESC",
+    )
     .all()
     .flatMap((row) => {
       const tabId = rowString(row, "tab_id");
       if (!tabId) return [];
       const cwd = rowString(row, "cwd");
       const exists = cwdExists(cwd);
-      return [{
-        tabId,
-        lastModified: typeof row.last_modified === "number" ? row.last_modified : nowMs(),
-        ...(cwd ? { cwd, cwdExists: exists } : {}),
-        ...(rowString(row, "first_user_message") ? { firstUserMessage: rowString(row, "first_user_message") } : {}),
-        ...(rowString(row, "custom_label") ? { customLabel: rowString(row, "custom_label") } : {}),
-      }];
+      return [
+        {
+          tabId,
+          lastModified:
+            typeof row.last_modified === "number" ? row.last_modified : nowMs(),
+          ...(cwd ? { cwd, cwdExists: exists } : {}),
+          ...(rowString(row, "first_user_message")
+            ? { firstUserMessage: rowString(row, "first_user_message") }
+            : {}),
+          ...(rowString(row, "custom_label")
+            ? { customLabel: rowString(row, "custom_label") }
+            : {}),
+        },
+      ];
     });
 }
 
-function localRowToMessage(row: Record<string, unknown>): RestoredChatMessage | undefined {
+function localRowToMessage(
+  row: Record<string, unknown>,
+): RestoredChatMessage | undefined {
   const raw = rowString(row, "payload_json");
   if (!raw) return undefined;
   try {
@@ -639,7 +771,9 @@ function localRowToMessage(row: Record<string, unknown>): RestoredChatMessage | 
   }
 }
 
-function piEntryToMessage(entry: SessionEntry): RestoredChatMessage | undefined {
+function piEntryToMessage(
+  entry: SessionEntry,
+): RestoredChatMessage | undefined {
   if (entry.type === "compaction") {
     return {
       id: `compaction:${entry.id}`,
@@ -650,7 +784,8 @@ function piEntryToMessage(entry: SessionEntry): RestoredChatMessage | undefined 
     };
   }
   if (entry.type !== "message") return undefined;
-  const role = entry.message.role === "assistant" ? "agent" : entry.message.role;
+  const role =
+    entry.message.role === "assistant" ? "agent" : entry.message.role;
   if (!isChatRole(role)) return undefined;
   const text = trimText(textFromContent(entry.message.content));
   const thinking = trimText(thinkingFromContent(entry.message.content));
@@ -664,32 +799,70 @@ function piEntryToMessage(entry: SessionEntry): RestoredChatMessage | undefined 
   };
 }
 
-export function readSqliteSessionTranscript(tabId: string, expectedCwd?: string): RestoredChatMessage[] | null {
+export function readSqliteSessionTranscript(
+  tabId: string,
+  expectedCwd?: string,
+): RestoredChatMessage[] | null {
   const transcript = readSqliteSessionStreams(tabId, expectedCwd);
   if (!transcript) return null;
-  return [...transcript.piMessages, ...transcript.localMessages]
-    .sort((a, b) => (a.createdAt ?? 0) - (b.createdAt ?? 0));
+  return mergeOrderedMessages(transcript.piMessages, transcript.localMessages);
 }
 
-export function readSqliteSessionStreams(tabId: string, expectedCwd?: string): {
+function mergeOrderedMessages(
+  left: RestoredChatMessage[],
+  right: RestoredChatMessage[],
+): RestoredChatMessage[] {
+  const merged: RestoredChatMessage[] = [];
+  let leftIndex = 0;
+  let rightIndex = 0;
+  while (leftIndex < left.length && rightIndex < right.length) {
+    const leftTime = left[leftIndex]?.createdAt ?? 0;
+    const rightTime = right[rightIndex]?.createdAt ?? 0;
+    if (leftTime <= rightTime) {
+      merged.push(left[leftIndex]!);
+      leftIndex += 1;
+    } else {
+      merged.push(right[rightIndex]!);
+      rightIndex += 1;
+    }
+  }
+  if (leftIndex < left.length) merged.push(...left.slice(leftIndex));
+  if (rightIndex < right.length) merged.push(...right.slice(rightIndex));
+  return merged;
+}
+
+export function readSqliteSessionStreams(
+  tabId: string,
+  expectedCwd?: string,
+): {
   piMessages: RestoredChatMessage[];
   localMessages: RestoredChatMessage[];
 } | null {
   const db = openDb();
   if (!db) return null;
-  const session = expectedCwd !== undefined
-    ? db
-        .query("SELECT session_id, current_leaf_entry_id, cwd FROM sessions WHERE tab_id = ? ORDER BY updated_at DESC")
-        .all(tabId)
-        .find((row) => sessionMatchesCwd(rowString(row, "cwd"), expectedCwd)) ?? null
-    : db
-        .query("SELECT session_id, current_leaf_entry_id FROM sessions WHERE tab_id = ? ORDER BY updated_at DESC LIMIT 1")
-        .get(tabId);
+  const session =
+    expectedCwd !== undefined
+      ? (db
+          .query(
+            "SELECT session_id, current_leaf_entry_id, cwd FROM sessions WHERE tab_id = ? ORDER BY updated_at DESC",
+          )
+          .all(tabId)
+          .find((row) =>
+            sessionMatchesCwd(rowString(row, "cwd"), expectedCwd),
+          ) ?? null)
+      : db
+          .query(
+            "SELECT session_id, current_leaf_entry_id FROM sessions WHERE tab_id = ? ORDER BY updated_at DESC LIMIT 1",
+          )
+          .get(tabId);
   const sessionId = rowString(session, "session_id");
   const currentLeafEntryId = rowString(session, "current_leaf_entry_id");
   const piMessages = sessionId
     ? activeSessionEntries(
-        db.query("SELECT payload_json FROM session_entries WHERE session_id = ? ORDER BY ordinal ASC")
+        db
+          .query(
+            "SELECT payload_json FROM session_entries WHERE session_id = ? ORDER BY ordinal ASC",
+          )
           .all(sessionId)
           .flatMap((row) => {
             const raw = rowString(row, "payload_json");
@@ -706,29 +879,44 @@ export function readSqliteSessionStreams(tabId: string, expectedCwd?: string): {
         return message ? [message] : [];
       })
     : [];
-  const localRows = expectedCwd !== undefined
-    ? db
-        .query("SELECT payload_json, cwd FROM session_local_messages WHERE tab_id = ? ORDER BY created_at ASC")
-        .all(tabId)
-        .filter((row) => sessionMatchesCwd(rowString(row, "cwd"), expectedCwd))
-    : db
-        .query("SELECT payload_json FROM session_local_messages WHERE tab_id = ? ORDER BY created_at ASC")
-        .all(tabId);
-  const localMessages = localRows
-    .flatMap((row) => {
-      const message = localRowToMessage(row);
-      return message ? [message] : [];
-    });
+  const localRows =
+    expectedCwd !== undefined
+      ? db
+          .query(
+            "SELECT payload_json, cwd FROM session_local_messages WHERE tab_id = ? ORDER BY created_at ASC",
+          )
+          .all(tabId)
+          .filter((row) =>
+            sessionMatchesCwd(rowString(row, "cwd"), expectedCwd),
+          )
+      : db
+          .query(
+            "SELECT payload_json FROM session_local_messages WHERE tab_id = ? ORDER BY created_at ASC",
+          )
+          .all(tabId);
+  const localMessages = localRows.flatMap((row) => {
+    const message = localRowToMessage(row);
+    return message ? [message] : [];
+  });
   return { piMessages, localMessages };
 }
 
 export function readSqliteSessionLabel(tabId: string): string | undefined {
   const db = openDb();
   if (!db) return undefined;
-  return rowString(db.query("SELECT custom_label FROM session_tabs WHERE tab_id = ?").get(tabId), "custom_label");
+  return rowString(
+    db
+      .query("SELECT custom_label FROM session_tabs WHERE tab_id = ?")
+      .get(tabId),
+    "custom_label",
+  );
 }
 
-export function writeSqliteSessionLabel(tabId: string, label: string, cwd?: string): boolean {
+export function writeSqliteSessionLabel(
+  tabId: string,
+  label: string,
+  cwd?: string,
+): boolean {
   const db = openDb();
   if (!db) return false;
   const trimmed = label.trim().slice(0, MAX_CUSTOM_LABEL_CHARS);
@@ -744,15 +932,23 @@ export function writeSqliteSessionLabel(tabId: string, label: string, cwd?: stri
   return true;
 }
 
-function persistLocalChatMessage(db: Database, tabId: string, message: RestoredChatMessage): boolean {
+function persistLocalChatMessage(
+  db: Database,
+  tabId: string,
+  message: RestoredChatMessage,
+): boolean {
   if (!isChatRole(message.role)) return true;
   const text = typeof message.text === "string" ? trimText(message.text) : "";
-  const thinking = typeof message.thinking === "string" ? trimText(message.thinking) : "";
+  const thinking =
+    typeof message.thinking === "string" ? trimText(message.thinking) : "";
   const attachments = parseChatAttachments(message.attachments);
   const a2ui = hasA2ui(message.a2ui) ? message.a2ui : undefined;
   if (!text && !thinking && !a2ui && attachments.length === 0) return true;
   const id = message.id || crypto.randomUUID();
-  const createdAt = typeof message.createdAt === "number" && Number.isFinite(message.createdAt) ? message.createdAt : nowMs();
+  const createdAt =
+    typeof message.createdAt === "number" && Number.isFinite(message.createdAt)
+      ? message.createdAt
+      : nowMs();
   const payload = {
     ...message,
     id,
@@ -766,26 +962,42 @@ function persistLocalChatMessage(db: Database, tabId: string, message: RestoredC
     `INSERT OR REPLACE INTO session_local_messages(
        tab_id, message_id, role, text, thinking, created_at, cwd, payload_json
      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-  ).run(tabId, id, message.role, text, thinking, createdAt, message.cwd ?? null, JSON.stringify(payload));
-  db.query("UPDATE session_tabs SET last_modified = MAX(last_modified, ?), cwd = COALESCE(cwd, ?) WHERE tab_id = ?").run(
+  ).run(
+    tabId,
+    id,
+    message.role,
+    text,
+    thinking,
     createdAt,
     message.cwd ?? null,
-    tabId,
+    JSON.stringify(payload),
   );
+  db.query(
+    "UPDATE session_tabs SET last_modified = MAX(last_modified, ?), cwd = COALESCE(cwd, ?) WHERE tab_id = ?",
+  ).run(createdAt, message.cwd ?? null, tabId);
   return true;
 }
 
 function rebuildLocalSearchIndex(db: Database, tabId: string): void {
-  db.query("DELETE FROM session_search_fts WHERE tab_id = ? AND source = 'local'").run(tabId);
+  db.query(
+    "DELETE FROM session_search_fts WHERE tab_id = ? AND source = 'local'",
+  ).run(tabId);
   const rows = db
-    .query("SELECT role, text, thinking, created_at FROM session_local_messages WHERE tab_id = ? ORDER BY created_at ASC")
+    .query(
+      "SELECT role, text, thinking, created_at FROM session_local_messages WHERE tab_id = ? ORDER BY created_at ASC",
+    )
     .all(tabId);
   for (const row of rows) {
-    const searchable = [rowString(row, "text") ?? "", rowString(row, "thinking") ?? ""]
+    const searchable = [
+      rowString(row, "text") ?? "",
+      rowString(row, "thinking") ?? "",
+    ]
       .filter(Boolean)
       .join("\n");
     if (!searchable) continue;
-    db.query("INSERT INTO session_search_fts(tab_id, role, text, timestamp, source) VALUES (?, ?, ?, ?, 'local')").run(
+    db.query(
+      "INSERT INTO session_search_fts(tab_id, role, text, timestamp, source) VALUES (?, ?, ?, ?, 'local')",
+    ).run(
       tabId,
       rowString(row, "role") ?? "",
       searchable,
@@ -794,7 +1006,10 @@ function rebuildLocalSearchIndex(db: Database, tabId: string): void {
   }
 }
 
-export function appendSqliteLocalChatMessage(tabId: string, message: RestoredChatMessage): boolean {
+export function appendSqliteLocalChatMessage(
+  tabId: string,
+  message: RestoredChatMessage,
+): boolean {
   const db = openDb();
   if (!db) return false;
   if (!persistLocalChatMessage(db, tabId, message)) return false;
@@ -809,32 +1024,50 @@ export function appendSqliteLocalChatMessage(tabId: string, message: RestoredCha
   for (const row of overflow) {
     const messageId = rowString(row, "message_id");
     if (messageId) {
-      db.query("DELETE FROM session_local_messages WHERE tab_id = ? AND message_id = ?").run(tabId, messageId);
+      db.query(
+        "DELETE FROM session_local_messages WHERE tab_id = ? AND message_id = ?",
+      ).run(tabId, messageId);
     }
   }
   rebuildLocalSearchIndex(db, tabId);
   return true;
 }
 
-export function truncateSqliteLocalChatAfter(tabId: string, cutoffMs: number): boolean {
+export function truncateSqliteLocalChatAfter(
+  tabId: string,
+  cutoffMs: number,
+): boolean {
   const db = openDb();
   if (!db) return false;
-  db.query("DELETE FROM session_local_messages WHERE tab_id = ? AND created_at > ?").run(tabId, cutoffMs);
+  db.query(
+    "DELETE FROM session_local_messages WHERE tab_id = ? AND created_at > ?",
+  ).run(tabId, cutoffMs);
   rebuildLocalSearchIndex(db, tabId);
   return true;
 }
 
-export function forkSqliteSession(sourceTabId: string, destTabId: string, leafId: string, label: string, cwd?: string): boolean {
+export function forkSqliteSession(
+  sourceTabId: string,
+  destTabId: string,
+  leafId: string,
+  label: string,
+  cwd?: string,
+): boolean {
   const db = openDb();
   if (!db) return false;
-  const source = db
-    .query("SELECT session_id, payload_json, cwd FROM sessions WHERE tab_id = ? ORDER BY updated_at DESC")
-    .all(sourceTabId)
-    .find((row) => sessionMatchesCwd(rowString(row, "cwd"), cwd)) ?? null;
+  const source =
+    db
+      .query(
+        "SELECT session_id, payload_json, cwd FROM sessions WHERE tab_id = ? ORDER BY updated_at DESC",
+      )
+      .all(sourceTabId)
+      .find((row) => sessionMatchesCwd(rowString(row, "cwd"), cwd)) ?? null;
   const sourceSessionId = rowString(source, "session_id");
   if (!sourceSessionId) return false;
   const rows = db
-    .query("SELECT payload_json FROM session_entries WHERE session_id = ? ORDER BY ordinal ASC")
+    .query(
+      "SELECT payload_json FROM session_entries WHERE session_id = ? ORDER BY ordinal ASC",
+    )
     .all(sourceSessionId)
     .flatMap((row) => {
       const raw = rowString(row, "payload_json");
@@ -869,7 +1102,15 @@ export function forkSqliteSession(sourceTabId: string, destTabId: string, leafId
   db.query(
     `INSERT INTO sessions(session_id, tab_id, cwd, current_leaf_entry_id, payload_json, created_at, updated_at)
      VALUES (?, ?, ?, ?, ?, ?, ?)`,
-  ).run(sessionId, destTabId, cwd ?? null, leafId, JSON.stringify({ header }), nowMs(), nowMs());
+  ).run(
+    sessionId,
+    destTabId,
+    cwd ?? null,
+    leafId,
+    JSON.stringify({ header }),
+    nowMs(),
+    nowMs(),
+  );
   path.forEach((entry, index) => {
     persistEntryAtOrdinal(db, destTabId, sessionId, entry, index, {
       touch: false,

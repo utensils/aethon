@@ -57,6 +57,12 @@ describe("StatusBar agent state", () => {
 
     expect(screen.getByText("error")).toBeTruthy();
     expect(screen.queryByText("idle")).toBeNull();
+    expect(
+      screen
+        .getByText("error")
+        .closest(".a2ui-status-center")
+        ?.querySelector(".a2ui-status-center-detail"),
+    ).toBeNull();
   });
 
   it("shows the full live activity label where connection used to render", () => {

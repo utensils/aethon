@@ -229,6 +229,7 @@ function idleStatusDetail(
   }
   if (!normalizedStatus && normalizedConnection === "connected")
     return undefined;
+  if (normalizedConnection === "connected") return undefined;
   return connection || undefined;
 }
 
