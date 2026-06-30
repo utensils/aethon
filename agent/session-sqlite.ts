@@ -819,10 +819,10 @@ function mergeOrderedMessages(
     const leftTime = left[leftIndex]?.createdAt ?? 0;
     const rightTime = right[rightIndex]?.createdAt ?? 0;
     if (leftTime <= rightTime) {
-      merged.push(left[leftIndex]!);
+      merged.push(left[leftIndex]);
       leftIndex += 1;
     } else {
-      merged.push(right[rightIndex]!);
+      merged.push(right[rightIndex]);
       rightIndex += 1;
     }
   }
