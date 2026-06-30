@@ -54,6 +54,7 @@ export function TurnBranchActions({
   return (
     <div
       className="ae-turn-branch-actions"
+      aria-label="Conversation turn actions"
       onMouseLeave={() => setConfirmingRollback(false)}
     >
       {confirmingRollback && !running && rollbackTarget?.entryId ? (

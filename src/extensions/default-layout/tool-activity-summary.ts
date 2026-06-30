@@ -69,7 +69,7 @@ export function activityLabel({
   progressCount: number;
 }): string {
   if (summary.running > 0) {
-    const runningNames = summary.names.slice(0, summary.running);
+    const runningNames = summary.runningNames;
     if (summary.running === 1 && runningNames[0]) {
       return `Running ${runningNames[0]}`;
     }
@@ -201,7 +201,9 @@ export function liveActivitySummary(
       detail: "Reviewing repository changes",
     };
   }
-  if (/\b(vitest|test|check|lint|tsc|eslint|cargo test|bun test)\b/.test(haystack)) {
+  if (
+    /\b(vitest|test|check|lint|tsc|eslint|cargo test|bun test)\b/.test(haystack)
+  ) {
     return {
       label: "Running checks",
       detail: "Waiting for results",

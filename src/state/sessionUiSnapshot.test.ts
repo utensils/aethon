@@ -734,6 +734,40 @@ describe("sessionUiSnapshot", () => {
     expect(shouldPreserveExistingHotSnapshot(existing, closed)).toBe(false);
   });
 
+  it("allows closed editor tabs to disappear from the hot snapshot", () => {
+    const tab = {
+      ...makeEmptyTab("editor-a", "Editor", null, "editor"),
+      editor: { filePath: "/repo/src/App.tsx" },
+    };
+    const existing = JSON.stringify({
+      tabs: [tab],
+      activeTabId: "editor-a",
+      savedAt: 1,
+    });
+
+    expect(shouldPreserveExistingHotSnapshot(existing, null)).toBe(false);
+  });
+
+  it("allows closed shell tabs to disappear from the hot snapshot", () => {
+    const tab = {
+      ...makeEmptyTab("shell-a", "Shell", null, "shell"),
+      shell: {
+        cwd: "/repo",
+        command: "zsh",
+        args: ["-l"],
+        shareMode: "private" as const,
+        shellState: "running" as const,
+      },
+    };
+    const existing = JSON.stringify({
+      tabs: [tab],
+      activeTabId: "shell-a",
+      savedAt: 1,
+    });
+
+    expect(shouldPreserveExistingHotSnapshot(existing, null)).toBe(false);
+  });
+
   it("preserves an existing bucket-only hot snapshot when a stale flush clears sessions", () => {
     const tab = {
       ...makeEmptyTab("bucket-tab", "Bucket", "project-1"),

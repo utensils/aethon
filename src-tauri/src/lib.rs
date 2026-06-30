@@ -202,6 +202,7 @@ pub fn run() {
             commands::config::aethon_home_dir,
             commands::session::search_sessions,
             commands::session::delete_session,
+            commands::session::fork_session,
             commands::session::export_chat_markdown,
             commands::scheduler::scheduled_tasks_list,
             commands::scheduler::scheduled_tasks_reconcile_live_tabs,

@@ -197,10 +197,9 @@ export function TurnActivity({
       .map((message) => message.id),
   );
   // The aggregated "Edited N files" card is the durable artifact of a turn,
-  // so it stays visible regardless of the tool-calls visibility toggle or
-  // whether the activity body is expanded. When tool cards render in full
-  // (showOriginalToolCards) each edit shows its own change, so skip it then
-  // to avoid duplication.
+  // but it belongs to the disclosure body so the summary chevron controls the
+  // whole section. When tool cards render in full (showOriginalToolCards), each
+  // edit shows its own change, so skip it then to avoid duplication.
   const pinnedFileChangeEntries = showOriginalToolCards
     ? []
     : collectFileChangeEntries(allToolMessages.filter(hasFileChange));
@@ -370,6 +369,13 @@ export function TurnActivity({
               onEvent={onEvent}
             />
           ))}
+          {pinnedFileChangeEntries.length > 0 && (
+            <ToolFileChangesCard
+              entries={pinnedFileChangeEntries}
+              summary={summary}
+              onEvent={onEvent}
+            />
+          )}
         </div>
       )}
       {!detailsOpen && runningTools.length > 0 && (
@@ -382,13 +388,6 @@ export function TurnActivity({
             />
           ))}
         </div>
-      )}
-      {pinnedFileChangeEntries.length > 0 && (
-        <ToolFileChangesCard
-          entries={pinnedFileChangeEntries}
-          summary={summary}
-          onEvent={onEvent}
-        />
       )}
     </div>
   );

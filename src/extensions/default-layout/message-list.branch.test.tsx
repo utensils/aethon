@@ -70,13 +70,13 @@ describe("conversation turn rollback/fork affordance", () => {
     ).toHaveLength(1);
     expect(screen.getByText("Rollback")).toBeTruthy();
     expect(screen.getByText("Fork")).toBeTruthy();
+    const finalAnswer = screen.getByText("final answer");
     const rollback = screen.getByRole("button", {
       name: "Rollback this turn",
     });
-    const finalAnswer = screen.getByText("final answer");
     const fork = screen.getByRole("button", { name: "Fork this turn" });
     expect(
-      rollback.compareDocumentPosition(finalAnswer) &
+      finalAnswer.compareDocumentPosition(rollback) &
         Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
     expect(
@@ -86,6 +86,9 @@ describe("conversation turn rollback/fork affordance", () => {
     expect(
       fork.closest(".a2ui-chat-message"),
     ).toBeNull();
+    expect(
+      rollback.closest(".ae-turn-branch-actions"),
+    ).toBe(fork.closest(".ae-turn-branch-actions"));
   });
 
   it("targets the latest visible branchable message in the turn", () => {

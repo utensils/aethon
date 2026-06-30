@@ -1,15 +1,23 @@
-//! SQLite-backed session search / delete / chat-Markdown export.
+//! SQLite-backed session search / delete / fork / chat-Markdown export.
 //!
 //! Pi may still write sidecar transcripts to its own default session
 //! directory, but Aethon's application state reads session data from SQLite.
 //! Snippet building lives here so UTF-16 / multibyte indexing pitfalls stay
 //! Rust-side.
 
+use std::collections::HashMap;
 use std::path::PathBuf;
+use std::time::{SystemTime, UNIX_EPOCH};
 
+use rusqlite::params;
+use serde_json::json;
 use tauri::{AppHandle, Manager};
 
 use crate::helpers::sanitize_filename_segment;
+
+const SESSION_PAYLOAD_VERSION: i64 = 3;
+const MAX_FORK_LABEL_CHARS: usize = 120;
+const MAX_SESSION_LABEL_BASE_CHARS: usize = 120;
 
 /// Cross-session search over Aethon's SQLite session tables. Capped at `limit`
 /// matches.
@@ -115,6 +123,151 @@ pub fn delete_session(tab_id: String, app: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+#[derive(serde::Serialize)]
+pub struct ForkSessionResult {
+    #[serde(rename = "tabId")]
+    tab_id: String,
+    #[serde(rename = "newTabId")]
+    new_tab_id: String,
+    label: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    cwd: Option<String>,
+    messages: Vec<ForkSessionMessage>,
+}
+
+#[derive(serde::Serialize)]
+pub struct ForkSessionMessage {
+    id: String,
+    #[serde(rename = "entryId")]
+    entry_id: String,
+    role: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    text: Option<String>,
+    #[serde(rename = "createdAt", skip_serializing_if = "Option::is_none")]
+    created_at: Option<i64>,
+}
+
+#[derive(Clone)]
+struct SessionEntryRow {
+    entry_id: String,
+    parent_entry_id: Option<String>,
+    entry_type: String,
+    role: Option<String>,
+    text: Option<String>,
+    timestamp: Option<i64>,
+    payload_json: String,
+}
+
+#[tauri::command]
+pub fn fork_session(
+    tab_id: String,
+    entry_id: String,
+    cwd: Option<String>,
+    app: AppHandle,
+) -> Result<ForkSessionResult, String> {
+    validate_session_tab_id(&tab_id)?;
+    validate_session_entry_id(&entry_id)?;
+    let cwd = normalize_optional_cwd(cwd);
+    let mut conn = crate::storage::connect(&app)?;
+    let (source_session_id, source_label) =
+        select_fork_source_session(&conn, &tab_id, cwd.as_deref())?
+            .ok_or_else(|| "fork_session: source session not found".to_string())?;
+    let entries = session_entry_rows(&conn, &source_session_id)?;
+    let path = entry_path_to_leaf(&entries, &entry_id)
+        .ok_or_else(|| format!("fork_session: unknown entry {entry_id}"))?;
+    let new_tab_id = uuid::Uuid::new_v4().to_string();
+    let new_session_id = uuid::Uuid::new_v4().to_string();
+    let label = fork_label(source_label.as_deref());
+    let now = now_ms();
+    let timestamp = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
+    let header = json!({
+        "header": {
+            "type": "session",
+            "version": SESSION_PAYLOAD_VERSION,
+            "id": new_session_id,
+            "timestamp": timestamp,
+            "cwd": cwd.as_deref().unwrap_or(""),
+            "parentSession": source_session_id,
+        }
+    });
+    let first_user_message = path
+        .iter()
+        .find(|row| row.role.as_deref() == Some("user"))
+        .and_then(|row| row.text.as_deref())
+        .filter(|text| !text.is_empty())
+        .map(short_session_label);
+
+    let tx = conn
+        .transaction()
+        .map_err(|e| format!("sqlite begin fork: {e}"))?;
+    tx.execute(
+        r#"
+        INSERT OR REPLACE INTO session_tabs(
+          tab_id, cwd, custom_label, first_user_message, metadata_json, last_modified
+        ) VALUES (?1, ?2, ?3, ?4, '{}', ?5)
+        "#,
+        params![new_tab_id, cwd, label, first_user_message, now],
+    )
+    .map_err(|e| format!("sqlite fork insert tab: {e}"))?;
+    tx.execute(
+        r#"
+        INSERT INTO sessions(
+          session_id, tab_id, cwd, current_leaf_entry_id, payload_json, created_at, updated_at
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6)
+        "#,
+        params![
+            new_session_id,
+            new_tab_id,
+            cwd,
+            entry_id,
+            header.to_string(),
+            now
+        ],
+    )
+    .map_err(|e| format!("sqlite fork insert session: {e}"))?;
+    for (ordinal, row) in path.iter().enumerate() {
+        tx.execute(
+            r#"
+            INSERT OR REPLACE INTO session_entries(
+              session_id, entry_id, parent_entry_id, entry_type, role, text, timestamp, payload_json, ordinal
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+            "#,
+            params![
+                new_session_id,
+                row.entry_id,
+                row.parent_entry_id,
+                row.entry_type,
+                row.role,
+                row.text,
+                row.timestamp,
+                row.payload_json,
+                ordinal as i64,
+            ],
+        )
+        .map_err(|e| format!("sqlite fork insert entry: {e}"))?;
+        if let Some(text) = row.text.as_deref().filter(|text| !text.is_empty()) {
+            tx.execute(
+                "INSERT INTO session_search_fts(tab_id, role, text, timestamp, source) VALUES (?1, ?2, ?3, ?4, 'pi')",
+                params![new_tab_id, row.role.as_deref().unwrap_or(""), text, row.timestamp.unwrap_or(now)],
+            )
+            .map_err(|e| format!("sqlite fork index entry: {e}"))?;
+        }
+    }
+    tx.commit()
+        .map_err(|e| format!("sqlite commit fork: {e}"))?;
+    let messages = path
+        .iter()
+        .filter_map(fork_seed_message)
+        .collect::<Vec<_>>();
+    Ok(ForkSessionResult {
+        tab_id,
+        new_tab_id,
+        label,
+        cwd,
+        messages,
+    })
+}
+
 fn validate_session_tab_id(tab_id: &str) -> Result<(), String> {
     if tab_id.is_empty() || tab_id.len() > 128 {
         return Err("tab_id must be 1..=128 chars".to_string());
@@ -126,6 +279,182 @@ fn validate_session_tab_id(tab_id: &str) -> Result<(), String> {
         return Err("tab_id must match [A-Za-z0-9_-]".to_string());
     }
     Ok(())
+}
+
+fn validate_session_entry_id(entry_id: &str) -> Result<(), String> {
+    if entry_id.is_empty() || entry_id.len() > 128 {
+        return Err("entry_id must be 1..=128 chars".to_string());
+    }
+    if !entry_id
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+    {
+        return Err("entry_id must match [A-Za-z0-9_-]".to_string());
+    }
+    Ok(())
+}
+
+fn normalize_optional_cwd(cwd: Option<String>) -> Option<String> {
+    cwd.and_then(|value| {
+        let trimmed = value.trim().trim_end_matches(['/', '\\']).to_string();
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed)
+        }
+    })
+}
+
+fn cwd_matches(session_cwd: Option<&str>, expected_cwd: Option<&str>) -> bool {
+    let Some(expected) = normalize_optional_cwd(expected_cwd.map(ToOwned::to_owned)) else {
+        return true;
+    };
+    normalize_optional_cwd(session_cwd.map(ToOwned::to_owned)).as_deref() == Some(expected.as_str())
+}
+
+fn select_fork_source_session(
+    conn: &rusqlite::Connection,
+    tab_id: &str,
+    cwd: Option<&str>,
+) -> Result<Option<(String, Option<String>)>, String> {
+    let mut stmt = conn
+        .prepare(
+            r#"
+            SELECT s.session_id, s.cwd, st.custom_label
+            FROM sessions s
+            LEFT JOIN session_tabs st ON st.tab_id = s.tab_id
+            WHERE s.tab_id = ?1
+            ORDER BY s.updated_at DESC
+            "#,
+        )
+        .map_err(|e| format!("sqlite prepare fork source: {e}"))?;
+    let rows = stmt
+        .query_map(params![tab_id], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, Option<String>>(1)?,
+                row.get::<_, Option<String>>(2)?,
+            ))
+        })
+        .map_err(|e| format!("sqlite query fork source: {e}"))?;
+    for row in rows {
+        let (session_id, session_cwd, label) =
+            row.map_err(|e| format!("sqlite fork source row: {e}"))?;
+        if cwd_matches(session_cwd.as_deref(), cwd) {
+            return Ok(Some((session_id, label)));
+        }
+    }
+    Ok(None)
+}
+
+fn session_entry_rows(
+    conn: &rusqlite::Connection,
+    session_id: &str,
+) -> Result<Vec<SessionEntryRow>, String> {
+    let mut stmt = conn
+        .prepare(
+            r#"
+            SELECT entry_id, parent_entry_id, entry_type, role, text, timestamp, payload_json
+            FROM session_entries
+            WHERE session_id = ?1
+            ORDER BY ordinal ASC
+            "#,
+        )
+        .map_err(|e| format!("sqlite prepare fork entries: {e}"))?;
+    let rows = stmt
+        .query_map(params![session_id], |row| {
+            Ok(SessionEntryRow {
+                entry_id: row.get(0)?,
+                parent_entry_id: row.get(1)?,
+                entry_type: row.get(2)?,
+                role: row.get(3)?,
+                text: row.get(4)?,
+                timestamp: row.get(5)?,
+                payload_json: row.get(6)?,
+            })
+        })
+        .map_err(|e| format!("sqlite query fork entries: {e}"))?;
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(|e| format!("sqlite fork entry row: {e}"))
+}
+
+fn entry_path_to_leaf(rows: &[SessionEntryRow], leaf_id: &str) -> Option<Vec<SessionEntryRow>> {
+    let by_id: HashMap<&str, &SessionEntryRow> = rows
+        .iter()
+        .map(|row| (row.entry_id.as_str(), row))
+        .collect();
+    let mut out = Vec::new();
+    let mut current = by_id.get(leaf_id).copied();
+    while let Some(row) = current {
+        out.push(row.clone());
+        current = row
+            .parent_entry_id
+            .as_deref()
+            .and_then(|parent| by_id.get(parent).copied());
+    }
+    if out.is_empty() {
+        None
+    } else {
+        out.reverse();
+        Some(out)
+    }
+}
+
+fn fork_seed_message(row: &SessionEntryRow) -> Option<ForkSessionMessage> {
+    let role = match row.role.as_deref()? {
+        "agent" | "assistant" => "agent",
+        "user" => "user",
+        "system" => "system",
+        _ => return None,
+    };
+    let text = row
+        .text
+        .as_deref()
+        .map(str::trim)
+        .filter(|text| !text.is_empty())
+        .map(ToOwned::to_owned);
+    if text.is_none() {
+        return None;
+    }
+    Some(ForkSessionMessage {
+        id: row.entry_id.clone(),
+        entry_id: row.entry_id.clone(),
+        role: role.to_string(),
+        text,
+        created_at: row.timestamp,
+    })
+}
+
+fn fork_label(src_label: Option<&str>) -> String {
+    let base = src_label
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("session");
+    format!("Fork of {base}")
+        .chars()
+        .take(MAX_FORK_LABEL_CHARS)
+        .collect()
+}
+
+fn short_session_label(text: &str) -> String {
+    let text = text.trim();
+    if text.chars().count() <= MAX_SESSION_LABEL_BASE_CHARS {
+        text.to_string()
+    } else {
+        let mut label: String = text
+            .chars()
+            .take(MAX_SESSION_LABEL_BASE_CHARS - 3)
+            .collect();
+        label.push_str("...");
+        label
+    }
+}
+
+fn now_ms() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_millis().min(i64::MAX as u128) as i64)
+        .unwrap_or(0)
 }
 
 #[cfg(test)]

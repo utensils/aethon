@@ -2577,7 +2577,7 @@ describe("ChatHistory turn activity feed (mocked Virtuoso renders rows)", () => 
     expect(container.querySelectorAll(".ae-file-activity-card").length).toBe(1);
   });
 
-  it("keeps the completed edit artifacts card pinned regardless of the activity toggle", () => {
+  it("collapses the completed edit artifacts card with the activity body", async () => {
     renderGroupedHistory({
       messages: [
         { id: "u1", role: "user", text: "change files" },
@@ -2608,14 +2608,16 @@ describe("ChatHistory turn activity feed (mocked Virtuoso renders rows)", () => 
       transcriptVisibility: { toolCalls: "hide" },
     });
 
-    // The aggregated "Edited N files" card is a durable artifact — the file
-    // is always listed regardless of the tool-calls toggle / turn collapse.
+    // The aggregated "Edited N files" card is durable, but it still belongs to
+    // the activity disclosure body so the chevron controls the whole section.
     expect(screen.getByText("App.tsx")).toBeTruthy();
 
     const summary = screen.getByRole("button", { name: /Edited 1 file/ });
     fireEvent.click(summary);
 
-    // Collapsing the turn body must NOT hide the pinned edits card.
+    await waitFor(() => expect(screen.queryByText("App.tsx")).toBeNull());
+
+    fireEvent.click(summary);
     expect(screen.getByText("App.tsx")).toBeTruthy();
   });
 

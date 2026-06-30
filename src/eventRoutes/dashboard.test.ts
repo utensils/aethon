@@ -412,6 +412,7 @@ describe("handleTaskLauncher", () => {
         data: {
           target: "host",
           prompt: "check the host",
+          model: "openai/gpt-5.5",
         },
       },
       ctx,
@@ -421,6 +422,9 @@ describe("handleTaskLauncher", () => {
     expect(mocks.newTab).toHaveBeenCalledOnce();
     const tabId = mocks.newTab.mock.calls[0]?.[0];
     expect(typeof tabId).toBe("string");
+    expect(mocks.newTab).toHaveBeenCalledWith(tabId, undefined, {
+      model: "openai/gpt-5.5",
+    });
     expect(mocks.sendChat).toHaveBeenCalledWith("check the host", {
       tabId,
       attachments: undefined,

@@ -48,6 +48,17 @@ describe("StatusBar agent state", () => {
     );
   });
 
+  it("does not hide a non-idle status just because the bridge is connected", () => {
+    renderStatusBar({
+      status: "error",
+      connection: "connected",
+      model: "anthropic/claude",
+    });
+
+    expect(screen.getByText("error")).toBeTruthy();
+    expect(screen.queryByText("idle")).toBeNull();
+  });
+
   it("shows the full live activity label where connection used to render", () => {
     vi.useFakeTimers();
     vi.setSystemTime(10_000);
@@ -90,6 +101,24 @@ describe("StatusBar agent state", () => {
     expect(screen.getByText("Thinking through next step")).toBeTruthy();
     expect(screen.getByText("Waiting for the next update")).toBeTruthy();
     expect(screen.getByText("connected")).toBeTruthy();
+  });
+
+  it("matches chat fallback copy while agent prose is streaming", () => {
+    renderStatusBar({
+      status: "thinking…",
+      connection: "connected",
+      model: "anthropic/claude",
+      activeTabId: "tab-1",
+      agentRunningTabs: { "tab-1": true },
+      messages: [
+        { id: "1", role: "user", text: "start" },
+        { id: "2", role: "agent", text: "partial answer" },
+      ],
+    });
+
+    expect(screen.getByText("Writing response")).toBeTruthy();
+    expect(screen.getByText("Streaming the answer")).toBeTruthy();
+    expect(screen.queryByText("Thinking through next step")).toBeNull();
   });
 });
 

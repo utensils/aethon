@@ -668,8 +668,7 @@ export function readSqliteSessionTranscript(tabId: string, expectedCwd?: string)
   const transcript = readSqliteSessionStreams(tabId, expectedCwd);
   if (!transcript) return null;
   return [...transcript.piMessages, ...transcript.localMessages]
-    .sort((a, b) => (a.createdAt ?? 0) - (b.createdAt ?? 0))
-    .slice(-200);
+    .sort((a, b) => (a.createdAt ?? 0) - (b.createdAt ?? 0));
 }
 
 export function readSqliteSessionStreams(tabId: string, expectedCwd?: string): {

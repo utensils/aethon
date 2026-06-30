@@ -278,7 +278,13 @@ export const handleTaskLauncher: EventRouteHandler = (
     const hasPayload = prompt.length > 0 || (attachments?.length ?? 0) > 0;
     if (sel?.target === "host" && hasPayload) {
       const tabId = crypto.randomUUID();
-      ctx.newTab(tabId);
+      ctx.newTab(
+        tabId,
+        undefined,
+        typeof sel.model === "string" && sel.model.length > 0
+          ? { model: sel.model }
+          : undefined,
+      );
       void ctx.sendChat(prompt, {
         tabId,
         attachments,

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { tabIsRunning } from "./message-row-state";
+import { fallbackAgentActivityForTab, tabIsRunning } from "./message-row-state";
 
 describe("tabIsRunning", () => {
   it("uses global waiting only for untabbed callers", () => {
@@ -56,5 +56,50 @@ describe("tabIsRunning", () => {
         "tab-1",
       ),
     ).toBe(true);
+  });
+});
+
+describe("fallbackAgentActivityForTab", () => {
+  it("uses writing copy while the latest visible message is streamed agent prose", () => {
+    expect(
+      fallbackAgentActivityForTab(
+        { waiting: true, activeTabId: "tab-1" },
+        "tab-1",
+        [
+          { role: "user", text: "start" },
+          { role: "agent", text: "partial answer" },
+        ],
+      ),
+    ).toEqual({
+      label: "Writing response",
+      detail: "Streaming the answer",
+    });
+  });
+
+  it("uses generic working copy before visible agent prose exists", () => {
+    expect(
+      fallbackAgentActivityForTab(
+        { waiting: true, activeTabId: "tab-1" },
+        "tab-1",
+        [{ role: "user", text: "start" }],
+      ),
+    ).toEqual({
+      label: "Thinking through next step",
+      detail: "Waiting for the next update",
+    });
+  });
+
+  it("can provide generic status for footer-only empty transcripts", () => {
+    expect(
+      fallbackAgentActivityForTab(
+        { waiting: true, activeTabId: "tab-1" },
+        "tab-1",
+        [],
+        { allowEmpty: true },
+      ),
+    ).toEqual({
+      label: "Thinking through next step",
+      detail: "Waiting for the next update",
+    });
   });
 });

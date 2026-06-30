@@ -167,23 +167,15 @@ export function ConversationTurnRow({
         />
       ))}
       {turn.userMessage && (
-        <>
-          <ChatMessageRow
-            message={turn.userMessage}
-            state={state}
-            tabId={tabId}
-            className={rowClassName}
-            onEvent={onEvent}
-            deliveryText={deliveryText}
-            thinkingVisibility={thinkingVisibility}
-          />
-          <TurnBranchActions
-            rollbackTarget={branchTargets.rollbackTarget}
-            state={state}
-            tabId={tabId}
-            onEvent={onEvent}
-          />
-        </>
+        <ChatMessageRow
+          message={turn.userMessage}
+          state={state}
+          tabId={tabId}
+          className={rowClassName}
+          onEvent={onEvent}
+          deliveryText={deliveryText}
+          thinkingVisibility={thinkingVisibility}
+        />
       )}
       {visibleAgentMessages.map((message, index) => (
         <ChatMessageRow
@@ -226,6 +218,7 @@ export function ConversationTurnRow({
         />
       ))}
       <TurnBranchActions
+        rollbackTarget={branchTargets.rollbackTarget}
         forkTarget={branchTargets.forkTarget}
         state={state}
         tabId={tabId}

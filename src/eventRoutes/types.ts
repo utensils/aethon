@@ -101,6 +101,7 @@ export interface EventRouteContext {
       restoredSession?: boolean;
       cwd?: string;
       scrollToMatch?: string;
+      model?: string;
       sourceIssue?: GitHubIssueSource;
     },
   ) => void;

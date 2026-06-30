@@ -53,6 +53,7 @@ export interface ToolMessageSummary {
   cancelled: number;
   durationMs: number;
   names: string[];
+  runningNames: string[];
   fileChanges: {
     total: number;
     created: number;
@@ -185,6 +186,8 @@ export function summarizeToolMessages(
 ): ToolMessageSummary {
   const names: string[] = [];
   const seenNames = new Set<string>();
+  const runningNames: string[] = [];
+  const seenRunningNames = new Set<string>();
   const summary: ToolMessageSummary = {
     total: 0,
     running: 0,
@@ -192,6 +195,7 @@ export function summarizeToolMessages(
     cancelled: 0,
     durationMs: 0,
     names,
+    runningNames,
     fileChanges: {
       total: 0,
       created: 0,
@@ -213,6 +217,10 @@ export function summarizeToolMessages(
     if (meta.title && !seenNames.has(meta.title)) {
       seenNames.add(meta.title);
       names.push(meta.title);
+    }
+    if (meta.isRunning && meta.title && !seenRunningNames.has(meta.title)) {
+      seenRunningNames.add(meta.title);
+      runningNames.push(meta.title);
     }
     if (meta.fileChange) {
       summary.fileChanges.total += 1;

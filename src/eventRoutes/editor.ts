@@ -258,6 +258,22 @@ export const handleFileTree: EventRouteHandler = (
     else ctx.newEditorTab(filePath);
     return true;
   }
+  if (event.eventType === "file-tree-open-many") {
+    const payload = asRecord(event.data);
+    const files = Array.isArray(payload.files) ? payload.files : [];
+    if (files.length === 0) return true;
+    for (const item of files) {
+      const target = asRecord(item);
+      const filePath =
+        typeof target.filePath === "string" ? target.filePath : "";
+      if (!filePath) continue;
+      const rootPath =
+        typeof target.rootPath === "string" ? target.rootPath : "";
+      if (rootPath) ctx.newEditorTab(filePath, { rootPath });
+      else ctx.newEditorTab(filePath);
+    }
+    return true;
+  }
   if (event.eventType === "file-tree-diff") {
     const payload = asRecord(event.data);
     const filePath =

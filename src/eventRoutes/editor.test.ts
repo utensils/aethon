@@ -283,6 +283,41 @@ describe("handleFileTree", () => {
     );
   });
 
+  it("opens every file from file-tree-open-many", () => {
+    const fx = buildRouteFixture();
+    const claimed = handleFileTree(
+      {
+        component: { id: "vcs-status", type: "vcs-status" },
+        eventType: "file-tree-open-many",
+        data: {
+          files: [
+            {
+              filePath: "/projects/aethon/src/App.tsx",
+              rootPath: "/projects/aethon",
+            },
+            {
+              filePath: "/projects/aethon/agent/main.ts",
+              rootPath: "/projects/aethon",
+            },
+          ],
+        },
+      },
+      fx.ctx,
+    );
+    expect(claimed).toBe(true);
+    expect(fx.mocks.newEditorTab).toHaveBeenCalledTimes(2);
+    expect(fx.mocks.newEditorTab).toHaveBeenNthCalledWith(
+      1,
+      "/projects/aethon/src/App.tsx",
+      { rootPath: "/projects/aethon" },
+    );
+    expect(fx.mocks.newEditorTab).toHaveBeenNthCalledWith(
+      2,
+      "/projects/aethon/agent/main.ts",
+      { rootPath: "/projects/aethon" },
+    );
+  });
+
   it("opens a diff tab on file-tree-diff", () => {
     const fx = buildRouteFixture();
     const claimed = handleFileTree(

@@ -646,6 +646,34 @@ function snapshotTabIds(value: unknown): Set<string> {
   return ids;
 }
 
+function snapshotAgentTabIds(value: unknown): Set<string> {
+  const ids = new Set<string>();
+  if (!value || typeof value !== "object") return ids;
+  const raw = value as {
+    tabs?: unknown;
+    buckets?: Record<string, { tabs?: unknown }> | unknown;
+  };
+  const collect = (tabs: unknown) => {
+    if (!Array.isArray(tabs)) return;
+    for (const tab of tabs) {
+      if (!tab || typeof tab !== "object") continue;
+      const candidate = tab as { id?: unknown; kind?: unknown };
+      if (typeof candidate.id !== "string") continue;
+      if (candidate.kind !== undefined && candidate.kind !== "agent") continue;
+      ids.add(candidate.id);
+    }
+  };
+  collect(raw.tabs);
+  if (raw.buckets && typeof raw.buckets === "object") {
+    for (const bucket of Object.values(
+      raw.buckets as Record<string, { tabs?: unknown }>,
+    )) {
+      collect(bucket?.tabs);
+    }
+  }
+  return ids;
+}
+
 function topLevelSnapshotTabIds(value: unknown): Set<string> {
   const ids = new Set<string>();
   if (!value || typeof value !== "object") return ids;
@@ -677,7 +705,7 @@ export function shouldPreserveExistingHotSnapshot(
   try {
     const existing = JSON.parse(existingRaw) as unknown;
     const next = nextRaw ? (JSON.parse(nextRaw) as unknown) : null;
-    const existingIds = snapshotTabIds(existing);
+    const existingIds = snapshotAgentTabIds(existing);
     if (existingIds.size === 0) return false;
     if (topLevelSnapshotTabIds(next).size > 0) return false;
     const nextIds = snapshotTabIds(next);

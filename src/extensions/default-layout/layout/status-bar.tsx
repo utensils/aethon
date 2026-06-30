@@ -12,10 +12,12 @@ import type { BuiltinComponentProps } from "../../../components/A2UIRenderer";
 import type { StringValue } from "../../../types/a2ui";
 import type { DevshellEntry } from "../../../hooks/useDevshell";
 import type { ContextUsageState } from "../../../types/tab";
+import type { ChatMessage } from "../../../types/a2ui";
 import {
   agentActivityForTab,
   useDelayedAgentActivity,
 } from "../../../agentActivity";
+import { fallbackAgentActivityForTab } from "../message-row-state";
 
 export function StatusBar({ component, state }: BuiltinComponentProps) {
   const props = component.props as {
@@ -39,14 +41,17 @@ export function StatusBar({ component, state }: BuiltinComponentProps) {
   const visibleAgentActivity = useDelayedAgentActivity(
     agentActivityForTab(state),
   );
-  const genericAgentActivity =
-    !visibleAgentActivity && state.waiting === true
-      ? {
-          label: "Thinking through next step",
-          detail: "Waiting for the next update",
-        }
-      : null;
-  const statusAgentActivity = visibleAgentActivity ?? genericAgentActivity;
+  const activeTabId =
+    typeof state.activeTabId === "string" ? state.activeTabId : undefined;
+  const messages = Array.isArray(state.messages)
+    ? (state.messages as ChatMessage[])
+    : [];
+  const fallbackActivity = visibleAgentActivity
+    ? null
+    : fallbackAgentActivityForTab(state, activeTabId, messages, {
+        allowEmpty: true,
+      });
+  const statusAgentActivity = visibleAgentActivity ?? fallbackActivity;
   const centerStatus = statusAgentActivity ?? {
     label: idleStatusLabel(left, center),
     detail: idleStatusDetail(left, center),
@@ -206,13 +211,10 @@ export function StatusBar({ component, state }: BuiltinComponentProps) {
 function idleStatusLabel(status: string, connection: string): string {
   const normalizedStatus = status.trim().toLowerCase();
   const normalizedConnection = connection.trim().toLowerCase();
-  if (
-    normalizedStatus === "ready" ||
-    normalizedStatus === "idle" ||
-    normalizedConnection === "connected"
-  ) {
+  if (normalizedStatus === "ready" || normalizedStatus === "idle") {
     return "idle";
   }
+  if (!normalizedStatus && normalizedConnection === "connected") return "idle";
   return status || normalizedConnection || "idle";
 }
 
@@ -222,13 +224,11 @@ function idleStatusDetail(
 ): string | undefined {
   const normalizedStatus = status.trim().toLowerCase();
   const normalizedConnection = connection.trim().toLowerCase();
-  if (
-    normalizedStatus === "ready" ||
-    normalizedStatus === "idle" ||
-    normalizedConnection === "connected"
-  ) {
+  if (normalizedStatus === "ready" || normalizedStatus === "idle") {
     return undefined;
   }
+  if (!normalizedStatus && normalizedConnection === "connected")
+    return undefined;
   return connection || undefined;
 }
 

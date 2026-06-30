@@ -1,9 +1,5 @@
 import { useMemo } from "react";
-import type {
-  A2UIComponent,
-  ChatMessage,
-  StringValue,
-} from "../../types/a2ui";
+import type { A2UIComponent, ChatMessage, StringValue } from "../../types/a2ui";
 import A2UIRenderer, {
   type BuiltinComponentProps,
 } from "../../components/A2UIRenderer";
@@ -14,7 +10,7 @@ import { resolveVisibility } from "../../utils/visibilityResolver";
 import { agentActivityForTab } from "../../agentActivity";
 import { VirtualMessageFeed } from "./virtual-message-feed";
 import type { CanvasFooterContext } from "./message-groups";
-import { tabIsRunning } from "./message-row-state";
+import { fallbackAgentActivityForTab } from "./message-row-state";
 
 export { ChatMessageRow } from "./message-row";
 
@@ -128,24 +124,18 @@ export function MainCanvas({
   }
 
   const agentActivity = agentActivityForTab(state, tabId);
-  const latestMessage = messages.at(-1);
-  const latestAgentProseVisible =
-    latestMessage?.role === "agent" &&
-    (Boolean(latestMessage.text) || Boolean(latestMessage.thinking));
   const hasRunningToolCard = messages.some(isRunningToolCard);
   const footerAgentActivity = hasRunningToolCard ? null : agentActivity;
-  const showFallbackActivity =
-    tabIsRunning(state, tabId) &&
-    !liveSubtree &&
-    messages.length > 0 &&
-    !footerAgentActivity &&
-    !hasRunningToolCard;
+  const fallbackActivity =
+    !liveSubtree && !footerAgentActivity && !hasRunningToolCard
+      ? fallbackAgentActivityForTab(state, tabId, messages)
+      : null;
   const footerContext: CanvasFooterContext = {
     liveSubtree,
     agentActivity: footerAgentActivity,
-    showTyping: showFallbackActivity,
-    typingLabel: latestAgentProseVisible ? "Writing response" : undefined,
-    typingDetail: latestAgentProseVisible ? "Streaming the answer" : undefined,
+    showTyping: Boolean(fallbackActivity),
+    typingLabel: fallbackActivity?.label,
+    typingDetail: fallbackActivity?.detail,
     state,
     tabId,
   };

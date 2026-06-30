@@ -790,24 +790,23 @@ export function VcsStatus({
     vcs.pr?.url ??
     null;
 
-  // Clicking the "N changed" chip opens the (first) changed file in an
-  // editor tab. With one change that's the file; with several it's a quick
-  // jump to the top of the list (the full set lives in the source-control
-  // panel). Paths from git_file_status are relative to the root.
-  const firstChanged = vcs.changes.files[0];
+  // Clicking the "N changed" chip opens every listed changed file in editor
+  // tabs. Paths from git_file_status are relative to the root.
+  const vcsRoot = vcs.root;
+  const changedFileTargets = vcsRoot
+    ? vcs.changes.files.map((file) => ({
+        filePath: absolutePathFor(vcsRoot, file.path),
+        rootPath: vcsRoot,
+      }))
+    : [];
   const openChanged = () => {
-    if (!vcs.root || !firstChanged) return;
-    // Reuse the file tree's separator-aware join so this path is identical
-    // to the one the tree emits for the same file (editor-tab dedupe).
-    onEvent("file-tree-open", {
-      filePath: absolutePathFor(vcs.root, firstChanged.path),
-      rootPath: vcs.root,
-    });
+    if (!vcs.root || changedFileTargets.length === 0) return;
+    onEvent("file-tree-open-many", { files: changedFileTargets });
   };
   const changeTitle =
-    changeTotal === 1 && firstChanged
-      ? `${firstChanged.path} — open in editor`
-      : `${changeTotal} changed files — open the first in editor`;
+    changeTotal === 1 && vcs.changes.files[0]
+      ? `${vcs.changes.files[0].path} — open in editor`
+      : `${changeTotal} changed files — open all in editor`;
 
   return (
     <div
@@ -841,7 +840,7 @@ export function VcsStatus({
           className="ae-vcs-chip ae-vcs-changes"
           title={changeTitle}
           onClick={openChanged}
-          disabled={!firstChanged}
+          disabled={changedFileTargets.length === 0}
         >
           <span className="ae-vcs-changes-dot" aria-hidden="true" />
           {changeTotal} changed

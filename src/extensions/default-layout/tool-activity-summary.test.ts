@@ -86,6 +86,50 @@ describe("tool activity summary helpers", () => {
     );
   });
 
+  it("labels the actual running tool when earlier tools are completed", () => {
+    const summary = summarizeToolMessages([
+      {
+        id: "completed-read",
+        role: "agent",
+        a2ui: {
+          components: [
+            {
+              id: "tool-read",
+              type: "tool-card",
+              props: {
+                title: "read",
+                toolName: "read",
+                startedAt: 1000,
+                endedAt: 1200,
+              },
+            },
+          ],
+        },
+      },
+      {
+        id: "running-bash",
+        role: "agent",
+        a2ui: {
+          components: [
+            {
+              id: "tool-bash",
+              type: "tool-card",
+              props: {
+                title: "bash",
+                toolName: "bash",
+                startedAt: 1300,
+              },
+            },
+          ],
+        },
+      },
+    ]);
+
+    expect(summary.names).toEqual(["read", "bash"]);
+    expect(summary.runningNames).toEqual(["bash"]);
+    expect(activityLabel({ summary, progressCount: 0 })).toBe("Running bash");
+  });
+
   it("summarizes hidden live tool activity without exposing commands", () => {
     const activity = liveActivitySummary([
       {
