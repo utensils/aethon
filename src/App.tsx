@@ -1,6 +1,7 @@
-import { useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { ExtensionRegistry } from "./extensions/ExtensionRegistry";
+import { persistStatusesDebounced } from "./gitStatusCache";
 import { defaultLayoutExtension } from "./extensions/default-layout";
 import { AppRoot } from "./app/AppRoot";
 import { BOOT_LAYOUT, hangWarnNotifId } from "./app/bootConstants";
@@ -14,7 +15,7 @@ import { useSpeakReplies } from "./hooks/useSpeakReplies";
 import { useShellConsent } from "./hooks/useShellConsent";
 import { useHostInfo } from "./hooks/useHostInfo";
 import { useDevshell, type DevshellEntry } from "./hooks/useDevshell";
-import { useProjects } from "./hooks/useProjects";
+import { useProjects, type GitStatus } from "./hooks/useProjects";
 import { useAgentWorkerReconcile } from "./hooks/useAgentWorkerReconcile";
 import { useAgentActivityHydration } from "./hooks/useAgentActivityHydration";
 import { useVcsStatus } from "./hooks/useVcsStatus";
@@ -35,6 +36,7 @@ import { useUpdater } from "./hooks/useUpdater";
 import { useWorkspaceStartup } from "./hooks/useWorkspaceStartup";
 import { UpdateBanner } from "./components/UpdateBanner";
 import { useProjectOps } from "./hooks/useProjectOps";
+import { applyActiveVcsGitStatusToProjects } from "./hooks/projectOps/vcsGitMirror";
 import type { TabBucket } from "./hooks/projectOps/types";
 import {
   buildInitialAppStore,
@@ -265,7 +267,12 @@ export default function App() {
   // file tree. The file tree's final `~/.aethon` fallback is intentionally
   // omitted: it is never a git repo, so `/vcs` would collapse anyway, and
   // replicating the async home-dir fetch here is noise.
-  useVcsStatus({ activeRoot: activeWorkspaceRoot, setState });
+  useVcsStatus({
+    activeRoot: activeWorkspaceRoot,
+    setState,
+    onGitStatusSettled: (root, status) =>
+      projectsHandleRef.current.applyVcsGitStatus(root, status),
+  });
   useGitWatch(activeWorkspaceRoot);
 
   // ---------------------------------------------------------------------
@@ -379,6 +386,7 @@ export default function App() {
     knownTabIds,
     scopedDiscoveredSessions,
     recentSessionItems,
+    buildProjectsMirror,
     syncProjectsToState,
     syncRecentSessionsToState,
     openProjectFromPicker,
@@ -417,6 +425,23 @@ export default function App() {
     newShellTab,
     workspacePrompts,
   });
+  const applyVcsGitStatus = useCallback(
+    (root: string, status: GitStatus | null) => {
+      const result = applyActiveVcsGitStatusToProjects({
+        projects: projectsRef.current,
+        gitStatuses: gitStatusRef.current,
+        root,
+        status,
+      });
+      if (!result.changed) return undefined;
+      persistStatusesDebounced(gitStatusRef.current);
+      projectsRef.current = result.projects;
+      return (nextState: Record<string, unknown>) =>
+        buildProjectsMirror(nextState);
+    },
+    [buildProjectsMirror, gitStatusRef, projectsRef],
+  );
+
   useProjectSyncEffects({
     state,
     stateRef,
@@ -593,6 +618,7 @@ export default function App() {
     clearActiveProject,
     setActiveProjectById,
     syncProjectsToState,
+    applyVcsGitStatus,
     pushNotification,
     appendMessage,
     appendSystem,

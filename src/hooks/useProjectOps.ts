@@ -449,6 +449,7 @@ export function useProjectOps(ctx: UseProjectOpsContext): UseProjectOpsActions {
     scopedDiscoveredSessions,
     recentSessionItems,
     syncRecentSessionsToState,
+    buildProjectsMirror,
     syncProjectsToState,
     persistProjects,
     openProjectFromPicker,

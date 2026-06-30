@@ -53,6 +53,13 @@ interface GitStatus {
   behind?: number;
 }
 
+export interface VcsGitStatus {
+  branch?: string;
+  dirty?: boolean;
+  ahead?: number;
+  behind?: number;
+}
+
 export interface VcsChanges {
   total: number;
   modified: number;
@@ -107,6 +114,19 @@ export interface UseVcsStatusContext {
   /** Active project/workspace cwd (workspace-aware). Null collapses /vcs. */
   activeRoot: string | null;
   setState: Dispatch<SetStateAction<Record<string, unknown>>>;
+  /**
+   * Optional project/sidebar mirror patcher. Called from the same setState
+   * updater that commits the settled /vcs slice so active-root branch changes
+   * paint atomically across all chrome surfaces.
+   */
+  onGitStatusSettled?: (
+    root: string,
+    status: VcsGitStatus | null,
+  ) =>
+    | ((nextState: Record<string, unknown>) =>
+        | Partial<Record<string, unknown>>
+        | void)
+    | void;
 }
 
 const POLL_INTERVAL_MS = 20_000;
@@ -153,6 +173,24 @@ function emptySlice(root: string | null, loading: boolean): VcsSlice {
     changes: EMPTY_CHANGES,
     pr: null,
     ci: null,
+  };
+}
+
+function gitStatusFromSlice(slice: VcsSlice): VcsGitStatus | null {
+  if (
+    !slice.branch &&
+    !slice.dirty &&
+    slice.ahead === 0 &&
+    slice.behind === 0 &&
+    slice.changes.total === 0
+  ) {
+    return null;
+  }
+  return {
+    ...(slice.branch ? { branch: slice.branch } : {}),
+    dirty: slice.dirty,
+    ahead: slice.ahead,
+    behind: slice.behind,
   };
 }
 
@@ -210,7 +248,11 @@ function pickPr(prs: GhPr[]): VcsPr | null {
   };
 }
 
-export function useVcsStatus({ activeRoot, setState }: UseVcsStatusContext): void {
+export function useVcsStatus({
+  activeRoot,
+  setState,
+  onGitStatusSettled,
+}: UseVcsStatusContext): void {
   useEffect(() => {
     let cancelled = false;
     // In-flight guard is effect-scoped (one per root), NOT a component-wide
@@ -239,7 +281,18 @@ export function useVcsStatus({ activeRoot, setState }: UseVcsStatusContext): voi
       if (slice.root && !slice.loading) {
         putCachedVcsSlice(slice.root, slice);
       }
-      setState((s) => ({ ...s, vcs: slice }));
+      const mirrorPatchForState =
+        !slice.loading && slice.root
+          ? onGitStatusSettled?.(slice.root, gitStatusFromSlice(slice))
+          : undefined;
+      setState((s) => {
+        const next = { ...s, vcs: slice };
+        const mirrorPatch = mirrorPatchForState?.(next);
+        if (mirrorPatch && Object.keys(mirrorPatch).length > 0) {
+          return { ...next, ...mirrorPatch };
+        }
+        return next;
+      });
     };
 
     if (!activeRoot) {
