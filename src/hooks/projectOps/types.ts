@@ -101,6 +101,10 @@ export interface UseProjectOpsActions {
     openIds: Set<string>,
   ) => RecentSessionItem[];
   syncRecentSessionsToState: () => void;
+  buildProjectsMirror: (
+    prev: Record<string, unknown>,
+    tabsForRecent?: Tab[],
+  ) => Record<string, unknown>;
 
   // ─── Project ops ────────────────────────────────────────────────────
   syncProjectsToState: () => void;

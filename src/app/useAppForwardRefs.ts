@@ -5,6 +5,7 @@ import type {
   ProjectsHandle,
 } from "../hooks/useAppStateRefs";
 import type { NotificationInput } from "../hooks/useNotifications";
+import type { GitStatus } from "../hooks/useProjects";
 import type { ProjectsState } from "../projects";
 
 export interface UseAppForwardRefsContext {
@@ -23,6 +24,12 @@ export interface UseAppForwardRefsContext {
   clearActiveProject: () => void;
   setActiveProjectById: (id: string) => boolean;
   syncProjectsToState: () => void;
+  applyVcsGitStatus: (
+    root: string,
+    status: GitStatus | null,
+  ) =>
+    | ((nextState: Record<string, unknown>) => Partial<Record<string, unknown>>)
+    | undefined;
   pushNotification: (n: NotificationInput) => string;
   appendMessage: ChatActionsHandle["appendMessage"];
   appendSystem: ChatActionsHandle["appendSystem"];
@@ -56,6 +63,7 @@ export function useAppForwardRefs(ctx: UseAppForwardRefsContext): void {
     clearActiveProject,
     setActiveProjectById,
     syncProjectsToState,
+    applyVcsGitStatus,
     pushNotification,
     appendMessage,
     appendSystem,
@@ -71,6 +79,7 @@ export function useAppForwardRefs(ctx: UseAppForwardRefsContext): void {
     projectsHandleRef.current = {
       getPaths: () => projectsRef.current.projects.map((p) => p.path),
       onGitStatusChanged: () => syncProjectsToState(),
+      applyVcsGitStatus,
     };
     pushNotificationRef.current = pushNotification;
     chatActionsRef.current = {

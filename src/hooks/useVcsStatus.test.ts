@@ -40,16 +40,27 @@ import { __TEST__ as vcsCacheTest } from "../vcsSliceCache";
 
 /** A setState double that applies the functional-update form and records
  *  the latest `/vcs` slice the hook wrote. */
-function makeSetState() {
+function makeSetState(opts: { replayFunctionalUpdaters?: boolean } = {}) {
   let store: Record<string, unknown> = {};
   const setState = (
     u:
       | Record<string, unknown>
       | ((s: Record<string, unknown>) => Record<string, unknown>),
   ) => {
-    store = typeof u === "function" ? u(store) : u;
+    if (typeof u !== "function") {
+      store = u;
+      return;
+    }
+    if (opts.replayFunctionalUpdaters) {
+      u(store);
+    }
+    store = u(store);
   };
-  return { setState, vcs: () => store.vcs as VcsSlice | undefined };
+  return {
+    setState,
+    state: () => store,
+    vcs: () => store.vcs as VcsSlice | undefined,
+  };
 }
 
 beforeEach(() => {
@@ -153,6 +164,58 @@ describe("useVcsStatus", () => {
     expect(vcs.ci).toBeNull();
     expect(branchMock).not.toHaveBeenCalled();
     expect(checksMock).not.toHaveBeenCalled();
+  });
+
+  it("commits active git status mirror with the settled /vcs slice", async () => {
+    invokeMock.mockImplementation((cmd: string) => {
+      if (cmd === "git_status") {
+        return Promise.resolve({
+          branch: "main",
+          ahead: 6,
+          behind: 1,
+          dirty: false,
+        });
+      }
+      if (cmd === "git_file_status") return Promise.resolve([]);
+      return Promise.resolve(null);
+    });
+    branchMock.mockResolvedValue(null);
+    checksMock.mockResolvedValue(null);
+    const mirror = vi.fn((_root, status) => () => ({
+      sidebar: { projects: [{ id: "project-1", git: status }] },
+    }));
+
+    const h = makeSetState({ replayFunctionalUpdaters: true });
+    renderHook(() =>
+      useVcsStatus({
+        activeRoot: "/repo",
+        setState: h.setState,
+        onGitStatusSettled: mirror,
+      }),
+    );
+
+    await waitFor(() => expect(h.vcs()?.loading).toBe(false));
+    expect(mirror).toHaveBeenLastCalledWith(
+      "/repo",
+      { branch: "main", ahead: 6, behind: 1, dirty: false },
+    );
+    expect(mirror.mock.results.at(-1)?.value).toEqual(expect.any(Function));
+    expect(mirror.mock.results.at(-1)?.value(h.state())).toEqual(
+      expect.objectContaining({
+        sidebar: {
+          projects: [
+            {
+              id: "project-1",
+              git: { branch: "main", ahead: 6, behind: 1, dirty: false },
+            },
+          ],
+        },
+      }),
+    );
+    expect(h.state()).toMatchObject({
+      vcs: { branch: "main", loading: false },
+      sidebar: { projects: [{ id: "project-1", git: { branch: "main" } }] },
+    });
   });
 
   it("fetches a newly selected root even while the previous poll is in flight", async () => {

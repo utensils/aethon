@@ -3,6 +3,7 @@ import type { ChatMessage } from "../types/a2ui";
 import { emptyProjectsState, type ProjectsState } from "../projects";
 import type { AppStore } from "../state/appStore";
 import type { NotificationInput } from "./useNotifications";
+import type { GitStatus } from "./useProjects";
 
 export interface ProjectOpsHandle {
   clearActiveProject: () => void;
@@ -12,6 +13,12 @@ export interface ProjectOpsHandle {
 export interface ProjectsHandle {
   getPaths: () => string[];
   onGitStatusChanged: () => void;
+  applyVcsGitStatus: (
+    root: string,
+    status: GitStatus | null,
+  ) =>
+    | ((nextState: Record<string, unknown>) => Partial<Record<string, unknown>>)
+    | undefined;
 }
 
 export interface ChatActionsHandle {
@@ -59,6 +66,7 @@ export function useAppStateRefs(appStore: AppStore): AppStateRefs {
     projectsHandleRef: useRef<ProjectsHandle>({
       getPaths: () => [],
       onGitStatusChanged: () => {},
+      applyVcsGitStatus: () => undefined,
     }),
     pushNotificationRef: useRef<(n: NotificationInput) => void>(() => {}),
     chatActionsRef: useRef<ChatActionsHandle>({
