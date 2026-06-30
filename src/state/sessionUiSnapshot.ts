@@ -126,7 +126,9 @@ export function isLegacyAethonStateCwd(cwd: string): boolean {
     after === "" ||
     (after.startsWith("/") &&
       after !== "/projects" &&
-      !after.startsWith("/projects/"))
+      !after.startsWith("/projects/") &&
+      after !== "/worktrees" &&
+      !after.startsWith("/worktrees/"))
   );
 }
 
@@ -669,18 +671,18 @@ function closedSnapshotIds(value: unknown): Set<string> {
 
 export function shouldPreserveExistingHotSnapshot(
   existingRaw: string | null,
-  nextRaw: string,
+  nextRaw: string | null,
 ): boolean {
   if (!existingRaw) return false;
   try {
     const existing = JSON.parse(existingRaw) as unknown;
-    const next = JSON.parse(nextRaw) as unknown;
-    const existingTopIds = topLevelSnapshotTabIds(existing);
-    if (existingTopIds.size === 0) return false;
+    const next = nextRaw ? (JSON.parse(nextRaw) as unknown) : null;
+    const existingIds = snapshotTabIds(existing);
+    if (existingIds.size === 0) return false;
     if (topLevelSnapshotTabIds(next).size > 0) return false;
     const nextIds = snapshotTabIds(next);
     const closedIds = closedSnapshotIds(next);
-    for (const id of existingTopIds) {
+    for (const id of existingIds) {
       if (!nextIds.has(id) && !closedIds.has(id)) return true;
     }
     return false;
@@ -696,7 +698,11 @@ export function saveSessionUiSnapshot(
   const serialized = serializeSessionUiSnapshot(state);
   try {
     if (serialized === null) {
-      if (canUseSessionStorage()) window.sessionStorage.removeItem(KEY);
+      if (canUseSessionStorage()) {
+        const existing = window.sessionStorage.getItem(KEY);
+        if (shouldPreserveExistingHotSnapshot(existing, null)) return;
+        window.sessionStorage.removeItem(KEY);
+      }
       persistDisk?.("");
       return;
     }
