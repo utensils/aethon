@@ -2,6 +2,7 @@ import type { A2UIComponent, A2UIPayload, ChatMessage } from "../../types/a2ui";
 import type { Tab } from "../../types/tab";
 import { closeRunningToolCards } from "../../utils/agentBusy";
 import { toolCardIdentityFromId } from "../../utils/toolCardIdentity";
+import { clearAgentActivity } from "./agentActivity";
 import type { BridgeMessageHandler } from "./types";
 import { clearHangWarn } from "./hangWarn";
 import { flushResponseDeltas } from "./responseDelta";
@@ -275,6 +276,7 @@ export const handleA2ui: BridgeMessageHandler = (data, ctx) => {
     }
   }
   if (data.done) {
+    clearAgentActivity(ctx, tabId);
     ctx.updateTab(tabId, (tab) => {
       const closedTools = closeRunningToolCards(tab.messages);
       return {

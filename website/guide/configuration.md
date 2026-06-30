@@ -428,6 +428,12 @@ Most fields take effect on the next render. A few need a spawn or restart:
 - **Devshell refresh / next spawn**: `[devshell]` fields, plus the
   explicit "Refresh now" button in Settings.
 
+Extension and agent-source changes request a graceful bridge reload rather
+than aborting an active turn. The frontend keeps tab, workspace, editor, and
+activity state across both Vite hot reloads and bridge reloads; if a prompt is
+running, the chat and footer should continue to show the tab-scoped activity
+until the next agent event or final answer arrives.
+
 ## Where to next
 
 - [Reference: config.toml](/reference/config-reference): exhaustive

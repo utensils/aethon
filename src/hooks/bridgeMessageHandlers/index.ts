@@ -16,6 +16,7 @@ import {
 } from "./authProfiles";
 import { handleAuthProfileUsage } from "./authProfileUsage";
 import { handleA2ui } from "./a2ui";
+import { handleAgentActivity } from "./agentActivity";
 import { handleContextUsage } from "./contextUsage";
 import { handleEntryIds } from "./entryIds";
 import { handleEditorQuery } from "./editorQuery";
@@ -68,6 +69,7 @@ export const bridgeMessageHandlers: Readonly<
   Record<string, BridgeMessageHandler>
 > = Object.freeze({
   a2ui: handleA2ui,
+  agent_activity: handleAgentActivity,
   auth_profile_changed: handleAuthProfileChanged,
   auth_profile_login_event: handleAuthProfileLoginEvent,
   auth_profile_usage: handleAuthProfileUsage,

@@ -23,6 +23,7 @@ import {
 } from "./sidebar";
 import { restoreSessionFromSelection } from "./sessionRestore";
 import { firstIssueSessionTab } from "../extensions/default-layout/dashboard/issue-sessions";
+import { DEFAULT_WORKSPACE_BASE_BRANCH } from "../projects";
 
 function issueSourceFromStartTask(data: {
   projectId?: string;
@@ -55,6 +56,31 @@ function issueSourceFromStartTask(data: {
     ...(data.workspaceId ? { workspaceId: data.workspaceId } : {}),
     createdAt: Date.now(),
   };
+}
+
+function projectBaseBranchFromState(
+  state: Record<string, unknown>,
+  projectId: string,
+): string {
+  const projects = state.projects;
+  if (Array.isArray(projects)) {
+    const project = projects.find(
+      (candidate): candidate is { id: string; workspaceBaseBranch?: unknown } =>
+        Boolean(
+          candidate &&
+            typeof candidate === "object" &&
+            "id" in candidate &&
+            candidate.id === projectId,
+        ),
+    );
+    if (
+      typeof project?.workspaceBaseBranch === "string" &&
+      project.workspaceBaseBranch.trim().length > 0
+    ) {
+      return project.workspaceBaseBranch.trim();
+    }
+  }
+  return DEFAULT_WORKSPACE_BASE_BRANCH;
 }
 
 /** New-tab / Open Project… / restore-session / select-project-card
@@ -101,6 +127,12 @@ export const handleProjectsDashboard: EventRouteHandler = (
   if (eventType === "delete-session") {
     return handleSidebarDeleteSession(
       { component: { id: "", type: "sidebar" }, eventType, data },
+      ctx,
+    );
+  }
+  if (eventType === "start-task" || eventType === "paste-image-failed") {
+    return handleTaskLauncher(
+      { component: { id: "", type: "task-launcher" }, eventType, data },
       ctx,
     );
   }
@@ -230,6 +262,7 @@ export const handleTaskLauncher: EventRouteHandler = (
           baseBranch?: string;
           workspaceId?: string;
           model?: string;
+          target?: string;
           source?: string;
           issueNumber?: unknown;
           issueUrl?: unknown;
@@ -238,7 +271,27 @@ export const handleTaskLauncher: EventRouteHandler = (
           issueTemplateLabel?: string;
         }
       | undefined;
-    if (!sel?.projectId || !sel.prompt) return true;
+    const attachments = Array.isArray(sel?.attachments)
+      ? sel.attachments
+      : undefined;
+    const prompt = typeof sel?.prompt === "string" ? sel.prompt : "";
+    const hasPayload = prompt.length > 0 || (attachments?.length ?? 0) > 0;
+    if (sel?.target === "host" && hasPayload) {
+      const tabId = crypto.randomUUID();
+      ctx.newTab(
+        tabId,
+        undefined,
+        typeof sel.model === "string" && sel.model.length > 0
+          ? { model: sel.model }
+          : undefined,
+      );
+      void ctx.sendChat(prompt, {
+        tabId,
+        attachments,
+      });
+      return true;
+    }
+    if (!sel?.projectId || !hasPayload) return true;
     const sourceIssue = issueSourceFromStartTask(sel);
     if (sourceIssue) {
       const existing = firstIssueSessionTab(
@@ -253,11 +306,15 @@ export const handleTaskLauncher: EventRouteHandler = (
     }
     void ctx.startTaskInProject({
       projectId: sel.projectId,
-      prompt: sel.prompt,
+      prompt,
       newWorkspace: sel.newWorkspace === true,
-      attachments: Array.isArray(sel.attachments) ? sel.attachments : undefined,
+      attachments,
       branch: sel.branch,
-      baseBranch: sel.baseBranch,
+      baseBranch:
+        sel.newWorkspace === true
+          ? (sel.baseBranch?.trim() ||
+            projectBaseBranchFromState(ctx.stateRef.current, sel.projectId))
+          : sel.baseBranch,
       workspaceId: sel.workspaceId,
       ...(typeof sel.model === "string" && sel.model.length > 0
         ? { model: sel.model }

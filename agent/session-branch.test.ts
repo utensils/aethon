@@ -200,7 +200,8 @@ describe("handleForkSession", () => {
     const { state, sm } = makeState();
     const { deps, sent } = makeDeps();
     await handleForkSession(state, deps, msg({ tabId: "t1", entryId: "e2" }));
-    expect(sm.createBranchedSession).toHaveBeenCalledWith("e2");
+    expect(sm.getEntry).toHaveBeenCalledWith("e2");
+    expect(sm.createBranchedSession).not.toHaveBeenCalled();
     const forked = sent.find((m) => m.type === "session_forked");
     expect(forked).toBeTruthy();
     expect(typeof forked?.newTabId).toBe("string");
@@ -210,10 +211,11 @@ describe("handleForkSession", () => {
     expect(forked?.cwd).toBe("/proj");
   });
 
-  it("emits a fork event even when pi does not produce a sidecar path", async () => {
-    const { state } = makeState({ branchedPath: undefined });
+  it("does not wait on pi sidecar branching", async () => {
+    const { state, sm } = makeState({ branchedPath: undefined });
     const { deps, sent } = makeDeps();
     await handleForkSession(state, deps, msg({ tabId: "t1", entryId: "e2" }));
+    expect(sm.createBranchedSession).not.toHaveBeenCalled();
     expect(sent.some((m) => m.type === "error")).toBe(false);
     expect(sent.some((m) => m.type === "session_forked")).toBe(true);
   });
@@ -263,7 +265,8 @@ describe("handleForkSession", () => {
     expect(ensureTabMock).toHaveBeenCalledWith(state, deps, "t1", {
       cwdOverride: "/proj",
     });
-    expect(sm.createBranchedSession).toHaveBeenCalledWith("e2");
+    expect(sm.getEntry).toHaveBeenCalledWith("e2");
+    expect(sm.createBranchedSession).not.toHaveBeenCalled();
     const forked = sent.find((m) => m.type === "session_forked");
     expect(forked?.cwd).toBe("/proj");
     expect(sent.some((m) => m.type === "error")).toBe(false);
@@ -290,7 +293,8 @@ describe("handleForkSession", () => {
     expect(ensureTabMock).toHaveBeenCalledWith(state, deps, "t1", {
       cwdOverride: "/repo/from-message",
     });
-    expect(sm.createBranchedSession).toHaveBeenCalledWith("e2");
+    expect(sm.getEntry).toHaveBeenCalledWith("e2");
+    expect(sm.createBranchedSession).not.toHaveBeenCalled();
     const forked = sent.find((m) => m.type === "session_forked");
     expect(forked?.cwd).toBe("/repo/from-message");
     expect(sent.some((m) => m.type === "error")).toBe(false);

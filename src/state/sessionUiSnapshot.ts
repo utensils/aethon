@@ -126,7 +126,9 @@ export function isLegacyAethonStateCwd(cwd: string): boolean {
     after === "" ||
     (after.startsWith("/") &&
       after !== "/projects" &&
-      !after.startsWith("/projects/"))
+      !after.startsWith("/projects/") &&
+      after !== "/worktrees" &&
+      !after.startsWith("/worktrees/"))
   );
 }
 
@@ -617,6 +619,106 @@ export function serializeSessionUiSnapshot(
   }
 }
 
+function snapshotTabIds(value: unknown): Set<string> {
+  const ids = new Set<string>();
+  if (!value || typeof value !== "object") return ids;
+  const raw = value as {
+    tabs?: unknown;
+    buckets?: Record<string, { tabs?: unknown }> | unknown;
+  };
+  if (Array.isArray(raw.tabs)) {
+    for (const tab of raw.tabs) {
+      const id = (tab as { id?: unknown } | null)?.id;
+      if (typeof id === "string") ids.add(id);
+    }
+  }
+  if (raw.buckets && typeof raw.buckets === "object") {
+    for (const bucket of Object.values(
+      raw.buckets as Record<string, { tabs?: unknown }>,
+    )) {
+      if (!Array.isArray(bucket?.tabs)) continue;
+      for (const tab of bucket.tabs) {
+        const id = (tab as { id?: unknown } | null)?.id;
+        if (typeof id === "string") ids.add(id);
+      }
+    }
+  }
+  return ids;
+}
+
+function snapshotAgentTabIds(value: unknown): Set<string> {
+  const ids = new Set<string>();
+  if (!value || typeof value !== "object") return ids;
+  const raw = value as {
+    tabs?: unknown;
+    buckets?: Record<string, { tabs?: unknown }> | unknown;
+  };
+  const collect = (tabs: unknown) => {
+    if (!Array.isArray(tabs)) return;
+    for (const tab of tabs) {
+      if (!tab || typeof tab !== "object") continue;
+      const candidate = tab as { id?: unknown; kind?: unknown };
+      if (typeof candidate.id !== "string") continue;
+      if (candidate.kind !== undefined && candidate.kind !== "agent") continue;
+      ids.add(candidate.id);
+    }
+  };
+  collect(raw.tabs);
+  if (raw.buckets && typeof raw.buckets === "object") {
+    for (const bucket of Object.values(
+      raw.buckets as Record<string, { tabs?: unknown }>,
+    )) {
+      collect(bucket?.tabs);
+    }
+  }
+  return ids;
+}
+
+function topLevelSnapshotTabIds(value: unknown): Set<string> {
+  const ids = new Set<string>();
+  if (!value || typeof value !== "object") return ids;
+  const tabs = (value as { tabs?: unknown }).tabs;
+  if (!Array.isArray(tabs)) return ids;
+  for (const tab of tabs) {
+    const id = (tab as { id?: unknown } | null)?.id;
+    if (typeof id === "string") ids.add(id);
+  }
+  return ids;
+}
+
+function closedSnapshotIds(value: unknown): Set<string> {
+  const ids = new Set<string>();
+  if (!value || typeof value !== "object") return ids;
+  const closed = (value as { closedSessionIds?: unknown }).closedSessionIds;
+  if (!Array.isArray(closed)) return ids;
+  for (const id of closed) {
+    if (typeof id === "string") ids.add(id);
+  }
+  return ids;
+}
+
+export function shouldPreserveExistingHotSnapshot(
+  existingRaw: string | null,
+  nextRaw: string | null,
+): boolean {
+  if (!existingRaw) return false;
+  try {
+    const existing = JSON.parse(existingRaw) as unknown;
+    const next = nextRaw ? (JSON.parse(nextRaw) as unknown) : null;
+    const existingIds = snapshotAgentTabIds(existing);
+    if (existingIds.size === 0) return false;
+    if (topLevelSnapshotTabIds(next).size > 0) return false;
+    const nextIds = snapshotTabIds(next);
+    const closedIds = closedSnapshotIds(next);
+    for (const id of existingIds) {
+      if (!nextIds.has(id) && !closedIds.has(id)) return true;
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}
+
 export function saveSessionUiSnapshot(
   state: Record<string, unknown>,
   persistDisk?: (content: string) => void,
@@ -624,11 +726,19 @@ export function saveSessionUiSnapshot(
   const serialized = serializeSessionUiSnapshot(state);
   try {
     if (serialized === null) {
-      if (canUseSessionStorage()) window.sessionStorage.removeItem(KEY);
+      if (canUseSessionStorage()) {
+        const existing = window.sessionStorage.getItem(KEY);
+        if (shouldPreserveExistingHotSnapshot(existing, null)) return;
+        window.sessionStorage.removeItem(KEY);
+      }
       persistDisk?.("");
       return;
     }
-    if (canUseSessionStorage()) window.sessionStorage.setItem(KEY, serialized);
+    if (canUseSessionStorage()) {
+      const existing = window.sessionStorage.getItem(KEY);
+      if (shouldPreserveExistingHotSnapshot(existing, serialized)) return;
+      window.sessionStorage.setItem(KEY, serialized);
+    }
     persistDisk?.(serialized);
   } catch {
     /* best-effort; quota or privacy settings should not break the app */

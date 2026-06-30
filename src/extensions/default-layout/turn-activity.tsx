@@ -19,6 +19,7 @@ import {
   fileChangeStatsLabel,
   hasFileChange,
   hasToolCardChildren,
+  liveActivitySummary,
   summaryWithFileEntries,
   toolDurationLabel,
   toolStateLabel,
@@ -28,6 +29,7 @@ import {
   ToolFileChangesCard,
   ToolFileChangeRow,
 } from "./tool-file-changes";
+import { LiveActivityCard } from "./live-activity-card";
 
 const ACTIVITY_DISCLOSURE_EXIT_MS = 240;
 
@@ -151,25 +153,29 @@ export function TurnActivity({
             !visibleAgentMessageIds?.has(message.id) &&
             hasDisplayableAgentContent(message, thinkingVisibility),
         );
-  const allToolMessages = turn.toolMessages;
   const showGenericTools = toolCallsVisibility !== "hide";
+  const allToolMessages = turn.toolMessages;
+  const runningTools = allToolMessages.filter(isRunningToolCard);
   const summarizedToolMessages = showGenericTools
     ? allToolMessages
-    : allToolMessages.filter(hasFileChange);
+    : live
+      ? runningTools
+      : allToolMessages.filter(hasFileChange);
   const allFileChangeEntries = collectFileChangeEntries(summarizedToolMessages);
   const summary = summaryWithFileEntries(
     summarizeToolMessages(summarizedToolMessages),
     allFileChangeEntries,
   );
-  const runningTools = showGenericTools
-    ? allToolMessages.filter(isRunningToolCard)
-    : [];
   const completedFileActivity =
     !live &&
     summary.fileChanges.total > 0 &&
     summary.running === 0 &&
     summary.failed === 0 &&
     summary.cancelled === 0;
+  const liveOnlyActivity = live && !showGenericTools && runningTools.length > 0;
+  const liveOnlySummary = liveOnlyActivity
+    ? liveActivitySummary(runningTools)
+    : null;
   const defaultDetailsOpen =
     expanded || toolCallsVisibility === "show" || completedFileActivity;
   const detailsOpen = forceOpen || (manualOpen ?? defaultDetailsOpen);
@@ -191,24 +197,25 @@ export function TurnActivity({
       .map((message) => message.id),
   );
   // The aggregated "Edited N files" card is the durable artifact of a turn,
-  // so it stays visible regardless of the tool-calls visibility toggle or
-  // whether the activity body is expanded. When tool cards render in full
-  // (showOriginalToolCards) each edit shows its own change, so skip it then
-  // to avoid duplication.
+  // but it belongs to the disclosure body so the summary chevron controls the
+  // whole section. When tool cards render in full (showOriginalToolCards), each
+  // edit shows its own change, so skip it then to avoid duplication.
   const pinnedFileChangeEntries = showOriginalToolCards
     ? []
     : collectFileChangeEntries(allToolMessages.filter(hasFileChange));
   const detailToolRows =
-    showOriginalToolCards || !showGenericTools
-      ? []
-      : detailTools.filter(
-          (message) =>
-            !hasFileChange(message) && !originalToolCardIds.has(message.id),
-        );
+    liveOnlyActivity && detailsBodyVisible
+      ? runningTools
+      : showOriginalToolCards || !showGenericTools
+        ? []
+        : detailTools.filter(
+            (message) =>
+              !hasFileChange(message) && !originalToolCardIds.has(message.id),
+          );
   const hasActivity =
     progressMessages.length > 0 ||
     summary.fileChanges.total > 0 ||
-    (showGenericTools && allToolMessages.length > 0) ||
+    summarizedToolMessages.length > 0 ||
     runningTools.length > 0;
 
   useEffect(
@@ -228,6 +235,17 @@ export function TurnActivity({
   }, [detailsBodyVisible]);
 
   if (!hasActivity) return null;
+  if (liveOnlyActivity) {
+    if (!liveOnlySummary) return null;
+    return (
+      <div className="ae-turn-activity ae-turn-activity-live-summary">
+        <LiveActivityCard
+          label={liveOnlySummary.label}
+          detail={liveOnlySummary.detail}
+        />
+      </div>
+    );
+  }
   const label = activityLabel({
     summary,
     progressCount: progressMessages.length,
@@ -351,6 +369,13 @@ export function TurnActivity({
               onEvent={onEvent}
             />
           ))}
+          {pinnedFileChangeEntries.length > 0 && (
+            <ToolFileChangesCard
+              entries={pinnedFileChangeEntries}
+              summary={summary}
+              onEvent={onEvent}
+            />
+          )}
         </div>
       )}
       {!detailsOpen && runningTools.length > 0 && (
@@ -363,13 +388,6 @@ export function TurnActivity({
             />
           ))}
         </div>
-      )}
-      {pinnedFileChangeEntries.length > 0 && (
-        <ToolFileChangesCard
-          entries={pinnedFileChangeEntries}
-          summary={summary}
-          onEvent={onEvent}
-        />
       )}
     </div>
   );

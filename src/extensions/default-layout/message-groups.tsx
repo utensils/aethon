@@ -4,15 +4,20 @@ import A2UIRenderer, {
 } from "../../components/A2UIRenderer";
 import type { ConversationTurn } from "../../utils/transcriptRows";
 import type { ToolCallsMode, VisibilityMode } from "../../config";
+import type { AgentActivityState } from "../../agentActivity";
+import { useDelayedAgentActivity } from "../../agentActivity";
 import { ChatMessageRow, TypingIndicator } from "./message-row";
-import { branchTargetForTurn } from "./turn-action-helpers";
+import { branchTargetsForTurn } from "./turn-action-helpers";
 import { TurnBranchActions } from "./turn-actions";
 import { TurnActivity } from "./turn-activity";
 import { hasDisplayableAgentContent } from "./turn-activity-helpers";
 
 export interface CanvasFooterContext {
   liveSubtree: { components: A2UIComponent[] } | null;
+  agentActivity?: AgentActivityState | null;
   showTyping: boolean;
+  typingLabel?: string;
+  typingDetail?: string;
   state: Record<string, unknown>;
   tabId?: string;
   rowClassName?: string;
@@ -22,15 +27,20 @@ export interface CanvasFooterContext {
 // canvas subtree + typing indicator scroll and follow with the messages. Passed
 // dynamic data via Virtuoso's `context` so its component identity stays stable.
 export function CanvasFooter({ context }: { context?: CanvasFooterContext }) {
+  const visibleActivity = useDelayedAgentActivity(
+    context?.agentActivity ?? null,
+  );
   if (!context) return null;
   const {
     liveSubtree,
     showTyping,
+    typingLabel,
+    typingDetail,
     state,
     tabId,
     rowClassName = "a2ui-chat-message",
   } = context;
-  if (!liveSubtree && !showTyping) return null;
+  if (!liveSubtree && !showTyping && !visibleActivity) return null;
   return (
     <>
       {liveSubtree && (
@@ -38,15 +48,26 @@ export function CanvasFooter({ context }: { context?: CanvasFooterContext }) {
           <A2UIRenderer payload={liveSubtree} state={state} tabId={tabId} />
         </div>
       )}
-      {showTyping && (
+      {visibleActivity ? (
         <div className="a2ui-msg-row a2ui-msg-row-footer">
           <div className="ae-conversation-turn">
             <div className={`${rowClassName} agent ae-typing-message`}>
-              <TypingIndicator />
+              <TypingIndicator
+                label={visibleActivity.label}
+                detail={visibleActivity.detail}
+              />
             </div>
           </div>
         </div>
-      )}
+      ) : showTyping ? (
+        <div className="a2ui-msg-row a2ui-msg-row-footer">
+          <div className="ae-conversation-turn">
+            <div className={`${rowClassName} agent ae-typing-message`}>
+              <TypingIndicator label={typingLabel} detail={typingDetail} />
+            </div>
+          </div>
+        </div>
+      ) : null}
     </>
   );
 }
@@ -99,25 +120,20 @@ export function ConversationTurnRow({
     hasStopNotice || (isLatest && !live && state.status === "stopped");
   const interruptedTail =
     !live && hasHiddenThinkingTail(turn, thinkingVisibility);
-  const preserveInterruptedProse = stopped || interruptedTail;
   const displayableAgentMessages = turn.agentMessages.filter((message) =>
     hasDisplayableAgentContent(message, thinkingVisibility),
   );
-  const visibleFinalMessage = displayableAgentMessages.at(-1);
-  const visibleAgentMessages = live
-    ? displayableAgentMessages
-    : preserveInterruptedProse
+  const visibleAgentMessages =
+    displayableAgentMessages.length > 0
       ? displayableAgentMessages
-      : visibleFinalMessage
-        ? [visibleFinalMessage]
-        : turn.progressMessages.filter((message) =>
-            hasDisplayableAgentContent(message, thinkingVisibility),
-          );
+      : turn.progressMessages.filter((message) =>
+          hasDisplayableAgentContent(message, thinkingVisibility),
+        );
   const visibleAgentMessageIds =
     visibleAgentMessages.length > 0
       ? new Set(visibleAgentMessages.map((message) => message.id))
       : undefined;
-  const branchTarget = branchTargetForTurn(turn, visibleAgentMessages);
+  const branchTargets = branchTargetsForTurn(turn, visibleAgentMessages);
   const userIndex = turn.userMessage
     ? turn.messages.findIndex((message) => message.id === turn.userMessage?.id)
     : -1;
@@ -202,7 +218,8 @@ export function ConversationTurnRow({
         />
       ))}
       <TurnBranchActions
-        target={branchTarget}
+        rollbackTarget={branchTargets.rollbackTarget}
+        forkTarget={branchTargets.forkTarget}
         state={state}
         tabId={tabId}
         onEvent={onEvent}

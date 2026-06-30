@@ -257,6 +257,12 @@ fn worktree_add_allowed_roots(
         && user_dir.is_absolute()
         && let Some(anchor) = normalize_path(&user_dir)
     {
+        if let Some(path) = normalize_path(&anchor.join("worktrees")) {
+            roots.push(ManagedWorktreeRoot {
+                path,
+                anchor: anchor.clone(),
+            });
+        }
         let repo_name = project_norm
             .file_name()
             .and_then(|name| name.to_str())
@@ -723,6 +729,24 @@ mod tests {
         let resolved =
             validate_worktree_add_target(dir.path(), &target, Some(aethon.path().to_path_buf()))
                 .expect("managed aethon user root should be allowed");
+
+        assert_eq!(resolved, target);
+    }
+
+    #[tokio::test]
+    async fn add_worktree_allows_managed_aethon_global_worktrees_root() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let aethon = tempfile::tempdir().expect("tempdir");
+        init_repo(dir.path());
+        let target = aethon
+            .path()
+            .join("worktrees")
+            .join("repo-abcdef0")
+            .join("feature-user-root");
+
+        let resolved =
+            validate_worktree_add_target(dir.path(), &target, Some(aethon.path().to_path_buf()))
+                .expect("managed aethon global worktrees root should be allowed");
 
         assert_eq!(resolved, target);
     }

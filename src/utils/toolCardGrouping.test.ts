@@ -133,6 +133,7 @@ describe("summarizeToolMessages", () => {
       cancelled: 1,
       durationMs: 7_501,
       names: ["read", "bash", "edit", "write"],
+      runningNames: [],
       fileChanges: {
         total: 2,
         created: 1,

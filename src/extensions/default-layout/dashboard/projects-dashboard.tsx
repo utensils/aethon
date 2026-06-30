@@ -245,6 +245,7 @@ export function ProjectsDashboard({
                 projects,
                 workspacesByProject,
                 showProjectSelector: true,
+                defaultTarget: "host",
                 placeholder:
                   "Start a task on this host… choose a project, use @<subagent> or @path",
               }}

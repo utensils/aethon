@@ -403,6 +403,35 @@ describe("handleProjectDashboard", () => {
 });
 
 describe("handleTaskLauncher", () => {
+  it("projects-dashboard start-task launches a host tab", async () => {
+    const { ctx, mocks } = buildRouteFixture();
+    const handled = await handleProjectsDashboard(
+      {
+        component: { id: "projects-dashboard", type: "projects-dashboard" },
+        eventType: "start-task",
+        data: {
+          target: "host",
+          prompt: "check the host",
+          model: "openai/gpt-5.5",
+        },
+      },
+      ctx,
+    );
+
+    expect(handled).toBe(true);
+    expect(mocks.newTab).toHaveBeenCalledOnce();
+    const tabId = mocks.newTab.mock.calls[0]?.[0];
+    expect(typeof tabId).toBe("string");
+    expect(mocks.newTab).toHaveBeenCalledWith(tabId, undefined, {
+      model: "openai/gpt-5.5",
+    });
+    expect(mocks.sendChat).toHaveBeenCalledWith("check the host", {
+      tabId,
+      attachments: undefined,
+    });
+    expect(ctx.startTaskInProject).not.toHaveBeenCalled();
+  });
+
   it("start-task calls ctx.startTaskInProject with the full payload", async () => {
     const { ctx } = buildRouteFixture();
     const handled = await handleTaskLauncher(
@@ -428,6 +457,76 @@ describe("handleTaskLauncher", () => {
       baseBranch: "main",
       workspaceId: undefined,
     });
+  });
+
+  it("start-task defaults new workspaces to the project base branch", async () => {
+    const { ctx } = buildRouteFixture({
+      state: {
+        projects: [
+          {
+            id: "p1",
+            label: "nyc-real-estate",
+            path: "/repo/nyc-real-estate",
+            workspaceBaseBranch: "upstream/trunk",
+          },
+        ],
+      },
+    });
+    const handled = await handleTaskLauncher(
+      {
+        component: { id: "x", type: "task-launcher" },
+        eventType: "start-task",
+        data: {
+          projectId: "p1",
+          prompt: "fix the bug",
+          newWorkspace: true,
+          branch: "fix/issue-664-crexi-duplicate",
+        },
+      },
+      ctx,
+    );
+    expect(handled).toBe(true);
+    expect(ctx.startTaskInProject).toHaveBeenCalledWith(
+      expect.objectContaining({
+        projectId: "p1",
+        newWorkspace: true,
+        baseBranch: "upstream/trunk",
+      }),
+    );
+  });
+
+  it("start-task defaults new workspaces to origin/main when no project override exists", async () => {
+    const { ctx } = buildRouteFixture({
+      state: {
+        projects: [
+          {
+            id: "p1",
+            label: "nyc-real-estate",
+            path: "/repo/nyc-real-estate",
+          },
+        ],
+      },
+    });
+    await handleTaskLauncher(
+      {
+        component: { id: "x", type: "task-launcher" },
+        eventType: "start-task",
+        data: {
+          projectId: "p1",
+          prompt: "fix the bug",
+          newWorkspace: true,
+          branch: "fix/issue-664-crexi-duplicate",
+        },
+      },
+      ctx,
+    );
+    expect(ctx.startTaskInProject).toHaveBeenCalledWith(
+      expect.objectContaining({
+        projectId: "p1",
+        newWorkspace: true,
+        baseBranch: "origin/main",
+      }),
+    );
   });
 
   it("start-task forwards GitHub issue origin metadata", async () => {

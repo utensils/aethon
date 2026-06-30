@@ -96,6 +96,18 @@ slice, and the relevant broader gate (`bunx vitest run`, `bun run typecheck`,
 gate exits 0 with existing warnings, report those warnings clearly; do not treat
 new warnings as acceptable without addressing or justifying them.
 
+## UI UAT Discipline
+
+For Aethon UI and interaction changes, verify the running dev app with the
+right tool for the job: use the `aethon-debug` skill for webview state,
+programmatic event dispatch, screenshots, and fast end-to-end probes; use the
+`computer-use` skill when visual/manual UI behavior matters, such as clicking,
+typing, focus, menus, or layout as the user sees it. Prefer the narrower debug
+probe first when diagnosing state, then confirm user-facing behavior with
+Computer Use when the fix depends on rendered interaction. Never UAT against
+`/Applications/Aethon.app` or any release bundle unless the user explicitly asks
+for release testing; use the running dev app only.
+
 ## Architecture
 
 ### Layer responsibilities
@@ -424,6 +436,19 @@ via `src/workspaces.ts` (Rust commands in `commands/git/`); the active
 workspace is mirrored to `/activeWorkspaceId` so the file tree and new tabs
 follow the sidebar selection.
 
+Aethon is built for concurrent work: users can have multiple projects,
+workspaces, tabs, shells, and agents active at the same time. Treat workspace
+switching as a restore operation, not a reset. Switching host/project/workspace
+or returning to a running tab must not drop, invent, or briefly blank live UI
+state such as in-flight status, activity labels, queue counts, attention dots,
+tab identity, cwd, model/auth/session association, or terminal state. When a
+tab is still running, the chat and footer should immediately reconstruct a
+truthful activity affordance from tab-scoped sources (`agentRunningTabs`,
+`agentActivityByTab`, per-tab `waiting`, pending queue state, and immutable tab
+cwd) even before the next bridge event arrives. Do not rely only on global
+`waiting`/`status` for routed workspace UI; those are active-surface summaries
+and can lag a workspace bucket switch.
+
 Pi sessions are scoped to a working directory, but Aethon's application
 state is SQLite-backed. `src/projects.ts` still reads/writes the logical
 `projects.json` state key for compatibility, but `read_state` / `write_state`
@@ -442,6 +467,11 @@ The sidebar tree is **host → project → workspace**
 tiered (`src/hooks/statusPollScheduler.ts`): hot = active workspace
 (20 s + `git-state-changed` events), warm = last 4 activated workspace roots
 (60 s), cold = other projects (5 min).
+
+Tests for project/workspace/session fixes must cover the full concurrent state
+transition: switch away from a workspace with a running tab, switch back, and
+assert the restored chat/status/sidebar surface is correct without waiting for
+a new agent event to repair it.
 
 ### Monaco editor + file tree
 
@@ -551,10 +581,10 @@ The Tauri shell sets these env vars when spawning the bridge (`agent/main.ts`):
 | Env var                             | Purpose                                                                                                                                                                                                                                                      |
 | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `AETHON_DOCS_DIR`                   | Bundled docs dir (`docs/aethon-agent/` in dev, `<resource_dir>/docs/aethon-agent/` in release). Contains `README.md`, `api.md`, `components.md`, `extensions.md`. The system prompt points the model at these for the authoritative API/component reference. |
-| `AETHON_USER_DIR`                   | `~/.aethon/` — user extensions, config, logs, and the SQLite-backed app state directory.                                                                                                                                                                      |
+| `AETHON_USER_DIR`                   | `~/.aethon/` — user extensions, config, logs, and the SQLite-backed app state directory.                                                                                                                                                                     |
 | `AETHON_DB_FILE`                    | `~/.aethon/state/aethon.sqlite3` — canonical Aethon app state, projects, sessions, search index, and small managed state slices.                                                                                                                             |
-| `AETHON_PROJECTS_DIR`               | `~/.aethon/projects/` — stable per-project generated data directories keyed by project id.                                                                                                                                                                    |
-| `AETHON_STATE_FILE`                 | `~/.aethon/state.json` — compatibility/debug JSON snapshot of loaded extensions, themes, custom components, layout summary, and tab list. Rewritten (debounced 200 ms) on every registration.                                                               |
+| `AETHON_PROJECTS_DIR`               | `~/.aethon/projects/` — stable per-project generated data directories keyed by project id.                                                                                                                                                                   |
+| `AETHON_STATE_FILE`                 | `~/.aethon/state.json` — compatibility/debug JSON snapshot of loaded extensions, themes, custom components, layout summary, and tab list. Rewritten (debounced 200 ms) on every registration.                                                                |
 | `AETHON_SESSIONS_DIR`               | Legacy Aethon session-import location. New Aethon session state is SQLite-backed; pi still writes sidecar transcripts to pi's default session location for later pi pickup and analytics.                                                                    |
 | `AETHON_RELEASE_MODE`               | `"1"` in release, `"0"` in dev. The system prompt branches on this to (a) avoid telling the model to read source files that aren't there, (b) point at `~/.aethon/extensions/` for new extensions instead.                                                   |
 | `AETHON_PROJECT_ROOT`               | Source tree path (dev only). Lets the model reference `agent/main.ts` etc. by absolute path during dev work.                                                                                                                                                 |
@@ -634,6 +664,14 @@ for that sentinel, sets the reload-in-progress flag, emits
 drop never aborts a user's LLM turn. The fallback hard-kill path
 remains for the case where stdin is wedged.
 
+Frontend UI state must survive both Vite hot reloads and bridge reloads as a
+core product invariant. Open tabs, active workspace selection, stashed
+workspace buckets, chat history, editor tabs, terminal-panel state, and
+in-flight activity indicators should not disappear, demote to project overview,
+or reset because React remounted or the bridge respawned. When touching reload,
+session restore, project/workspace switching, or snapshot persistence, add
+coverage for the full transition and verify against the running dev app.
+
 ## Conventions
 
 - **Conventional Commits** for all messages: `feat(scope):`, `fix(scope):`, etc.
@@ -706,13 +744,11 @@ the toolchain or build inputs:
 ## Hot reload
 
 Vite hot-reloads the frontend automatically. The agent subprocess (`bun run
-agent/main.ts`) is held alive across reloads in Tauri state, so editing the
-agent on its own would not pick up changes — to fix this, in debug builds
-the Rust shell uses `notify` to watch `agent/` recursively and kills the
-child whenever a file changes. The next Tauri command (e.g. `start_agent`,
-`send_message`) lazily respawns it with the new code, and the frontend
-receives an `agent-reloaded` event so it can show "agent reloaded" in the
-status bar. Production builds skip the watcher entirely.
+agent/main.ts`) is held alive across frontend reloads in Tauri state. In debug
+builds the Rust shell also watches `agent/` recursively; agent edits request a
+graceful bridge reload via `reload_request`, the bridge drains active prompts,
+emits `_reload_done`, exits, and the supervisor emits `agent-reloaded` before
+the next IPC call respawns it. Production builds skip the watcher entirely.
 
 If you find yourself wanting to manually restart the agent during dev, the
 simplest path is `touch agent/main.ts`.

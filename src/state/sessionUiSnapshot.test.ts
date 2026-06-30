@@ -1,12 +1,13 @@
 // @vitest-environment jsdom
 
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { makeEmptyTab } from "../types/tab";
 import {
   isLegacyAethonStateCwd,
   loadSessionUiSnapshot,
   parseSessionUiSnapshot,
   saveSessionUiSnapshot,
+  shouldPreserveExistingHotSnapshot,
 } from "./sessionUiSnapshot";
 
 afterEach(() => {
@@ -249,6 +250,10 @@ describe("sessionUiSnapshot", () => {
             cwd: "/Users/jamesbrink/.aethon/projects",
           },
           {
+            ...makeEmptyTab("managed-worktree", "Managed Worktree"),
+            cwd: "/Users/jamesbrink/.aethon/worktrees/repo-abc123/fix-thing",
+          },
+          {
             ...makeEmptyTab("normal", "Normal"),
             cwd: "/Users/jamesbrink/Projects/utensils/aethon",
           },
@@ -261,6 +266,7 @@ describe("sessionUiSnapshot", () => {
     expect(parsed?.tabs.map((tab) => tab.id)).toEqual([
       "managed",
       "managed-root",
+      "managed-worktree",
       "normal",
     ]);
     expect(parsed?.activeTabId).toBe("managed");
@@ -268,14 +274,17 @@ describe("sessionUiSnapshot", () => {
 
   it("does not treat project-local .aethon folders as legacy app state", () => {
     expect(isLegacyAethonStateCwd("/Users/jamesbrink/.aethon")).toBe(true);
-    expect(isLegacyAethonStateCwd("/home/james/.aethon/aethon/old")).toBe(
-      true,
-    );
+    expect(isLegacyAethonStateCwd("/home/james/.aethon/aethon/old")).toBe(true);
     expect(isLegacyAethonStateCwd("/Users/jamesbrink/.aethon/projects")).toBe(
       false,
     );
     expect(
       isLegacyAethonStateCwd("/Users/jamesbrink/.aethon/projects/project-id"),
+    ).toBe(false);
+    expect(
+      isLegacyAethonStateCwd(
+        "/Users/jamesbrink/.aethon/worktrees/repo-abc123/fix-thing",
+      ),
     ).toBe(false);
     expect(
       isLegacyAethonStateCwd("/Users/jamesbrink/Projects/foo/.aethon/sandbox"),
@@ -658,6 +667,182 @@ describe("sessionUiSnapshot", () => {
         },
       ],
     });
+  });
+
+  it("preserves an existing hot snapshot when a stale flush drops active tabs", () => {
+    const tab = {
+      ...makeEmptyTab("tab-a", "A"),
+      messages: [{ id: "m1", role: "user" as const, text: "hi" }],
+    };
+    const existing = JSON.stringify({
+      tabs: [tab],
+      activeTabId: "tab-a",
+      savedAt: 1,
+    });
+    const stale = JSON.stringify({
+      tabs: [],
+      activeTabId: "__overview__",
+      buckets: {},
+      savedAt: 2,
+    });
+
+    expect(shouldPreserveExistingHotSnapshot(existing, stale)).toBe(true);
+  });
+
+  it("allows an active tab to move into a persisted bucket", () => {
+    const tab = {
+      ...makeEmptyTab("tab-a", "A", "project-1"),
+      messages: [{ id: "m1", role: "user" as const, text: "hi" }],
+    };
+    const existing = JSON.stringify({
+      tabs: [tab],
+      activeTabId: "tab-a",
+      savedAt: 1,
+    });
+    const bucketed = JSON.stringify({
+      tabs: [],
+      activeTabId: "__overview__",
+      buckets: {
+        "project-1::workspace::worktree": {
+          tabs: [tab],
+          activeTabId: "tab-a",
+        },
+      },
+      savedAt: 2,
+    });
+
+    expect(shouldPreserveExistingHotSnapshot(existing, bucketed)).toBe(false);
+  });
+
+  it("allows explicitly closed active tabs to disappear from the hot snapshot", () => {
+    const tab = {
+      ...makeEmptyTab("tab-a", "A"),
+      messages: [{ id: "m1", role: "user" as const, text: "hi" }],
+    };
+    const existing = JSON.stringify({
+      tabs: [tab],
+      activeTabId: "tab-a",
+      savedAt: 1,
+    });
+    const closed = JSON.stringify({
+      tabs: [],
+      activeTabId: "__overview__",
+      closedSessionIds: ["tab-a"],
+      savedAt: 2,
+    });
+
+    expect(shouldPreserveExistingHotSnapshot(existing, closed)).toBe(false);
+  });
+
+  it("allows closed editor tabs to disappear from the hot snapshot", () => {
+    const tab = {
+      ...makeEmptyTab("editor-a", "Editor", null, "editor"),
+      editor: { filePath: "/repo/src/App.tsx" },
+    };
+    const existing = JSON.stringify({
+      tabs: [tab],
+      activeTabId: "editor-a",
+      savedAt: 1,
+    });
+
+    expect(shouldPreserveExistingHotSnapshot(existing, null)).toBe(false);
+  });
+
+  it("allows closed shell tabs to disappear from the hot snapshot", () => {
+    const tab = {
+      ...makeEmptyTab("shell-a", "Shell", null, "shell"),
+      shell: {
+        cwd: "/repo",
+        command: "zsh",
+        args: ["-l"],
+        shareMode: "private" as const,
+        shellState: "running" as const,
+      },
+    };
+    const existing = JSON.stringify({
+      tabs: [tab],
+      activeTabId: "shell-a",
+      savedAt: 1,
+    });
+
+    expect(shouldPreserveExistingHotSnapshot(existing, null)).toBe(false);
+  });
+
+  it("preserves an existing bucket-only hot snapshot when a stale flush clears sessions", () => {
+    const tab = {
+      ...makeEmptyTab("bucket-tab", "Bucket", "project-1"),
+      messages: [{ id: "m1", role: "user" as const, text: "hi" }],
+    };
+    const existing = JSON.stringify({
+      tabs: [],
+      activeTabId: "__overview__",
+      buckets: {
+        "project-1::workspace::wt-1": {
+          tabs: [tab],
+          activeTabId: "bucket-tab",
+        },
+      },
+      savedAt: 1,
+    });
+
+    expect(shouldPreserveExistingHotSnapshot(existing, null)).toBe(true);
+  });
+
+  it("does not erase a richer hot snapshot when a transient empty state serializes to null", () => {
+    const tab = {
+      ...makeEmptyTab("tab-a", "A"),
+      messages: [{ id: "m1", role: "user" as const, text: "hi" }],
+    };
+    window.sessionStorage.setItem(
+      "aethon:session-ui-snapshot:v1",
+      JSON.stringify({
+        tabs: [tab],
+        activeTabId: "tab-a",
+        savedAt: 1,
+      }),
+    );
+    const persistDisk = vi.fn();
+
+    saveSessionUiSnapshot(
+      { tabs: [], activeTabId: "__overview__" },
+      persistDisk,
+    );
+
+    expect(loadSessionUiSnapshot()?.tabs).toMatchObject([{ id: "tab-a" }]);
+    expect(persistDisk).not.toHaveBeenCalled();
+  });
+
+  it("does not erase a bucket-only hot snapshot when a transient empty state serializes to null", () => {
+    const tab = {
+      ...makeEmptyTab("bucket-tab", "Bucket", "project-1"),
+      messages: [{ id: "m1", role: "user" as const, text: "hi" }],
+    };
+    window.sessionStorage.setItem(
+      "aethon:session-ui-snapshot:v1",
+      JSON.stringify({
+        tabs: [],
+        activeTabId: "__overview__",
+        buckets: {
+          "project-1::workspace::wt-1": {
+            tabs: [tab],
+            activeTabId: "bucket-tab",
+          },
+        },
+        savedAt: 1,
+      }),
+    );
+    const persistDisk = vi.fn();
+
+    saveSessionUiSnapshot(
+      { tabs: [], activeTabId: "__overview__" },
+      persistDisk,
+    );
+
+    expect(
+      loadSessionUiSnapshot()?.buckets?.["project-1::workspace::wt-1"]
+        ?.activeTabId,
+    ).toBe("bucket-tab");
+    expect(persistDisk).not.toHaveBeenCalled();
   });
 
   it("persists shell tabs for frontend reload and restores their PTY on mount", () => {

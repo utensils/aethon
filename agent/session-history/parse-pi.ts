@@ -10,7 +10,6 @@ import { stripExpandedFileReferences } from "../file-references";
 import { isSilentTool } from "../silent-tools";
 import { summarizeToolArgs, toolCardPayload } from "../tool-card";
 import {
-  MAX_RESTORED_MESSAGES,
   type RestoredChatMessage,
   textFromContent,
   thinkingFromContent,
@@ -307,5 +306,5 @@ export function parseSessionHistoryLines(
     }
   }
 
-  return messages.slice(-MAX_RESTORED_MESSAGES);
+  return messages;
 }

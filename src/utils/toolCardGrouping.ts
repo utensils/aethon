@@ -6,7 +6,9 @@ interface ToolCardMeta {
   isError: boolean;
   status?: string;
   title?: string;
+  toolName?: string;
   description?: string;
+  filePath?: string;
   startedAt?: number;
   endedAt?: number;
   fileChange?: ToolCardFileChange;
@@ -35,7 +37,9 @@ export interface ToolCardDetails {
   isError: boolean;
   status?: string;
   title?: string;
+  toolName?: string;
   description?: string;
+  filePath?: string;
   startedAt?: number;
   endedAt?: number;
   fileChange?: ToolCardFileChange;
@@ -49,6 +53,7 @@ export interface ToolMessageSummary {
   cancelled: number;
   durationMs: number;
   names: string[];
+  runningNames: string[];
   fileChanges: {
     total: number;
     created: number;
@@ -99,7 +104,9 @@ function toolCardMetaSignature(
   return JSON.stringify([
     componentId ?? "",
     props?.title,
+    props?.toolName,
     props?.description,
+    props?.filePath,
     props?.status,
     props?.startedAt,
     props?.endedAt,
@@ -120,7 +127,9 @@ function readToolCardMeta(m: ChatMessage): ToolCardMeta {
   const cached = toolCardMetaCache.get(m);
   if (cached?.signature === signature) return cached.meta;
   const title = stringValue(props?.title);
+  const toolName = stringValue(props?.toolName);
   const description = stringValue(props?.description);
+  const filePath = stringValue(props?.filePath);
   const status = stringValue(props?.status);
   const startedAt = finiteNumber(props?.startedAt);
   const endedAt = finiteNumber(props?.endedAt);
@@ -132,7 +141,9 @@ function readToolCardMeta(m: ChatMessage): ToolCardMeta {
     isError: props?.isError === true,
     ...(status ? { status } : {}),
     ...(title ? { title } : {}),
+    ...(toolName ? { toolName } : {}),
     ...(description ? { description } : {}),
+    ...(filePath ? { filePath } : {}),
     ...(comp?.id ? { componentId: comp.id } : {}),
     ...(startedAt !== undefined ? { startedAt } : {}),
     ...(endedAt !== undefined ? { endedAt } : {}),
@@ -175,6 +186,8 @@ export function summarizeToolMessages(
 ): ToolMessageSummary {
   const names: string[] = [];
   const seenNames = new Set<string>();
+  const runningNames: string[] = [];
+  const seenRunningNames = new Set<string>();
   const summary: ToolMessageSummary = {
     total: 0,
     running: 0,
@@ -182,6 +195,7 @@ export function summarizeToolMessages(
     cancelled: 0,
     durationMs: 0,
     names,
+    runningNames,
     fileChanges: {
       total: 0,
       created: 0,
@@ -203,6 +217,10 @@ export function summarizeToolMessages(
     if (meta.title && !seenNames.has(meta.title)) {
       seenNames.add(meta.title);
       names.push(meta.title);
+    }
+    if (meta.isRunning && meta.title && !seenRunningNames.has(meta.title)) {
+      seenRunningNames.add(meta.title);
+      runningNames.push(meta.title);
     }
     if (meta.fileChange) {
       summary.fileChanges.total += 1;

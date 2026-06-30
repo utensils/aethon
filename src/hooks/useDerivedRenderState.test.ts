@@ -214,6 +214,54 @@ describe("useDerivedRenderState", () => {
     });
   });
 
+  it("synthesizes workspace landing when active workspace state loses its landing object", () => {
+    const buildSidebarHistory = vi.fn(() => []);
+    const { result } = renderHook(() =>
+      useDerivedRenderState({
+        state: {
+          tabs: [],
+          activeTabId: OVERVIEW_TAB_ID,
+          activeProjectId: "p1",
+          activeWorkspaceId: "wt-1",
+          project: { id: "p1", path: "/repo/app" },
+          landing: null,
+          sidebar: {
+            projects: [
+              {
+                id: "p1",
+                label: "Aethon",
+                iconUrl: "asset://localhost/icon.png",
+                workspaces: [
+                  {
+                    id: "wt-1",
+                    label: "fix/session",
+                    branch: "fix/session",
+                    path: "/repo/app-fix-session",
+                    isMain: false,
+                  },
+                ],
+              },
+            ],
+          },
+        },
+        buildSidebarHistory,
+        hostInfo,
+      }),
+    );
+
+    expect(result.current.renderState.landingVisible).toBe(true);
+    expect(result.current.renderState.emptyAndProject).toBe(false);
+    expect(result.current.renderState.landing).toMatchObject({
+      kind: "workspace",
+      projectId: "p1",
+      projectLabel: "Aethon",
+      workspaceId: "wt-1",
+      branch: "fix/session",
+      path: "/repo/app-fix-session",
+    });
+    expect(buildSidebarHistory).toHaveBeenCalledWith([], OVERVIEW_TAB_ID, []);
+  });
+
   it("builds the active project dashboard from matching sessions and workspaces", () => {
     const { result } = renderHook(() =>
       useDerivedRenderState({

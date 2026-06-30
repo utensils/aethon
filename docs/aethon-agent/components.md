@@ -905,6 +905,8 @@ launcher's project chip), `restore-session`.
   activeWorkspaceId?: string | { $ref },
   placeholder?: string,
   prompt?: string | { $ref },
+  target?: "project" | "host",
+  model?: string,
 }
 ```
 
@@ -912,11 +914,13 @@ Codex-style "do anything" composer. Textarea + chip row
 `[project ▾ workspace ▾ branch ▾]` + Start button. The workspace chip
 defaults to "project root"; selecting "+ New workspace" reveals the
 branch + base inputs. Submit emits `start-task` with `{projectId,
-prompt, newWorkspace?, branch?, baseBranch?, workspaceId?}`; the
-dashboard handler routes this to the App-level `startTaskInProject`
-orchestrator (the same path the `aethon.tasks.start` pi tool calls).
-When `baseBranch` is omitted, workspace creation uses the project's
-configured workspace base and then falls back to `origin/main`.
+prompt, newWorkspace?, branch?, baseBranch?, workspaceId?, model?}` for
+project launches, or `{target:"host", prompt, model?}` for the host overview.
+The dashboard handler routes project launches to the App-level
+`startTaskInProject` orchestrator (the same path the `aethon.tasks.start` pi
+tool calls), while host launches open a host-scoped tab directly and preserve
+the selected model. When `baseBranch` is omitted, workspace creation uses the
+project's configured workspace base and then falls back to `origin/main`.
 Reusable standalone in custom layouts.
 
 ### `project-card`

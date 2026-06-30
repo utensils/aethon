@@ -36,6 +36,25 @@ export function usePickerAnchor(
         return;
       }
       const r = anchor.getBoundingClientRect();
+      const hasMeasuredLayout =
+        r.width !== 0 ||
+        r.height !== 0 ||
+        r.top !== 0 ||
+        r.right !== 0 ||
+        r.bottom !== 0 ||
+        r.left !== 0;
+      if (
+        hasMeasuredLayout &&
+        (r.width <= 0 ||
+          r.height <= 0 ||
+          r.bottom <= 0 ||
+          r.top >= window.innerHeight ||
+          r.right <= 0 ||
+          r.left >= window.innerWidth)
+      ) {
+        setMenuAnchor(null);
+        return;
+      }
       const scale = readUiScale();
       const viewportWidth = window.innerWidth / scale;
       const viewportHeight = window.innerHeight / scale;

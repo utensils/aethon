@@ -3,6 +3,7 @@ import { emitAgentTurnComplete } from "../../utils/agentTurnEvents";
 import { lastAgentText } from "../../utils/messages";
 import { resolveControlWait } from "../controlWaitRegistry";
 import type { BridgeMessageHandler } from "./types";
+import { clearAgentActivity } from "./agentActivity";
 import { clearHangWarn } from "./hangWarn";
 import { flushResponseDeltas } from "./responseDelta";
 
@@ -16,6 +17,7 @@ export const handleResponseEnd: BridgeMessageHandler = (data, ctx) => {
     resolveControlWait(data.controlRequestId, "completed", tabId);
   }
   flushResponseDeltas(tabId);
+  clearAgentActivity(ctx, tabId);
   // Always clear waiting on response_end. The queue is now held client
   // side: `useQueuedDispatch` watches the `waiting` transition and
   // re-flips it to true while popping the head and dispatching the

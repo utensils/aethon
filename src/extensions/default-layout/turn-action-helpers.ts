@@ -9,12 +9,22 @@ export function isBranchableTurnMessage(message: ChatMessage): boolean {
   );
 }
 
-export function branchTargetForTurn(
+export interface TurnBranchTargets {
+  rollbackTarget?: ChatMessage;
+  forkTarget?: ChatMessage;
+}
+
+export function branchTargetsForTurn(
   turn: ConversationTurn,
   visibleAgentMessages: ChatMessage[],
-): ChatMessage | undefined {
-  return [turn.userMessage, ...visibleAgentMessages]
+): TurnBranchTargets {
+  const rollbackTarget =
+    turn.userMessage && isBranchableTurnMessage(turn.userMessage)
+      ? turn.userMessage
+      : undefined;
+  const forkTarget = [turn.userMessage, ...visibleAgentMessages]
     .filter((message): message is ChatMessage => Boolean(message))
     .filter(isBranchableTurnMessage)
     .at(-1);
+  return { rollbackTarget, forkTarget };
 }

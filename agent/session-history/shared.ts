@@ -9,7 +9,6 @@ export const LABEL_FILE = "label.txt";
 export const LABEL_META_FILE = "label-meta.json";
 export const LOCAL_CHAT_FILE = "aethon-chat.jsonl";
 export const MAX_CUSTOM_LABEL_CHARS = 120;
-export const MAX_RESTORED_MESSAGES = 200;
 export const MAX_LOCAL_CHAT_MESSAGES = 400;
 export const MAX_TEXT_CHARS = 8 * 1024;
 export const MAX_LABEL_CHARS = 60;

@@ -31,9 +31,17 @@ import { saveClipboardImageAttachment } from "../../../utils/imageAttachments";
 import { ImageAttachmentImage } from "../image-attachment-image";
 import { ImageLightbox } from "../image-lightbox";
 import { AtPicker } from "../at-picker";
+import { SlashPicker } from "../slash-picker";
 import { useAtMentionTextarea } from "../use-at-mention-textarea";
 import { useTextareaVoiceInput } from "../use-textarea-voice-input";
 import { VoiceInputButton, VoiceStatus } from "../voice-controls";
+import {
+  type ArgMatch,
+  type CommandMatch,
+  type PickerMatch,
+  type SlashCommandSource,
+  useSlashMatching,
+} from "../use-slash-matching";
 
 interface ProjectLite {
   id: string;
@@ -85,6 +93,8 @@ type WorkspaceChoice =
   | { kind: "existing"; id: string; path: string; label: string }
   | { kind: "new" };
 
+const HOST_PROJECT_ID = "__aethon_host__";
+
 const codeInputProps = {
   autoCapitalize: "none",
   autoCorrect: "off",
@@ -107,9 +117,13 @@ export function TaskLauncher({
         placeholder?: string;
         prompt?: unknown;
         showProjectSelector?: boolean;
+        defaultTarget?: "host" | "project";
+        commands?: SlashCommandSource;
       }
     | undefined;
   const showProjectSelector = props?.showProjectSelector === true;
+  const defaultToHost =
+    showProjectSelector && props?.defaultTarget === "host";
 
   const data: LauncherData = useMemo(
     () => ({
@@ -149,14 +163,21 @@ export function TaskLauncher({
     return list;
   }, [data.project, data.projects, data.otherProjects]);
   const [selectedProjectId, setSelectedProjectId] = useState(
-    data.project?.id ?? selectableProjects[0]?.id ?? "",
+    defaultToHost
+      ? HOST_PROJECT_ID
+      : (data.project?.id ?? selectableProjects[0]?.id ?? ""),
   );
-  const selectedProject = showProjectSelector
-    ? (selectableProjects.find((p) => p.id === selectedProjectId) ??
-      data.project ??
-      selectableProjects[0] ??
-      null)
-    : data.project;
+  const hostSelected =
+    showProjectSelector && selectedProjectId === HOST_PROJECT_ID;
+  const selectedProject =
+    showProjectSelector && !hostSelected
+      ? (selectableProjects.find((p) => p.id === selectedProjectId) ??
+        data.project ??
+        selectableProjects[0] ??
+        null)
+      : showProjectSelector
+        ? null
+        : data.project;
   const selectedWorkspaces = useMemo(
     () =>
       showProjectSelector
@@ -240,6 +261,8 @@ export function TaskLauncher({
   // Only resets when the user hasn't started typing — typing a prompt
   // implies intent, so don't yank their selection out from under them.
   const [touched, setTouched] = useState(false);
+  const hostOverviewVisible = defaultToHost && state.emptyAndNoProject === true;
+  const wasHostOverviewVisibleRef = useRef(hostOverviewVisible);
   useEffect(() => {
     if (touched) return;
     queueMicrotask(() => setWorkspaceChoice(initialChoice));
@@ -251,6 +274,27 @@ export function TaskLauncher({
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
+    if (!defaultToHost) return;
+    const wasVisible = wasHostOverviewVisibleRef.current;
+    wasHostOverviewVisibleRef.current = hostOverviewVisible;
+    if (!hostOverviewVisible || wasVisible) return;
+    setSelectedProjectId(HOST_PROJECT_ID);
+    setWorkspaceChoice({ kind: "current" });
+    setBaseBranch(DEFAULT_WORKSPACE_BASE_BRANCH);
+    setTouched(false);
+  }, [defaultToHost, hostOverviewVisible]);
+
+  useEffect(() => {
+    if (defaultToHost) {
+      if (selectedProjectId === HOST_PROJECT_ID) return;
+      if (selectableProjects.some((p) => p.id === selectedProjectId)) return;
+      queueMicrotask(() => {
+        setSelectedProjectId(HOST_PROJECT_ID);
+        setWorkspaceChoice({ kind: "current" });
+        setBaseBranch(DEFAULT_WORKSPACE_BASE_BRANCH);
+      });
+      return;
+    }
     const fallbackProject = data.project ?? selectableProjects[0] ?? null;
     if (!fallbackProject) return;
     if (selectableProjects.some((p) => p.id === selectedProjectId)) return;
@@ -261,7 +305,7 @@ export function TaskLauncher({
         fallbackProject.workspaceBaseBranch ?? DEFAULT_WORKSPACE_BASE_BRANCH,
       );
     });
-  }, [data.project, selectableProjects, selectedProjectId]);
+  }, [data.project, defaultToHost, selectableProjects, selectedProjectId]);
 
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   useEffect(() => {
@@ -279,8 +323,14 @@ export function TaskLauncher({
   // workspace, else the project root (a "+ New workspace" forks from the
   // project, so its files are the right suggestions too).
   const launcherRef = useRef<HTMLDivElement | null>(null);
+  const { slashMatch, highlightIdx, setHighlightIdx, dismissPicker } =
+    useSlashMatching({
+      value: promptText,
+      commandsRaw: props?.commands ?? { $ref: "/slashCommands" },
+      state,
+    });
   const atRoot =
-    workspaceChoice.kind === "existing"
+    !hostSelected && workspaceChoice.kind === "existing"
       ? workspaceChoice.path
       : (selectedProject?.path ?? null);
   const {
@@ -296,30 +346,39 @@ export function TaskLauncher({
     onValueCommit: () => setTouched(true),
     textareaRef,
     root: atRoot,
-    enabled: !submitting,
+    enabled: !submitting && !slashMatch,
   });
 
   const submitPrompt = useCallback((rawPrompt: string) => {
     if (submitting) return;
     const text = rawPrompt.trim();
     if (!text && attachments.length === 0) return;
-    if (!selectedProject) return;
+    if (!selectedProject && !hostSelected) return;
     setSubmitting(true);
     const baseTrimmed = baseBranch.trim();
     onEvent("start-task", {
-      projectId: selectedProject.id,
+      ...(hostSelected
+        ? { target: "host" }
+        : { projectId: selectedProject?.id }),
       prompt: text,
       attachments,
-      newWorkspace: workspaceChoice.kind === "new",
-      branch: workspaceChoice.kind === "new" ? newBranch.trim() : undefined,
+      newWorkspace: !hostSelected && workspaceChoice.kind === "new",
+      branch:
+        !hostSelected && workspaceChoice.kind === "new"
+          ? newBranch.trim()
+          : undefined,
       baseBranch:
-        workspaceChoice.kind === "new" && baseTrimmed.length > 0
+        !hostSelected &&
+        workspaceChoice.kind === "new" &&
+        baseTrimmed.length > 0
           ? baseTrimmed
           : undefined,
       // Existing workspace case: we send the workspaceId so the route
       // handler can activate it before spawning the tab.
       workspaceId:
-        workspaceChoice.kind === "existing" ? workspaceChoice.id : undefined,
+        !hostSelected && workspaceChoice.kind === "existing"
+          ? workspaceChoice.id
+          : undefined,
       // Per-launch model. Falls back to the resolved default so the
       // session always boots with a concrete model even before `ready`.
       model: selectedModel || defaultModelId || undefined,
@@ -337,6 +396,7 @@ export function TaskLauncher({
     submitting,
     attachments,
     selectedProject,
+    hostSelected,
     workspaceChoice,
     newBranch,
     baseBranch,
@@ -349,13 +409,31 @@ export function TaskLauncher({
     submitPrompt(promptText);
   }, [promptText, submitPrompt]);
 
+  const insertSlashMatch = (match: PickerMatch) => {
+    const text =
+      match.kind === "command"
+        ? `/${match.cmd.name} `
+        : `/${match.cmd.name} ${match.choice.value}`;
+    setPromptText(text);
+    setTouched(true);
+  };
+
+  const submitSlashArgMatch = (match: ArgMatch) => {
+    const text = `/${match.cmd.name} ${match.choice.value}`;
+    setPromptText(text);
+    setTouched(true);
+    submitPrompt(text);
+  };
+
   // The dashboard task-launcher and the composer both mount at once — the
   // layout grid hides cells with display:none rather than unmounting — so each
   // registers the same global voice hotkey against one shared mic. Track
   // whether this dashboard actually owns the canvas (mirrors the
   // project-dashboard's `visible: /emptyAndProject` binding) so it neither
   // starts while hidden nor keeps holding the slot after being hidden.
-  const voiceSurfaceVisible = !!state.emptyAndProject;
+  const voiceSurfaceVisible = defaultToHost
+    ? state.emptyAndNoProject === true
+    : state.emptyAndProject === true;
   const voiceConfig = (state.voice as
     | {
         toggleHotkey?: string | null;
@@ -385,7 +463,52 @@ export function TaskLauncher({
     });
 
   const onKey = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (handleAtMentionKeyDown(e)) return;
+    if (slashMatch) {
+      const list = slashMatch.matches;
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setHighlightIdx((i) => (i + 1) % list.length);
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setHighlightIdx((i) => (i - 1 + list.length) % list.length);
+        return;
+      }
+      if (e.key === "Tab") {
+        e.preventDefault();
+        const match = list[highlightIdx] ?? list[0];
+        if (match) insertSlashMatch(match);
+        return;
+      }
+      if (e.key === "Escape") {
+        e.preventDefault();
+        dismissPicker();
+        return;
+      }
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        const value = (e.target as HTMLTextAreaElement).value;
+        if (slashMatch.mode === "arg") {
+          const match = list[highlightIdx] ?? list[0];
+          if (match) submitSlashArgMatch(match as ArgMatch);
+          return;
+        }
+        const exact = (list as CommandMatch[]).find(
+          (candidate) =>
+            value === `/${candidate.cmd.name}` ||
+            value.startsWith(`/${candidate.cmd.name} `),
+        );
+        if (exact && value.trim().length > 0) {
+          submitPrompt(value);
+          return;
+        }
+        const match = list[highlightIdx] ?? list[0];
+        if (match) insertSlashMatch(match);
+        return;
+      }
+    }
+    if (!slashMatch && handleAtMentionKeyDown(e)) return;
     // Plain Enter submits; Shift+Enter adds a newline. Matches the main
     // chat composer. Cmd/Ctrl+Enter also submits for users who hold
     // modifiers out of habit.
@@ -422,7 +545,7 @@ export function TaskLauncher({
       });
   };
 
-  if (!selectedProject) return null;
+  if (!selectedProject && !hostSelected) return null;
 
   const workspaceLabel =
     workspaceChoice.kind === "current"
@@ -442,7 +565,9 @@ export function TaskLauncher({
         className="a2ui-task-launcher-input"
         placeholder={
           props?.placeholder ??
-          `Start a task in ${selectedProject.label}… use @<subagent> or @path`
+          (hostSelected
+            ? "Start a task on this host… use @<subagent> or @path"
+            : `Start a task in ${selectedProject!.label}… use @<subagent> or @path`)
         }
         value={promptText}
         rows={3}
@@ -456,6 +581,14 @@ export function TaskLauncher({
         onKeyDown={onKey}
         disabled={submitting}
         aria-label="Task prompt"
+      />
+      <SlashPicker
+        anchorRef={launcherRef}
+        slashMatch={slashMatch}
+        highlightIdx={highlightIdx}
+        setHighlightIdx={setHighlightIdx}
+        onInsert={insertSlashMatch}
+        onSubmitArg={submitSlashArgMatch}
       />
       <AtPicker
         anchorRef={launcherRef}
@@ -523,14 +656,25 @@ export function TaskLauncher({
         )}
         {showProjectSelector && selectableProjects.length > 0 && (
           <ChipMenu
-            label={selectedProject.label}
+            label={hostSelected ? "host" : (selectedProject?.label ?? "project")}
             icon="◰"
             ariaLabel="Project"
-            items={selectableProjects.map((p) => ({
-              id: p.id,
-              label: p.label,
-              current: p.id === selectedProject.id,
-            }))}
+            items={[
+              ...(defaultToHost
+                ? [
+                    {
+                      id: HOST_PROJECT_ID,
+                      label: "host",
+                      current: hostSelected,
+                    },
+                  ]
+                : []),
+              ...selectableProjects.map((p) => ({
+                id: p.id,
+                label: p.label,
+                current: !hostSelected && p.id === selectedProject?.id,
+              })),
+            ]}
             onSelect={(id) => {
               const project = selectableProjects.find((p) => p.id === id);
               setSelectedProjectId(id);
@@ -542,45 +686,47 @@ export function TaskLauncher({
             }}
           />
         )}
-        <ChipMenu
-          label={workspaceLabel}
-          icon="⌥"
-          ariaLabel="Workspace"
-          items={[
-            {
-              id: "current",
-              label: `project root (${selectedProject.label})`,
-              current: workspaceChoice.kind === "current",
-            },
-            ...selectedWorkspaces.map((w) => ({
-              id: w.id,
-              label: w.label || w.branch || "workspace",
-              current:
-                workspaceChoice.kind === "existing" &&
-                workspaceChoice.id === w.id,
-            })),
-            {
-              id: "__new__",
-              label: "+ New workspace",
-              current: workspaceChoice.kind === "new",
-            },
-          ]}
-          onSelect={(id) => {
-            setTouched(true);
-            if (id === "current") setWorkspaceChoice({ kind: "current" });
-            else if (id === "__new__") setWorkspaceChoice({ kind: "new" });
-            else {
-              const found = selectedWorkspaces.find((w) => w.id === id);
-              if (found)
-                setWorkspaceChoice({
-                  kind: "existing",
-                  id: found.id,
-                  path: found.path,
-                  label: found.label || found.branch || "workspace",
-                });
-            }
-          }}
-        />
+        {!hostSelected && selectedProject && (
+          <ChipMenu
+            label={workspaceLabel}
+            icon="⌥"
+            ariaLabel="Workspace"
+            items={[
+              {
+                id: "current",
+                label: `project root (${selectedProject.label})`,
+                current: workspaceChoice.kind === "current",
+              },
+              ...selectedWorkspaces.map((w) => ({
+                id: w.id,
+                label: w.label || w.branch || "workspace",
+                current:
+                  workspaceChoice.kind === "existing" &&
+                  workspaceChoice.id === w.id,
+              })),
+              {
+                id: "__new__",
+                label: "+ New workspace",
+                current: workspaceChoice.kind === "new",
+              },
+            ]}
+            onSelect={(id) => {
+              setTouched(true);
+              if (id === "current") setWorkspaceChoice({ kind: "current" });
+              else if (id === "__new__") setWorkspaceChoice({ kind: "new" });
+              else {
+                const found = selectedWorkspaces.find((w) => w.id === id);
+                if (found)
+                  setWorkspaceChoice({
+                    kind: "existing",
+                    id: found.id,
+                    path: found.path,
+                    label: found.label || found.branch || "workspace",
+                  });
+              }
+            }}
+          />
+        )}
         {workspaceChoice.kind === "new" && (
           <>
             <input

@@ -6,9 +6,9 @@
  *    earlier message. Non-destructive — the abandoned path stays in the file,
  *    so a later restore still sees it; we just realign the Aethon-local chat
  *    so it doesn't resurrect post-rollback rows.
- *  - fork: SQLite copies the path root→entry into a new Aethon session.
- *    Pi still receives a sidecar branch file in its default session location,
- *    but Aethon does not read or copy that file.
+ *  - fork: SQLite copies the path root→entry into a new Aethon session. The UI
+ *    restores from that SQLite state, so it must not block on pi's sidecar
+ *    branch writer.
  */
 
 import { randomUUID } from "node:crypto";
@@ -179,16 +179,6 @@ export async function handleForkSession(
       type: "error",
       tabId,
       message: `fork_session: unknown entry ${entryId}`,
-    });
-    return;
-  }
-  try {
-    sm.createBranchedSession(entryId);
-  } catch (err) {
-    deps.send({
-      type: "error",
-      tabId,
-      message: `fork_session: ${(err as Error).message}`,
     });
     return;
   }

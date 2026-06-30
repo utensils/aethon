@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, type MutableRefObject } from "react";
 import type { A2UIPayload } from "../types/a2ui";
 import { TAB_MIRROR_KEYS } from "./useTabs";
 import { WORKSTATION_AREAS, workstationRows } from "./useFocus";
@@ -141,11 +141,13 @@ export function buildInitialAppStore({
 export interface UseSessionPersistenceOptions {
   appStore: AppStore;
   hasSyncSessionSnapshot: boolean;
+  stateRef?: MutableRefObject<Record<string, unknown>>;
 }
 
 export function useSessionPersistence({
   appStore,
   hasSyncSessionSnapshot,
+  stateRef,
 }: UseSessionPersistenceOptions): void {
   const sessionSnapshotPersistTimerRef = useRef<number | null>(null);
 
@@ -216,18 +218,19 @@ export function useSessionPersistence({
     let cancelled = false;
     let persistenceStarted = false;
     let unsubscribe: (() => void) | undefined;
+    const currentState = () => stateRef?.current ?? appStore.getState();
     const persistNow = () => {
       if (!persistenceStarted) return;
       if (sessionSnapshotPersistTimerRef.current !== null) {
         window.clearTimeout(sessionSnapshotPersistTimerRef.current);
         sessionSnapshotPersistTimerRef.current = null;
       }
-      saveSessionUiSnapshot(appStore.getState(), (content) => {
+      saveSessionUiSnapshot(currentState(), (content) => {
         writeState(SESSION_UI_SNAPSHOT_FILE, content).catch(() => {
           /* persist is best effort */
         });
       });
-      saveLayoutPrefs(appStore.getState()).catch(() => {
+      saveLayoutPrefs(currentState()).catch(() => {
         /* persist is best effort */
       });
     };
@@ -296,7 +299,7 @@ export function useSessionPersistence({
       hot?.off("vite:beforeUpdate", reloadOnJsUpdate);
       hot?.off("vite:beforeFullReload", persistNow);
     };
-  }, [appStore, hasSyncSessionSnapshot, restoreSessionUiSnapshot]);
+  }, [appStore, hasSyncSessionSnapshot, restoreSessionUiSnapshot, stateRef]);
 
   useEffect(() => {
     let cancelled = false;

@@ -1,6 +1,7 @@
 import { closeRunningToolCards } from "../../utils/agentBusy";
 import { clearPendingForksForTab } from "../../eventRoutes/session";
 import { resolveControlWait } from "../controlWaitRegistry";
+import { clearAgentActivity } from "./agentActivity";
 import { clearHangWarn } from "./hangWarn";
 import type { BridgeMessageHandler } from "./types";
 
@@ -30,6 +31,7 @@ export const handleError: BridgeMessageHandler = (data, ctx) => {
     resolveControlWait(data.controlRequestId, "error", tabId, message);
   }
   ctx.activeResponseIdRef.current = null;
+  clearAgentActivity(ctx, tabId);
   ctx.appendMessage(
     {
       id: crypto.randomUUID(),

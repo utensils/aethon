@@ -10,16 +10,16 @@
 .ae-turn-activity {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 7px;
   min-width: 0;
   max-width: 100%;
-  padding-left: 4px;
+  padding-left: 0;
 }
 
 .ae-turn-activity-summary {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 7px;
   width: fit-content;
   max-width: 100%;
   padding: 3px 0;
@@ -27,7 +27,7 @@
   background: transparent;
   color: var(--text-dim);
   font: inherit;
-  font-size: var(--chrome-text);
+  font-size: var(--chrome-text-compact);
   text-align: left;
   cursor: pointer;
   transition: color var(--motion-fast) var(--ease-out);
@@ -43,9 +43,66 @@
   flex-direction: column;
   gap: 8px;
   min-width: 0;
-  max-width: min(100%, 76ch);
-  padding-left: 18px;
+  max-width: min(100%, 72ch);
+  padding-left: 16px;
   transform-origin: top;
+}
+
+.ae-turn-activity-live-tools {
+  position: relative;
+  gap: 6px;
+  width: min(100%, 42rem);
+  margin-top: 1px;
+  padding: 8px 10px 8px 12px;
+  border: 1px solid color-mix(in oklab, var(--accent) 22%, var(--border));
+  border-radius: 10px;
+  background: color-mix(in oklab, var(--accent) 5%, transparent);
+}
+
+.ae-turn-activity-live-only {
+  margin-top: 2px;
+}
+
+.ae-live-activity-card {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  width: fit-content;
+  max-width: min(100%, 38rem);
+  padding: 7px 10px;
+  color: color-mix(in oklab, var(--text) 78%, var(--text-dim));
+  font-size: var(--chrome-text-compact);
+}
+
+.ae-live-activity-pulse {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: var(--accent);
+  box-shadow: 0 0 0 0 color-mix(in oklab, var(--accent) 28%, transparent);
+}
+
+.ae-live-activity-copy {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 7px;
+  min-width: 0;
+}
+
+.ae-live-activity-label {
+  color: color-mix(in oklab, var(--accent) 48%, var(--text));
+  font-weight: 600;
+}
+
+.ae-live-activity-detail {
+  color: var(--text-dim);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .ae-live-activity-pulse {
+    animation: ae-live-tool-pulse 1.35s var(--ease-out-strong) infinite;
+  }
 }
 
 .ae-turn-activity-body[data-state="open"],
@@ -218,6 +275,11 @@
   animation: ae-tool-row-in var(--motion-base) var(--ease-out-strong) both;
 }
 
+.ae-turn-activity-live-tools .ae-tool-activity-row {
+  color: var(--text);
+  font-size: var(--text-sm);
+}
+
 @keyframes ae-tool-row-in {
   from {
     opacity: 0;
@@ -240,6 +302,27 @@
 
 .ae-tool-activity-row[data-status="running"] .ae-tool-activity-dot {
   background: var(--accent);
+  box-shadow: 0 0 0 0 color-mix(in oklab, var(--accent) 34%, transparent);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .ae-tool-activity-row[data-status="running"] .ae-tool-activity-dot {
+    animation: ae-live-tool-pulse 1.35s var(--ease-out-strong) infinite;
+  }
+}
+
+@keyframes ae-live-tool-pulse {
+  0%,
+  100% {
+    opacity: 0.56;
+    transform: scale(0.9);
+    box-shadow: 0 0 0 0 color-mix(in oklab, var(--accent) 28%, transparent);
+  }
+  42% {
+    opacity: 1;
+    transform: scale(1);
+    box-shadow: 0 0 0 6px color-mix(in oklab, var(--accent) 0%, transparent);
+  }
 }
 
 .ae-tool-activity-row[data-status="failed"] .ae-tool-activity-dot,
@@ -284,6 +367,10 @@
   color: var(--text-dim);
   font-size: var(--chrome-text-compact);
   white-space: nowrap;
+}
+
+.ae-tool-activity-row[data-status="running"] .ae-tool-activity-state {
+  color: color-mix(in oklab, var(--accent) 62%, var(--text-dim));
 }
 
 .ae-file-activity-card {
@@ -712,7 +799,7 @@
   gap: 4px;
   padding: 6px 8px;
   margin-bottom: 6px;
-  border-left: 2px solid var(--accent-soft);
+  border: 1px solid color-mix(in oklab, var(--accent) 18%, var(--border));
   background: color-mix(in srgb, var(--accent) 5%, transparent);
   border-radius: var(--radius-sm, 6px);
 }

@@ -10,6 +10,28 @@ function messageLine(id: string, role: "user" | "assistant", content: string): s
 }
 
 describe("parseSessionHistoryLines", () => {
+  it("keeps the full restored transcript instead of dropping early turns", () => {
+    const lines = Array.from({ length: 240 }, (_, index) =>
+      messageLine(`u${index}`, "user", `message ${index}`),
+    );
+
+    const restored = parseSessionHistoryLines(lines);
+
+    expect(restored).toHaveLength(240);
+    expect(restored[0]).toMatchObject({
+      id: "u0",
+      entryId: "u0",
+      role: "user",
+      text: "message 0",
+    });
+    expect(restored.at(-1)).toMatchObject({
+      id: "u239",
+      entryId: "u239",
+      role: "user",
+      text: "message 239",
+    });
+  });
+
   it("strips expanded @file context from restored user display text", () => {
     const expanded = [
       "Review @README.md",

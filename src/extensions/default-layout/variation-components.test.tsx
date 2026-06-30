@@ -22,7 +22,7 @@ vi.mock("../../auth-profiles", async (importOriginal) => {
   };
 });
 
-import { AccountSelector, ModelPicker } from "./variation-components";
+import { AccountSelector, ModelPicker, VcsStatus } from "./variation-components";
 
 beforeEach(() => {
   vi.stubGlobal("requestAnimationFrame", (cb: FrameRequestCallback) => {
@@ -184,6 +184,56 @@ describe("ModelPicker", () => {
       { sectionId: "models", itemId: "openai/gpt-5.5" },
       "openai/gpt-5.5",
     );
+  });
+});
+
+describe("VcsStatus", () => {
+  it("opens all changed files from the changed-files chip", () => {
+    const onEvent = vi.fn();
+    render(
+      <VcsStatus
+        component={{ id: "vcs-status", type: "vcs-status", props: {} }}
+        state={{
+          vcs: {
+            root: "/repo",
+            branch: "main",
+            ahead: 0,
+            behind: 0,
+            loading: false,
+            changes: {
+              total: 2,
+              modified: 2,
+              added: 0,
+              deleted: 0,
+              untracked: 0,
+              renamed: 0,
+              copied: 0,
+              conflicted: 0,
+              insertions: 10,
+              deletions: 2,
+              files: [
+                { path: "src/App.tsx", status: "modified" },
+                { path: "agent/main.ts", status: "modified" },
+              ],
+            },
+          },
+        }}
+        onEvent={onEvent}
+      />,
+    );
+
+    const button = screen.getByRole("button", { name: /2 changed/i });
+    expect(button.getAttribute("title")).toBe(
+      "2 changed files — open all in editor",
+    );
+    fireEvent.click(button);
+
+    expect(onEvent).toHaveBeenCalledWith("file-tree-open-many", {
+      files: [
+        { filePath: "/repo/src/App.tsx", rootPath: "/repo" },
+        { filePath: "/repo/agent/main.ts", rootPath: "/repo" },
+      ],
+    });
   });
 });
 

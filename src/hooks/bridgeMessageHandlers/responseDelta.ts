@@ -1,5 +1,6 @@
 import type { BridgeMessageHandler } from "./types";
 import type { BridgeMessageContext } from "./types";
+import { clearAgentActivity } from "./agentActivity";
 
 interface PendingDelta {
   ctx: BridgeMessageContext;
@@ -54,6 +55,9 @@ export const handleResponseDelta: BridgeMessageHandler = (data, ctx) => {
   const messageId = (data.messageId as string) || undefined;
   const tabId = (data.tabId as string | undefined) ?? "default";
   const channel = data.channel === "thinking" ? "thinking" : "text";
+  if (channel === "text") {
+    clearAgentActivity(ctx, tabId);
+  }
   const model =
     typeof data.model === "string" && data.model.length > 0
       ? data.model

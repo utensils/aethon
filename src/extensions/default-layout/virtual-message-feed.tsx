@@ -217,7 +217,10 @@ export function VirtualMessageFeed({
   // The canvas can be scrollable with zero messages (a live subtree / typing
   // indicator in the Footer), so the pill must consider footer content too.
   const hasFooterContent = Boolean(
-    footerContext && (footerContext.liveSubtree || footerContext.showTyping),
+    footerContext &&
+      (footerContext.liveSubtree ||
+        footerContext.showTyping ||
+        footerContext.agentActivity),
   );
   const hasContent = messages.length > 0 || hasFooterContent;
 

@@ -73,7 +73,11 @@ export interface EventRouteContext {
   // ─── Chat / prompt ──────────────────────────────────────────────────
   sendChat: (
     text: string,
-    options?: { mode?: "normal" | "steer"; attachments?: ChatAttachment[] },
+    options?: {
+      mode?: "normal" | "steer";
+      tabId?: string;
+      attachments?: ChatAttachment[];
+    },
   ) => Promise<void>;
   stopPrompt: (explicitTabId?: string) => Promise<void>;
   updateTab: (tabId: string, updater: (tab: Tab) => Tab) => void;
@@ -97,6 +101,7 @@ export interface EventRouteContext {
       restoredSession?: boolean;
       cwd?: string;
       scrollToMatch?: string;
+      model?: string;
       sourceIssue?: GitHubIssueSource;
     },
   ) => void;

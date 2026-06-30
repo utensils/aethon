@@ -610,7 +610,24 @@ describe("ChatInput", () => {
     expect(virtuosoMockState.alignToBottom).toBeUndefined();
   });
 
-  it("renders the typing indicator inside the transcript row column", () => {
+  it("renders a textual live activity indicator before visible agent output", () => {
+    renderMainCanvas({
+      waiting: true,
+      messages: [{ id: "1", role: "user", text: "start" }],
+    });
+
+    const indicator = screen.getByRole("status", {
+      name: "Thinking through next step. Waiting for the next update",
+    });
+    expect(screen.getByText("Thinking through next step")).toBeTruthy();
+    expect(screen.getByText("Waiting for the next update")).toBeTruthy();
+    expect(indicator.querySelectorAll(".ae-typing-dot")).toHaveLength(0);
+    expect(indicator.closest(".a2ui-msg-row-footer")).toBeTruthy();
+    expect(indicator.closest(".ae-conversation-turn")).toBeTruthy();
+    expect(indicator.closest(".a2ui-canvas-message.agent")).toBeTruthy();
+  });
+
+  it("shows a writing fallback while agent prose is streaming", () => {
     renderMainCanvas({
       waiting: true,
       messages: [
@@ -619,14 +636,194 @@ describe("ChatInput", () => {
       ],
     });
 
-    const indicator = screen.getByRole("status", {
-      name: "Agent is thinking",
+    expect(screen.getByText("streaming update")).toBeTruthy();
+    expect(screen.queryByText("Thinking through next step")).toBeNull();
+    expect(screen.getByText("Writing response")).toBeTruthy();
+    expect(screen.getByText("Streaming the answer")).toBeTruthy();
+  });
+
+  it("does not infer tool-specific footer activity from planning prose", () => {
+    renderMainCanvas({
+      waiting: true,
+      messages: [
+        {
+          id: "1",
+          role: "user",
+          text: "Explore this directory and summarize it for me",
+        },
+        {
+          id: "2",
+          role: "agent",
+          text: "I’m going to sample the durable config versus cache/log state.",
+        },
+      ],
     });
-    expect(indicator.textContent).not.toContain("Thinking...");
-    expect(indicator.querySelectorAll(".ae-typing-dot")).toHaveLength(3);
-    expect(indicator.closest(".a2ui-msg-row-footer")).toBeTruthy();
-    expect(indicator.closest(".ae-conversation-turn")).toBeTruthy();
-    expect(indicator.closest(".a2ui-canvas-message.agent")).toBeTruthy();
+
+    expect(screen.getByText(/sample the durable config/)).toBeTruthy();
+    expect(screen.queryByText("Reading directory contents")).toBeNull();
+    expect(screen.queryByText("Inspecting files and folders")).toBeNull();
+    expect(screen.getByText("Writing response")).toBeTruthy();
+    expect(screen.getByText("Streaming the answer")).toBeTruthy();
+  });
+
+  it("keeps the fallback generic when final answer prose is streaming", () => {
+    renderMainCanvas({
+      waiting: true,
+      messages: [
+        {
+          id: "1",
+          role: "user",
+          text: "Explore this directory and summarize it for me",
+        },
+        {
+          id: "2",
+          role: "agent",
+          text:
+            "/Users/jamesbrink/.aethon is your Aethon user data/config directory.\n\n" +
+            "Key findings:\n\n" +
+            "- Purpose: Stores runtime state, sessions, project registry, and extensions.\n" +
+            "- Not a git repo: No project source history here.",
+        },
+      ],
+    });
+
+    expect(screen.getByText(/Key findings/)).toBeTruthy();
+    expect(screen.queryByText("Reading directory contents")).toBeNull();
+    expect(screen.getByText("Writing response")).toBeTruthy();
+    expect(screen.getByText("Streaming the answer")).toBeTruthy();
+  });
+
+  it("restores a writing fallback from tab-scoped running state", () => {
+    renderMainCanvas(
+      {
+        waiting: false,
+        agentRunningTabs: { "tab-1": true },
+        messages: [
+          { id: "1", role: "user", text: "summarize this workspace" },
+          {
+            id: "2",
+            role: "agent",
+            text: "I have enough context and am summarizing it now.",
+          },
+        ],
+      },
+      "tab-1",
+    );
+
+    expect(screen.getByText(/summarizing it now/)).toBeTruthy();
+    expect(screen.getByText("Writing response")).toBeTruthy();
+    expect(screen.getByText("Streaming the answer")).toBeTruthy();
+  });
+
+  it("does not show the footer activity indicator when running tool activity is visible", () => {
+    renderMainCanvas({
+      waiting: true,
+      messages: [
+        { id: "1", role: "user", text: "start" },
+        { id: "2", role: "agent", text: "I’ll search first." },
+        {
+          id: "3",
+          role: "agent",
+          a2ui: {
+            components: [
+              {
+                id: "tool-bash",
+                type: "tool-card",
+                props: {
+                  title: "bash",
+                  toolName: "bash",
+                  description: "rg message-row",
+                  startedAt: 1000,
+                },
+              },
+            ],
+          },
+        },
+      ],
+      transcriptVisibility: { toolCalls: "hide" },
+    });
+
+    expect(screen.getByText("Searching files")).toBeTruthy();
+    expect(screen.queryByText("Thinking through next step")).toBeNull();
+  });
+
+  it("does not duplicate footer activity when hidden running tools already summarize it", () => {
+    vi.useFakeTimers();
+    renderMainCanvas(
+      {
+        waiting: true,
+        agentActivityByTab: {
+          "tab-1": {
+            label: "Running checks",
+            detail: "Waiting for results",
+            startedAt: Date.now() - 1_000,
+            updatedAt: Date.now(),
+          },
+        },
+        messages: [
+          { id: "1", role: "user", text: "continue" },
+          { id: "2", role: "agent", text: "I’ll run the final checks." },
+          {
+            id: "3",
+            role: "agent",
+            a2ui: {
+              components: [
+                {
+                  id: "tool-checks",
+                  type: "tool-card",
+                  props: {
+                    title: "bash",
+                    toolName: "bash",
+                    description: "bunx vitest run && bunx eslint .",
+                    startedAt: 1000,
+                  },
+                },
+              ],
+            },
+          },
+        ],
+        transcriptVisibility: { toolCalls: "hide" },
+      },
+      "tab-1",
+    );
+
+    act(() => vi.runOnlyPendingTimers());
+
+    expect(screen.getAllByText("Running checks")).toHaveLength(1);
+    expect(screen.getAllByText("Waiting for results")).toHaveLength(1);
+  });
+
+  it("labels hidden running directory tools as directory reading", () => {
+    renderMainCanvas({
+      waiting: true,
+      messages: [
+        { id: "1", role: "user", text: "summarize this directory" },
+        { id: "2", role: "agent", text: "I’ll inspect the top-level shape." },
+        {
+          id: "3",
+          role: "agent",
+          a2ui: {
+            components: [
+              {
+                id: "tool-bash",
+                type: "tool-card",
+                props: {
+                  title: "bash",
+                  toolName: "bash",
+                  description: "find . -maxdepth 2 -type f | head -200",
+                  startedAt: 1000,
+                },
+              },
+            ],
+          },
+        },
+      ],
+      transcriptVisibility: { toolCalls: "hide" },
+    });
+
+    expect(screen.getByText("Reading directory contents")).toBeTruthy();
+    expect(screen.getByText("Inspecting files and folders")).toBeTruthy();
+    expect(screen.queryByText("Writing response")).toBeNull();
   });
 
   it("shows the pill and stops following when the user scrolls up", () => {
@@ -2035,17 +2232,18 @@ describe("ChatHistory turn activity feed (mocked Virtuoso renders rows)", () => 
     expect(screen.queryByText(/read · bash/)).toBeNull();
   });
 
-  it("group-block keeps the final answer visible and folds earlier work", () => {
+  it("group-block keeps agent prose chronological and groups tool activity", () => {
     renderGroupedHistory({
       messages: toolMessages,
       transcriptVisibility: { toolCalls: "group-block" },
     });
+    expect(screen.getByText("reading files")).toBeTruthy();
     expect(screen.getByText("done")).toBeTruthy();
-    expect(screen.queryByText("reading files")).toBeNull();
     expect(screen.getByText(/2 tool calls/)).toBeTruthy();
     expect(screen.queryByText(/1 update/)).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: /2 tool calls/ }));
-    expect(screen.getByText("reading files")).toBeTruthy();
+    expect(screen.getByText("read")).toBeTruthy();
+    expect(screen.getByText("bash")).toBeTruthy();
   });
 
   it("expands completed file tools as one compact edit artifact", () => {
@@ -2379,7 +2577,7 @@ describe("ChatHistory turn activity feed (mocked Virtuoso renders rows)", () => 
     expect(container.querySelectorAll(".ae-file-activity-card").length).toBe(1);
   });
 
-  it("keeps the completed edit artifacts card pinned regardless of the activity toggle", () => {
+  it("collapses the completed edit artifacts card with the activity body", async () => {
     renderGroupedHistory({
       messages: [
         { id: "u1", role: "user", text: "change files" },
@@ -2410,14 +2608,16 @@ describe("ChatHistory turn activity feed (mocked Virtuoso renders rows)", () => 
       transcriptVisibility: { toolCalls: "hide" },
     });
 
-    // The aggregated "Edited N files" card is a durable artifact — the file
-    // is always listed regardless of the tool-calls toggle / turn collapse.
+    // The aggregated "Edited N files" card is durable, but it still belongs to
+    // the activity disclosure body so the chevron controls the whole section.
     expect(screen.getByText("App.tsx")).toBeTruthy();
 
     const summary = screen.getByRole("button", { name: /Edited 1 file/ });
     fireEvent.click(summary);
 
-    // Collapsing the turn body must NOT hide the pinned edits card.
+    await waitFor(() => expect(screen.queryByText("App.tsx")).toBeNull());
+
+    fireEvent.click(summary);
     expect(screen.getByText("App.tsx")).toBeTruthy();
   });
 
@@ -3086,7 +3286,7 @@ describe("ChatHistory turn activity feed (mocked Virtuoso renders rows)", () => 
     expect(enteredRows[0].textContent).toContain("new request");
   });
 
-  it("hide drops tool cards while keeping final prose and progress disclosure", () => {
+  it("hide drops tool cards while keeping agent prose chronological", () => {
     renderGroupedHistory({
       messages: toolMessages,
       transcriptVisibility: { toolCalls: "hide" },
@@ -3094,10 +3294,54 @@ describe("ChatHistory turn activity feed (mocked Virtuoso renders rows)", () => 
     expect(screen.queryByText("2 tool calls")).toBeNull();
     expect(screen.queryByText("read")).toBeNull();
     expect(screen.queryByText("bash")).toBeNull();
-    expect(screen.getByText("done")).toBeTruthy();
-    expect(screen.queryByText("reading files")).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: /1 update/ }));
     expect(screen.getByText("reading files")).toBeTruthy();
+    expect(screen.getByText("done")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /1 update/ })).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: /Earlier progress/ }),
+    ).toBeNull();
+  });
+
+  it("hide still surfaces live running tool activity without persisting tool details", () => {
+    const { container } = renderGroupedHistory({
+      messages: [
+        { id: "u1", role: "user", text: "inspect files" },
+        { id: "a1", role: "agent", text: "I’ll inspect the repo." },
+        {
+          id: "t1",
+          role: "agent",
+          a2ui: {
+            components: [
+              {
+                id: "tool-bash",
+                type: "tool-card",
+                props: {
+                  title: "bash",
+                  description: "rg message-row",
+                  startedAt: 1000,
+                },
+                children: [
+                  {
+                    id: "out",
+                    type: "code",
+                    props: { content: "raw running output" },
+                  },
+                ],
+              },
+            ],
+          },
+        },
+      ],
+      waiting: true,
+      transcriptVisibility: { toolCalls: "hide" },
+    });
+
+    expect(screen.getByText("Searching files")).toBeTruthy();
+    expect(screen.getByText("Looking for relevant matches")).toBeTruthy();
+    expect(screen.queryByText("bash")).toBeNull();
+    expect(screen.queryByText("rg message-row")).toBeNull();
+    expect(screen.queryByText("raw running output")).toBeNull();
+    expect(container.querySelector(".ae-live-activity-card")).toBeTruthy();
   });
 
   it("show expands activity by default", () => {

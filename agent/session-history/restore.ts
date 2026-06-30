@@ -26,7 +26,6 @@ import { readLocalChatTranscript } from "./parse-local";
 import { parseSessionHistoryLines } from "./parse-pi";
 import { isSubagentToolName } from "./subagent-tool-results";
 import {
-  MAX_RESTORED_MESSAGES,
   toolCardIdentityFromId,
   toolCardRecordsFromA2ui,
   type RestoredChatAttachment,
@@ -513,10 +512,7 @@ export async function readSessionTranscript(
       mergedPiMessages,
       sqliteTranscript.localMessages,
     );
-    return mergeRestoredMessagesChronologically(
-      mergedPiMessages,
-      localOnly,
-    ).slice(-MAX_RESTORED_MESSAGES);
+    return mergeRestoredMessagesChronologically(mergedPiMessages, localOnly);
   }
   // When `expectedCwd` is provided, only restore from a session whose
   // header cwd matches — the shared `default` tab dir collects sessions
@@ -532,7 +528,7 @@ export async function readSessionTranscript(
     path = (await latestSessionLog(sessionDir))?.path;
   }
   const localMessages = await readLocalChatTranscript(sessionDir, expectedCwd);
-  if (!path) return localMessages.slice(-MAX_RESTORED_MESSAGES);
+  if (!path) return localMessages;
 
   const raw = await readFile(path, "utf8");
   const piMessages = removePiToolCardsCoveredByLocalCancellation(
@@ -548,10 +544,7 @@ export async function readSessionTranscript(
     localMessages,
   );
   const localOnly = dedupeLocalMessages(mergedPiMessages, localMessages);
-  return mergeRestoredMessagesChronologically(
-    mergedPiMessages,
-    localOnly,
-  ).slice(-MAX_RESTORED_MESSAGES);
+  return mergeRestoredMessagesChronologically(mergedPiMessages, localOnly);
 }
 
 export const __testing = {

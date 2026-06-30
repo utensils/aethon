@@ -438,7 +438,7 @@ describe("parseSessionHistoryLines", () => {
     ]);
   });
 
-  it("keeps the most recent bounded set of restored messages", () => {
+  it("keeps the full restored pi transcript", () => {
     const lines = Array.from({ length: 205 }, (_, index) =>
       JSON.stringify({
         type: "message",
@@ -451,17 +451,55 @@ describe("parseSessionHistoryLines", () => {
     );
 
     const parsed = parseSessionHistoryLines(lines);
-    expect(parsed).toHaveLength(200);
+    expect(parsed).toHaveLength(205);
     expect(parsed[0]).toEqual({
-      id: "m5",
-      entryId: "m5",
+      id: "m0",
+      entryId: "m0",
       role: "user",
-      text: "message 5",
+      text: "message 0",
+    });
+    expect(parsed.at(-1)).toMatchObject({
+      id: "m204",
+      entryId: "m204",
+      role: "user",
+      text: "message 204",
     });
   });
 });
 
 describe("readSessionTranscript", () => {
+  it("keeps the beginning of long restored sessions", async () => {
+    const dir = await tempRoot();
+    const path = join(dir, "session.jsonl");
+    const lines = Array.from({ length: 240 }, (_, index) =>
+      JSON.stringify({
+        type: "message",
+        id: `u${index}`,
+        message: {
+          role: "user",
+          content: [{ type: "text", text: `message ${index}` }],
+        },
+      }),
+    );
+    await writeFile(path, `${lines.join("\n")}\n`);
+
+    const restored = await readSessionTranscript(dir);
+
+    expect(restored).toHaveLength(240);
+    expect(restored[0]).toMatchObject({
+      id: "u0",
+      entryId: "u0",
+      role: "user",
+      text: "message 0",
+    });
+    expect(restored.at(-1)).toMatchObject({
+      id: "u239",
+      entryId: "u239",
+      role: "user",
+      text: "message 239",
+    });
+  });
+
   it("reads the newest jsonl file from a session directory", async () => {
     const dir = await tempRoot();
     const oldPath = join(dir, "old.jsonl");
@@ -1584,11 +1622,12 @@ describe("readSessionTranscript", () => {
     }
 
     const restored = await readSessionTranscript(dir);
+    expect(restored).toHaveLength(401);
     expect(restored.at(1)).toEqual({
-      id: "local-206",
+      id: "local-5",
       role: "system",
-      text: "local 206",
-      createdAt: 206,
+      text: "local 5",
+      createdAt: 5,
     });
     expect(restored.at(-1)).toEqual({
       id: "local-404",
@@ -1596,7 +1635,6 @@ describe("readSessionTranscript", () => {
       text: "local 404",
       createdAt: 404,
     });
-    expect(restored).toHaveLength(200);
   });
 
   it("reads project cwd metadata from the newest session log", async () => {

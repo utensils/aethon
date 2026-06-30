@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { clearPendingForksForTab, handleSessionBranch } from "./session";
 import { buildRouteFixture } from "./testFixtures";
 import type { Tab } from "../types/tab";
@@ -41,8 +41,23 @@ describe("handleSessionBranch", () => {
     });
   });
 
-  it("fork-to-tab asks the bridge to fork", async () => {
+  it("fork-to-tab forks through the local session command and opens the tab", async () => {
     const { ctx, mocks } = buildRouteFixture({ state: { activeTabId: "t1" } });
+    mocks.invoke.mockResolvedValueOnce({
+      tabId: "t1",
+      newTabId: "forked-tab",
+      label: "Fork of Session",
+      cwd: "/repo",
+      messages: [
+        {
+          id: "e1",
+          entryId: "e1",
+          role: "user",
+          text: "start here",
+          createdAt: 1,
+        },
+      ],
+    });
     const handled = await handleSessionBranch(
       event("fork-to-tab", { entryId: "e2" }),
       ctx,
@@ -55,29 +70,45 @@ describe("handleSessionBranch", () => {
       kind: "info",
       durationMs: null,
     });
-    expect(mocks.invoke).toHaveBeenCalledWith("agent_command", {
-      payload: JSON.stringify({
-        type: "fork_session",
-        tabId: "t1",
-        entryId: "e2",
-      }),
+    expect(mocks.invoke).toHaveBeenCalledWith("fork_session", {
+      tabId: "t1",
+      entryId: "e2",
     });
+    await vi.waitFor(() => {
+      expect(mocks.newTab).toHaveBeenCalledWith("forked-tab", "Fork of Session", {
+        restoredSession: true,
+        cwd: "/repo",
+      });
+    });
+    expect(mocks.updateTab).toHaveBeenCalledWith(
+      "forked-tab",
+      expect.any(Function),
+    );
+    const updater = mocks.updateTab.mock.calls[0][1] as (t: Tab) => Tab;
+    expect(updater({ id: "forked-tab", messages: [] } as unknown as Tab).messages).toEqual([
+      {
+        id: "e1",
+        entryId: "e1",
+        role: "user",
+        text: "start here",
+        createdAt: 1,
+      },
+    ]);
+    expect(mocks.dismissNotification).toHaveBeenCalledWith("session-fork-t1");
   });
 
   it("fork-to-tab ignores duplicate activations while a fork is pending", async () => {
     const { ctx, mocks } = buildRouteFixture({ state: { activeTabId: "t-dupe" } });
+    mocks.invoke.mockReturnValue(new Promise(() => {}));
     const payload = event("fork-to-tab", { entryId: "e-dupe" });
     expect(await handleSessionBranch(payload, ctx)).toBe(true);
     expect(await handleSessionBranch(payload, ctx)).toBe(true);
 
     expect(mocks.pushNotification).toHaveBeenCalledTimes(1);
     expect(mocks.invoke).toHaveBeenCalledTimes(1);
-    expect(mocks.invoke).toHaveBeenCalledWith("agent_command", {
-      payload: JSON.stringify({
-        type: "fork_session",
-        tabId: "t-dupe",
-        entryId: "e-dupe",
-      }),
+    expect(mocks.invoke).toHaveBeenCalledWith("fork_session", {
+      tabId: "t-dupe",
+      entryId: "e-dupe",
     });
   });
 
@@ -99,23 +130,31 @@ describe("handleSessionBranch", () => {
     const { ctx, mocks } = buildRouteFixture({
       state: { activeTabId: "wrong-tab" },
     });
+    mocks.invoke.mockResolvedValueOnce({
+      tabId: "visible-tab",
+      newTabId: "forked-visible",
+      label: "Fork",
+    });
     const handled = await handleSessionBranch(
       event("fork-to-tab", { entryId: "e2", tabId: "visible-tab" }),
       ctx,
     );
     expect(handled).toBe(true);
-    expect(mocks.invoke).toHaveBeenCalledWith("agent_command", {
-      payload: JSON.stringify({
-        type: "fork_session",
-        tabId: "visible-tab",
-        entryId: "e2",
-      }),
+    expect(mocks.invoke).toHaveBeenCalledWith("fork_session", {
+      tabId: "visible-tab",
+      entryId: "e2",
     });
   });
 
   it("fork-to-tab forwards a cwd hint for restored sessions", async () => {
     const { ctx, mocks } = buildRouteFixture({
       state: { activeTabId: "wrong-tab" },
+    });
+    mocks.invoke.mockResolvedValueOnce({
+      tabId: "visible-tab",
+      newTabId: "forked-cwd",
+      label: "Fork",
+      cwd: "/repo/aethon",
     });
     const handled = await handleSessionBranch(
       event("fork-to-tab", {
@@ -126,13 +165,10 @@ describe("handleSessionBranch", () => {
       ctx,
     );
     expect(handled).toBe(true);
-    expect(mocks.invoke).toHaveBeenCalledWith("agent_command", {
-      payload: JSON.stringify({
-        type: "fork_session",
-        tabId: "visible-tab",
-        entryId: "e-cwd",
-        cwd: "/repo/aethon",
-      }),
+    expect(mocks.invoke).toHaveBeenCalledWith("fork_session", {
+      tabId: "visible-tab",
+      entryId: "e-cwd",
+      cwd: "/repo/aethon",
     });
   });
 

@@ -1,4 +1,5 @@
 import type { EventRouteHandler } from "./types";
+import type { ChatMessage } from "../types/a2ui";
 import { truncateToEntry } from "../utils/messages";
 
 function str(value: unknown): string {
@@ -29,11 +30,21 @@ export function clearPendingForksForTab(tabId: string) {
  *  - `rollback-to-here`: optimistically truncate the rendered transcript to the
  *    chosen message, then ask the bridge to branch the session there. The
  *    bridge's `session_rolled_back` reply reconciles authoritatively.
- *  - `fork-to-tab`: ask the bridge to extract the branch into a new session;
- *    the bridge's `session_forked` reply copies the file + opens the new tab.
+ *  - `fork-to-tab`: copy the SQLite-backed transcript path directly through
+ *    Rust and open the new tab from the command result. This is intentionally
+ *    not routed through the agent bridge because a busy LLM turn must not make
+ *    a local transcript fork feel stuck.
  *
  * Both are keyed off `entryId` (the pi session entry id carried on the row).
  */
+interface ForkSessionResult {
+  tabId?: string;
+  newTabId?: string;
+  label?: string;
+  cwd?: string;
+  messages?: ChatMessage[];
+}
+
 export const handleSessionBranch: EventRouteHandler = (
   { eventType, data },
   ctx,
@@ -81,14 +92,54 @@ export const handleSessionBranch: EventRouteHandler = (
       kind: "info",
       durationMs: null,
     });
-    void ctx.invoke("agent_command", {
-      payload: JSON.stringify({
-        type: "fork_session",
+    void ctx
+      .invoke("fork_session", {
         tabId,
         entryId,
         ...(cwd ? { cwd } : {}),
-      }),
-    }).catch(() => pendingForks.delete(forkKey));
+      })
+      .then((result) => {
+        const forked = result as ForkSessionResult | undefined;
+        const newTabId =
+          typeof forked?.newTabId === "string" ? forked.newTabId : "";
+        if (!newTabId) throw new Error("fork_session: missing forked tab id");
+        const label =
+          typeof forked?.label === "string" && forked.label.trim()
+            ? forked.label
+            : "Fork";
+        const resultCwd =
+          typeof forked?.cwd === "string" && forked.cwd.trim()
+            ? forked.cwd
+            : cwd || undefined;
+        clearPendingForksForTab(tabId);
+        ctx.dismissNotification(`session-fork-${tabId}`);
+        ctx.newTab(newTabId, label, {
+          restoredSession: true,
+          ...(resultCwd ? { cwd: resultCwd } : {}),
+        });
+        if (Array.isArray(forked?.messages) && forked.messages.length > 0) {
+          ctx.updateTab(newTabId, (tab) => ({
+            ...tab,
+            messages: forked.messages as ChatMessage[],
+          }));
+        }
+        ctx.pushNotification({
+          title: "Forked session",
+          message: `Opened ${label}.`,
+          kind: "success",
+          durationMs: 3000,
+        });
+      })
+      .catch((err: unknown) => {
+        pendingForks.delete(forkKey);
+        ctx.dismissNotification(`session-fork-${tabId}`);
+        ctx.pushNotification({
+          title: "Fork failed",
+          message: err instanceof Error ? err.message : String(err),
+          kind: "error",
+          durationMs: 5000,
+        });
+      });
     return true;
   }
 

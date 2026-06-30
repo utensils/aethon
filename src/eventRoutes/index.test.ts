@@ -101,12 +101,9 @@ describe("dispatchEvent — precedence contract", () => {
       ctx,
     );
     expect(handled).toBe(true);
-    expect(mocks.invoke).toHaveBeenCalledWith("agent_command", {
-      payload: JSON.stringify({
-        type: "fork_session",
-        tabId: "rendered-tab",
-        entryId: "entry-1",
-      }),
+    expect(mocks.invoke).toHaveBeenCalledWith("fork_session", {
+      tabId: "rendered-tab",
+      entryId: "entry-1",
     });
   });
 

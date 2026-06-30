@@ -34,24 +34,30 @@ function branchEventPayload(
 }
 
 export function TurnBranchActions({
-  target,
+  rollbackTarget,
+  forkTarget,
   state,
   tabId,
   onEvent,
 }: {
-  target?: ChatMessage;
+  rollbackTarget?: ChatMessage;
+  forkTarget?: ChatMessage;
   state: Record<string, unknown>;
   tabId?: string;
   onEvent?: BuiltinComponentProps["onEvent"];
 }) {
   const [confirmingRollback, setConfirmingRollback] = useState(false);
-  if (!target?.entryId || !onEvent || tabIsRunning(state, tabId)) return null;
+  if ((!rollbackTarget?.entryId && !forkTarget?.entryId) || !onEvent) {
+    return null;
+  }
+  const running = tabIsRunning(state, tabId);
   return (
     <div
       className="ae-turn-branch-actions"
+      aria-label="Conversation turn actions"
       onMouseLeave={() => setConfirmingRollback(false)}
     >
-      {confirmingRollback ? (
+      {confirmingRollback && !running && rollbackTarget?.entryId ? (
         <>
           <button
             type="button"
@@ -60,7 +66,7 @@ export function TurnBranchActions({
               setConfirmingRollback(false);
               onEvent(
                 "rollback-to-here",
-                branchEventPayload(target, tabId, state),
+                branchEventPayload(rollbackTarget, tabId, state),
               );
             }}
           >
@@ -76,49 +82,56 @@ export function TurnBranchActions({
         </>
       ) : (
         <>
-          <button
-            type="button"
-            className="ae-turn-branch-btn"
-            aria-label="Rollback this turn"
-            title="Rewind the conversation to this turn"
-            onClick={() => setConfirmingRollback(true)}
-          >
-            <svg
-              viewBox="0 0 16 16"
-              width="13"
-              height="13"
-              aria-hidden="true"
-              focusable="false"
+          {!running && rollbackTarget?.entryId ? (
+            <button
+              type="button"
+              className="ae-turn-branch-btn"
+              aria-label="Rollback this turn"
+              title="Rewind the conversation to this prompt"
+              onClick={() => setConfirmingRollback(true)}
             >
-              <path d="M5.2 5.1H10a4 4 0 1 1-3.1 6.55" />
-              <path d="M5.2 5.1 7.55 2.8" />
-              <path d="M5.2 5.1 7.55 7.45" />
-            </svg>
-            <span className="ae-turn-branch-label">Rollback</span>
-          </button>
-          <button
-            type="button"
-            className="ae-turn-branch-btn"
-            aria-label="Fork this turn"
-            title="Fork the conversation into a new tab from this turn"
-            onClick={() =>
-              onEvent("fork-to-tab", branchEventPayload(target, tabId, state))
-            }
-          >
-            <svg
-              viewBox="0 0 16 16"
-              width="13"
-              height="13"
-              aria-hidden="true"
-              focusable="false"
+              <svg
+                viewBox="0 0 16 16"
+                width="13"
+                height="13"
+                aria-hidden="true"
+                focusable="false"
+              >
+                <path d="M5.2 5.1H10a4 4 0 1 1-3.1 6.55" />
+                <path d="M5.2 5.1 7.55 2.8" />
+                <path d="M5.2 5.1 7.55 7.45" />
+              </svg>
+              <span className="ae-turn-branch-label">Rollback</span>
+            </button>
+          ) : null}
+          {forkTarget?.entryId ? (
+            <button
+              type="button"
+              className="ae-turn-branch-btn"
+              aria-label="Fork this turn"
+              title="Fork the conversation into a new tab from this turn"
+              onClick={() =>
+                onEvent(
+                  "fork-to-tab",
+                  branchEventPayload(forkTarget, tabId, state),
+                )
+              }
             >
-              <path d="M5 3.25v4.15c0 2.4 1.55 4.1 4.2 4.1H11" />
-              <path d="M8.75 9.2 11 11.5l-2.25 2.3" />
-              <circle cx="5" cy="3.25" r="1.6" />
-              <circle cx="5" cy="12.75" r="1.6" />
-            </svg>
-            <span className="ae-turn-branch-label">Fork</span>
-          </button>
+              <svg
+                viewBox="0 0 16 16"
+                width="13"
+                height="13"
+                aria-hidden="true"
+                focusable="false"
+              >
+                <path d="M5 3.25v4.15c0 2.4 1.55 4.1 4.2 4.1H11" />
+                <path d="M8.75 9.2 11 11.5l-2.25 2.3" />
+                <circle cx="5" cy="3.25" r="1.6" />
+                <circle cx="5" cy="12.75" r="1.6" />
+              </svg>
+              <span className="ae-turn-branch-label">Fork</span>
+            </button>
+          ) : null}
         </>
       )}
     </div>

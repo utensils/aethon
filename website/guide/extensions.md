@@ -11,17 +11,17 @@ the app as `$AETHON_DOCS_DIR`.
 
 ## What an extension can register
 
-| Surface | API | Example |
-|---|---|---|
-| A2UI components | `aethon.registerComponent(type, template)` | Replace `chat-history`, add `team-status`. |
-| Themes | `aethon.registerTheme({ id, label?, vars })` | Drop-in palette. |
-| Layouts | `aethon.registerLayout({ id, name, description?, payload })` | Sibling to `workstation` (the only built-in). |
-| Slash commands | `aethon.registerSlashCommand({ name, description, usage? })` paired with `onEvent` | `/team-deploy`, `/standup`. |
-| Keybindings | `aethon.registerKeybinding({ combo, action?, description? })` paired with `onEvent` | Override or add. |
-| Menu items | `aethon.registerMenuItem({ label, action, location?, id?, parent? })` paired with `onEvent` | Native menu entries. |
-| Event handlers | `aethon.onEvent({ componentType, descendantId? }, handler)` | Wire a registered surface to its action. |
-| Event routes | `aethon.registerEventRoute({ componentId?, eventType? })` | Intercept App-dispatched events. |
-| Sidebar sections | `aethon.registerSidebarSection({ id, title, items })` | Custom sidebar group. |
+| Surface          | API                                                                                         | Example                                       |
+| ---------------- | ------------------------------------------------------------------------------------------- | --------------------------------------------- |
+| A2UI components  | `aethon.registerComponent(type, template)`                                                  | Replace `chat-history`, add `team-status`.    |
+| Themes           | `aethon.registerTheme({ id, label?, vars })`                                                | Drop-in palette.                              |
+| Layouts          | `aethon.registerLayout({ id, name, description?, payload })`                                | Sibling to `workstation` (the only built-in). |
+| Slash commands   | `aethon.registerSlashCommand({ name, description, usage? })` paired with `onEvent`          | `/team-deploy`, `/standup`.                   |
+| Keybindings      | `aethon.registerKeybinding({ combo, action?, description? })` paired with `onEvent`         | Override or add.                              |
+| Menu items       | `aethon.registerMenuItem({ label, action, location?, id?, parent? })` paired with `onEvent` | Native menu entries.                          |
+| Event handlers   | `aethon.onEvent({ componentType, descendantId? }, handler)`                                 | Wire a registered surface to its action.      |
+| Event routes     | `aethon.registerEventRoute({ componentId?, eventType? })`                                   | Intercept App-dispatched events.              |
+| Sidebar sections | `aethon.registerSidebarSection({ id, title, items })`                                       | Custom sidebar group.                         |
 
 Most of the `register*` calls record **metadata only**. The action is
 attached separately via `aethon.onEvent({ componentType, descendantId },
@@ -43,9 +43,10 @@ Drop a `.ts` file into `~/.aethon/extensions/`:
 ```
 
 Aethon's bridge **hot-reloads** it: edit the file, save, and the
-extension re-runs without a relaunch. The chat shows an
-`extension_lifecycle` event for every load / fail / reload so you get
-visible feedback.
+extension re-runs without a relaunch. If a prompt is in flight, reload
+waits for that turn to drain instead of killing the agent mid-response.
+The chat shows an `extension_lifecycle` event for every load / fail /
+reload so you get visible feedback.
 
 ### 2 — npm-distributed extension packages
 
@@ -106,7 +107,7 @@ Project-local extensions are great for team-wide slash commands or
 internal tooling that shouldn't pollute the user's global setup.
 
 ::: tip
-Discovery is a *walk* — Aethon starts at the active tab's cwd and walks
+Discovery is a _walk_ — Aethon starts at the active tab's cwd and walks
 **up** to its git root. Extensions found anywhere on the way are loaded.
 :::
 

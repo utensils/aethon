@@ -12,6 +12,12 @@ import type { BuiltinComponentProps } from "../../../components/A2UIRenderer";
 import type { StringValue } from "../../../types/a2ui";
 import type { DevshellEntry } from "../../../hooks/useDevshell";
 import type { ContextUsageState } from "../../../types/tab";
+import type { ChatMessage } from "../../../types/a2ui";
+import {
+  agentActivityForTab,
+  useDelayedAgentActivity,
+} from "../../../agentActivity";
+import { fallbackAgentActivityForTab } from "../message-row-state";
 
 export function StatusBar({ component, state }: BuiltinComponentProps) {
   const props = component.props as {
@@ -32,6 +38,31 @@ export function StatusBar({ component, state }: BuiltinComponentProps) {
   const contextUsage = props.context
     ? contextUsageFromValue(resolveValue(state, props.context.$ref))
     : null;
+  const visibleAgentActivity = useDelayedAgentActivity(
+    agentActivityForTab(state),
+  );
+  const activeTabId =
+    typeof state.activeTabId === "string" ? state.activeTabId : undefined;
+  const messages = Array.isArray(state.messages)
+    ? (state.messages as ChatMessage[])
+    : [];
+  const fallbackActivity = visibleAgentActivity
+    ? null
+    : fallbackAgentActivityForTab(state, activeTabId, messages, {
+        allowEmpty: true,
+      });
+  const statusAgentActivity = visibleAgentActivity ?? fallbackActivity;
+  const centerStatus = statusAgentActivity ?? {
+    label: idleStatusLabel(left, center),
+    detail: idleStatusDetail(left, center),
+  };
+  const leftLabel = center || "disconnected";
+  const leftTitle = leftLabel;
+  const leftConnectionState = connectionStateClass(leftLabel);
+  const leftClassName = `a2ui-status-left ${leftConnectionState}`;
+  const centerClassName = `a2ui-status-center${
+    statusAgentActivity ? " is-agent-active" : ""
+  }`;
 
   // Project / workspace / branch chip — derived from the live sidebar
   // projects list so a single source of truth drives both the sidebar
@@ -81,7 +112,9 @@ export function StatusBar({ component, state }: BuiltinComponentProps) {
       ? devshellSlice.entries[devshellRoot]
       : undefined;
   const devshellLabel = devshellEntry ? devshellChipLabel(devshellEntry) : null;
-  const devshellTooltip = devshellEntry ? devshellChipTooltip(devshellEntry) : null;
+  const devshellTooltip = devshellEntry
+    ? devshellChipTooltip(devshellEntry)
+    : null;
   const devshellClass = devshellEntry
     ? `a2ui-status-devshell-chip is-${devshellEntry.state}`
     : "a2ui-status-devshell-chip";
@@ -93,12 +126,18 @@ export function StatusBar({ component, state }: BuiltinComponentProps) {
     | undefined;
   const startupRoot = startupSlice?.activeRoot ?? null;
   const startupEntry =
-    startupRoot && startupSlice?.entries ? startupSlice.entries[startupRoot] : null;
-  const startupLabel = startupEntry ? startupChipLabel(startupEntry.state) : null;
+    startupRoot && startupSlice?.entries
+      ? startupSlice.entries[startupRoot]
+      : null;
+  const startupLabel = startupEntry
+    ? startupChipLabel(startupEntry.state)
+    : null;
 
   return (
     <footer className="a2ui-status-bar">
-      <span className="a2ui-status-left">{left}</span>
+      <span className={leftClassName} title={leftTitle}>
+        {leftLabel}
+      </span>
       {showChip ? (
         <span
           className="a2ui-status-project-chip"
@@ -153,10 +192,58 @@ export function StatusBar({ component, state }: BuiltinComponentProps) {
         </span>
       ) : null}
       {contextUsage ? <ContextMeter usage={contextUsage} /> : null}
-      <span className="a2ui-status-center">{center}</span>
+      <span
+        className={centerClassName}
+        title={centerStatus.detail ?? centerStatus.label}
+      >
+        <span className="a2ui-status-center-main">{centerStatus.label}</span>
+        {centerStatus.detail ? (
+          <span className="a2ui-status-center-detail">
+            {centerStatus.detail}
+          </span>
+        ) : null}
+      </span>
       <span className="a2ui-status-right">{right}</span>
     </footer>
   );
+}
+
+function idleStatusLabel(status: string, connection: string): string {
+  const normalizedStatus = status.trim().toLowerCase();
+  const normalizedConnection = connection.trim().toLowerCase();
+  if (normalizedStatus === "ready" || normalizedStatus === "idle") {
+    return "idle";
+  }
+  if (!normalizedStatus && normalizedConnection === "connected") return "idle";
+  return status || normalizedConnection || "idle";
+}
+
+function idleStatusDetail(
+  status: string,
+  connection: string,
+): string | undefined {
+  const normalizedStatus = status.trim().toLowerCase();
+  const normalizedConnection = connection.trim().toLowerCase();
+  if (normalizedStatus === "ready" || normalizedStatus === "idle") {
+    return undefined;
+  }
+  if (!normalizedStatus && normalizedConnection === "connected")
+    return undefined;
+  if (normalizedConnection === "connected") return undefined;
+  return connection || undefined;
+}
+
+function connectionStateClass(connection: string): string {
+  switch (connection.trim().toLowerCase()) {
+    case "connected":
+      return "is-connected";
+    case "connecting":
+    case "starting":
+    case "starting…":
+      return "is-connecting";
+    default:
+      return "is-disconnected";
+  }
 }
 
 function startupChipLabel(state: string | undefined): string | null {
@@ -227,7 +314,9 @@ function devshellChipTooltip(entry: DevshellEntry): string | null {
       break;
     case "none":
       if (entry.enabled === "never") {
-        lines.push("Devshell disabled in config — set [devshell] enabled = \"auto\" to re-enable");
+        lines.push(
+          'Devshell disabled in config — set [devshell] enabled = "auto" to re-enable',
+        );
       }
       break;
   }
@@ -267,8 +356,12 @@ function contextUsageFromValue(value: unknown): ContextUsageState | null {
       usage.estimatedTokensUntilCompact,
     ),
     ...(usage.compacting === true ? { compacting: true } : {}),
-    ...(saturatedByProvider ? { saturatedByProvider: true, saturated: true } : {}),
-    ...(usage.saturatedByEstimate === true ? { saturatedByEstimate: true } : {}),
+    ...(saturatedByProvider
+      ? { saturatedByProvider: true, saturated: true }
+      : {}),
+    ...(usage.saturatedByEstimate === true
+      ? { saturatedByEstimate: true }
+      : {}),
   };
 }
 
