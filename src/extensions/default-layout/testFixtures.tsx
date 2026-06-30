@@ -134,7 +134,10 @@ export function renderGroupedHistory(state: Record<string, unknown>) {
   return render(groupedHistoryElement(state));
 }
 
-export function renderMainCanvas(state: Record<string, unknown>) {
+export function renderMainCanvas(
+  state: Record<string, unknown>,
+  tabId?: string,
+) {
   return render(
     <MainCanvas
       component={{
@@ -143,6 +146,7 @@ export function renderMainCanvas(state: Record<string, unknown>) {
         props: { messages: { $ref: "/messages" } },
       }}
       state={state}
+      tabId={tabId}
       onEvent={vi.fn()}
     />,
   );

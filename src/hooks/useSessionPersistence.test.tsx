@@ -179,6 +179,67 @@ describe("useSessionPersistence", () => {
     expect(writeState).toHaveBeenCalled();
   });
 
+  it("flushes the live state ref when the store snapshot lags after hot reload", async () => {
+    const appStore = createAppStore({
+      tabs: [],
+      activeTabId: "__overview__",
+      persistedTabBuckets: {},
+      layout: {},
+      terminalPanel: {},
+    });
+    const stateRef = {
+      current: {
+        tabs: [
+          {
+            id: "restored-tab",
+            kind: "agent",
+            label: "Restored",
+            messages: [{ id: "m1", role: "user", text: "old context" }],
+            draft: "",
+            waiting: false,
+            queueCount: 0,
+            queuedMessages: [],
+            canvas: null,
+            model: "",
+            terminalBuffer: "",
+            projectId: "project-1",
+            cwd: "/repo/worktree",
+          },
+        ],
+        activeTabId: "restored-tab",
+        persistedTabBuckets: {},
+        layout: {},
+        terminalPanel: {},
+      },
+    };
+
+    renderHook(() =>
+      useSessionPersistence({
+        appStore,
+        hasSyncSessionSnapshot: true,
+        stateRef,
+      }),
+    );
+
+    window.dispatchEvent(new Event("aethon:flush-session-ui-snapshot"));
+
+    await waitFor(() => {
+      const raw = window.sessionStorage.getItem(
+        "aethon:session-ui-snapshot:v1",
+      );
+      expect(raw).not.toBeNull();
+      const parsed = JSON.parse(raw ?? "{}") as {
+        activeTabId?: string;
+        tabs?: Array<{ id?: string; messages?: unknown[] }>;
+      };
+      expect(parsed.activeTabId).toBe("restored-tab");
+      expect(parsed.tabs?.[0]).toMatchObject({
+        id: "restored-tab",
+        messages: [{ id: "m1", role: "user", text: "old context" }],
+      });
+    });
+  });
+
   it("preserves overview as the active surface during durable restore", async () => {
     vi.mocked(readState).mockResolvedValue(
       JSON.stringify({

@@ -14,6 +14,7 @@ import { resolveVisibility } from "../../utils/visibilityResolver";
 import { agentActivityForTab } from "../../agentActivity";
 import { VirtualMessageFeed } from "./virtual-message-feed";
 import type { CanvasFooterContext } from "./message-groups";
+import { tabIsRunning } from "./message-row-state";
 
 export { ChatMessageRow } from "./message-row";
 
@@ -131,16 +132,20 @@ export function MainCanvas({
   const latestAgentProseVisible =
     latestMessage?.role === "agent" &&
     (Boolean(latestMessage.text) || Boolean(latestMessage.thinking));
+  const hasRunningToolCard = messages.some(isRunningToolCard);
+  const footerAgentActivity = hasRunningToolCard ? null : agentActivity;
+  const showFallbackActivity =
+    tabIsRunning(state, tabId) &&
+    !liveSubtree &&
+    messages.length > 0 &&
+    !footerAgentActivity &&
+    !hasRunningToolCard;
   const footerContext: CanvasFooterContext = {
     liveSubtree,
-    agentActivity,
-    showTyping:
-      state.waiting === true &&
-      !liveSubtree &&
-      messages.length > 0 &&
-      !latestAgentProseVisible &&
-      !agentActivity &&
-      !messages.some(isRunningToolCard),
+    agentActivity: footerAgentActivity,
+    showTyping: showFallbackActivity,
+    typingLabel: latestAgentProseVisible ? "Writing response" : undefined,
+    typingDetail: latestAgentProseVisible ? "Streaming the answer" : undefined,
     state,
     tabId,
   };

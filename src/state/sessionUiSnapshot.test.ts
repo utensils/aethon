@@ -7,6 +7,7 @@ import {
   loadSessionUiSnapshot,
   parseSessionUiSnapshot,
   saveSessionUiSnapshot,
+  shouldPreserveExistingHotSnapshot,
 } from "./sessionUiSnapshot";
 
 afterEach(() => {
@@ -658,6 +659,71 @@ describe("sessionUiSnapshot", () => {
         },
       ],
     });
+  });
+
+  it("preserves an existing hot snapshot when a stale flush drops active tabs", () => {
+    const tab = {
+      ...makeEmptyTab("tab-a", "A"),
+      messages: [{ id: "m1", role: "user" as const, text: "hi" }],
+    };
+    const existing = JSON.stringify({
+      tabs: [tab],
+      activeTabId: "tab-a",
+      savedAt: 1,
+    });
+    const stale = JSON.stringify({
+      tabs: [],
+      activeTabId: "__overview__",
+      buckets: {},
+      savedAt: 2,
+    });
+
+    expect(shouldPreserveExistingHotSnapshot(existing, stale)).toBe(true);
+  });
+
+  it("allows an active tab to move into a persisted bucket", () => {
+    const tab = {
+      ...makeEmptyTab("tab-a", "A", "project-1"),
+      messages: [{ id: "m1", role: "user" as const, text: "hi" }],
+    };
+    const existing = JSON.stringify({
+      tabs: [tab],
+      activeTabId: "tab-a",
+      savedAt: 1,
+    });
+    const bucketed = JSON.stringify({
+      tabs: [],
+      activeTabId: "__overview__",
+      buckets: {
+        "project-1::workspace::worktree": {
+          tabs: [tab],
+          activeTabId: "tab-a",
+        },
+      },
+      savedAt: 2,
+    });
+
+    expect(shouldPreserveExistingHotSnapshot(existing, bucketed)).toBe(false);
+  });
+
+  it("allows explicitly closed active tabs to disappear from the hot snapshot", () => {
+    const tab = {
+      ...makeEmptyTab("tab-a", "A"),
+      messages: [{ id: "m1", role: "user" as const, text: "hi" }],
+    };
+    const existing = JSON.stringify({
+      tabs: [tab],
+      activeTabId: "tab-a",
+      savedAt: 1,
+    });
+    const closed = JSON.stringify({
+      tabs: [],
+      activeTabId: "__overview__",
+      closedSessionIds: ["tab-a"],
+      savedAt: 2,
+    });
+
+    expect(shouldPreserveExistingHotSnapshot(existing, closed)).toBe(false);
   });
 
   it("persists shell tabs for frontend reload and restores their PTY on mount", () => {

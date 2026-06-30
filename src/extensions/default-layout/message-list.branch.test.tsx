@@ -181,7 +181,7 @@ describe("conversation turn rollback/fork affordance", () => {
     expect(screen.getByRole("button", { name: "Fork this turn" })).toBeTruthy();
   });
 
-  it("hides the affordance while the session is still running", () => {
+  it("keeps fork available while hiding rollback for legacy running state", () => {
     turn(
       [{ id: "1", entryId: "e1", role: "agent", text: "working" }],
       vi.fn(),
@@ -191,10 +191,10 @@ describe("conversation turn rollback/fork affordance", () => {
     expect(
       screen.queryByRole("button", { name: "Rollback this turn" }),
     ).toBeNull();
-    expect(screen.queryByRole("button", { name: "Fork this turn" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Fork this turn" })).toBeTruthy();
   });
 
-  it("hides the affordance while the owning tab is still running", () => {
+  it("keeps fork available while hiding rollback for the owning running tab", () => {
     turn(
       [{ id: "1", entryId: "e1", role: "agent", text: "working" }],
       vi.fn(),
@@ -204,7 +204,7 @@ describe("conversation turn rollback/fork affordance", () => {
     expect(
       screen.queryByRole("button", { name: "Rollback this turn" }),
     ).toBeNull();
-    expect(screen.queryByRole("button", { name: "Fork this turn" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Fork this turn" })).toBeTruthy();
   });
 
   it("keeps fork available for assistant-only turns when another tab is running", () => {

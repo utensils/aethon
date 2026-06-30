@@ -47,19 +47,16 @@ export function TurnBranchActions({
   onEvent?: BuiltinComponentProps["onEvent"];
 }) {
   const [confirmingRollback, setConfirmingRollback] = useState(false);
-  if (
-    (!rollbackTarget?.entryId && !forkTarget?.entryId) ||
-    !onEvent ||
-    tabIsRunning(state, tabId)
-  ) {
+  if ((!rollbackTarget?.entryId && !forkTarget?.entryId) || !onEvent) {
     return null;
   }
+  const running = tabIsRunning(state, tabId);
   return (
     <div
       className="ae-turn-branch-actions"
       onMouseLeave={() => setConfirmingRollback(false)}
     >
-      {confirmingRollback && rollbackTarget?.entryId ? (
+      {confirmingRollback && !running && rollbackTarget?.entryId ? (
         <>
           <button
             type="button"
@@ -84,7 +81,7 @@ export function TurnBranchActions({
         </>
       ) : (
         <>
-          {rollbackTarget?.entryId ? (
+          {!running && rollbackTarget?.entryId ? (
             <button
               type="button"
               className="ae-turn-branch-btn"

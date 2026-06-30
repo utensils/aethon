@@ -627,7 +627,7 @@ describe("ChatInput", () => {
     expect(indicator.closest(".a2ui-canvas-message.agent")).toBeTruthy();
   });
 
-  it("hides the footer activity while agent prose is streaming", () => {
+  it("shows a writing fallback while agent prose is streaming", () => {
     renderMainCanvas({
       waiting: true,
       messages: [
@@ -638,11 +638,11 @@ describe("ChatInput", () => {
 
     expect(screen.getByText("streaming update")).toBeTruthy();
     expect(screen.queryByText("Thinking through next step")).toBeNull();
-    expect(screen.queryByText("Writing response")).toBeNull();
-    expect(screen.queryByText("Streaming the answer")).toBeNull();
+    expect(screen.getByText("Writing response")).toBeTruthy();
+    expect(screen.getByText("Streaming the answer")).toBeTruthy();
   });
 
-  it("does not infer footer activity from planning prose", () => {
+  it("does not infer tool-specific footer activity from planning prose", () => {
     renderMainCanvas({
       waiting: true,
       messages: [
@@ -662,10 +662,11 @@ describe("ChatInput", () => {
     expect(screen.getByText(/sample the durable config/)).toBeTruthy();
     expect(screen.queryByText("Reading directory contents")).toBeNull();
     expect(screen.queryByText("Inspecting files and folders")).toBeNull();
-    expect(screen.queryByText("Writing response")).toBeNull();
+    expect(screen.getByText("Writing response")).toBeTruthy();
+    expect(screen.getByText("Streaming the answer")).toBeTruthy();
   });
 
-  it("clears footer activity when final answer prose is streaming", () => {
+  it("keeps the fallback generic when final answer prose is streaming", () => {
     renderMainCanvas({
       waiting: true,
       messages: [
@@ -688,7 +689,30 @@ describe("ChatInput", () => {
 
     expect(screen.getByText(/Key findings/)).toBeTruthy();
     expect(screen.queryByText("Reading directory contents")).toBeNull();
-    expect(screen.queryByText("Writing response")).toBeNull();
+    expect(screen.getByText("Writing response")).toBeTruthy();
+    expect(screen.getByText("Streaming the answer")).toBeTruthy();
+  });
+
+  it("restores a writing fallback from tab-scoped running state", () => {
+    renderMainCanvas(
+      {
+        waiting: false,
+        agentRunningTabs: { "tab-1": true },
+        messages: [
+          { id: "1", role: "user", text: "summarize this workspace" },
+          {
+            id: "2",
+            role: "agent",
+            text: "I have enough context and am summarizing it now.",
+          },
+        ],
+      },
+      "tab-1",
+    );
+
+    expect(screen.getByText(/summarizing it now/)).toBeTruthy();
+    expect(screen.getByText("Writing response")).toBeTruthy();
+    expect(screen.getByText("Streaming the answer")).toBeTruthy();
   });
 
   it("does not show the footer activity indicator when running tool activity is visible", () => {
@@ -721,6 +745,52 @@ describe("ChatInput", () => {
 
     expect(screen.getByText("Searching files")).toBeTruthy();
     expect(screen.queryByText("Thinking through next step")).toBeNull();
+  });
+
+  it("does not duplicate footer activity when hidden running tools already summarize it", () => {
+    vi.useFakeTimers();
+    renderMainCanvas(
+      {
+        waiting: true,
+        agentActivityByTab: {
+          "tab-1": {
+            label: "Running checks",
+            detail: "Waiting for results",
+            startedAt: Date.now() - 1_000,
+            updatedAt: Date.now(),
+          },
+        },
+        messages: [
+          { id: "1", role: "user", text: "continue" },
+          { id: "2", role: "agent", text: "I’ll run the final checks." },
+          {
+            id: "3",
+            role: "agent",
+            a2ui: {
+              components: [
+                {
+                  id: "tool-checks",
+                  type: "tool-card",
+                  props: {
+                    title: "bash",
+                    toolName: "bash",
+                    description: "bunx vitest run && bunx eslint .",
+                    startedAt: 1000,
+                  },
+                },
+              ],
+            },
+          },
+        ],
+        transcriptVisibility: { toolCalls: "hide" },
+      },
+      "tab-1",
+    );
+
+    act(() => vi.runOnlyPendingTimers());
+
+    expect(screen.getAllByText("Running checks")).toHaveLength(1);
+    expect(screen.getAllByText("Waiting for results")).toHaveLength(1);
   });
 
   it("labels hidden running directory tools as directory reading", () => {

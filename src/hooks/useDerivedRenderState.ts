@@ -39,6 +39,52 @@ export interface DerivedRenderStateResult {
   scheduledTasksOpen: boolean;
 }
 
+function implicitWorkspaceLanding(
+  state: Record<string, unknown>,
+): { kind: "workspace"; [key: string]: unknown } | null {
+  const workspaceId =
+    typeof state.activeWorkspaceId === "string"
+      ? state.activeWorkspaceId
+      : null;
+  if (!workspaceId) return null;
+  const activeProjectId =
+    typeof state.activeProjectId === "string"
+      ? state.activeProjectId
+      : ((state.project as { id?: string } | null | undefined)?.id ?? null);
+  const sidebarProjects =
+    ((state.sidebar as { projects?: unknown } | undefined)?.projects as
+      | Array<{
+          id: string;
+          label?: string;
+          iconUrl?: string;
+          workspaces?: Array<{
+            id: string;
+            label?: string;
+            branch?: string;
+            path?: string;
+            isMain?: boolean;
+          }>;
+        }>
+      | undefined) ?? [];
+  for (const project of sidebarProjects) {
+    if (activeProjectId && project.id !== activeProjectId) continue;
+    const workspace = project.workspaces?.find((w) => w.id === workspaceId);
+    if (!workspace) continue;
+    return {
+      kind: "workspace",
+      projectId: project.id,
+      projectLabel: project.label,
+      iconUrl: project.iconUrl,
+      workspaceId: workspace.id,
+      workspaceLabel: workspace.label,
+      branch: workspace.branch,
+      path: workspace.path,
+      isMain: workspace.isMain === true,
+    };
+  }
+  return null;
+}
+
 export function useDerivedRenderState({
   state,
   buildSidebarHistory,
@@ -51,14 +97,6 @@ export function useDerivedRenderState({
     const sidebar =
       (state.sidebar as Record<string, unknown> | undefined) ?? {};
     const activeTabId = state.activeTabId as string | undefined;
-    const landing = state.landing as { kind?: string } | null | undefined;
-    const landingVisible = !!landing && landing.kind === "workspace";
-    const effectiveActiveTabId = landingVisible ? OVERVIEW_TAB_ID : activeTabId;
-    const history = buildSidebarHistory(
-      tabs,
-      effectiveActiveTabId,
-      recentSessions,
-    );
     const hasTabs = tabs.length > 0;
     // Shell tabs live in /tabs but render only in the bottom terminal
     // panel — they must not suppress the overview. Only agent + editor
@@ -68,6 +106,18 @@ export function useDerivedRenderState({
     );
     const activeKind = activeTabKind(tabs, activeTabId);
     const overviewActive = activeKind === null || activeKind === "shell";
+    const explicitLanding =
+      state.landing as { kind?: string } | null | undefined;
+    const landing =
+      explicitLanding ??
+      (overviewActive ? implicitWorkspaceLanding(state) : null);
+    const landingVisible = !!landing && landing.kind === "workspace";
+    const effectiveActiveTabId = landingVisible ? OVERVIEW_TAB_ID : activeTabId;
+    const history = buildSidebarHistory(
+      tabs,
+      effectiveActiveTabId,
+      recentSessions,
+    );
     // The overview owns the canvas when there are no session tabs *or*
     // when the user has explicitly selected the overview pseudo-tab.
     // Either case keeps the host / project dashboards visible while
@@ -204,6 +254,7 @@ export function useDerivedRenderState({
       hasSessionTabs,
       overviewActive: landingVisible ? true : overviewActive,
       overviewTabId: OVERVIEW_TAB_ID,
+      landing,
       empty,
       emptyAndProject,
       emptyAndNoProject,

@@ -140,7 +140,7 @@ export default function App() {
     continueStartup,
   } = useWorkspaceStartup({ state, setState, stateRef });
 
-  useSessionPersistence({ appStore, hasSyncSessionSnapshot });
+  useSessionPersistence({ appStore, hasSyncSessionSnapshot, stateRef });
   useAgentActivityHydration(setState);
 
   const recordProjectModel = useProjectModelRecorder(setState);
@@ -440,7 +440,12 @@ export default function App() {
   // Hydrate per-workspace tab buckets restored from disk into tabBucketsRef so
   // switching to a backgrounded workspace after a restart lands on its
   // last-active tab rather than the empty landing card.
-  useTabBucketHydration(state.persistedTabBuckets, tabBucketsRef);
+  useTabBucketHydration(
+    state.persistedTabBuckets,
+    tabBucketsRef,
+    state,
+    setState,
+  );
 
   const { updateTabRouted, findTabRouted, clearClosedIssueLinksForProject } =
     useRoutedTabHelpers({ setState, stateRef, projectsRef, tabBucketsRef });

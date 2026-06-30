@@ -436,6 +436,19 @@ via `src/workspaces.ts` (Rust commands in `commands/git/`); the active
 workspace is mirrored to `/activeWorkspaceId` so the file tree and new tabs
 follow the sidebar selection.
 
+Aethon is built for concurrent work: users can have multiple projects,
+workspaces, tabs, shells, and agents active at the same time. Treat workspace
+switching as a restore operation, not a reset. Switching host/project/workspace
+or returning to a running tab must not drop, invent, or briefly blank live UI
+state such as in-flight status, activity labels, queue counts, attention dots,
+tab identity, cwd, model/auth/session association, or terminal state. When a
+tab is still running, the chat and footer should immediately reconstruct a
+truthful activity affordance from tab-scoped sources (`agentRunningTabs`,
+`agentActivityByTab`, per-tab `waiting`, pending queue state, and immutable tab
+cwd) even before the next bridge event arrives. Do not rely only on global
+`waiting`/`status` for routed workspace UI; those are active-surface summaries
+and can lag a workspace bucket switch.
+
 Pi sessions are scoped to a working directory, but Aethon's application
 state is SQLite-backed. `src/projects.ts` still reads/writes the logical
 `projects.json` state key for compatibility, but `read_state` / `write_state`
@@ -454,6 +467,11 @@ The sidebar tree is **host → project → workspace**
 tiered (`src/hooks/statusPollScheduler.ts`): hot = active workspace
 (20 s + `git-state-changed` events), warm = last 4 activated workspace roots
 (60 s), cold = other projects (5 min).
+
+Tests for project/workspace/session fixes must cover the full concurrent state
+transition: switch away from a workspace with a running tab, switch back, and
+assert the restored chat/status/sidebar surface is correct without waiting for
+a new agent event to repair it.
 
 ### Monaco editor + file tree
 

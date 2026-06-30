@@ -1,5 +1,12 @@
-import { useEffect, type MutableRefObject } from "react";
+import {
+  useEffect,
+  type Dispatch,
+  type MutableRefObject,
+  type SetStateAction,
+} from "react";
 import type { Tab } from "../types/tab";
+import { TAB_MIRROR_KEYS } from "./useTabs";
+import { projectScopeBucketKey } from "./projectOps/tabBuckets";
 import type { TabBucket } from "./projectOps/types";
 
 /**
@@ -20,6 +27,8 @@ import type { TabBucket } from "./projectOps/types";
 export function useTabBucketHydration(
   persistedTabBuckets: unknown,
   tabBucketsRef: MutableRefObject<Map<string, TabBucket>>,
+  state: Record<string, unknown>,
+  setState: Dispatch<SetStateAction<Record<string, unknown>>>,
 ): void {
   useEffect(() => {
     if (
@@ -41,5 +50,72 @@ export function useTabBucketHydration(
         activeTabId: bucket.activeTabId,
       });
     }
-  }, [persistedTabBuckets, tabBucketsRef]);
+
+    const activeProjectId =
+      typeof state.activeProjectId === "string" ? state.activeProjectId : null;
+    if (!activeProjectId) return;
+    const activeWorkspaceId =
+      typeof state.activeWorkspaceId === "string"
+        ? state.activeWorkspaceId
+        : null;
+    const activeBucketKey = projectScopeBucketKey(
+      activeProjectId,
+      activeWorkspaceId,
+    );
+    const activeBucket = restored[activeBucketKey];
+    if (!activeBucket?.tabs?.length) return;
+
+    setState((prev) => {
+      const visibleTabs = Array.isArray(prev.tabs) ? (prev.tabs as Tab[]) : [];
+      const visibleOwnsSession = visibleTabs.some(
+        (tab) => tab.kind === "agent" || tab.kind === "editor",
+      );
+      if (visibleOwnsSession) return prev;
+
+      const tabs = activeBucket.tabs ?? [];
+      if (tabs.length === 0) return prev;
+      const preferred =
+        typeof activeBucket.activeTabId === "string" &&
+        tabs.some((tab) => tab.id === activeBucket.activeTabId)
+          ? activeBucket.activeTabId
+          : (tabs.find((tab) => tab.kind === "agent" || tab.kind === "editor")
+              ?.id ?? tabs[0]?.id);
+      const activeTab = tabs.find((tab) => tab.id === preferred);
+      if (!activeTab || activeTab.kind === "shell") return prev;
+
+      const nextPersisted =
+        prev.persistedTabBuckets &&
+        typeof prev.persistedTabBuckets === "object" &&
+        !Array.isArray(prev.persistedTabBuckets)
+          ? {
+              ...(prev.persistedTabBuckets as Record<string, TabBucket>),
+            }
+          : {};
+      delete nextPersisted[activeBucketKey];
+      tabBucketsRef.current.delete(activeBucketKey);
+
+      const result: Record<string, unknown> = {
+        ...prev,
+        tabs,
+        activeTabId: activeTab.id,
+        persistedTabBuckets: nextPersisted,
+        empty: false,
+        hasTabs: true,
+        landing: null,
+      };
+      const activeRecord = activeTab as unknown as Record<string, unknown>;
+      for (const key of TAB_MIRROR_KEYS) {
+        result[key as string] = activeRecord[key as string];
+      }
+      return result;
+    });
+  }, [
+    persistedTabBuckets,
+    setState,
+    state.activeProjectId,
+    state.activeTabId,
+    state.activeWorkspaceId,
+    state.tabs,
+    tabBucketsRef,
+  ]);
 }
