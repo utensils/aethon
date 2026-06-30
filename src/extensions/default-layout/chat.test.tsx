@@ -642,6 +642,45 @@ describe("ChatInput", () => {
     expect(screen.getByText("Streaming the answer")).toBeTruthy();
   });
 
+  it("does not show live fallback activity derived only from hidden thinking", () => {
+    const { container } = renderMainCanvas({
+      waiting: true,
+      messages: [
+        { id: "1", role: "user", text: "start" },
+        { id: "2", role: "agent", thinking: "private reasoning" },
+      ],
+      transcriptVisibility: { thinking: "hide" },
+    });
+
+    expect(screen.queryByText("private reasoning")).toBeNull();
+    expect(screen.queryByText("Writing response")).toBeNull();
+    expect(screen.queryByText("Streaming the answer")).toBeNull();
+    expect(screen.queryByText("Thinking through next step")).toBeNull();
+    expect(container.querySelector(".a2ui-msg-row-footer")).toBeNull();
+  });
+
+  it("does not show live fallback activity derived only from hidden thinking tags", () => {
+    const { container } = renderMainCanvas({
+      waiting: true,
+      messages: [
+        { id: "1", role: "user", text: "start" },
+        {
+          id: "2",
+          role: "agent",
+          text: "<thinking>private reasoning</thinking>",
+        },
+      ],
+      transcriptVisibility: { thinking: "hide" },
+    });
+
+    expect(screen.queryByText("private reasoning")).toBeNull();
+    expect(screen.queryByText("Writing response")).toBeNull();
+    expect(screen.queryByText("Streaming the answer")).toBeNull();
+    expect(screen.queryByText("Thinking through next step")).toBeNull();
+    expect(container.querySelector(".a2ui-canvas-message.agent")).toBeNull();
+    expect(container.querySelector(".a2ui-msg-row-footer")).toBeNull();
+  });
+
   it("does not infer tool-specific footer activity from planning prose", () => {
     renderMainCanvas({
       waiting: true,
@@ -715,8 +754,8 @@ describe("ChatInput", () => {
     expect(screen.getByText("Streaming the answer")).toBeTruthy();
   });
 
-  it("does not show the footer activity indicator when running tool activity is visible", () => {
-    renderMainCanvas({
+  it("does not show tool-derived live activity when running tool cards are hidden", () => {
+    const { container } = renderMainCanvas({
       waiting: true,
       messages: [
         { id: "1", role: "user", text: "start" },
@@ -743,13 +782,18 @@ describe("ChatInput", () => {
       transcriptVisibility: { toolCalls: "hide" },
     });
 
-    expect(screen.getByText("Searching files")).toBeTruthy();
+    expect(screen.queryByText("Searching files")).toBeNull();
+    expect(screen.queryByText("Looking for relevant matches")).toBeNull();
+    expect(screen.queryByText("bash")).toBeNull();
+    expect(screen.queryByText("rg message-row")).toBeNull();
+    expect(container.querySelector(".ae-live-activity-card")).toBeNull();
+    expect(container.querySelector(".ae-turn-activity")).toBeNull();
     expect(screen.queryByText("Thinking through next step")).toBeNull();
   });
 
-  it("does not duplicate footer activity when hidden running tools already summarize it", () => {
+  it("does not show delayed agent activity when hidden running tools are present", () => {
     vi.useFakeTimers();
-    renderMainCanvas(
+    const { container } = renderMainCanvas(
       {
         waiting: true,
         agentActivityByTab: {
@@ -789,12 +833,15 @@ describe("ChatInput", () => {
 
     act(() => vi.runOnlyPendingTimers());
 
-    expect(screen.getAllByText("Running checks")).toHaveLength(1);
-    expect(screen.getAllByText("Waiting for results")).toHaveLength(1);
+    expect(screen.queryByText("Running checks")).toBeNull();
+    expect(screen.queryByText("Waiting for results")).toBeNull();
+    expect(screen.queryByText("bunx vitest run && bunx eslint .")).toBeNull();
+    expect(container.querySelector(".ae-live-activity-card")).toBeNull();
+    expect(container.querySelector(".a2ui-msg-row-footer")).toBeNull();
   });
 
-  it("labels hidden running directory tools as directory reading", () => {
-    renderMainCanvas({
+  it("keeps hidden running directory tools out of live activity", () => {
+    const { container } = renderMainCanvas({
       waiting: true,
       messages: [
         { id: "1", role: "user", text: "summarize this directory" },
@@ -821,9 +868,14 @@ describe("ChatInput", () => {
       transcriptVisibility: { toolCalls: "hide" },
     });
 
-    expect(screen.getByText("Reading directory contents")).toBeTruthy();
-    expect(screen.getByText("Inspecting files and folders")).toBeTruthy();
+    expect(screen.queryByText("Reading directory contents")).toBeNull();
+    expect(screen.queryByText("Inspecting files and folders")).toBeNull();
+    expect(
+      screen.queryByText("find . -maxdepth 2 -type f | head -200"),
+    ).toBeNull();
     expect(screen.queryByText("Writing response")).toBeNull();
+    expect(container.querySelector(".ae-live-activity-card")).toBeNull();
+    expect(container.querySelector(".ae-turn-activity")).toBeNull();
   });
 
   it("shows the pill and stops following when the user scrolls up", () => {
@@ -3169,7 +3221,9 @@ describe("ChatHistory turn activity feed (mocked Virtuoso renders rows)", () => 
         {
           id: "t1",
           role: "agent",
-          a2ui: { components: [mkCard("c1", "first out"), mkCard("c2", "second out")] },
+          a2ui: {
+            components: [mkCard("c1", "first out"), mkCard("c2", "second out")],
+          },
         },
       ],
       waiting: false,
@@ -3302,7 +3356,7 @@ describe("ChatHistory turn activity feed (mocked Virtuoso renders rows)", () => 
     ).toBeNull();
   });
 
-  it("hide still surfaces live running tool activity without persisting tool details", () => {
+  it("hide suppresses live running tool activity and tool details", () => {
     const { container } = renderGroupedHistory({
       messages: [
         { id: "u1", role: "user", text: "inspect files" },
@@ -3336,12 +3390,13 @@ describe("ChatHistory turn activity feed (mocked Virtuoso renders rows)", () => 
       transcriptVisibility: { toolCalls: "hide" },
     });
 
-    expect(screen.getByText("Searching files")).toBeTruthy();
-    expect(screen.getByText("Looking for relevant matches")).toBeTruthy();
+    expect(screen.queryByText("Searching files")).toBeNull();
+    expect(screen.queryByText("Looking for relevant matches")).toBeNull();
     expect(screen.queryByText("bash")).toBeNull();
     expect(screen.queryByText("rg message-row")).toBeNull();
     expect(screen.queryByText("raw running output")).toBeNull();
-    expect(container.querySelector(".ae-live-activity-card")).toBeTruthy();
+    expect(container.querySelector(".ae-live-activity-card")).toBeNull();
+    expect(container.querySelector(".ae-turn-activity")).toBeNull();
   });
 
   it("show expands activity by default", () => {
