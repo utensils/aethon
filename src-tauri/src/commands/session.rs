@@ -413,9 +413,7 @@ fn fork_seed_message(row: &SessionEntryRow) -> Option<ForkSessionMessage> {
         .map(str::trim)
         .filter(|text| !text.is_empty())
         .map(ToOwned::to_owned);
-    if text.is_none() {
-        return None;
-    }
+    text.as_ref()?;
     Some(ForkSessionMessage {
         id: row.entry_id.clone(),
         entry_id: row.entry_id.clone(),
