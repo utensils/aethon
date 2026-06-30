@@ -19,7 +19,6 @@ import {
   fileChangeStatsLabel,
   hasFileChange,
   hasToolCardChildren,
-  liveActivitySummary,
   summaryWithFileEntries,
   toolDurationLabel,
   toolStateLabel,
@@ -29,7 +28,6 @@ import {
   ToolFileChangesCard,
   ToolFileChangeRow,
 } from "./tool-file-changes";
-import { LiveActivityCard } from "./live-activity-card";
 
 const ACTIVITY_DISCLOSURE_EXIT_MS = 240;
 
@@ -135,15 +133,13 @@ export function TurnActivity({
     setAllExpanded(next);
     // Dispatch only to the cards inside THIS turn's subtree so sibling
     // turns are unaffected.
-    turnRef.current
-      ?.querySelectorAll(".ae-tool-card")
-      .forEach((el) =>
-        el.dispatchEvent(
-          new CustomEvent("aethon:tool-card-set-open", {
-            detail: { open: next },
-          }),
-        ),
-      );
+    turnRef.current?.querySelectorAll(".ae-tool-card").forEach((el) =>
+      el.dispatchEvent(
+        new CustomEvent("aethon:tool-card-set-open", {
+          detail: { open: next },
+        }),
+      ),
+    );
   };
   const progressMessages =
     live || forceOpen
@@ -159,7 +155,7 @@ export function TurnActivity({
   const summarizedToolMessages = showGenericTools
     ? allToolMessages
     : live
-      ? runningTools
+      ? []
       : allToolMessages.filter(hasFileChange);
   const allFileChangeEntries = collectFileChangeEntries(summarizedToolMessages);
   const summary = summaryWithFileEntries(
@@ -172,10 +168,6 @@ export function TurnActivity({
     summary.running === 0 &&
     summary.failed === 0 &&
     summary.cancelled === 0;
-  const liveOnlyActivity = live && !showGenericTools && runningTools.length > 0;
-  const liveOnlySummary = liveOnlyActivity
-    ? liveActivitySummary(runningTools)
-    : null;
   const defaultDetailsOpen =
     expanded || toolCallsVisibility === "show" || completedFileActivity;
   const detailsOpen = forceOpen || (manualOpen ?? defaultDetailsOpen);
@@ -204,19 +196,17 @@ export function TurnActivity({
     ? []
     : collectFileChangeEntries(allToolMessages.filter(hasFileChange));
   const detailToolRows =
-    liveOnlyActivity && detailsBodyVisible
-      ? runningTools
-      : showOriginalToolCards || !showGenericTools
-        ? []
-        : detailTools.filter(
-            (message) =>
-              !hasFileChange(message) && !originalToolCardIds.has(message.id),
-          );
+    showOriginalToolCards || !showGenericTools
+      ? []
+      : detailTools.filter(
+          (message) =>
+            !hasFileChange(message) && !originalToolCardIds.has(message.id),
+        );
   const hasActivity =
     progressMessages.length > 0 ||
     summary.fileChanges.total > 0 ||
     summarizedToolMessages.length > 0 ||
-    runningTools.length > 0;
+    (showGenericTools && runningTools.length > 0);
 
   useEffect(
     () => () => {
@@ -235,17 +225,6 @@ export function TurnActivity({
   }, [detailsBodyVisible]);
 
   if (!hasActivity) return null;
-  if (liveOnlyActivity) {
-    if (!liveOnlySummary) return null;
-    return (
-      <div className="ae-turn-activity ae-turn-activity-live-summary">
-        <LiveActivityCard
-          label={liveOnlySummary.label}
-          detail={liveOnlySummary.detail}
-        />
-      </div>
-    );
-  }
   const label = activityLabel({
     summary,
     progressCount: progressMessages.length,
@@ -378,7 +357,7 @@ export function TurnActivity({
           )}
         </div>
       )}
-      {!detailsOpen && runningTools.length > 0 && (
+      {showGenericTools && !detailsOpen && runningTools.length > 0 && (
         <div className="ae-turn-activity-live-tools" data-state="open">
           {runningTools.map((message) => (
             <ToolActivityRow

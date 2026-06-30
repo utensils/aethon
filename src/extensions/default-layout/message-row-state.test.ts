@@ -89,6 +89,71 @@ describe("fallbackAgentActivityForTab", () => {
     });
   });
 
+  it("does not derive fallback activity from hidden thinking-only messages", () => {
+    expect(
+      fallbackAgentActivityForTab(
+        { waiting: true, activeTabId: "tab-1" },
+        "tab-1",
+        [
+          { role: "user", text: "start" },
+          { role: "agent", thinking: "internal chain" },
+        ],
+        { thinkingVisibility: "hide" },
+      ),
+    ).toBeNull();
+  });
+
+  it("does not derive fallback activity from hidden embedded thinking-only text", () => {
+    expect(
+      fallbackAgentActivityForTab(
+        { waiting: true, activeTabId: "tab-1" },
+        "tab-1",
+        [
+          { role: "user", text: "start" },
+          { role: "agent", text: "<thinking>internal chain</thinking>" },
+        ],
+        { thinkingVisibility: "hide" },
+      ),
+    ).toBeNull();
+  });
+
+  it("uses writing copy for thinking-only messages when thinking is visible", () => {
+    expect(
+      fallbackAgentActivityForTab(
+        { waiting: true, activeTabId: "tab-1" },
+        "tab-1",
+        [
+          { role: "user", text: "start" },
+          { role: "agent", thinking: "visible reasoning" },
+        ],
+        { thinkingVisibility: "show" },
+      ),
+    ).toEqual({
+      label: "Writing response",
+      detail: "Streaming the answer",
+    });
+  });
+
+  it("keeps writing copy when visible text surrounds hidden embedded thinking", () => {
+    expect(
+      fallbackAgentActivityForTab(
+        { waiting: true, activeTabId: "tab-1" },
+        "tab-1",
+        [
+          { role: "user", text: "start" },
+          {
+            role: "agent",
+            text: "<thinking>internal chain</thinking>visible answer",
+          },
+        ],
+        { thinkingVisibility: "hide" },
+      ),
+    ).toEqual({
+      label: "Writing response",
+      detail: "Streaming the answer",
+    });
+  });
+
   it("can provide generic status for footer-only empty transcripts", () => {
     expect(
       fallbackAgentActivityForTab(

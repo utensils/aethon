@@ -128,7 +128,9 @@ export function MainCanvas({
   const footerAgentActivity = hasRunningToolCard ? null : agentActivity;
   const fallbackActivity =
     !liveSubtree && !footerAgentActivity && !hasRunningToolCard
-      ? fallbackAgentActivityForTab(state, tabId, messages)
+      ? fallbackAgentActivityForTab(state, tabId, messages, {
+          thinkingVisibility: visibility.thinking,
+        })
       : null;
   const footerContext: CanvasFooterContext = {
     liveSubtree,

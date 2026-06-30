@@ -8,6 +8,7 @@
 
 import { resolvePointer } from "../../../utils/jsonPointer";
 import { resolveString } from "../../../utils/dataBinding";
+import { resolveVisibility } from "../../../utils/visibilityResolver";
 import type { BuiltinComponentProps } from "../../../components/A2UIRenderer";
 import type { StringValue } from "../../../types/a2ui";
 import type { DevshellEntry } from "../../../hooks/useDevshell";
@@ -46,10 +47,12 @@ export function StatusBar({ component, state }: BuiltinComponentProps) {
   const messages = Array.isArray(state.messages)
     ? (state.messages as ChatMessage[])
     : [];
+  const visibility = resolveVisibility(state, activeTabId);
   const fallbackActivity = visibleAgentActivity
     ? null
     : fallbackAgentActivityForTab(state, activeTabId, messages, {
         allowEmpty: true,
+        thinkingVisibility: visibility.thinking,
       });
   const statusAgentActivity = visibleAgentActivity ?? fallbackActivity;
   const centerStatus = statusAgentActivity ?? {
