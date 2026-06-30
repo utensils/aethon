@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen } from "@testing-library/react";
+import { act, cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { A2UIComponent } from "../../../types/a2ui";
 import { StatusBar } from "./status-bar";
@@ -28,6 +28,70 @@ function renderStatusBar(state: Record<string, unknown>) {
     />,
   );
 }
+
+describe("StatusBar agent state", () => {
+  afterEach(() => vi.useRealTimers());
+
+  it("moves idle agent status to the center and keeps connection on the left", () => {
+    renderStatusBar({
+      status: "ready",
+      connection: "connected",
+      model: "anthropic/claude",
+    });
+
+    const footer = screen.getByText("idle").closest(".a2ui-status-bar");
+    expect(footer?.querySelector(".a2ui-status-left")?.textContent).toBe(
+      "connected",
+    );
+    expect(footer?.querySelector(".a2ui-status-center")?.textContent).toBe(
+      "idle",
+    );
+  });
+
+  it("shows the full live activity label where connection used to render", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(10_000);
+    renderStatusBar({
+      status: "Working",
+      connection: "connected",
+      model: "anthropic/claude",
+      activeTabId: "tab-1",
+      agentActivityByTab: {
+        "tab-1": {
+          label: "Running checks",
+          detail: "Waiting for results",
+          startedAt: 9_000,
+          updatedAt: 10_000,
+        },
+      },
+    });
+
+    act(() => vi.runOnlyPendingTimers());
+
+    const footer = screen
+      .getByText("Running checks")
+      .closest(".a2ui-status-bar");
+    expect(footer?.querySelector(".a2ui-status-left")?.textContent).toBe(
+      "connected",
+    );
+    expect(footer?.querySelector(".a2ui-status-center")?.textContent).toBe(
+      "Running checksWaiting for results",
+    );
+  });
+
+  it("uses a generic center status while waiting before activity arrives", () => {
+    renderStatusBar({
+      status: "thinking…",
+      connection: "connected",
+      model: "anthropic/claude",
+      waiting: true,
+    });
+
+    expect(screen.getByText("Thinking through next step")).toBeTruthy();
+    expect(screen.getByText("Waiting for the next update")).toBeTruthy();
+    expect(screen.getByText("connected")).toBeTruthy();
+  });
+});
 
 describe("StatusBar context meter", () => {
   it("renders current context and next auto-compaction threshold", () => {

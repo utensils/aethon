@@ -47,9 +47,15 @@ export function StatusBar({ component, state }: BuiltinComponentProps) {
         }
       : null;
   const statusAgentActivity = visibleAgentActivity ?? genericAgentActivity;
-  const leftLabel = statusAgentActivity?.label ?? left;
-  const leftTitle = statusAgentActivity?.detail ?? undefined;
-  const leftClassName = `a2ui-status-left${
+  const centerStatus = statusAgentActivity ?? {
+    label: idleStatusLabel(left, center),
+    detail: idleStatusDetail(left, center),
+  };
+  const leftLabel = center || "disconnected";
+  const leftTitle = leftLabel;
+  const leftConnectionState = connectionStateClass(leftLabel);
+  const leftClassName = `a2ui-status-left ${leftConnectionState}`;
+  const centerClassName = `a2ui-status-center${
     statusAgentActivity ? " is-agent-active" : ""
   }`;
 
@@ -101,7 +107,9 @@ export function StatusBar({ component, state }: BuiltinComponentProps) {
       ? devshellSlice.entries[devshellRoot]
       : undefined;
   const devshellLabel = devshellEntry ? devshellChipLabel(devshellEntry) : null;
-  const devshellTooltip = devshellEntry ? devshellChipTooltip(devshellEntry) : null;
+  const devshellTooltip = devshellEntry
+    ? devshellChipTooltip(devshellEntry)
+    : null;
   const devshellClass = devshellEntry
     ? `a2ui-status-devshell-chip is-${devshellEntry.state}`
     : "a2ui-status-devshell-chip";
@@ -113,8 +121,12 @@ export function StatusBar({ component, state }: BuiltinComponentProps) {
     | undefined;
   const startupRoot = startupSlice?.activeRoot ?? null;
   const startupEntry =
-    startupRoot && startupSlice?.entries ? startupSlice.entries[startupRoot] : null;
-  const startupLabel = startupEntry ? startupChipLabel(startupEntry.state) : null;
+    startupRoot && startupSlice?.entries
+      ? startupSlice.entries[startupRoot]
+      : null;
+  const startupLabel = startupEntry
+    ? startupChipLabel(startupEntry.state)
+    : null;
 
   return (
     <footer className="a2ui-status-bar">
@@ -175,10 +187,62 @@ export function StatusBar({ component, state }: BuiltinComponentProps) {
         </span>
       ) : null}
       {contextUsage ? <ContextMeter usage={contextUsage} /> : null}
-      <span className="a2ui-status-center">{center}</span>
+      <span
+        className={centerClassName}
+        title={centerStatus.detail ?? centerStatus.label}
+      >
+        <span className="a2ui-status-center-main">{centerStatus.label}</span>
+        {centerStatus.detail ? (
+          <span className="a2ui-status-center-detail">
+            {centerStatus.detail}
+          </span>
+        ) : null}
+      </span>
       <span className="a2ui-status-right">{right}</span>
     </footer>
   );
+}
+
+function idleStatusLabel(status: string, connection: string): string {
+  const normalizedStatus = status.trim().toLowerCase();
+  const normalizedConnection = connection.trim().toLowerCase();
+  if (
+    normalizedStatus === "ready" ||
+    normalizedStatus === "idle" ||
+    normalizedConnection === "connected"
+  ) {
+    return "idle";
+  }
+  return status || normalizedConnection || "idle";
+}
+
+function idleStatusDetail(
+  status: string,
+  connection: string,
+): string | undefined {
+  const normalizedStatus = status.trim().toLowerCase();
+  const normalizedConnection = connection.trim().toLowerCase();
+  if (
+    normalizedStatus === "ready" ||
+    normalizedStatus === "idle" ||
+    normalizedConnection === "connected"
+  ) {
+    return undefined;
+  }
+  return connection || undefined;
+}
+
+function connectionStateClass(connection: string): string {
+  switch (connection.trim().toLowerCase()) {
+    case "connected":
+      return "is-connected";
+    case "connecting":
+    case "starting":
+    case "starting…":
+      return "is-connecting";
+    default:
+      return "is-disconnected";
+  }
 }
 
 function startupChipLabel(state: string | undefined): string | null {
@@ -249,7 +313,9 @@ function devshellChipTooltip(entry: DevshellEntry): string | null {
       break;
     case "none":
       if (entry.enabled === "never") {
-        lines.push("Devshell disabled in config — set [devshell] enabled = \"auto\" to re-enable");
+        lines.push(
+          'Devshell disabled in config — set [devshell] enabled = "auto" to re-enable',
+        );
       }
       break;
   }
@@ -289,8 +355,12 @@ function contextUsageFromValue(value: unknown): ContextUsageState | null {
       usage.estimatedTokensUntilCompact,
     ),
     ...(usage.compacting === true ? { compacting: true } : {}),
-    ...(saturatedByProvider ? { saturatedByProvider: true, saturated: true } : {}),
-    ...(usage.saturatedByEstimate === true ? { saturatedByEstimate: true } : {}),
+    ...(saturatedByProvider
+      ? { saturatedByProvider: true, saturated: true }
+      : {}),
+    ...(usage.saturatedByEstimate === true
+      ? { saturatedByEstimate: true }
+      : {}),
   };
 }
 
