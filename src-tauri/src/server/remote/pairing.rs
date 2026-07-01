@@ -232,6 +232,7 @@ mod tests {
                 fingerprint: "f".repeat(64),
             },
             remote: Arc::new(RemoteState::in_memory()),
+            relay: Arc::new(crate::server::remote::relay::EchoRelay),
         }
     }
 

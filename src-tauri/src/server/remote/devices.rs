@@ -136,9 +136,6 @@ impl DeviceStore {
 
     /// Resolve a presented token to its non-revoked device. Scans every
     /// record (no early exit on the hash compare itself); N is tiny.
-    // TODO(remote-gateway): the WS hello handshake consumes this later
-    // on this branch; drop the allow when ws.rs lands.
-    #[allow(dead_code)]
     pub fn verify_token(&self, token: &str) -> Option<DeviceView> {
         let hash = sha256_hex(token.as_bytes());
         let records = self.records.lock().ok()?;
@@ -149,9 +146,6 @@ impl DeviceStore {
     }
 
     /// Record activity from a device (connect / reconnect).
-    // TODO(remote-gateway): the WS hello handshake consumes this later
-    // on this branch; drop the allow when ws.rs lands.
-    #[allow(dead_code)]
     pub fn touch(&self, id: &str) {
         let Ok(mut records) = self.records.lock() else {
             return;

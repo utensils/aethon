@@ -114,7 +114,14 @@ struct ControlCompletion {
 pub(crate) fn control_update_state(
     snapshot: Value,
     state: State<'_, Arc<ControlState>>,
+    remote: State<'_, Arc<crate::server::remote::RemoteState>>,
 ) -> Result<(), String> {
+    // Mirror the snapshot to remote clients as the `frontend-state`
+    // topic — the convergence signal that keeps every paired device's
+    // view of tabs/models/accounts in step regardless of who mutated.
+    if let Ok(json) = serde_json::to_string(&snapshot) {
+        remote.hub.publish("frontend-state", json);
+    }
     *state.frontend_state.lock().map_err(|e| e.to_string())? = snapshot;
     Ok(())
 }
@@ -254,35 +261,50 @@ async fn forward_to_frontend(
     state: &Arc<ControlState>,
     req: ControlRequest,
 ) -> ControlResponse {
+    match forward_ui_method(app, state, &req.method, req.params).await {
+        Ok(value) => ok_response(value),
+        Err(err) => err_response(err),
+    }
+}
+
+/// Round one UI-owned mutation through the desktop webview: emit a
+/// `control-request`, await the matching `control_request_complete`.
+/// Shared by the local control socket and the remote gateway's `ui.*`
+/// forwards, so both serialize on the same pending map + timeouts.
+pub(crate) async fn forward_ui_method(
+    app: &AppHandle,
+    state: &Arc<ControlState>,
+    method: &str,
+    params: Value,
+) -> Result<Value, String> {
     let request_id = uuid::Uuid::new_v4().to_string();
-    let timeout = request_timeout(&req.params);
+    let timeout = request_timeout(&params);
     let (tx, rx) = oneshot::channel();
     {
-        let mut pending = match state.pending.lock() {
-            Ok(guard) => guard,
-            Err(err) => return err_response(format!("pending lock: {err}")),
-        };
+        let mut pending = state
+            .pending
+            .lock()
+            .map_err(|err| format!("pending lock: {err}"))?;
         pending.insert(request_id.clone(), tx);
     }
     let payload = FrontendControlRequest {
         request_id: request_id.clone(),
-        method: req.method,
-        params: req.params,
+        method: method.to_string(),
+        params,
     };
     if let Err(err) = app.emit("control-request", payload) {
         let _ = state.pending.lock().map(|mut p| p.remove(&request_id));
-        return err_response(format!("emit control-request: {err}"));
+        return Err(format!("emit control-request: {err}"));
     }
     match tokio::time::timeout(timeout, rx).await {
-        Ok(Ok(done)) if done.success => ok_response(done.data.unwrap_or(Value::Null)),
-        Ok(Ok(done)) => err_response(
-            done.error
-                .unwrap_or_else(|| "control request failed".to_string()),
-        ),
-        Ok(Err(_)) => err_response("control request was cancelled".to_string()),
+        Ok(Ok(done)) if done.success => Ok(done.data.unwrap_or(Value::Null)),
+        Ok(Ok(done)) => Err(done
+            .error
+            .unwrap_or_else(|| "control request failed".to_string())),
+        Ok(Err(_)) => Err("control request was cancelled".to_string()),
         Err(_) => {
             let _ = state.pending.lock().map(|mut p| p.remove(&request_id));
-            err_response("control request timed out".to_string())
+            Err("control request timed out".to_string())
         }
     }
 }

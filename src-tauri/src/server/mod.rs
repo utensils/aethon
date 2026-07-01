@@ -81,6 +81,14 @@ impl ServerState {
 /// are gated on `[server] enabled` (default true); the browser always runs.
 pub fn boot(app: AppHandle, state: Arc<ServerState>) {
     tauri::async_runtime::spawn(async move {
+        // Tap Tauri events for the remote hub exactly once per process —
+        // taps survive server stop/start, so this must not live in
+        // `start()` (a restart would double-publish every event).
+        {
+            use tauri::Manager;
+            let remote = Arc::clone(app.state::<Arc<remote::RemoteState>>().inner());
+            remote::events::install_taps(&remote.hub, &app);
+        }
         let enabled = server_enabled(&app);
         match start_on_boot_if_enabled(enabled, || start(&app, &state, true)).await {
             Ok(Some(_)) => {}
@@ -121,15 +129,18 @@ fn server_enabled_from_config_text(raw: &str) -> bool {
 
 /// Read `[server] port` (default 0 → OS-assigned). Out-of-range values
 /// fall back to 0 rather than failing boot.
-fn server_port(app: &AppHandle) -> u16 {
-    server_port_from_config_text(&server_config_raw(app))
-}
-
 fn server_port_from_config_text(raw: &str) -> u16 {
     crate::helpers::parse_config_toml(raw)["server"]["port"]
         .as_u64()
         .and_then(|p| u16::try_from(p).ok())
         .unwrap_or(0)
+}
+
+/// Read `[server] allow_insecure_ws` (default false). Dev-only.
+fn allow_insecure_ws_from_config_text(raw: &str) -> bool {
+    crate::helpers::parse_config_toml(raw)["server"]["allowInsecureWs"]
+        .as_bool()
+        .unwrap_or(false)
 }
 
 async fn start_on_boot_if_enabled<F, Fut>(
@@ -154,15 +165,35 @@ where
 pub async fn start(app: &AppHandle, state: &ServerState, advertise: bool) -> Result<u16, String> {
     use tauri::Manager;
     let info = crate::commands::host::local_host_info();
-    let identity = tls::identity();
+    let raw_config = server_config_raw(app);
+    let mut identity = tls::identity();
     if identity.is_none() {
         tracing::warn!(
             target: "aethon::server",
             "TLS identity unavailable — serving the plain scaffold; remote pairing disabled"
         );
     }
+    if allow_insecure_ws_from_config_text(&raw_config) {
+        // Dev-only escape hatch for the browser dev loop (a desktop
+        // browser can't pin a self-signed cert). Phones will refuse the
+        // missing TLS — this is not a production mode.
+        tracing::warn!(
+            target: "aethon::server",
+            "[server] allow_insecure_ws = true — serving WITHOUT TLS (dev only)"
+        );
+        identity = None;
+    }
     let remote = Arc::clone(app.state::<Arc<remote::RemoteState>>().inner());
-    let (port, http_task) = http::serve(info.clone(), server_port(app), identity, remote).await?;
+    let relay: Arc<dyn remote::relay::RelayExec> =
+        Arc::new(remote::relay::TauriRelay::new(app.clone()));
+    let (port, http_task) = http::serve(
+        info.clone(),
+        server_port_from_config_text(&raw_config),
+        identity,
+        remote,
+        relay,
+    )
+    .await?;
     let advertise_daemon = if advertise {
         Some(
             mdns::advertise(&info.display_name, port, &info.fingerprint)

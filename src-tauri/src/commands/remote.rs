@@ -72,9 +72,10 @@ pub fn remote_devices_list(remote: State<'_, Arc<RemoteState>>) -> Result<Vec<De
 
 #[tauri::command]
 pub fn remote_device_revoke(id: String, remote: State<'_, Arc<RemoteState>>) -> Result<(), String> {
-    remote.devices.revoke(&id)
-    // The WS layer watches revocation and closes the device's live
-    // connections with `bye revoked` (wired with ws.rs).
+    remote.devices.revoke(&id)?;
+    // Token is dead for new connections; drop live ones immediately.
+    remote.close_device(&id);
+    Ok(())
 }
 
 #[tauri::command]

@@ -15,6 +15,9 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
 
+use axum::extract::{Query, State};
+use axum::http::{StatusCode, header};
+use axum::response::{IntoResponse, Response};
 use axum::routing::post;
 use axum::{Json, Router, routing::get};
 use axum_server::tls_rustls::RustlsConfig;
@@ -22,12 +25,17 @@ use tauri::async_runtime::JoinHandle;
 use tokio::net::TcpListener;
 
 use crate::commands::host::HostInfo;
-use crate::server::remote::{GatewayCtx, RemoteState, pairing};
+use crate::server::remote::relay::RelayExec;
+use crate::server::remote::{GatewayCtx, RemoteState, pairing, ws};
 use crate::server::tls::TlsIdentity;
 
-fn router(info: HostInfo, remote: Arc<RemoteState>) -> Router {
+pub fn router(info: HostInfo, remote: Arc<RemoteState>, relay: Arc<dyn RelayExec>) -> Router {
     let status_info = info.clone();
-    let ctx = GatewayCtx { info, remote };
+    let ctx = GatewayCtx {
+        info,
+        remote,
+        relay,
+    };
     Router::new()
         .route("/health", get(|| async { "aethon" }))
         .route(
@@ -40,9 +48,54 @@ fn router(info: HostInfo, remote: Arc<RemoteState>) -> Router {
         // Harmless on the plain-HTTP fallback listener: pairing sessions
         // can only be armed while the TLS identity exists
         // (remote_pairing_begin refuses otherwise), so without TLS this
-        // route is a guaranteed 404.
+        // route is a guaranteed 404. /ws still authenticates per-token
+        // on its first frame either way.
         .route("/pair", post(pairing::pair_handler))
+        .route("/ws", get(ws::ws_handler))
+        .route("/asset", get(asset_handler))
         .with_state(ctx)
+}
+
+#[derive(serde::Deserialize)]
+struct AssetQuery {
+    path: String,
+    token: String,
+}
+
+/// `GET /asset?path=…&token=…` — the mobile equivalent of Tauri's
+/// `convertFileSrc` for chat image attachments. Token in the query
+/// because `<img src>` can't carry headers; the URL never leaves the
+/// paired transport. Routed through the relay so it reuses the exact
+/// jailed read path (`read_paste_image_base64`: pastes dir only,
+/// 32 MiB cap) rather than growing a second file-serving surface.
+async fn asset_handler(
+    State(ctx): State<GatewayCtx>,
+    Query(query): Query<AssetQuery>,
+) -> Response {
+    use base64::Engine;
+    if ctx.remote.devices.verify_token(&query.token).is_none() {
+        return (StatusCode::UNAUTHORIZED, "unauthorized").into_response();
+    }
+    let args = serde_json::json!({ "path": query.path });
+    let b64 = match ctx.relay.invoke("read_paste_image_base64", args).await {
+        Ok(serde_json::Value::String(b64)) => b64,
+        Ok(_) => return (StatusCode::INTERNAL_SERVER_ERROR, "bad relay shape").into_response(),
+        Err(e) => {
+            tracing::debug!(target: "aethon::server::http", "asset denied: {e}");
+            return (StatusCode::NOT_FOUND, "not found").into_response();
+        }
+    };
+    let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(b64) else {
+        return (StatusCode::INTERNAL_SERVER_ERROR, "decode failed").into_response();
+    };
+    let mime = match query.path.rsplit('.').next().map(str::to_ascii_lowercase) {
+        Some(ext) if ext == "png" => "image/png",
+        Some(ext) if ext == "jpg" || ext == "jpeg" => "image/jpeg",
+        Some(ext) if ext == "gif" => "image/gif",
+        Some(ext) if ext == "webp" => "image/webp",
+        _ => "application/octet-stream",
+    };
+    ([(header::CONTENT_TYPE, mime)], bytes).into_response()
 }
 
 /// Bind the listener and spawn the serving task. Returns the bound port
@@ -52,11 +105,12 @@ pub async fn serve(
     port: u16,
     tls: Option<&TlsIdentity>,
     remote: Arc<RemoteState>,
+    relay: Arc<dyn RelayExec>,
 ) -> Result<(u16, JoinHandle<()>), String> {
     let addr: SocketAddr = format!("0.0.0.0:{port}")
         .parse()
         .map_err(|e| format!("addr: {e}"))?;
-    let app = router(info, remote);
+    let app = router(info, remote, relay);
     match tls {
         Some(identity) => {
             crate::server::tls::install_crypto_provider();

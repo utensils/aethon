@@ -49,7 +49,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 tracing-appender = "0.2"
 mdns-sd = "0.12"
 gethostname = "1"
-axum = "0.7"
+axum = { version = "0.7", features = ["ws"] }
 # Remote gateway TLS: ring-flavored everywhere so we stay on the crypto
 # provider reqwest already links (aws-lc-rs would add a second provider
 # and a cmake build dep).
