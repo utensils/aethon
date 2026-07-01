@@ -129,12 +129,21 @@ pub struct UpdatesConfig {
 
 #[derive(Default, Deserialize)]
 pub struct ServerConfig {
-    /// Whether to start the unauthenticated local HTTP listener and advertise
-    /// this host over mDNS (`_aethon._tcp.local.`) on boot. Default `true`.
-    /// Set `false` to stop LAN exposure while keeping peer *discovery* (the
-    /// browser) running, since that's read-only. The `server_start` IPC
-    /// (explicit user action) starts and advertises regardless of this flag.
+    /// Whether to start the LAN HTTP listener and advertise this host over
+    /// mDNS (`_aethon._tcp.local.`) on boot. Default `true`. Set `false`
+    /// to stop LAN exposure while keeping peer *discovery* (the browser)
+    /// running, since that's read-only. The `server_start` IPC (explicit
+    /// user action) starts and advertises regardless of this flag.
     pub enabled: Option<bool>,
+    /// Fixed TCP port for the LAN listener. Default unset → the OS picks
+    /// a free port (advertised via mDNS). Pin it when firewall rules or
+    /// Tailscale ACLs need a stable target.
+    pub port: Option<u16>,
+    /// Dev-only: additionally accept remote-gateway connections without
+    /// TLS. Exists so a desktop browser (which can't pin a self-signed
+    /// cert) can drive the mobile UI against a local dev instance.
+    /// Default `false`; never enable on a network you don't trust.
+    pub allow_insecure_ws: Option<bool>,
 }
 
 #[derive(Default, Deserialize)]
@@ -512,6 +521,8 @@ pub fn parse_config_toml(input: &str) -> serde_json::Value {
         },
         "server": {
             "enabled": cfg.server.enabled.unwrap_or(true),
+            "port": cfg.server.port,
+            "allowInsecureWs": cfg.server.allow_insecure_ws.unwrap_or(false),
         },
         "startup": {
             "autoApprove": cfg.startup.auto_approve.unwrap_or(false),

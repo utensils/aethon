@@ -11,10 +11,13 @@
 //!   `resolve_inside_root` lexical traversal gate.
 //! - [`names`]  — `validate_state_name` and `sanitize_filename_segment`,
 //!   the leaf-filename guards.
+//! - [`secure_files`] — owner-only (0600/0700) file + dir writes shared
+//!   by the credential stores (control socket, remote gateway).
 
 pub mod config;
 pub mod names;
 pub mod paths;
+pub mod secure_files;
 
 // Flat re-exports of the surface external callers actually use. The
 // underlying structs (`AethonConfig`, `UiConfig`, etc.) stay reachable

@@ -50,6 +50,24 @@ tracing-appender = "0.2"
 mdns-sd = "0.12"
 gethostname = "1"
 axum = "0.7"
+# Remote gateway TLS: ring-flavored everywhere so we stay on the crypto
+# provider reqwest already links (aws-lc-rs would add a second provider
+# and a cmake build dep).
+axum-server = { version = "0.7", default-features = false, features = [
+  "tls-rustls-no-provider",
+] }
+rustls = { version = "0.23", default-features = false, features = [
+  "ring",
+  "log",
+  "std",
+  "tls12",
+] }
+rcgen = { version = "0.14", default-features = false, features = [
+  "crypto",
+  "pem",
+  "ring",
+] }
+sha2 = "0.10"
 sha1 = "0.10"
 chrono = { version = "0.4", default-features = false, features = [
   "std",

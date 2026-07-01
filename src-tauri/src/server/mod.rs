@@ -1,11 +1,12 @@
-//! Built-in HTTP + mDNS server scaffold.
+//! Built-in HTTP + mDNS server, growing into the remote gateway.
 //!
 //! Models Claudette's daemon pattern: one `ServiceDaemon` advertises
 //! `_aethon._tcp.local.`, a second `ServiceDaemon` browses for peers and
-//! emits `host-discovered` / `host-removed` Tauri events. An axum HTTP
-//! server binds `0.0.0.0:0` (OS picks the port → mDNS TXT) and exposes
-//! `GET /health` + `GET /status`. No auth, no TLS — explicitly scaffold
-//! until the pairing PR replaces fingerprint + adds tokens.
+//! emits `host-discovered` / `host-removed` Tauri events. An axum server
+//! binds `0.0.0.0` (`[server] port`, default OS-assigned → mDNS TXT) and
+//! exposes `GET /health` + `GET /status`, over TLS when the [`tls`]
+//! identity is available. The [`remote`] module adds pairing + an
+//! authenticated WebSocket relay for companion clients (iOS app).
 //!
 //! Lifecycle: `boot(app)` binds HTTP and registers mDNS advertisement only
 //! when `[server] enabled` is true (the default). The mDNS browser runs even
@@ -22,6 +23,7 @@ use tokio::sync::Mutex;
 pub mod http;
 pub mod mdns;
 pub mod remote;
+pub mod tls;
 
 /// Holds the running server's resources so we can shut down cleanly.
 /// All fields owned: dropping `ServerHandle` stops the advertisement
@@ -95,22 +97,39 @@ pub fn boot(app: AppHandle, state: Arc<ServerState>) {
     });
 }
 
-/// Read `[server] enabled` from `~/.aethon/config.toml` (default true).
-fn server_enabled(app: &AppHandle) -> bool {
+/// Read the raw `~/.aethon/config.toml` text ("" when unreadable).
+fn server_config_raw(app: &AppHandle) -> String {
     use tauri::Manager;
     let Ok(home) = app.path().home_dir() else {
-        return true;
+        return String::new();
     };
     let user_dir =
         crate::helpers::aethon_dir(Some(home.clone())).unwrap_or_else(|| home.join(".aethon"));
-    let raw = std::fs::read_to_string(user_dir.join("config.toml")).unwrap_or_default();
-    server_enabled_from_config_text(&raw)
+    std::fs::read_to_string(user_dir.join("config.toml")).unwrap_or_default()
+}
+
+/// Read `[server] enabled` from `~/.aethon/config.toml` (default true).
+fn server_enabled(app: &AppHandle) -> bool {
+    server_enabled_from_config_text(&server_config_raw(app))
 }
 
 fn server_enabled_from_config_text(raw: &str) -> bool {
     crate::helpers::parse_config_toml(raw)["server"]["enabled"]
         .as_bool()
         .unwrap_or(true)
+}
+
+/// Read `[server] port` (default 0 → OS-assigned). Out-of-range values
+/// fall back to 0 rather than failing boot.
+fn server_port(app: &AppHandle) -> u16 {
+    server_port_from_config_text(&server_config_raw(app))
+}
+
+fn server_port_from_config_text(raw: &str) -> u16 {
+    crate::helpers::parse_config_toml(raw)["server"]["port"]
+        .as_u64()
+        .and_then(|p| u16::try_from(p).ok())
+        .unwrap_or(0)
 }
 
 async fn start_on_boot_if_enabled<F, Fut>(
@@ -132,9 +151,16 @@ where
 /// `server_start` IPC can reuse it after a disabled boot or user-triggered
 /// stop — that path passes `advertise = true` so an explicit start always
 /// announces, regardless of the config gate.
-pub async fn start(_app: &AppHandle, state: &ServerState, advertise: bool) -> Result<u16, String> {
+pub async fn start(app: &AppHandle, state: &ServerState, advertise: bool) -> Result<u16, String> {
     let info = crate::commands::host::local_host_info();
-    let (port, http_task) = http::serve(info.clone()).await?;
+    let identity = tls::identity();
+    if identity.is_none() {
+        tracing::warn!(
+            target: "aethon::server",
+            "TLS identity unavailable — serving the plain scaffold; remote pairing disabled"
+        );
+    }
+    let (port, http_task) = http::serve(info.clone(), server_port(app), identity).await?;
     let advertise_daemon = if advertise {
         Some(
             mdns::advertise(&info.display_name, port, &info.fingerprint)
