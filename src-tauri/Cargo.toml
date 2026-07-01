@@ -112,6 +112,7 @@ voice = [
 [dev-dependencies]
 tempfile = "3"
 tokio = { version = "1.52.1", features = ["macros", "rt"] }
+tauri = { version = "2", features = ["test"] }
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }

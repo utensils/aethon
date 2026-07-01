@@ -21,6 +21,7 @@ use tokio::sync::Mutex;
 
 pub mod http;
 pub mod mdns;
+pub mod remote;
 
 /// Holds the running server's resources so we can shut down cleanly.
 /// All fields owned: dropping `ServerHandle` stops the advertisement
