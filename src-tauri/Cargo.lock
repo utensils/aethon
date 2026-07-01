@@ -49,6 +49,7 @@ dependencies = [
  "tempfile",
  "tokenizers",
  "tokio",
+ "tokio-tungstenite",
  "toml 0.8.23",
  "toml_edit 0.22.27",
  "tracing",

@@ -17,6 +17,9 @@ pub mod protocol;
 pub mod relay;
 pub mod ws;
 
+#[cfg(test)]
+mod integration_tests;
+
 use devices::DeviceStore;
 use events::EventHub;
 use pairing::PairingSession;
