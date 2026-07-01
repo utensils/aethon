@@ -156,6 +156,7 @@ pub fn run() {
         .manage(updater_state::UpdaterState::new())
         .manage(commands::scheduler::ScheduledTasksState::new())
         .manage(Arc::new(server::ServerState::new()))
+        .manage(Arc::new(server::remote::RemoteState::new()))
         .manage(devshell::DevshellCache::shared())
         .manage(commands::startup::WorkspaceStartupState::default());
     #[cfg(feature = "voice")]
@@ -285,6 +286,12 @@ pub fn run() {
             commands::server::server_status,
             commands::server::server_start,
             commands::server::server_stop,
+            commands::remote::remote_status,
+            commands::remote::remote_pairing_begin,
+            commands::remote::remote_pairing_cancel,
+            commands::remote::remote_devices_list,
+            commands::remote::remote_device_revoke,
+            commands::remote::remote_device_rename,
             commands::window::updater_available,
             commands::window::toggle_fullscreen,
             commands::window::toggle_devtools,

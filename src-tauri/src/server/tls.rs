@@ -55,7 +55,9 @@ pub fn install_crypto_provider() {
     let _ = rustls::crypto::ring::default_provider().install_default();
 }
 
-fn default_remote_dir() -> Option<PathBuf> {
+/// `~/.aethon/remote/` — shared home of the TLS identity and the
+/// paired-device store.
+pub(crate) fn default_remote_dir() -> Option<PathBuf> {
     crate::helpers::aethon_dir(std::env::home_dir()).map(|d| d.join("remote"))
 }
 
@@ -122,7 +124,7 @@ fn pem_certificate_der(pem: &str) -> Option<Vec<u8>> {
     base64::engine::general_purpose::STANDARD.decode(b64).ok()
 }
 
-fn sha256_hex(bytes: &[u8]) -> String {
+pub(crate) fn sha256_hex(bytes: &[u8]) -> String {
     let digest = Sha256::digest(bytes);
     digest.iter().map(|b| format!("{b:02x}")).collect()
 }

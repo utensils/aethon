@@ -152,6 +152,7 @@ where
 /// stop — that path passes `advertise = true` so an explicit start always
 /// announces, regardless of the config gate.
 pub async fn start(app: &AppHandle, state: &ServerState, advertise: bool) -> Result<u16, String> {
+    use tauri::Manager;
     let info = crate::commands::host::local_host_info();
     let identity = tls::identity();
     if identity.is_none() {
@@ -160,7 +161,8 @@ pub async fn start(app: &AppHandle, state: &ServerState, advertise: bool) -> Res
             "TLS identity unavailable — serving the plain scaffold; remote pairing disabled"
         );
     }
-    let (port, http_task) = http::serve(info.clone(), server_port(app), identity).await?;
+    let remote = Arc::clone(app.state::<Arc<remote::RemoteState>>().inner());
+    let (port, http_task) = http::serve(info.clone(), server_port(app), identity, remote).await?;
     let advertise_daemon = if advertise {
         Some(
             mdns::advertise(&info.display_name, port, &info.fingerprint)

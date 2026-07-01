@@ -24,6 +24,7 @@ dependencies = [
  "futures-util",
  "gethostname",
  "hound",
+ "if-addrs",
  "libc",
  "mdns-sd",
  "notify",

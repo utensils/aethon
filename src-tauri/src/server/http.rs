@@ -13,25 +13,36 @@
 //! OS picks — and the chosen port flows back into mDNS advertising.
 
 use std::net::SocketAddr;
+use std::sync::Arc;
 
+use axum::routing::post;
 use axum::{Json, Router, routing::get};
 use axum_server::tls_rustls::RustlsConfig;
 use tauri::async_runtime::JoinHandle;
 use tokio::net::TcpListener;
 
 use crate::commands::host::HostInfo;
+use crate::server::remote::{GatewayCtx, RemoteState, pairing};
 use crate::server::tls::TlsIdentity;
 
-fn router(info: HostInfo) -> Router {
+fn router(info: HostInfo, remote: Arc<RemoteState>) -> Router {
+    let status_info = info.clone();
+    let ctx = GatewayCtx { info, remote };
     Router::new()
         .route("/health", get(|| async { "aethon" }))
         .route(
             "/status",
             get(move || {
-                let info = info.clone();
+                let info = status_info.clone();
                 async move { Json(info) }
             }),
         )
+        // Harmless on the plain-HTTP fallback listener: pairing sessions
+        // can only be armed while the TLS identity exists
+        // (remote_pairing_begin refuses otherwise), so without TLS this
+        // route is a guaranteed 404.
+        .route("/pair", post(pairing::pair_handler))
+        .with_state(ctx)
 }
 
 /// Bind the listener and spawn the serving task. Returns the bound port
@@ -40,11 +51,12 @@ pub async fn serve(
     info: HostInfo,
     port: u16,
     tls: Option<&TlsIdentity>,
+    remote: Arc<RemoteState>,
 ) -> Result<(u16, JoinHandle<()>), String> {
     let addr: SocketAddr = format!("0.0.0.0:{port}")
         .parse()
         .map_err(|e| format!("addr: {e}"))?;
-    let app = router(info);
+    let app = router(info, remote);
     match tls {
         Some(identity) => {
             crate::server::tls::install_crypto_provider();
