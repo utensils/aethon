@@ -1,5 +1,6 @@
 import {
   createElement,
+  useEffect,
   useMemo,
   useRef,
   useState,
@@ -28,6 +29,8 @@ import { useAtMentionTextarea } from "./use-at-mention-textarea";
 import { useComposerResize } from "./use-composer-resize";
 import { useDraftCommit } from "./use-draft-commit";
 import { useVoiceConversation } from "../../hooks/useVoiceConversation";
+import { useConversationEngineChoice } from "../../hooks/useCascadeConversation";
+import { activeWorkspaceCwd } from "../../utils/activeWorkspaceRoot";
 import { ConversationHud } from "./conversation-hud";
 import {
   VoiceConversationButton,
@@ -138,14 +141,44 @@ export function ChatInput({
         holdHotkey?: string | null;
         speakMaxChars?: number;
         conversationContinuous?: boolean;
+        conversationEngine?: string;
+        brainModel?: string | null;
       }
     | undefined) ?? { toggleHotkey: "mod+shift+m", holdHotkey: null };
+  const conversationEngine = useConversationEngineChoice(
+    voiceConfig.conversationEngine,
+  );
+  // Latest state for event-time context resolution (mirrors optionsRef in
+  // the conversation hooks — refs must not be written during render).
+  const stateRef = useRef(state);
+  useEffect(() => {
+    stateRef.current = state;
+  });
   const conversation = useVoiceConversation({
     submitText: (text) => onEvent("submit", { value: text, mode: "normal" }),
     getActiveTabId: () => state.activeTabId as string | undefined,
     continuous: voiceConfig.conversationContinuous ?? false,
     maxSpokenChars: voiceConfig.speakMaxChars ?? 600,
     onNeedsSetup: (providerId) => onEvent("voice:setup", { providerId }),
+    engine: conversationEngine,
+    getConvoContext: () => {
+      const current = stateRef.current;
+      const voice = current.voice as { brainModel?: string | null } | undefined;
+      const activeTabId =
+        typeof current.activeTabId === "string" ? current.activeTabId : undefined;
+      const model =
+        (typeof current.model === "string" && current.model) ||
+        (typeof current.piDefaultModel === "string" && current.piDefaultModel) ||
+        undefined;
+      return {
+        ...(activeTabId ? { activeTabId } : {}),
+        ...(activeWorkspaceCwd(current)
+          ? { projectPath: activeWorkspaceCwd(current) ?? undefined }
+          : {}),
+        ...(model ? { defaultModel: model } : {}),
+        ...(voice?.brainModel ? { brainModel: voice.brainModel } : {}),
+      };
+    },
   });
   const settings = state.settings as { open?: boolean } | undefined;
   const palette = state.commandPalette as { open?: boolean } | undefined;
@@ -349,6 +382,7 @@ export function ChatInput({
         <ConversationHud
           phase={conversation.phase}
           error={conversation.error}
+          interim={conversation.interimText}
           autoListen={voiceConfig.conversationContinuous ?? false}
           onPrimary={conversation.primaryAction}
           onToggleAutoListen={() =>

@@ -48,6 +48,13 @@ const liveConfig: AethonConfig = {
     speakAgentReplies: false,
     speakMaxChars: 600,
     conversationContinuous: false,
+    conversationEngine: "auto" as const,
+    brainModel: null,
+    sttProvider: "deepgram-flux",
+    ttsProvider: "cartesia",
+    ttsVoice: null,
+    deepgramApiKeySet: false,
+    cartesiaApiKeySet: false,
   },
   updates: { channel: "nightly", disableAutoCheck: false },
   devshell: {

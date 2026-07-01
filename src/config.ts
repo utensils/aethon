@@ -99,6 +99,27 @@ export interface AethonConfig {
     /** In conversation voice mode, auto-reopen the mic after the agent
      *  finishes speaking (hands-free) instead of waiting for a tap. */
     conversationContinuous: boolean;
+    /** Which pipeline the hands-free conversation uses. `"auto"` picks the
+     *  cascade (streaming STT → voice brain → streaming TTS) when its API
+     *  keys resolve, else the local LFM2 loop. */
+    conversationEngine: "auto" | "cascade" | "lfm2";
+    /** pi model id (`provider/model`) for the voice-brain session; null
+     *  inherits the default model. */
+    brainModel: string | null;
+    /** Cascade streaming STT / TTS providers (currently fixed). */
+    sttProvider: string;
+    ttsProvider: string;
+    /** Cartesia voice id; null uses the provider default voice. */
+    ttsVoice: string | null;
+    /** Whether API keys are stored in config.toml (write-only from the UI —
+     *  raw values never cross IPC; env vars also satisfy the cascade). */
+    deepgramApiKeySet: boolean;
+    cartesiaApiKeySet: boolean;
+    /** Write-only: present in a Settings save patch only while the user is
+     *  setting ("<key>") or clearing ("") a stored key. Never populated on
+     *  read — the Rust side leaves stored keys untouched when absent. */
+    deepgramApiKey?: string;
+    cartesiaApiKey?: string;
   };
   updates: {
     /** Release channel the auto-updater follows. `"stable"` (default)
@@ -190,6 +211,13 @@ const DEFAULTS: AethonConfig = {
     // Auto-listen (hands-free auto-reopen of the mic after the agent speaks)
     // is opt-in: with push-to-talk the user drives each turn explicitly.
     conversationContinuous: false,
+    conversationEngine: "auto",
+    brainModel: null,
+    sttProvider: "deepgram-flux",
+    ttsProvider: "cartesia",
+    ttsVoice: null,
+    deepgramApiKeySet: false,
+    cartesiaApiKeySet: false,
   },
   updates: { channel: "stable", disableAutoCheck: false },
   devshell: {
@@ -325,6 +353,33 @@ export function getConfig(): Promise<AethonConfig> {
           // Opt-in: only an explicit `true` enables auto-listen; absent or
           // false → off (matches the Rust default).
           conversationContinuous: obj?.voice?.conversationContinuous === true,
+          conversationEngine:
+            obj?.voice?.conversationEngine === "cascade"
+              ? "cascade"
+              : obj?.voice?.conversationEngine === "lfm2"
+                ? "lfm2"
+                : "auto",
+          brainModel:
+            typeof obj?.voice?.brainModel === "string" &&
+            obj.voice.brainModel.trim()
+              ? obj.voice.brainModel.trim()
+              : null,
+          sttProvider:
+            typeof obj?.voice?.sttProvider === "string" &&
+            obj.voice.sttProvider
+              ? obj.voice.sttProvider
+              : DEFAULTS.voice.sttProvider,
+          ttsProvider:
+            typeof obj?.voice?.ttsProvider === "string" &&
+            obj.voice.ttsProvider
+              ? obj.voice.ttsProvider
+              : DEFAULTS.voice.ttsProvider,
+          ttsVoice:
+            typeof obj?.voice?.ttsVoice === "string" && obj.voice.ttsVoice.trim()
+              ? obj.voice.ttsVoice.trim()
+              : null,
+          deepgramApiKeySet: obj?.voice?.deepgramApiKeySet === true,
+          cartesiaApiKeySet: obj?.voice?.cartesiaApiKeySet === true,
         },
         updates: {
           channel: obj?.updates?.channel === "nightly" ? "nightly" : "stable",

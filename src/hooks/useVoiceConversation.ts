@@ -10,6 +10,10 @@ import {
 import { onAgentTurnComplete } from "../utils/agentTurnEvents";
 import { setConversationActive } from "../utils/conversationMode";
 import { LFM2_VOICE_PROVIDER_ID, capSpokenText } from "../utils/voice";
+import {
+  useCascadeConversation,
+  type VoiceConvoContext,
+} from "./useCascadeConversation";
 
 /** A full turn of the LFM2-Audio conversation loop:
  *  idle → listening → transcribing → thinking → speaking → (continue|idle). */
@@ -19,6 +23,8 @@ export type ConversationPhase =
   | "transcribing"
   | "thinking"
   | "speaking";
+
+export type ConversationEngineKind = "cascade" | "lfm2";
 
 export interface UseVoiceConversationOptions {
   /** Send the transcript to the agent (reuses the composer submit path). */
@@ -32,12 +38,22 @@ export interface UseVoiceConversationOptions {
   maxSpokenChars: number;
   /** Routed to Settings when the LFM2 model/binary isn't ready. */
   onNeedsSetup?: (providerId: string) => void;
+  /** Which pipeline drives the conversation. `"lfm2"` (default) is the local
+   *  batch loop below; `"cascade"` is the streaming engine
+   *  (useCascadeConversation) — resolve `"auto"` before passing it in
+   *  (useConversationEngineChoice). */
+  engine?: ConversationEngineKind;
+  /** Runtime context stamped on cascade voice turns (active tab, project,
+   *  models). Required for the cascade engine to dispatch tasks. */
+  getConvoContext?: () => VoiceConvoContext;
 }
 
 export interface VoiceConversationController {
   active: boolean;
   phase: ConversationPhase;
   error: string | null;
+  /** Live partial transcript while listening (cascade engine only). */
+  interimText: string | null;
   enter: () => void;
   exit: () => void;
   /** Context-aware tap: start speaking / finish speaking / interrupt. */
@@ -51,6 +67,19 @@ export interface VoiceConversationController {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+/** Route to the configured conversation pipeline. Both hooks mount
+ *  unconditionally (rules of hooks); each is inert until entered, so the
+ *  inactive one costs a few no-op listeners. */
+export function useVoiceConversation(
+  options: UseVoiceConversationOptions,
+): VoiceConversationController {
+  const lfm2 = useLfm2Conversation(options);
+  const cascade = useCascadeConversation({
+    getContext: options.getConvoContext ?? (() => ({})),
+  });
+  return options.engine === "cascade" ? cascade : lfm2;
 }
 
 // Voice-activity detection thresholds (over the recorder's ~30 Hz
@@ -68,7 +97,8 @@ interface VoiceLevel {
   level: number;
 }
 
-export function useVoiceConversation(
+/** The original LFM2-Audio loop: batch ASR → composer submit → batch TTS. */
+function useLfm2Conversation(
   options: UseVoiceConversationOptions,
 ): VoiceConversationController {
   const [active, setActive] = useState(false);
@@ -357,5 +387,15 @@ export function useVoiceConversation(
     };
   }, []);
 
-  return { active, phase, error, enter, exit, primaryAction, beginHold, endHold };
+  return {
+    active,
+    phase,
+    error,
+    interimText: null,
+    enter,
+    exit,
+    primaryAction,
+    beginHold,
+    endHold,
+  };
 }
