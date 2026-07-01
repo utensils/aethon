@@ -27,8 +27,8 @@ pub(crate) use self::audio::{
     AudioRecorder, CpalAudioRecorder, LevelTask, RecordingSession, spawn_level_emitter,
     validate_captured_audio,
 };
-// Shared DSP helpers consumed by the playback module.
-use self::audio::{compute_rms, resample};
+// Shared DSP helpers consumed by the playback + conversation modules.
+use self::audio::{StreamResampler, compute_rms, resample};
 #[cfg(test)]
 use self::audio::{
     normalize_interleaved_f32, normalize_interleaved_f64, normalize_interleaved_i16,
@@ -36,6 +36,7 @@ use self::audio::{
     resample_to_target_rate,
 };
 
+mod convo;
 mod download;
 mod inference;
 mod lfm2;
@@ -45,6 +46,8 @@ mod providers;
 mod registry;
 mod settings;
 mod types;
+
+pub(crate) use convo::*;
 
 use download::*;
 use inference::*;

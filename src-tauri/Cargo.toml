@@ -96,6 +96,10 @@ tokenizers = { version = "0.22", default-features = false, features = [
 rubato = { version = "2", default-features = false, optional = true }
 hound = { version = "3", optional = true }
 tempfile = { version = "3", optional = true }
+tokio-tungstenite = { version = "0.24", default-features = false, features = [
+  "connect",
+  "rustls-tls-native-roots",
+], optional = true }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
@@ -128,6 +132,7 @@ voice = [
   "dep:rubato",
   "dep:hound",
   "dep:tempfile",
+  "dep:tokio-tungstenite",
 ]
 
 [dev-dependencies]

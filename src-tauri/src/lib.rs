@@ -164,7 +164,8 @@ pub fn run() {
         .manage(voice::VoiceProviderRegistry::new(
             voice::VoiceProviderRegistry::default_model_root(),
         ))
-        .manage(voice::AudioPlayer::new());
+        .manage(voice::AudioPlayer::new())
+        .manage(voice::ConversationEngine::new());
     let builder = builder
         .on_window_event(|window, event| match event {
             tauri::WindowEvent::Resized(_) | tauri::WindowEvent::Moved(_) => {
@@ -307,6 +308,13 @@ pub fn run() {
             commands::voice::voice_cancel_recording,
             commands::voice::voice_speak,
             commands::voice::voice_stop_playback,
+            commands::voice_convo::voice_convo_status,
+            commands::voice_convo::voice_convo_start,
+            commands::voice_convo::voice_convo_stop,
+            commands::voice_convo::voice_convo_speak_chunk,
+            commands::voice_convo::voice_convo_speak_end,
+            commands::voice_convo::voice_convo_cancel_speech,
+            commands::voice_convo::voice_convo_force_end_turn,
             commands::boot::boot_stage,
             commands::boot::boot_ok,
             commands::devshell::devshell_status,

@@ -38,4 +38,5 @@ pub mod startup;
 pub mod subagents;
 pub mod updater;
 pub mod voice;
+pub mod voice_convo;
 pub mod window;

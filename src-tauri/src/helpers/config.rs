@@ -112,6 +112,26 @@ pub struct VoiceConfig {
     pub speak_agent_replies: Option<bool>,
     pub speak_max_chars: Option<u32>,
     pub conversation_continuous: Option<bool>,
+    /// Which conversation pipeline the hands-free mode uses. Allowed values:
+    /// `"auto"` (default — cascade when its API keys resolve, else the local
+    /// LFM2 loop), `"cascade"` (streaming STT → voice brain → streaming TTS),
+    /// `"lfm2"` (force the local loop). Unknown values fall back to `"auto"`.
+    pub conversation_engine: Option<String>,
+    /// pi model id (`provider/model`) for the voice-brain session. Empty →
+    /// the tab's default model.
+    pub brain_model: Option<String>,
+    /// Cascade streaming STT provider. Currently only `"deepgram-flux"`.
+    pub stt_provider: Option<String>,
+    /// Cascade streaming TTS provider. Currently only `"cartesia"`.
+    pub tts_provider: Option<String>,
+    /// Cartesia voice id for spoken replies. Empty → provider default voice.
+    pub tts_voice: Option<String>,
+    /// API keys for the cascade providers. Env vars (`DEEPGRAM_API_KEY`,
+    /// `CARTESIA_API_KEY`) take precedence; these exist so keys can live in
+    /// config.toml when env plumbing is inconvenient. Never exposed through
+    /// `parse_config_toml` — the frontend only sees `*ApiKeySet` booleans.
+    pub deepgram_api_key: Option<String>,
+    pub cartesia_api_key: Option<String>,
 }
 
 #[derive(Default, Deserialize)]
@@ -409,6 +429,16 @@ pub fn normalize_thinking_level(value: Option<&str>) -> Option<&str> {
     }
 }
 
+/// Unknown values fall back to `"auto"` so a typo can't silently pin the
+/// conversation mode to a pipeline the user didn't ask for.
+pub fn normalize_conversation_engine(value: Option<&str>) -> &str {
+    match value {
+        Some("cascade") => "cascade",
+        Some("lfm2") => "lfm2",
+        _ => "auto",
+    }
+}
+
 pub fn parse_host_startup_auto_approve(input: &str) -> bool {
     if input.is_empty() {
         return false;
@@ -509,6 +539,14 @@ pub fn parse_config_toml(input: &str) -> serde_json::Value {
             "speakAgentReplies": cfg.voice.speak_agent_replies.unwrap_or(false),
             "speakMaxChars": cfg.voice.speak_max_chars.unwrap_or(600),
             "conversationContinuous": cfg.voice.conversation_continuous.unwrap_or(false),
+            "conversationEngine": normalize_conversation_engine(cfg.voice.conversation_engine.as_deref()),
+            "brainModel": cfg.voice.brain_model.as_deref().map(str::trim).filter(|s| !s.is_empty()),
+            "sttProvider": cfg.voice.stt_provider.as_deref().filter(|s| !s.is_empty()).unwrap_or("deepgram-flux"),
+            "ttsProvider": cfg.voice.tts_provider.as_deref().filter(|s| !s.is_empty()).unwrap_or("cartesia"),
+            "ttsVoice": cfg.voice.tts_voice.as_deref().map(str::trim).filter(|s| !s.is_empty()),
+            // Presence flags only — raw keys never cross into the frontend.
+            "deepgramApiKeySet": cfg.voice.deepgram_api_key.as_deref().is_some_and(|s| !s.trim().is_empty()),
+            "cartesiaApiKeySet": cfg.voice.cartesia_api_key.as_deref().is_some_and(|s| !s.trim().is_empty()),
         },
         "extensions": {
             "stateWarnKb": state_warn_kb,

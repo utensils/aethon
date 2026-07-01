@@ -16,6 +16,13 @@ pub struct VoiceProviderRegistry {
 }
 
 impl VoiceProviderRegistry {
+    /// Whether a batch dictation capture currently owns the microphone. The
+    /// conversation engine checks this before opening its streaming mic (and
+    /// vice versa) so the two capture paths never contend for the device.
+    pub(crate) fn recording_active(&self) -> bool {
+        self.active_recording.lock().is_some()
+    }
+
     pub fn new(model_root: PathBuf) -> Self {
         Self::with_runtime(
             model_root,

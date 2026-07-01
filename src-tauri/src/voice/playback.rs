@@ -17,19 +17,46 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use tauri::{AppHandle, Emitter};
 use tokio::task::AbortHandle;
 
-use super::{LevelTask, VoiceLevelPayload, compute_rms, resample};
+use super::{LevelTask, StreamResampler, VoiceLevelPayload, compute_rms, resample};
 
 /// Cursor over mono PCM samples, advanced one frame at a time by the audio
 /// callback. Factored out so the draining logic is unit-testable without a
 /// real output device.
+///
+/// Two modes share the type: a batch clip (`new`, complete from birth) and a
+/// streaming clip (`new_streaming`, fed via `append` while playing and sealed
+/// with `mark_complete`). A streaming buffer that runs dry before more audio
+/// arrives plays silence (`next_sample` → `None` → EQUILIBRIUM) rather than
+/// finishing, so `finished()` only fires after the producer seals it.
 pub(super) struct PlaybackBuffer {
     samples: Vec<f32>,
     pos: usize,
+    complete: bool,
 }
 
 impl PlaybackBuffer {
     pub(super) fn new(samples: Vec<f32>) -> Self {
-        Self { samples, pos: 0 }
+        Self {
+            samples,
+            pos: 0,
+            complete: true,
+        }
+    }
+
+    pub(super) fn new_streaming() -> Self {
+        Self {
+            samples: Vec::new(),
+            pos: 0,
+            complete: false,
+        }
+    }
+
+    pub(super) fn append(&mut self, more: &[f32]) {
+        self.samples.extend_from_slice(more);
+    }
+
+    pub(super) fn mark_complete(&mut self) {
+        self.complete = true;
     }
 
     /// The next mono sample, or `None` once the buffer is drained.
@@ -42,13 +69,16 @@ impl PlaybackBuffer {
     }
 
     pub(super) fn finished(&self) -> bool {
-        self.pos >= self.samples.len()
+        self.complete && self.pos >= self.samples.len()
     }
 }
 
+/// Clonable so the conversation engine's driver task can hold its own handle;
+/// every clone shares the single playback slot and generation counter.
+#[derive(Clone)]
 pub(crate) struct AudioPlayer {
     active: Arc<Mutex<Option<PlaybackHandle>>>,
-    generation: AtomicU64,
+    generation: Arc<AtomicU64>,
 }
 
 /// Holds a playing stream and its level/finished watcher. Dropping it stops
@@ -71,7 +101,7 @@ impl AudioPlayer {
     pub(crate) fn new() -> Self {
         Self {
             active: Arc::new(Mutex::new(None)),
-            generation: AtomicU64::new(0),
+            generation: Arc::new(AtomicU64::new(0)),
         }
     }
 
@@ -98,25 +128,45 @@ impl AudioPlayer {
             return Ok(());
         }
 
-        let host = cpal::default_host();
-        let device = host
-            .default_output_device()
-            .ok_or_else(|| "No default audio output device is available".to_string())?;
-        let supported = device
-            .default_output_config()
-            .map_err(|e| format!("Failed to read audio output config: {e}"))?;
-        let device_rate = supported.sample_rate();
-        let channels = usize::from(supported.channels().max(1));
-        let config: cpal::StreamConfig = supported.clone().into();
-
-        let resampled = resample(&samples, sample_rate, device_rate);
+        let target = default_output_target()?;
+        let resampled = resample(&samples, sample_rate, target.rate);
         let buffer = Arc::new(Mutex::new(PlaybackBuffer::new(resampled)));
+        self.start_with_buffer(&target, Arc::clone(&buffer), app)?;
+        Ok(())
+    }
 
+    /// Open the output device for a streaming clip: audio is fed through the
+    /// returned handle's `append` while the device plays, and the clip only
+    /// counts as finished (→ `voice://playback-finished`) after
+    /// `mark_complete()` + drain. The handle resamples appended audio from
+    /// `source_rate` to the device rate with carried state, so chunk
+    /// boundaries don't click.
+    pub(crate) fn start_stream(
+        &self,
+        source_rate: u32,
+        app: Option<AppHandle>,
+    ) -> Result<StreamingPlaybackHandle, String> {
+        *self.active.lock() = None;
+        let target = default_output_target()?;
+        let buffer = Arc::new(Mutex::new(PlaybackBuffer::new_streaming()));
+        self.start_with_buffer(&target, Arc::clone(&buffer), app)?;
+        Ok(StreamingPlaybackHandle {
+            buffer,
+            resampler: StreamResampler::new(source_rate, target.rate),
+        })
+    }
+
+    fn start_with_buffer(
+        &self,
+        target: &OutputTarget,
+        buffer: Arc<Mutex<PlaybackBuffer>>,
+        app: Option<AppHandle>,
+    ) -> Result<(), String> {
         let stream = build_output_stream(
-            &device,
-            &config,
-            supported.sample_format(),
-            channels,
+            &target.device,
+            &target.config,
+            target.sample_format,
+            target.channels,
             Arc::clone(&buffer),
         )?;
         stream
@@ -136,6 +186,64 @@ impl AudioPlayer {
     /// Stop any in-flight playback immediately (drops the stream + watcher).
     pub(crate) fn stop(&self) {
         *self.active.lock() = None;
+    }
+}
+
+struct OutputTarget {
+    device: cpal::Device,
+    config: cpal::StreamConfig,
+    sample_format: cpal::SampleFormat,
+    channels: usize,
+    rate: u32,
+}
+
+fn default_output_target() -> Result<OutputTarget, String> {
+    let host = cpal::default_host();
+    let device = host
+        .default_output_device()
+        .ok_or_else(|| "No default audio output device is available".to_string())?;
+    let supported = device
+        .default_output_config()
+        .map_err(|e| format!("Failed to read audio output config: {e}"))?;
+    let rate = supported.sample_rate();
+    let channels = usize::from(supported.channels().max(1));
+    let sample_format = supported.sample_format();
+    let config: cpal::StreamConfig = supported.into();
+    Ok(OutputTarget {
+        device,
+        config,
+        sample_format,
+        channels,
+        rate,
+    })
+}
+
+/// Producer side of a streaming playback: append synthesized audio as it
+/// arrives, then seal the clip. Dropping the handle does NOT stop playback —
+/// the device keeps draining what was appended; call `AudioPlayer::stop()` to
+/// cut it off.
+pub(crate) struct StreamingPlaybackHandle {
+    buffer: Arc<Mutex<PlaybackBuffer>>,
+    resampler: StreamResampler,
+}
+
+impl StreamingPlaybackHandle {
+    /// Append mono samples at the handle's source rate.
+    pub(crate) fn append(&mut self, samples: &[f32]) {
+        let resampled = self.resampler.process(samples);
+        if !resampled.is_empty() {
+            self.buffer.lock().append(&resampled);
+        }
+    }
+
+    /// Seal the clip: once the device drains what's buffered, the watcher
+    /// fires `voice://playback-finished` and frees the stream.
+    pub(crate) fn mark_complete(&self) {
+        self.buffer.lock().mark_complete();
+    }
+
+    pub(crate) fn is_drained(&self) -> bool {
+        self.buffer.lock().finished()
     }
 }
 

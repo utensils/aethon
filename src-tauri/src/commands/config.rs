@@ -402,6 +402,40 @@ pub fn write_config(config: serde_json::Value, app: AppHandle) -> Result<(), Str
     let voice_conversation_continuous = voice
         .and_then(|m| m.get("conversationContinuous"))
         .and_then(|v| v.as_bool());
+    let voice_conversation_engine = voice
+        .and_then(|m| m.get("conversationEngine"))
+        .and_then(|v| v.as_str())
+        .map(|s| helpers::normalize_conversation_engine(Some(s)));
+    let voice_brain_model = voice
+        .and_then(|m| m.get("brainModel"))
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
+    let voice_stt_provider = voice
+        .and_then(|m| m.get("sttProvider"))
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty());
+    let voice_tts_provider = voice
+        .and_then(|m| m.get("ttsProvider"))
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty());
+    let voice_tts_voice = voice
+        .and_then(|m| m.get("ttsVoice"))
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
+    // API keys are write-only from the Settings panel: the frontend never
+    // receives the stored value (read_config exposes `*ApiKeySet` booleans),
+    // so an absent field means "leave the stored key alone" — NOT "clear it".
+    // An explicitly-sent empty string clears.
+    let voice_deepgram_api_key = voice
+        .and_then(|m| m.get("deepgramApiKey"))
+        .and_then(|v| v.as_str())
+        .map(str::trim);
+    let voice_cartesia_api_key = voice
+        .and_then(|m| m.get("cartesiaApiKey"))
+        .and_then(|v| v.as_str())
+        .map(str::trim);
     let update_channel = updates
         .and_then(|m| m.get("channel"))
         .and_then(|v| v.as_str())
@@ -575,6 +609,34 @@ pub fn write_config(config: serde_json::Value, app: AppHandle) -> Result<(), Str
             "conversation_continuous",
             voice_conversation_continuous,
         );
+        match voice_conversation_engine {
+            // "auto" is the default — keep the file clean by omitting it.
+            Some("auto") | None => {
+                voice_table.remove("conversation_engine");
+            }
+            Some(engine) => {
+                voice_table.insert("conversation_engine", toml_edit::value(engine));
+            }
+        }
+        set_or_clear_str(voice_table, "brain_model", voice_brain_model);
+        set_or_clear_str(voice_table, "stt_provider", voice_stt_provider);
+        set_or_clear_str(voice_table, "tts_provider", voice_tts_provider);
+        set_or_clear_str(voice_table, "tts_voice", voice_tts_voice);
+        // Absent → untouched; explicit "" → cleared (see extraction comment).
+        for (key, value) in [
+            ("deepgram_api_key", voice_deepgram_api_key),
+            ("cartesia_api_key", voice_cartesia_api_key),
+        ] {
+            match value {
+                Some("") => {
+                    voice_table.remove(key);
+                }
+                Some(secret) => {
+                    voice_table.insert(key, toml_edit::value(secret));
+                }
+                None => {}
+            }
+        }
     }
 
     // ── [updates] ──

@@ -85,7 +85,7 @@ struct VoiceStartLatencyEvent {
 #[tauri::command]
 #[tracing::instrument(
     target = "aethon::voice",
-    skip(app, voice),
+    skip(app, voice, convo),
     fields(
         provider_id = tracing::field::Empty,
         total_ms = tracing::field::Empty,
@@ -97,7 +97,13 @@ pub async fn voice_start_recording(
     provider_id: Option<String>,
     app: AppHandle,
     voice: State<'_, VoiceProviderRegistry>,
+    convo: State<'_, crate::voice::ConversationEngine>,
 ) -> Result<(), String> {
+    if convo.is_active() {
+        return Err(
+            "A voice conversation is using the microphone — exit it to dictate".to_string(),
+        );
+    }
     let t0 = Instant::now();
     let resolved_provider_id = {
         let settings = open_voice_settings(&app)?;
