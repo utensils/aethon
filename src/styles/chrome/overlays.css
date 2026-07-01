@@ -248,6 +248,101 @@
 .ae-settings-secondary:hover {
   background: color-mix(in oklab, var(--accent) 8%, transparent);
 }
+.ae-settings-secondary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* =============================================================================
+   Remote Devices (companion pairing)
+   ============================================================================= */
+.ae-settings-error {
+  color: var(--danger, #e5484d);
+  font-size: 0.88rem;
+  margin: 0 0 8px 0;
+}
+.ae-remote-status,
+.ae-remote-fingerprint {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.88rem;
+  color: var(--text-dim);
+}
+.ae-remote-hint {
+  color: var(--text-dim);
+  font-size: 0.88rem;
+  margin: 8px 0;
+}
+.ae-remote-pairing {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px;
+  margin: 10px 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: color-mix(in oklab, var(--accent) 5%, transparent);
+}
+.ae-remote-pairing-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 2rem;
+  letter-spacing: 0.35em;
+  text-align: center;
+  color: var(--text);
+}
+.ae-remote-pairing-hint {
+  margin: 0;
+  text-align: center;
+  color: var(--text-dim);
+  font-size: 0.85rem;
+}
+.ae-remote-pairing-payload code {
+  display: block;
+  margin-top: 6px;
+  padding: 8px;
+  word-break: break-all;
+  font-size: 0.75rem;
+  color: var(--text-dim);
+  background: var(--bg-input);
+  border-radius: 6px;
+}
+.ae-remote-devices {
+  margin-top: 12px;
+}
+.ae-remote-device-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.ae-remote-device {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-areas: "name action" "meta action";
+  align-items: center;
+  gap: 2px 12px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.ae-remote-device--revoked {
+  opacity: 0.55;
+}
+.ae-remote-device-name {
+  grid-area: name;
+  font-size: 0.92rem;
+  color: var(--text);
+}
+.ae-remote-device-meta {
+  grid-area: meta;
+  font-size: 0.8rem;
+  color: var(--text-dim);
+}
+.ae-remote-revoke {
+  grid-area: action;
+  color: var(--danger, #e5484d);
+}
 
 /* =============================================================================
    Scheduled Tasks manager
