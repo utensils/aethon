@@ -30,12 +30,28 @@ import { handleMirroredTabsChanged } from "./aethon-api-sessions";
 import { handleNativeSlashCommand } from "./nativeSlash";
 import { handleSetProject } from "./projectLifecycle";
 import { handleAuthProfileMessage } from "./auth-profiles";
+import { buildTasksApi } from "./aethon-api-dashboard";
+import { ensureVoiceBrain } from "./voice/brain";
+import { parseVoiceTaskEvent, parseVoiceTurn } from "./voice/protocol";
 import {
   handleLocalChatMessage,
   handleSetSessionLabel,
   handleTabClose,
   handleTabOpen,
 } from "./tabs";
+
+/** Voice-brain singleton bound to this bridge's send + task-launch path.
+ *  `tasks.start` rides the same `dashboard_query op:"start_task"` round-trip
+ *  the dashboard tools use. */
+function voiceBrainFor(
+  state: AethonAgentState,
+  deps: DispatcherDeps,
+): ReturnType<typeof ensureVoiceBrain> {
+  return ensureVoiceBrain(state, {
+    send: deps.send,
+    startTask: (input) => buildTasksApi(state, { send: deps.send }).start(input),
+  });
+}
 
 function mirrorNativeWindowsFromFrontend(
   state: AethonAgentState,
@@ -279,6 +295,33 @@ export async function dispatchInboundMessage(
         break;
       case "fork_session":
         await handleForkSession(state, deps, msg);
+        break;
+      case "voice_turn": {
+        const turn = parseVoiceTurn(msg);
+        if (!turn) {
+          deps.send({ type: "error", message: "voice_turn: missing text" });
+          break;
+        }
+        voiceBrainFor(state, deps).handleTurn(turn);
+        break;
+      }
+      case "voice_task_event": {
+        const event = parseVoiceTaskEvent(msg);
+        if (!event) {
+          deps.send({
+            type: "error",
+            message: "voice_task_event: missing taskTabId",
+          });
+          break;
+        }
+        voiceBrainFor(state, deps).handleTaskEvent(event);
+        break;
+      }
+      case "voice_brain_abort":
+        await state.voiceBrain?.abort();
+        break;
+      case "voice_session_reset":
+        await state.voiceBrain?.reset();
         break;
       case "devshell_event": {
         const status = msg.devshellStatus;

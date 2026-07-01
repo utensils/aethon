@@ -38,8 +38,9 @@ interface ResolvedModelServices {
 
 /** Resolve the model AND its matching auth/model services together (see
  *  {@link servicesForProvider}). Returns null when an explicit model can't be
- *  found in its provider's registry. */
-function resolveModelServices(
+ *  found in its provider's registry. Also used by the voice brain
+ *  (agent/voice/brain.ts) to pin its own session model. */
+export function resolveModelServices(
   state: AethonAgentState,
   parentTabId: string,
   modelId: string | undefined,

@@ -91,6 +91,14 @@ export interface InboundMessage {
   devshellStatus?: "ready" | "failed" | "resolving";
   devshellRoot?: string;
   devshellKind?: string;
+  /** Voice-brain fields (`voice_turn` / `voice_task_event`). Tab references
+   *  ride as activeTabId/taskTabId inside these, never top-level `tabId`, so
+   *  the Rust router keeps them on the global bridge. */
+  text?: string;
+  context?: unknown;
+  taskTabId?: string;
+  status?: string;
+  finalText?: string;
 }
 
 export async function emitGlobalReady(
