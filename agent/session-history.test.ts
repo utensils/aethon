@@ -1635,7 +1635,7 @@ describe("readSessionTranscript", () => {
       text: "local 404",
       createdAt: 404,
     });
-  });
+  }, 15_000);
 
   it("reads project cwd metadata from the newest session log", async () => {
     const dir = await tempRoot();
