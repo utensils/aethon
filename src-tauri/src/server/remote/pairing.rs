@@ -67,7 +67,7 @@ pub fn new_device_token() -> String {
 }
 
 /// Non-loopback addresses a phone could dial, most-useful first:
-/// IPv4 (incl. Tailscale's 100.x), then `<hostname>` mDNS name.
+/// IPv4 (incl. Tailscale's 100.x), then the Bonjour-resolvable mDNS name.
 fn candidate_hosts() -> Vec<String> {
     let mut hosts: Vec<String> = Vec::new();
     if let Ok(ifaces) = if_addrs::get_if_addrs() {
@@ -81,13 +81,7 @@ fn candidate_hosts() -> Vec<String> {
             }
         }
     }
-    let hostname = gethostname::gethostname().to_string_lossy().into_owned();
-    if !hostname.is_empty() {
-        let mdns = if hostname.ends_with(".local") {
-            hostname
-        } else {
-            format!("{hostname}.local")
-        };
+    if let Some(mdns) = crate::server::mdns::local_mdns_hostname() {
         hosts.push(mdns);
     }
     hosts

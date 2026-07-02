@@ -19,20 +19,33 @@ sim_app="src-tauri/gen/apple/build/arm64-sim/Aethon.app"
 # devshell deliberately doesn't carry them.
 export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
 
+# Host-side Rust build scripts still compile for macOS while the app
+# itself cross-compiles for iOS. On nix-darwin, plain `cc` can resolve to
+# the Nix GCC wrapper, which cannot see Xcode's SDK libiconv.tbd. Pin the
+# host tools to Apple's clang so build scripts link against the active SDK.
+apple_cc="/usr/bin/cc"
+apple_cxx="/usr/bin/c++"
+export CC="${CC:-$apple_cc}"
+export CXX="${CXX:-$apple_cxx}"
+export CARGO_TARGET_AARCH64_APPLE_DARWIN_LINKER="${CARGO_TARGET_AARCH64_APPLE_DARWIN_LINKER:-$apple_cc}"
+export RUSTC_LINKER="${RUSTC_LINKER:-$apple_cc}"
+if [ -z "${SDKROOT:-}" ]; then
+  export SDKROOT="$(xcrun --sdk macosx --show-sdk-path 2>/dev/null || true)"
+fi
+
 # Cross-compiling C deps (ring's curve25519.c, etc.) for the iOS targets
 # must use Apple's unwrapped clang. The Nix cc-wrapper injects
 # `-mmacos-version-min=…`, which clang rejects alongside
 # `-mios-simulator-version-min=…` ("not allowed with"). Point cc-rs +
 # rustc's link step at /usr/bin/clang for the iOS triples only — the
 # desktop build's /usr/bin/cc pin (flake.nix) is untouched.
-apple_clang="/usr/bin/clang"
 for triple in aarch64_apple_ios aarch64_apple_ios_sim x86_64_apple_ios; do
-  export "CC_${triple}=${apple_clang}"
-  export "CXX_${triple}=${apple_clang}++"
+  export "CC_${triple}=/usr/bin/clang"
+  export "CXX_${triple}=/usr/bin/clang++"
 done
-export CARGO_TARGET_AARCH64_APPLE_IOS_LINKER="$apple_clang"
-export CARGO_TARGET_AARCH64_APPLE_IOS_SIM_LINKER="$apple_clang"
-export CARGO_TARGET_X86_64_APPLE_IOS_LINKER="$apple_clang"
+export CARGO_TARGET_AARCH64_APPLE_IOS_LINKER="/usr/bin/clang"
+export CARGO_TARGET_AARCH64_APPLE_IOS_SIM_LINKER="/usr/bin/clang"
+export CARGO_TARGET_X86_64_APPLE_IOS_LINKER="/usr/bin/clang"
 
 if ! command -v xcodebuild >/dev/null 2>&1; then
   echo "error: xcodebuild not found — install Xcode (xcode-select --install or the App Store)." >&2
