@@ -8,6 +8,7 @@ import {
 } from "../../types/tab";
 import type { ProjectsState } from "../../projects";
 import { disposeEditorBuffer } from "../../monaco/editor-buffers";
+import { discardDeferredTabOpen } from "../bridgeMessageHandlers/readyEffects";
 import { recomputeModelPicker } from "../../utils/modelPicker";
 import { focusTerminalPanelSoon } from "../../utils/focus";
 import { CLOSED_TAB_STACK_MAX, TAB_MIRROR_KEYS } from "./constants";
@@ -241,6 +242,9 @@ export function useCloseTabActions(deps: CloseTabDeps): CloseTabActions {
   }
 
   function closeTabNow(tabId: string): void {
+    // A restored tab closed before its first interaction never needs
+    // its deferred bridge replay (see readyEffects.ts).
+    discardDeferredTabOpen(tabId);
     const tabs = (stateRef.current.tabs as Tab[] | undefined) ?? [];
     if (tabs.length === 0) return;
     const closing = tabs.find((t) => t.id === tabId);

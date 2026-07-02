@@ -10,6 +10,7 @@ import {
   PI_DEFAULT_MODEL_SENTINEL,
 } from "../utils/modelPicker";
 import { isAgentTabInFlight } from "../utils/agentBusy";
+import { flushDeferredTabOpen } from "./bridgeMessageHandlers/readyEffects";
 import type { UseChatContext } from "./useChat";
 
 export const THINKING_LEVELS = new Set([
@@ -60,6 +61,7 @@ export function useChatModelSelectionController(
     | "updateTab"
     | "recordProjectModel"
     | "piDefaultModelRef"
+    | "pendingTabOpens"
   >,
   deps: ChatModelSelectionDeps,
 ): ChatModelSelectionController {
@@ -69,8 +71,26 @@ export function useChatModelSelectionController(
     updateTab,
     recordProjectModel,
     piDefaultModelRef,
+    pendingTabOpens,
   } = ctx;
   const { appendMessage } = deps;
+
+  /** A restored tab whose bridge replay is deferred (or still in
+   *  flight) must finish its `tab_open` before a tab-scoped command —
+   *  otherwise set_model / set_thinking_level races the open and the
+   *  restored snapshot overwrites the user's switch. Open failures
+   *  surface through the command itself. */
+  async function awaitTabOpen(tabId: string): Promise<void> {
+    const pending =
+      flushDeferredTabOpen(tabId) ?? pendingTabOpens.current.get(tabId);
+    if (pending) {
+      try {
+        await pending;
+      } catch {
+        /* surfaced by the command that follows */
+      }
+    }
+  }
 
   // Debounced persistence of header-selected agent defaults to [agent].
   // Clicking through models / reasoning levels would otherwise do a disk read +
@@ -217,6 +237,7 @@ export function useChatModelSelectionController(
     // No live session to retarget — the default pick is all that's needed.
     if (!hasActiveAgentTab || !activeId) return;
     try {
+      await awaitTabOpen(activeId);
       await invoke("agent_command", {
         payload: JSON.stringify({
           type: "set_model",
@@ -291,6 +312,7 @@ export function useChatModelSelectionController(
     }));
     persistDefaultThinkingLevel(level);
     try {
+      await awaitTabOpen(activeId);
       await invoke("agent_command", {
         payload: JSON.stringify({
           type: "set_thinking_level",

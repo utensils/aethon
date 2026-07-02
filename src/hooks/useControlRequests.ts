@@ -13,6 +13,7 @@ import {
   registerControlWait,
   type ControlWaitResult,
 } from "./controlWaitRegistry";
+import { flushDeferredTabOpen } from "./bridgeMessageHandlers/readyEffects";
 
 /** Default ceiling for `chat.send --wait` / `chat.wait` when the caller does
  *  not pass `timeoutMs`. Generous because real agent turns routinely run for
@@ -176,6 +177,28 @@ async function openTab(
   const cwd = stringParam(params, "cwd");
   const model = stringParam(params, "model");
   const account = stringParam(params, "account");
+  const existing = (
+    (ctx.stateRef.current.tabs as Tab[] | undefined) ?? []
+  ).find((t) => t.id === tabId);
+  if (existing) {
+    // The id names a tab that already exists locally (a restored tab —
+    // possibly with its bridge replay still deferred — or a live one).
+    // Never append a duplicate: finish/await its open and focus it.
+    await ensureControlTabOpened(ctx, tabId);
+    ctx.setActiveTab(tabId);
+    if (account) {
+      await switchAccountForTab(tabId, account, { cwd, model });
+      ctx.updateTab(tabId, (tab) => ({ ...tab, authProfileId: account }));
+    }
+    return {
+      id: tabId,
+      kind: existing.kind ?? "agent",
+      label: existing.label,
+      cwd,
+      model,
+      authProfileId: account,
+    };
+  }
   ctx.newTab(tabId, label, { cwd, model });
   await ctx.pendingTabOpens.current.get(tabId);
   if (account) {
@@ -203,6 +226,24 @@ function focusTab(
   return { activeTabId: tabId };
 }
 
+/** A deferred restored tab must finish its bridge replay before a
+ *  tab-scoped account switch targets it — otherwise auth_profile_apply
+ *  lands before tab_open and the replay restores the old profile. */
+async function ensureControlTabOpened(
+  ctx: UseControlRequestsContext,
+  tabId: string,
+): Promise<void> {
+  const pending =
+    flushDeferredTabOpen(tabId) ?? ctx.pendingTabOpens.current.get(tabId);
+  if (pending) {
+    try {
+      await pending;
+    } catch {
+      /* surfaced by the command that follows */
+    }
+  }
+}
+
 async function applyAccount(
   ctx: UseControlRequestsContext,
   params: Record<string, unknown>,
@@ -212,6 +253,7 @@ async function applyAccount(
   if (target.busy) {
     throw new Error(`tab ${target.tabId} is busy; stop or wait before switching accounts`);
   }
+  await ensureControlTabOpened(ctx, target.tabId);
   await switchAccountForTab(target.tabId, profileId, {
     cwd: target.cwd,
     model: target.model,
@@ -235,6 +277,7 @@ async function sendChat(
     if (target.busy) {
       throw new Error(`tab ${target.tabId} is busy; stop or wait before switching accounts`);
     }
+    await ensureControlTabOpened(ctx, target.tabId);
     await switchAccountForTab(target.tabId, account, {
       cwd: target.cwd,
       model: target.model,

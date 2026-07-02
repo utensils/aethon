@@ -1,6 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { handleReady } from "./ready";
-import { resetReplayedTabsForTest } from "./readyEffects";
+import {
+  flushDeferredTabOpen,
+  resetReplayedTabsForTest,
+} from "./readyEffects";
 import { buildHandlerFixture } from "./testFixtures";
 import { clearTauriMocks, installTauriMocks } from "../../test/tauriMocks";
 import { makeEmptyTab } from "../../types/tab";
@@ -674,7 +677,7 @@ describe("handleReady", () => {
     );
   });
 
-  it("requests transcript replay for non-default open tabs after ready", () => {
+  it("defers transcript replay for background tabs until first interaction", async () => {
     const harness = installTauriMocks();
     const { ctx } = buildHandlerFixture({
       state: {
@@ -703,6 +706,12 @@ describe("handleReady", () => {
       },
       ctx,
     );
+    // Background tab: no bridge traffic at ready (lazy replay keeps a
+    // reload at one cold boot), then the full tab_open on flush.
+    expect(
+      harness.invoke.mock.calls.filter((call) => call[0] === "agent_command"),
+    ).toEqual([]);
+    await flushDeferredTabOpen("tab-2");
     const payloads = harness.invoke.mock.calls
       .filter((call) => call[0] === "agent_command")
       .map((call) => JSON.parse(call[1].payload as string));
@@ -716,7 +725,7 @@ describe("handleReady", () => {
     ]);
   });
 
-  it("replays restored tab reasoning levels to the bridge", () => {
+  it("replays restored tab reasoning levels to the bridge", async () => {
     const harness = installTauriMocks();
     const { ctx } = buildHandlerFixture({
       state: {
@@ -752,6 +761,7 @@ describe("handleReady", () => {
       },
       ctx,
     );
+    await flushDeferredTabOpen("tab-2");
 
     const payloads = harness.invoke.mock.calls
       .filter((call) => call[0] === "agent_command")

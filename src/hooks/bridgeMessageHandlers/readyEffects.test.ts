@@ -1,7 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { buildHandlerFixture } from "./testFixtures";
 import { clearTauriMocks, installTauriMocks } from "../../test/tauriMocks";
-import { resetReplayedTabsForTest, runReadyEffects } from "./readyEffects";
+import {
+  discardDeferredTabOpen,
+  flushDeferredTabOpen,
+  hasDeferredTabOpen,
+  resetReplayedTabsForTest,
+  runReadyEffects,
+} from "./readyEffects";
 
 describe("runReadyEffects", () => {
   let harness: ReturnType<typeof installTauriMocks>;
@@ -15,9 +21,10 @@ describe("runReadyEffects", () => {
     clearTauriMocks();
   });
 
-  it("replays restored non-default agent tabs through the pending tab-open gate", async () => {
+  it("eagerly replays the active restored tab through the pending tab-open gate", async () => {
     const { ctx } = buildHandlerFixture({
       state: {
+        activeTabId: "tab-1",
         tabs: [
           {
             id: "tab-1",
@@ -58,9 +65,125 @@ describe("runReadyEffects", () => {
     });
   });
 
+  it("defers background restored tabs and opens them on flush", async () => {
+    const { ctx } = buildHandlerFixture({
+      state: {
+        activeTabId: "tab-active",
+        tabs: [
+          { id: "tab-active", label: "Active", model: "claude", cwd: "/repo/a" },
+          { id: "tab-bg", label: "Background", model: "claude", cwd: "/repo/b" },
+        ],
+      },
+    });
+    ctx.prepareWorkspaceStartup = vi.fn().mockResolvedValue(true);
+
+    runReadyEffects(ctx, {
+      currentProjectCwd: null,
+      priorActiveTabCwd: null,
+      priorActiveTabId: "default",
+      bridgeTabIds: new Set<string>(),
+    });
+
+    // Only the visible tab hit the bridge; the background tab holds a
+    // deferred open — this is the 1-cold-boot (not 1+N) property.
+    expect(ctx.pendingTabOpens.current.has("tab-active")).toBe(true);
+    expect(ctx.pendingTabOpens.current.has("tab-bg")).toBe(false);
+    expect(hasDeferredTabOpen("tab-bg")).toBe(true);
+
+    const opening = flushDeferredTabOpen("tab-bg");
+    expect(opening).toBeDefined();
+    expect(hasDeferredTabOpen("tab-bg")).toBe(false);
+    expect(ctx.pendingTabOpens.current.has("tab-bg")).toBe(true);
+    await opening;
+    expect(harness.invoke).toHaveBeenCalledWith("agent_command", {
+      payload: JSON.stringify({
+        type: "tab_open",
+        tabId: "tab-bg",
+        model: "claude",
+        cwd: "/repo/b",
+        restoreHistory: true,
+      }),
+    });
+    // A second flush is a no-op — the open is single-shot.
+    expect(flushDeferredTabOpen("tab-bg")).toBeUndefined();
+  });
+
+  it("re-parks a flushed open when workspace startup is not ready", async () => {
+    const { ctx } = buildHandlerFixture({
+      state: {
+        activeTabId: "default",
+        tabs: [
+          { id: "tab-bg", label: "Background", model: "claude", cwd: "/repo/b" },
+        ],
+      },
+    });
+    const prepare = vi
+      .fn()
+      .mockResolvedValueOnce(false)
+      .mockResolvedValue(true);
+    ctx.prepareWorkspaceStartup = prepare;
+
+    runReadyEffects(ctx, {
+      currentProjectCwd: null,
+      priorActiveTabCwd: null,
+      priorActiveTabId: "default",
+      bridgeTabIds: new Set<string>(),
+    });
+
+    // First flush: startup not approved — no tab_open, thunk re-parked.
+    await flushDeferredTabOpen("tab-bg");
+    expect(harness.invoke).not.toHaveBeenCalledWith(
+      "agent_command",
+      expect.anything(),
+    );
+    expect(hasDeferredTabOpen("tab-bg")).toBe(true);
+
+    // Next interaction retries and succeeds.
+    await flushDeferredTabOpen("tab-bg");
+    expect(harness.invoke).toHaveBeenCalledWith("agent_command", {
+      payload: JSON.stringify({
+        type: "tab_open",
+        tabId: "tab-bg",
+        model: "claude",
+        cwd: "/repo/b",
+        restoreHistory: true,
+      }),
+    });
+    expect(hasDeferredTabOpen("tab-bg")).toBe(false);
+  });
+
+  it("discards a deferred open without touching the bridge", () => {
+    const { ctx } = buildHandlerFixture({
+      state: {
+        activeTabId: "default",
+        tabs: [
+          { id: "tab-bg", label: "Background", model: "claude", cwd: "/repo/b" },
+        ],
+      },
+    });
+    ctx.prepareWorkspaceStartup = vi.fn().mockResolvedValue(true);
+
+    runReadyEffects(ctx, {
+      currentProjectCwd: null,
+      priorActiveTabCwd: null,
+      priorActiveTabId: "default",
+      bridgeTabIds: new Set<string>(),
+    });
+    expect(hasDeferredTabOpen("tab-bg")).toBe(true);
+
+    discardDeferredTabOpen("tab-bg");
+    expect(hasDeferredTabOpen("tab-bg")).toBe(false);
+    expect(flushDeferredTabOpen("tab-bg")).toBeUndefined();
+    expect(harness.invoke).not.toHaveBeenCalledWith(
+      "agent_command",
+      expect.anything(),
+    );
+  });
+
   it("skips tab_open when workspace startup is not ready", async () => {
     const { ctx } = buildHandlerFixture({
       state: {
+        activeTabId: "tab-1",
         tabs: [{ id: "tab-1", label: "Tab 1", model: "claude", cwd: "/repo/a" }],
       },
     });
@@ -83,6 +206,7 @@ describe("runReadyEffects", () => {
   it("replays exact .aethon-root tabs but not legacy project mirrors", async () => {
     const { ctx } = buildHandlerFixture({
       state: {
+        activeTabId: "state-root",
         tabs: [
           {
             id: "state-root",
@@ -113,11 +237,13 @@ describe("runReadyEffects", () => {
 
     // The exact `~/.aethon` root is the bridge's fallback cwd for tabs with
     // no active project — a live session that must survive reload. Only
-    // legacy project MIRRORS under the state dir stay excluded.
+    // legacy project MIRRORS under the state dir stay excluded — no eager
+    // open AND no deferred open.
     expect(ctx.pendingTabOpens.current.has("state-root")).toBe(true);
     expect(ctx.pendingTabOpens.current.has("legacy-project")).toBe(false);
-    expect(ctx.pendingTabOpens.current.has("managed-project")).toBe(true);
-    await ctx.pendingTabOpens.current.get("managed-project");
+    expect(hasDeferredTabOpen("legacy-project")).toBe(false);
+    expect(hasDeferredTabOpen("managed-project")).toBe(true);
+    await flushDeferredTabOpen("managed-project");
     expect(ctx.prepareWorkspaceStartup).toHaveBeenCalledWith(
       "/Users/jamesbrink/.aethon",
     );
@@ -212,6 +338,7 @@ describe("runReadyEffects", () => {
   it("replays each tab once per webview lifetime unless the bridge loses it", async () => {
     const { ctx } = buildHandlerFixture({
       state: {
+        activeTabId: "tab-1",
         tabs: [
           { id: "tab-1", label: "One", model: "claude", cwd: "/repo/a" },
           { id: "tab-2", label: "Two", model: "claude", cwd: "/repo/b" },
@@ -225,27 +352,26 @@ describe("runReadyEffects", () => {
       priorActiveTabId: "default",
     };
 
-    // First ready after webview load: both tabs replay.
+    // First ready after webview load: the active tab replays, the
+    // background tab defers.
     runReadyEffects(ctx, {
       ...input,
       bridgeTabIds: new Set(["tab-1", "tab-2"]),
     });
-    const firstOpens = new Map(ctx.pendingTabOpens.current);
-    expect(firstOpens.has("tab-1")).toBe(true);
-    expect(firstOpens.has("tab-2")).toBe(true);
+    const firstOpen = ctx.pendingTabOpens.current.get("tab-1");
+    expect(firstOpen).toBeDefined();
+    expect(hasDeferredTabOpen("tab-2")).toBe(true);
 
-    // A ready that re-fires while those opens are still in flight (the
-    // bridge snapshot can't reflect them yet) must not double-send.
+    // A ready that re-fires while that open is still in flight (the
+    // bridge snapshot can't reflect it yet) must not double-send.
     runReadyEffects(ctx, {
       ...input,
       bridgeTabIds: new Set<string>(),
     });
-    expect(ctx.pendingTabOpens.current.get("tab-1")).toBe(
-      firstOpens.get("tab-1"),
-    );
-    expect(ctx.pendingTabOpens.current.get("tab-2")).toBe(
-      firstOpens.get("tab-2"),
-    );
+    expect(ctx.pendingTabOpens.current.get("tab-1")).toBe(firstOpen);
+
+    // First interaction with the background tab opens it.
+    await flushDeferredTabOpen("tab-2");
 
     // Let the .finally() cleanup that clears pendingTabOpens flush.
     await new Promise((resolve) => setTimeout(resolve, 0));
@@ -253,21 +379,24 @@ describe("runReadyEffects", () => {
 
     // ready re-fires constantly (project switches, reports from other
     // clients). Re-replaying live tabs re-emitted session_history
-    // mid-stream and flipped the global project per ready — skip.
+    // mid-stream and flipped the global project per ready — skip both
+    // the eager and deferred paths.
     runReadyEffects(ctx, {
       ...input,
       bridgeTabIds: new Set(["tab-1", "tab-2"]),
     });
     expect(ctx.pendingTabOpens.current.size).toBe(0);
+    expect(hasDeferredTabOpen("tab-2")).toBe(false);
 
-    // Bridge respawned and lost tab-2: only that tab replays again.
+    // Bridge respawned and lost tab-2: it defers again (background),
+    // and opens on the next interaction.
     runReadyEffects(ctx, {
       ...input,
       bridgeTabIds: new Set(["tab-1"]),
     });
     expect(ctx.pendingTabOpens.current.has("tab-1")).toBe(false);
-    expect(ctx.pendingTabOpens.current.has("tab-2")).toBe(true);
-    await ctx.pendingTabOpens.current.get("tab-2");
+    expect(hasDeferredTabOpen("tab-2")).toBe(true);
+    await flushDeferredTabOpen("tab-2");
   });
 
   it("on the mobile surface, neither replays tabs nor announces a project", () => {

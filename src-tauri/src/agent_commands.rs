@@ -202,12 +202,21 @@ pub(crate) fn force_restart_agent(state: State<'_, AgentProcesses>) -> Result<()
         let mut guard = state.children.lock().map_err(|e| e.to_string())?;
         guard.drain().collect()
     };
+    // Two passes: dispatch the kill to every child first (signal delivery
+    // is fast), then reap — serial kill+wait paid N sequential process
+    // teardowns on multi-tab sessions.
+    let mut reap = Vec::with_capacity(children.len());
     for (key, child) in children {
-        let mut child = child.lock().map_err(|e| e.to_string())?;
-        let pid = child.id();
+        let mut guard = child.lock().map_err(|e| e.to_string())?;
+        let pid = guard.id();
         tracing::warn!(target: "aethon::agent", key = key, "force_restart_agent: killing pid={pid}");
-        let _ = child.kill();
-        let _ = child.wait();
+        let _ = guard.kill();
+        drop(guard);
+        reap.push(child);
+    }
+    for child in reap {
+        let mut guard = child.lock().map_err(|e| e.to_string())?;
+        let _ = guard.wait();
     }
     if let Ok(mut routes) = state.mutation_routes.lock() {
         routes.clear();
@@ -236,12 +245,20 @@ pub(crate) fn reload_agent(state: State<'_, AgentProcesses>, app: AppHandle) -> 
                 exits.insert(key.clone());
             }
         }
+        // Kill-all first, then reap: signal delivery is fast and the
+        // process teardowns overlap instead of paying N serial waits.
+        let mut reap = Vec::with_capacity(children.len());
         for (key, child) in children {
-            let mut child = child.lock().map_err(|e| e.to_string())?;
-            let pid = child.id();
+            let mut guard = child.lock().map_err(|e| e.to_string())?;
+            let pid = guard.id();
             tracing::info!(target: "aethon::agent", key = key, "reload_agent: killing pid={pid}");
-            let _ = child.kill();
-            let _ = child.wait();
+            let _ = guard.kill();
+            drop(guard);
+            reap.push(child);
+        }
+        for child in reap {
+            let mut guard = child.lock().map_err(|e| e.to_string())?;
+            let _ = guard.wait();
         }
         if let Ok(mut routes) = state.mutation_routes.lock() {
             routes.clear();

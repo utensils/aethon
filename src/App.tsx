@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { bootMark, reportBootTimeline } from "./utils/bootTrace";
+import { flushDeferredTabOpen } from "./hooks/bridgeMessageHandlers/readyEffects";
 import { ExtensionRegistry } from "./extensions/ExtensionRegistry";
 import { persistStatusesDebounced } from "./gitStatusCache";
 import { defaultLayoutExtension } from "./extensions/default-layout";
@@ -980,6 +981,16 @@ export default function App() {
     scheduledTasksOpen,
   } = useDerivedRenderState({ state, buildSidebarHistory, hostInfo });
   const chromeReady = bootConfigReady && startupChromeReady;
+
+  // First activation of a restored background tab opens it in the
+  // bridge — lazy replay keeps a bridge reload at one cold boot instead
+  // of one per tab (see readyEffects.ts). Covers every activation path
+  // (tab strip, palette, dashboard, activateTabAnywhere) in one place.
+  useEffect(() => {
+    if (typeof state.activeTabId === "string") {
+      void flushDeferredTabOpen(state.activeTabId);
+    }
+  }, [state.activeTabId]);
 
   // Boot timeline: mark the chrome-ready flip, then log the summary once
   // the first real-chrome frame commits. See src/utils/bootTrace.ts.
