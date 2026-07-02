@@ -11,6 +11,7 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { getLocalHost, type Host } from "../hosts";
 import {
   remoteDevicesList,
+  remoteHostReconnect,
   remoteHostProjectSnapshot,
   remoteHostsList,
   type RemoteDevice,
@@ -59,6 +60,7 @@ export function useHostInfo(): UseHostInfo {
   const remotesRef = useRef<Map<string, Host>>(new Map());
   const pairedHostsRef = useRef<Map<string, Host>>(new Map());
   const devicesRef = useRef<Map<string, Host>>(new Map());
+  const eventStreamsRef = useRef<Set<string>>(new Set());
   const [remotes, setRemotes] = useState<Host[]>([]);
   const [pairedHosts, setPairedHosts] = useState<Host[]>([]);
   const [devices, setDevices] = useState<Host[]>([]);
@@ -192,12 +194,29 @@ export function useHostInfo(): UseHostInfo {
             setActiveHostState((prev) => (prev === id ? localHost?.id ?? null : prev));
           }
         });
+        const offStatus = await listen<{ id?: string; connected?: boolean }>(
+          "remote-host-status-changed",
+          (event) => {
+            const id = event.payload?.id;
+            if (!id) return;
+            const paired = pairedHostsRef.current.get(id);
+            if (!paired) return;
+            pairedHostsRef.current.set(id, {
+              ...paired,
+              connected: event.payload.connected === true,
+              lastSeen:
+                event.payload.connected === true ? Date.now() : paired.lastSeen,
+            });
+            emitPairedHosts();
+          },
+        );
         if (cancelled) {
           offDiscovered();
           offRemoved();
+          offStatus();
           return;
         }
-        off = [offDiscovered, offRemoved];
+        off = [offDiscovered, offRemoved, offStatus];
       } catch {
         // Running outside Tauri (tests, plain browser) — no events flow.
       }
@@ -224,6 +243,13 @@ export function useHostInfo(): UseHostInfo {
         if (!hostsEqual(Array.from(pairedHostsRef.current.values()), nextHosts)) {
           pairedHostsRef.current = next;
           emitPairedHosts();
+        }
+        for (const hostId of next.keys()) {
+          if (eventStreamsRef.current.has(hostId)) continue;
+          eventStreamsRef.current.add(hostId);
+          void remoteHostReconnect(hostId).catch(() => {
+            eventStreamsRef.current.delete(hostId);
+          });
         }
         void refreshRemoteProjectSnapshots(Array.from(next.keys()));
       } catch {

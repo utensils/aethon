@@ -72,6 +72,38 @@ export function activeProjectIdForModelDefaults(
     : null;
 }
 
+export function activeProjectIdForNewTab(
+  projects: ProjectsState,
+  state: Record<string, unknown>,
+): string | null {
+  if (projects.activeId) return projects.activeId;
+  const id =
+    (state.project as { id?: unknown } | null | undefined)?.id ??
+    state.activeProjectId;
+  return typeof id === "string" && id.length > 0 ? id : null;
+}
+
+export function activeHostIdForNewTab(
+  projects: ProjectsState,
+  state: Record<string, unknown>,
+): string | undefined {
+  const projectId = activeProjectIdForNewTab(projects, state);
+  if (projectId) {
+    const localProject = projects.projects.find((p) => p.id === projectId);
+    if (localProject?.hostId) return localProject.hostId;
+  }
+  const hostId =
+    (state.project as { hostId?: unknown } | null | undefined)?.hostId ??
+    state.activeHostId;
+  return typeof hostId === "string" && hostId.length > 0 ? hostId : undefined;
+}
+
+export function isRemoteHostId(
+  hostId: string | null | undefined,
+): hostId is string {
+  return typeof hostId === "string" && hostId.startsWith("remote:");
+}
+
 /** Model displayed by overview-owned surfaces. Shell tabs can be the
  *  active tab for terminal focus, but the overview still owns the composer
  *  and header in that state, so the visible model must be the model a new

@@ -10,10 +10,13 @@ use std::time::Duration;
 use futures_util::{SinkExt, StreamExt};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
+use tauri::Emitter;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::TcpStream;
+use tokio::sync::Notify;
 use tokio_tungstenite::tungstenite::Message;
 
+use super::events::TAPPED_TOPICS;
 use super::hosts::PairedHostRecord;
 use super::protocol::PROTOCOL_VERSION;
 use crate::commands::host::HostInfo;
@@ -21,6 +24,7 @@ use crate::commands::host::HostInfo;
 const PAIR_TIMEOUT: Duration = Duration::from_secs(5);
 const INVOKE_TIMEOUT: Duration = Duration::from_secs(30);
 const MAX_PAIR_RESPONSE: usize = 64 * 1024;
+const EVENT_RECONNECT_DELAY: Duration = Duration::from_secs(2);
 
 #[derive(Debug)]
 struct PinnedCert {
@@ -263,6 +267,144 @@ pub async fn invoke(host: &PairedHostRecord, cmd: &str, args: Value) -> Result<V
         }
     }
     Err(last_error.unwrap_or_else(|| "remote host has no connection candidates".to_string()))
+}
+
+pub fn spawn_event_forwarder(host: PairedHostRecord, app: tauri::AppHandle, cancel: Arc<Notify>) {
+    tauri::async_runtime::spawn(async move {
+        event_forwarder_loop(host, app, cancel).await;
+    });
+}
+
+async fn event_forwarder_loop(host: PairedHostRecord, app: tauri::AppHandle, cancel: Arc<Notify>) {
+    loop {
+        let result = connect_and_forward_events(&host, &app, &cancel).await;
+        if matches!(result, Err(ref err) if err == "cancelled") {
+            return;
+        }
+        let payload = serde_json::json!({
+            "id": host.id,
+            "connected": false,
+            "error": result.err().unwrap_or_else(|| "disconnected".to_string()),
+        });
+        let _ = app.emit("remote-host-status-changed", payload);
+        tokio::select! {
+            _ = cancel.notified() => return,
+            _ = tokio::time::sleep(EVENT_RECONNECT_DELAY) => {}
+        }
+    }
+}
+
+async fn connect_and_forward_events(
+    host: &PairedHostRecord,
+    app: &tauri::AppHandle,
+    cancel: &Arc<Notify>,
+) -> Result<(), String> {
+    let mut last_error = None;
+    for candidate in &host.candidates {
+        match forward_events_candidate(candidate, host, app, cancel).await {
+            Ok(()) => return Ok(()),
+            Err(err) => last_error = Some(err),
+        }
+    }
+    Err(last_error.unwrap_or_else(|| "remote host has no connection candidates".to_string()))
+}
+
+async fn forward_events_candidate(
+    candidate: &str,
+    host: &PairedHostRecord,
+    app: &tauri::AppHandle,
+    cancel: &Arc<Notify>,
+) -> Result<(), String> {
+    let _ = rustls::crypto::ring::default_provider().install_default();
+    let connector = if host.fingerprint.is_empty() {
+        None
+    } else {
+        Some(tokio_tungstenite::Connector::Rustls(pinned_client_config(
+            host.fingerprint.clone(),
+        )))
+    };
+    let url = ws_url(candidate, &host.fingerprint);
+    let (mut ws, _) = tokio::time::timeout(
+        INVOKE_TIMEOUT,
+        tokio_tungstenite::connect_async_tls_with_config(&url, None, false, connector),
+    )
+    .await
+    .map_err(|_| format!("connect timeout {url}"))?
+    .map_err(|e| format!("connect {url}: {e}"))?;
+    ws.send(Message::Text(
+        serde_json::json!({
+            "t": "hello",
+            "protocol": PROTOCOL_VERSION,
+            "token": host.token,
+            "appVersion": env!("CARGO_PKG_VERSION"),
+        })
+        .to_string(),
+    ))
+    .await
+    .map_err(|e| format!("hello send: {e}"))?;
+    wait_for_hello(&mut ws).await?;
+    let topics = TAPPED_TOPICS
+        .iter()
+        .copied()
+        .filter(|topic| *topic != "host-discovered" && *topic != "host-removed")
+        .collect::<Vec<_>>();
+    ws.send(Message::Text(
+        serde_json::json!({
+            "t": "sub",
+            "topics": topics,
+        })
+        .to_string(),
+    ))
+    .await
+    .map_err(|e| format!("subscribe send: {e}"))?;
+    let _ = app.emit(
+        "remote-host-status-changed",
+        serde_json::json!({ "id": host.id, "connected": true }),
+    );
+    loop {
+        tokio::select! {
+            _ = cancel.notified() => return Err("cancelled".to_string()),
+            msg = ws.next() => {
+                let msg = msg
+                    .ok_or("socket closed")?
+                    .map_err(|e| format!("event read: {e}"))?;
+                let Message::Text(text) = msg else {
+                    continue;
+                };
+                forward_event_text(&host.id, app, &text)?;
+            }
+        }
+    }
+}
+
+fn forward_event_text(host_id: &str, app: &tauri::AppHandle, text: &str) -> Result<(), String> {
+    let parsed: Value = serde_json::from_str(text).map_err(|e| format!("bad event: {e}"))?;
+    match parsed.get("t").and_then(Value::as_str) {
+        Some("event") => {
+            let topic = parsed
+                .get("topic")
+                .and_then(Value::as_str)
+                .ok_or("event missing topic")?;
+            let payload = parsed.get("payload").cloned().unwrap_or(Value::Null);
+            let _ = app.emit(
+                "remote-host-event",
+                serde_json::json!({
+                    "hostId": host_id,
+                    "topic": topic,
+                    "payload": payload,
+                }),
+            );
+            Ok(())
+        }
+        Some("bye") => Err(format!(
+            "remote closed: {}",
+            parsed
+                .get("reason")
+                .and_then(Value::as_str)
+                .unwrap_or("unknown")
+        )),
+        _ => Ok(()),
+    }
 }
 
 async fn invoke_candidate(

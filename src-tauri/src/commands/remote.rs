@@ -157,6 +157,10 @@ pub async fn remote_host_pair(
     let _ = remote
         .devices
         .add(&remote_info.display_name, "desktop", &reciprocal_token);
+    if let Some(record) = remote.hosts.get(&view.id) {
+        let cancel = remote.replace_host_forwarder(&view.id);
+        crate::server::remote::client::spawn_event_forwarder(record, app.clone(), cancel);
+    }
     let _ = app.emit("remote-hosts-changed", serde_json::json!({ "id": view.id }));
     Ok(view)
 }
@@ -168,6 +172,7 @@ pub fn remote_host_forget(
     app: tauri::AppHandle,
 ) -> Result<(), String> {
     remote.hosts.forget(&id)?;
+    remote.close_host_forwarder(&id);
     let _ = app.emit("remote-hosts-changed", serde_json::json!({ "id": id }));
     Ok(())
 }
@@ -194,7 +199,8 @@ pub async fn remote_host_reconnect(
         .hosts
         .get(&id)
         .ok_or_else(|| format!("unknown remote host {id}"))?;
-    crate::server::remote::client::invoke(&host, "host_info", serde_json::json!({})).await?;
+    let cancel = remote.replace_host_forwarder(&id);
+    crate::server::remote::client::spawn_event_forwarder(host, app.clone(), cancel);
     let _ = app.emit("remote-hosts-changed", serde_json::json!({ "id": id }));
     Ok(())
 }

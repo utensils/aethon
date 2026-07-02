@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { modelForNewProjectTab } from "./helpers";
+import {
+  activeHostIdForNewTab,
+  activeProjectIdForNewTab,
+  isRemoteHostId,
+  modelForNewProjectTab,
+} from "./helpers";
+import { emptyProjectsState, type ProjectsState } from "../../projects";
 
 describe("modelForNewProjectTab", () => {
   const fallback = "openai-codex/gpt-5.5";
@@ -43,5 +49,45 @@ describe("modelForNewProjectTab", () => {
   it("ignores per-project memory when the active project is null", () => {
     const state = { projectModels: { p1: "qwen/qwen3" } };
     expect(modelForNewProjectTab(state, null, fallback)).toBe(fallback);
+  });
+});
+
+describe("remote tab inheritance", () => {
+  it("uses the selected remote project id when local projects have no active id", () => {
+    const projects = emptyProjectsState("local:bender");
+    const state = {
+      activeProjectId: "remote:fp::project::p1",
+      project: {
+        id: "remote:fp::project::p1",
+        hostId: "remote:fp",
+        path: "/remote/repo",
+      },
+    };
+
+    expect(activeProjectIdForNewTab(projects, state)).toBe(
+      "remote:fp::project::p1",
+    );
+    expect(activeHostIdForNewTab(projects, state)).toBe("remote:fp");
+  });
+
+  it("prefers local active project host metadata when present", () => {
+    const projects: ProjectsState = {
+      ...emptyProjectsState("local:bender"),
+      activeId: "p1",
+      projects: [
+        {
+          id: "p1",
+          label: "repo",
+          path: "/repo",
+          lastUsed: 1,
+          hostId: "local:bender",
+        },
+      ],
+    };
+
+    expect(activeProjectIdForNewTab(projects, {})).toBe("p1");
+    expect(activeHostIdForNewTab(projects, {})).toBe("local:bender");
+    expect(isRemoteHostId("remote:abc")).toBe(true);
+    expect(isRemoteHostId("local:bender")).toBe(false);
   });
 });

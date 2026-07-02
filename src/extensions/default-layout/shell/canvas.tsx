@@ -19,6 +19,8 @@ import type { NumberValue, StringValue } from "../../../types/a2ui";
 import type { ShareMode } from "../../../utils/shareMode";
 import { resolveNumber, resolveString } from "../../../utils/dataBinding";
 import { RegistryComponent } from "../../../components/A2UIRenderer";
+import { remoteHostInvoke } from "../../../services/remote";
+import { isRemoteHostId } from "../../../hooks/tabOps/helpers";
 import type {
   A2UIEventHandler,
   BuiltinComponentProps,
@@ -69,10 +71,11 @@ export function ShellCanvas({
   };
   const tabs =
     (state["tabs"] as
-      | Array<{ id: string; kind?: string; shell?: ShellMetaShape }>
+      | Array<{ id: string; kind?: string; hostId?: string; shell?: ShellMetaShape }>
       | undefined) ?? [];
   const boundTab = tabs.find((t) => t.id === tabId);
   const shell = boundTab?.shell;
+  const hostId = boundTab?.hostId;
 
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<XTerm | null>(null);
@@ -104,6 +107,10 @@ export function ShellCanvas({
   useEffect(() => {
     if (!containerRef.current) return;
     if (!tabId) return; // no tab bound yet — wait for the layout to populate
+    const invokeShell = (cmd: string, args: Record<string, unknown>) =>
+      isRemoteHostId(hostId)
+        ? remoteHostInvoke(hostId, cmd, args)
+        : invoke(cmd, args);
 
     const uiScale = readAppUiScale();
     applyTerminalHostUiScale(containerRef.current, uiScale);
@@ -137,7 +144,7 @@ export function ShellCanvas({
     // see — xterm gives us the pre-encoded sequence (e.g. "\x1b[A" for up
     // arrow), so we forward verbatim.
     const onDataDisposable = term.onData((data) => {
-      void invoke("shell_input", { tabId: tabIdRef.current, data }).catch(
+      void invokeShell("shell_input", { tabId: tabIdRef.current, data }).catch(
         () => {
           /* PTY closed mid-keystroke — drop silently */
         },
@@ -158,7 +165,7 @@ export function ShellCanvas({
       const decision = decideShellResize(dims, lastSentDimsRef.current);
       if (!decision) return;
       lastSentDimsRef.current = decision;
-      void invoke("shell_resize", {
+      void invokeShell("shell_resize", {
         tabId: tabIdRef.current,
         cols: decision.cols,
         rows: decision.rows,
@@ -278,7 +285,7 @@ export function ShellCanvas({
     };
     // Mount once per tabId — switching tabs creates a new instance.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tabId]);
+  }, [hostId, tabId]);
 
   useEffect(() => {
     const previous = shellStateRef.current;
@@ -300,14 +307,21 @@ export function ShellCanvas({
       return;
     }
     resizeReplayPendingRef.current = false;
-    void invoke("shell_resize", {
+    const send = isRemoteHostId(hostId)
+      ? remoteHostInvoke(hostId, "shell_resize", {
+          tabId,
+          cols: dims.cols,
+          rows: dims.rows,
+        })
+      : invoke("shell_resize", {
       tabId,
       cols: dims.cols,
       rows: dims.rows,
-    }).catch(() => {
+        });
+    void send.catch(() => {
       /* PTY may have exited between state update and replay */
     });
-  }, [dims, shell?.shellState, tabId]);
+  }, [dims, hostId, shell?.shellState, tabId]);
 
   return (
     <div className="ae-shell-canvas-wrap" style={{ gridArea: "canvas" }}>

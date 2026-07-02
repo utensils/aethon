@@ -3,7 +3,13 @@ import { invoke } from "@tauri-apps/api/core";
 import { makeEmptyTab, type ShellMeta, type Tab } from "../../types/tab";
 import type { ProjectsState } from "../../projects";
 import { initialDevshellTerminalBuffer } from "./devshellTerminal";
-import { cwdForNewTab } from "./helpers";
+import {
+  activeHostIdForNewTab,
+  activeProjectIdForNewTab,
+  cwdForNewTab,
+  isRemoteHostId,
+} from "./helpers";
+import { remoteHostInvoke } from "../../services/remote";
 
 export interface NewShellTabDeps {
   setState: Dispatch<SetStateAction<Record<string, unknown>>>;
@@ -54,6 +60,12 @@ export function useNewShellTab(deps: NewShellTabDeps) {
       options?.cwd ??
       cwdForNewTab(projectsRef.current, stateRef.current) ??
       undefined;
+    const projectId = activeProjectIdForNewTab(
+      projectsRef.current,
+      stateRef.current,
+    );
+    const hostId = activeHostIdForNewTab(projectsRef.current, stateRef.current);
+    const isRemote = isRemoteHostId(hostId);
     const seedShareMode = defaultShareModeRef.current;
     const resolvedCommand =
       options?.command ?? shellDefaultCommandRef.current ?? undefined;
@@ -69,10 +81,10 @@ export function useNewShellTab(deps: NewShellTabDeps) {
     setState((prev) => {
       const tabs = ((prev.tabs as Tab[] | undefined) ?? []).slice();
       const label = `Shell ${tabs.filter((t) => t.kind === "shell").length + 1}`;
-      const projectId = projectsRef.current.activeId;
       const tab: Tab = {
         ...makeEmptyTab(id, label, projectId, "shell"),
         terminalBuffer: initialTerminalBuffer,
+        ...(hostId ? { hostId } : {}),
         shell: {
           cwd: inheritedCwd ?? "",
           command: resolvedCommand ?? "",
@@ -97,7 +109,7 @@ export function useNewShellTab(deps: NewShellTabDeps) {
       };
     });
     const openShell = async (): Promise<boolean> => {
-      if (inheritedCwd) {
+      if (inheritedCwd && !isRemote) {
         const ready = prepareWorkspaceStartup
           ? await prepareWorkspaceStartup(inheritedCwd)
           : await invoke<{ state?: string }>(
@@ -113,21 +125,24 @@ export function useNewShellTab(deps: NewShellTabDeps) {
         if (!ready) throw new Error("workspace startup not ready");
       }
       if (!shellTabStillExists(stateRef.current, id)) return false;
-      await invoke("shell_open", {
-        args: {
-          tabId: id,
-          ...(resolvedCommand ? { command: resolvedCommand } : {}),
-          ...(resolvedArgs ? { args: resolvedArgs } : {}),
-          ...(inheritedCwd ? { cwd: inheritedCwd } : {}),
-          // Seed the share mode atomically inside shell_open so the
-          // privacy floor pins at total_appended=0 — every byte from the
-          // first prompt forward is visible to the agent when the user
-          // configured a non-private default. Applying the mode post-open
-          // would race the login banner and pin it below the floor.
-          ...(seedShareMode !== "private" ? { shareMode: seedShareMode } : {}),
-          ...(inheritEnv === false ? { inheritEnv: false } : {}),
-        },
-      });
+      const args = {
+        tabId: id,
+        ...(resolvedCommand ? { command: resolvedCommand } : {}),
+        ...(resolvedArgs ? { args: resolvedArgs } : {}),
+        ...(inheritedCwd ? { cwd: inheritedCwd } : {}),
+        // Seed the share mode atomically inside shell_open so the
+        // privacy floor pins at total_appended=0 — every byte from the
+        // first prompt forward is visible to the agent when the user
+        // configured a non-private default. Applying the mode post-open
+        // would race the login banner and pin it below the floor.
+        ...(seedShareMode !== "private" ? { shareMode: seedShareMode } : {}),
+        ...(inheritEnv === false ? { inheritEnv: false } : {}),
+      };
+      if (isRemote && hostId) {
+        await remoteHostInvoke(hostId, "shell_open", { args });
+      } else {
+        await invoke("shell_open", { args });
+      }
       return true;
     };
     openShell()

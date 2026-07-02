@@ -42,6 +42,10 @@ pub struct RemoteState {
     /// device's sessions so opening extra sockets doesn't multiply the
     /// budget. Pruned when a device's last session deregisters.
     rate: Mutex<HashMap<String, ws::RateLimiter>>,
+    /// Outbound desktop-host event forwarders keyed by paired host id.
+    /// Reconnect replaces the old cancel handle so the frontend can
+    /// explicitly refresh candidates without spawning duplicate streams.
+    host_forwarders: Mutex<HashMap<String, Arc<Notify>>>,
 }
 
 impl RemoteState {
@@ -59,6 +63,7 @@ impl RemoteState {
             hub: Arc::new(EventHub::new()),
             live: Mutex::new(HashMap::new()),
             rate: Mutex::new(HashMap::new()),
+            host_forwarders: Mutex::new(HashMap::new()),
         }
     }
 
@@ -72,6 +77,7 @@ impl RemoteState {
             hub: Arc::new(EventHub::new()),
             live: Mutex::new(HashMap::new()),
             rate: Mutex::new(HashMap::new()),
+            host_forwarders: Mutex::new(HashMap::new()),
         }
     }
 
@@ -139,6 +145,24 @@ impl RemoteState {
             for handle in handles {
                 handle.notify_one();
             }
+        }
+    }
+
+    pub fn replace_host_forwarder(&self, host_id: &str) -> Arc<Notify> {
+        let notify = Arc::new(Notify::new());
+        if let Ok(mut forwarders) = self.host_forwarders.lock() {
+            if let Some(old) = forwarders.insert(host_id.to_string(), Arc::clone(&notify)) {
+                old.notify_one();
+            }
+        }
+        notify
+    }
+
+    pub fn close_host_forwarder(&self, host_id: &str) {
+        if let Ok(mut forwarders) = self.host_forwarders.lock()
+            && let Some(handle) = forwarders.remove(host_id)
+        {
+            handle.notify_one();
         }
     }
 }

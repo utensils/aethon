@@ -16,6 +16,8 @@ import { recentSessionItemFromClosedTab } from "./helpers";
 import { SESSION_UI_SNAPSHOT_FLUSH_EVENT } from "../../state/sessionUiSnapshot";
 import { projectScopeBucketKey } from "../projectOps/tabBuckets";
 import type { TabBucket } from "../projectOps/types";
+import { remoteHostInvoke } from "../../services/remote";
+import { isRemoteHostId } from "./helpers";
 
 export interface CloseTabDeps {
   setState: Dispatch<SetStateAction<Record<string, unknown>>>;
@@ -249,6 +251,7 @@ export function useCloseTabActions(deps: CloseTabDeps): CloseTabActions {
     if (tabs.length === 0) return;
     const closing = tabs.find((t) => t.id === tabId);
     const closedKind = closing?.kind;
+    const closedHostId = closing?.hostId;
     if (closing) pushClosedTab(closing);
     let nextBuffer = "";
     let switched = false;
@@ -407,16 +410,21 @@ export function useCloseTabActions(deps: CloseTabDeps): CloseTabActions {
     // Tear down bridge session whether we became empty or not — both
     // paths fire tab_close and the bridge no-ops on unknown tab ids.
     void becameEmpty;
-    invoke("agent_command", {
-      payload: JSON.stringify({ type: "tab_close", tabId }),
-    }).catch(() => {
+    const closePayload = JSON.stringify({ type: "tab_close", tabId });
+    const closeAgent = isRemoteHostId(closedHostId)
+      ? remoteHostInvoke(closedHostId, "agent_command", { payload: closePayload })
+      : invoke("agent_command", { payload: closePayload });
+    closeAgent.catch(() => {
       /* ignore — UI already closed */
     });
     // M6 P1: shell tabs own a PTY in the Rust shell registry. Close
     // it too so the child process is reaped and the reader thread
     // joins (no zombies on tab close).
     if (closedKind === "shell") {
-      invoke("shell_close", { tabId }).catch(() => {
+      const close = isRemoteHostId(closedHostId)
+        ? remoteHostInvoke(closedHostId, "shell_close", { tabId })
+        : invoke("shell_close", { tabId });
+      close.catch(() => {
         /* idempotent — already torn down by natural exit */
       });
     }
