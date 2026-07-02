@@ -245,6 +245,16 @@ pub struct GuardrailsConfig {
 }
 
 #[derive(Default, Deserialize)]
+pub struct BootConfig {
+    /// Kill-switch for optimistic chrome. When `true` (default), a
+    /// built-ins-only session caches a boot snapshot so the next cold boot
+    /// paints the workstation before the agent bridge is ready. `false`
+    /// disables the optimization — the StartupCurtain always shows until the
+    /// bridge reports `ready`. Consumed frontend-side.
+    pub optimistic_chrome: Option<bool>,
+}
+
+#[derive(Default, Deserialize)]
 pub struct AethonConfig {
     #[serde(default)]
     pub ui: UiConfig,
@@ -270,6 +280,8 @@ pub struct AethonConfig {
     pub mcp: McpHostConfig,
     #[serde(default)]
     pub guardrails: GuardrailsConfig,
+    #[serde(default)]
+    pub boot: BootConfig,
 }
 
 /// Validate-and-normalize a tri-state thinking visibility value
@@ -580,6 +592,9 @@ pub fn parse_config_toml(input: &str) -> serde_json::Value {
             "softPromptAnchor": soft_prompt_anchor,
             "hardEnforceProjectRoot": hard_enforce_project_root,
         },
+        "boot": {
+            "optimisticChrome": cfg.boot.optimistic_chrome.unwrap_or(true),
+        },
     })
 }
 
@@ -721,6 +736,19 @@ mod tests {
         assert_eq!(
             parse_config_toml("[server]\nenabled = false\n")["server"]["enabled"],
             false
+        );
+    }
+
+    #[test]
+    fn boot_optimistic_chrome_defaults_true_and_honors_override() {
+        assert_eq!(parse_config_toml("")["boot"]["optimisticChrome"], true);
+        assert_eq!(
+            parse_config_toml("[boot]\noptimistic_chrome = false\n")["boot"]["optimisticChrome"],
+            false
+        );
+        assert_eq!(
+            parse_config_toml("[boot]\noptimistic_chrome = true\n")["boot"]["optimisticChrome"],
+            true
         );
     }
 

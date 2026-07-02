@@ -1,14 +1,35 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { handleReady } from "./ready";
-import {
-  flushDeferredTabOpen,
-  resetReplayedTabsForTest,
-} from "./readyEffects";
+import { flushDeferredTabOpen, resetReplayedTabsForTest } from "./readyEffects";
 import { buildHandlerFixture } from "./testFixtures";
 import { clearTauriMocks, installTauriMocks } from "../../test/tauriMocks";
 import { makeEmptyTab } from "../../types/tab";
 import { defaultLayoutExtension } from "../../extensions/default-layout";
 import * as highlight from "../../utils/highlight";
+import {
+  __testing as chromeBootTesting,
+  readChromeBootSnapshot,
+  shouldPaintChromeOptimistically,
+} from "../../state/chromeBootSnapshot";
+
+/** Map-backed Storage for the node test env (no real localStorage). */
+function makeFakeStorage(): Storage {
+  const m = new Map<string, string>();
+  return {
+    get length() {
+      return m.size;
+    },
+    clear: () => m.clear(),
+    getItem: (k: string) => (m.has(k) ? (m.get(k) as string) : null),
+    key: (i: number) => Array.from(m.keys())[i] ?? null,
+    removeItem: (k: string) => {
+      m.delete(k);
+    },
+    setItem: (k: string, v: string) => {
+      m.set(k, String(v));
+    },
+  };
+}
 
 describe("handleReady", () => {
   let grammarSpy: ReturnType<typeof vi.spyOn> | undefined;
@@ -221,7 +242,14 @@ describe("handleReady", () => {
             id: "openai/gpt-5.5",
             label: "GPT-5.5",
             provider: "openai",
-            thinkingLevels: ["off", "minimal", "low", "medium", "high", "xhigh"],
+            thinkingLevels: [
+              "off",
+              "minimal",
+              "low",
+              "medium",
+              "high",
+              "xhigh",
+            ],
           },
         ],
         extensionStateKeys: [],
@@ -929,6 +957,90 @@ describe("handleReady", () => {
         cwd: "/repo/a-fix-session-restore",
       }),
     ]);
+  });
+
+  describe("optimistic chrome boot snapshot", () => {
+    beforeEach(() => {
+      // Node env has no localStorage; inject a fake so the ready handler's
+      // best-effort snapshot write is observable.
+      chromeBootTesting.setStorage(makeFakeStorage());
+    });
+    afterEach(() => {
+      chromeBootTesting.reset();
+    });
+
+    it("records a built-ins-only session so the next boot paints optimistically", () => {
+      const { ctx } = buildHandlerFixture({
+        state: {
+          activeTabId: "default",
+          tabs: [{ id: "default", model: "" }],
+          sidebar: {},
+        },
+      });
+      handleReady(
+        {
+          type: "ready",
+          model: "claude",
+          models: [],
+          tabs: [{ id: "default", model: "claude" }],
+        },
+        ctx,
+      );
+      expect(readChromeBootSnapshot()).toEqual({
+        customLayout: false,
+        frontendModules: false,
+        extTheme: false,
+      });
+      expect(shouldPaintChromeOptimistically()).toBe(true);
+    });
+
+    it("records a custom extension layout so the next boot keeps the curtain", () => {
+      const { ctx } = buildHandlerFixture({
+        state: {
+          activeTabId: "default",
+          tabs: [{ id: "default", model: "" }],
+          sidebar: {},
+        },
+      });
+      handleReady(
+        {
+          type: "ready",
+          model: "claude",
+          models: [],
+          // A valid extension layout (object with a components array) is
+          // adopted as the base layout — the "custom chrome" signal.
+          extensionLayout: {
+            components: [{ id: "root", type: "container" }],
+          },
+          tabs: [{ id: "default", model: "claude" }],
+        },
+        ctx,
+      );
+      expect(readChromeBootSnapshot()?.customLayout).toBe(true);
+      expect(shouldPaintChromeOptimistically()).toBe(false);
+    });
+
+    it("records extension frontend modules so the next boot keeps the curtain", () => {
+      const { ctx } = buildHandlerFixture({
+        state: {
+          activeTabId: "default",
+          tabs: [{ id: "default", model: "" }],
+          sidebar: {},
+        },
+      });
+      handleReady(
+        {
+          type: "ready",
+          model: "claude",
+          models: [],
+          extensionFrontendModules: [{ name: "widget", code: "export {}" }],
+          tabs: [{ id: "default", model: "claude" }],
+        },
+        ctx,
+      );
+      expect(readChromeBootSnapshot()?.frontendModules).toBe(true);
+      expect(shouldPaintChromeOptimistically()).toBe(false);
+    });
   });
 
   it("does not backfill bridge tabs into the visible project bucket", () => {

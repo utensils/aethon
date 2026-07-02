@@ -1,5 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { A2UIPayload } from "../../types/a2ui";
+import { getResolvedConfig } from "../../config";
+import { writeChromeBootSnapshot } from "../../state/chromeBootSnapshot";
 import { activeProject } from "../../projects";
 import type { Tab } from "../../types/tab";
 import {
@@ -272,4 +274,42 @@ export const handleReady: BridgeMessageHandler = (data, ctx) => {
     priorActiveTabId,
     bridgeTabIds: new Set(bridgeTabs.map((t) => t.id)),
   });
+  // Cache a boot snapshot for the NEXT cold boot's optimistic-chrome gate
+  // (perf/c4). Records whether THIS run used any custom extension chrome so
+  // the next launch can paint the built-in workstation before the bridge is
+  // ready without risking a flash for extension users. Desktop-only: the
+  // mobile surface always forces the boot layout, so we never write a
+  // snapshot there and its curtain path stays byte-identical. Best-effort —
+  // `getResolvedConfig()` / localStorage hiccups must never break ready
+  // ingestion.
+  if (!mobileSurface) {
+    try {
+      // Active theme id is the same source hydrateThemes reads. If it names
+      // an extension theme we can't cheaply re-inject its CSS at boot, so
+      // record it and take the curtain next time (built-in themes are applied
+      // pre-paint by the boot config pass, so they never flash).
+      const activeThemeId =
+        typeof document !== "undefined"
+          ? document.documentElement.dataset.theme
+          : undefined;
+      const extThemeActive = Boolean(
+        activeThemeId && extThemes.some((t) => t.id === activeThemeId),
+      );
+      writeChromeBootSnapshot(
+        {
+          // baseLayout === bootLayout means no (valid) extension layout was
+          // applied — the precise "did we render built-in chrome" signal.
+          customLayout: baseLayout !== ctx.bootLayout,
+          frontendModules: extFrontendModules.length > 0,
+          extTheme: extThemeActive,
+        },
+        {
+          optimisticChrome:
+            getResolvedConfig()?.boot?.optimisticChrome !== false,
+        },
+      );
+    } catch {
+      /* boot snapshot is a pure optimization; ignore failures */
+    }
+  }
 };
