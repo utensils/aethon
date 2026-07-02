@@ -16,6 +16,9 @@ describe("handleMobileNav", () => {
       active: "sessions",
       isSessions: true,
       isChat: false,
+      isTerminal: false,
+      isFiles: false,
+      isGit: false,
       isSettings: false,
     });
   });

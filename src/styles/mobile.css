@@ -239,3 +239,60 @@
 .ae-mobile-composer {
   padding-bottom: var(--ae-safe-bottom);
 }
+
+/* Files screen */
+.ae-mobile-files {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow-y: auto;
+}
+.ae-mobile-files-crumb {
+  position: sticky;
+  top: 0;
+  padding: 8px 14px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.8rem;
+  color: var(--text-dim);
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+}
+.ae-mobile-files-error {
+  color: var(--danger, #e5484d);
+  padding: 8px 14px;
+  margin: 0;
+  font-size: 0.85rem;
+}
+.ae-mobile-files-empty {
+  color: var(--text-dim);
+  padding: 24px 14px;
+  text-align: center;
+  list-style: none;
+}
+.ae-mobile-file-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.ae-mobile-file-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 44px;
+  padding: 8px 14px;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  background: transparent;
+  color: var(--text);
+  font-size: 0.95rem;
+  text-align: left;
+  cursor: pointer;
+}
+.ae-mobile-file-row--up {
+  color: var(--text-dim);
+}
+.ae-mobile-file-glyph {
+  width: 1em;
+  color: var(--text-dim);
+}

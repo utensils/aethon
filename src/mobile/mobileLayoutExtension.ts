@@ -6,16 +6,21 @@
 
 import type { A2UIExtension } from "../extensions/types";
 import { ConnectionBadge } from "./composites/connection-badge";
+import { MobileFileList } from "./composites/mobile-file-list";
 import { MobileNav } from "./composites/mobile-nav";
 import { MobileSessions } from "./composites/mobile-sessions";
 import mobilePayload from "./mobile.a2ui.json";
 
+// The terminal + git screens reuse the default-layout composites
+// (terminal-panel, source-control-panel) — no mobile-specific variant
+// needed, just a touch-sized cell in the mobile layout.
 export const mobileLayoutExtension: A2UIExtension = {
   name: "mobile-layout",
   components: {
     "connection-badge": ConnectionBadge,
     "mobile-nav": MobileNav,
     "mobile-sessions": MobileSessions,
+    "mobile-file-list": MobileFileList,
   },
   layout: mobilePayload,
 };

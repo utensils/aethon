@@ -10,13 +10,16 @@
 import type { EventRouteHandler } from "./types";
 import { restoreSessionFromSelection } from "./sessionRestore";
 
-type Screen = "sessions" | "chat" | "settings";
+type Screen = "sessions" | "chat" | "terminal" | "files" | "git" | "settings";
 
 function screenFlags(active: Screen): Record<string, unknown> {
   return {
     active,
     isSessions: active === "sessions",
     isChat: active === "chat",
+    isTerminal: active === "terminal",
+    isFiles: active === "files",
+    isGit: active === "git",
     isSettings: active === "settings",
   };
 }
@@ -38,7 +41,14 @@ function setScreen(
   });
 }
 
-const SCREENS: readonly Screen[] = ["sessions", "chat", "settings"];
+const SCREENS: readonly Screen[] = [
+  "sessions",
+  "chat",
+  "terminal",
+  "files",
+  "git",
+  "settings",
+];
 
 function asScreen(value: unknown): Screen | undefined {
   return SCREENS.find((s) => s === value);

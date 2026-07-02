@@ -7,7 +7,12 @@
         "columns": { "$ref": "/layout/columns" },
         "rows": { "$ref": "/layout/rows" },
         "areas": { "$ref": "/layout/areas" },
-        "slotMap": { "sessions": "canvas" }
+        "slotMap": {
+          "sessions": "canvas",
+          "terminal-screen": "canvas",
+          "files": "canvas",
+          "git": "canvas"
+        }
       },
       "children": [
         {
@@ -56,6 +61,32 @@
           }
         },
         {
+          "id": "mobile-terminal-screen",
+          "type": "terminal-panel",
+          "props": {
+            "area": "terminal-screen",
+            "visible": { "$ref": "/mobileNav/isTerminal" },
+            "activeSubId": { "$ref": "/terminalPanel/activeSubId" }
+          }
+        },
+        {
+          "id": "mobile-files-screen",
+          "type": "mobile-file-list",
+          "props": {
+            "area": "files",
+            "visible": { "$ref": "/mobileNav/isFiles" }
+          }
+        },
+        {
+          "id": "mobile-git-screen",
+          "type": "source-control-panel",
+          "props": {
+            "area": "git",
+            "visible": { "$ref": "/mobileNav/isGit" },
+            "source": { "$ref": "/vcs" }
+          }
+        },
+        {
           "id": "mobile-composer",
           "type": "container",
           "props": {
@@ -86,6 +117,9 @@
       "active": "chat",
       "isSessions": false,
       "isChat": true,
+      "isTerminal": false,
+      "isFiles": false,
+      "isGit": false,
       "isSettings": false
     }
   }
