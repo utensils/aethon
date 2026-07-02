@@ -600,8 +600,9 @@ body.ae-resizing-sidebar .a2ui-layout {
   display: block;
 }
 .ae-host-name {
-  flex: 1 1 auto;
+  flex: 0 1 auto;
   min-width: 0;
+  max-width: min(12rem, 45%);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -623,7 +624,12 @@ body.ae-resizing-sidebar .a2ui-layout {
   font-weight: 700;
 }
 .ae-host-badge {
-  flex-shrink: 0;
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   padding: 1px 7px;
   border-radius: var(--radius-pill);
   font-size: var(--chrome-text-muted);
@@ -634,6 +640,7 @@ body.ae-resizing-sidebar .a2ui-layout {
   background: var(--bg-active);
 }
 .ae-host-badge--local {
+  flex: 0 0 auto;
   color: var(--accent);
   background: var(--accent-soft);
 }
