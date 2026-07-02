@@ -8,6 +8,7 @@ import {
   defaultLayoutExtension,
   preloadDefaultLayoutSurfaces,
 } from "./extensions/default-layout";
+import { releaseLazySurfaceBootDeferral } from "./extensions/default-layout/lazySurface";
 import { mobileLayoutExtension } from "./mobile/mobileLayoutExtension";
 import { AppRoot } from "./app/AppRoot";
 import { BOOT_LAYOUT, hangWarnNotifId } from "./app/bootConstants";
@@ -1010,7 +1011,13 @@ export default function App() {
       typeof requestIdleCallback === "function"
         ? (cb) => requestIdleCallback(cb, { timeout: 5_000 })
         : (cb) => setTimeout(cb, 2_000);
-    scheduleIdle(() => preloadDefaultLayoutSurfaces());
+    scheduleIdle(() => {
+      // Boot is over: lazy surfaces rendered from here on (palette,
+      // settings, first editor tab) load immediately, and the warmup
+      // below pulls every remaining chunk in the background.
+      releaseLazySurfaceBootDeferral();
+      preloadDefaultLayoutSurfaces();
+    });
     return () => cancelAnimationFrame(raf);
   }, [chromeReady]);
 
