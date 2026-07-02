@@ -44,16 +44,26 @@ export function perfMark(name: string): void {
   } catch {
     /* marks are best-effort */
   }
+  // Separate best-effort block: a throwing performance.mark must not
+  // also kill report scheduling + invoke-window tracking.
   if (name === "hello-ok" && helloOkAt === null) {
-    helloOkAt = performance.now();
-    reportTimer = setTimeout(perfReport, REPORT_DELAY_MS);
+    try {
+      helloOkAt = performance.now();
+      reportTimer = setTimeout(perfReport, REPORT_DELAY_MS);
+    } catch {
+      /* the report is best-effort */
+    }
   }
 }
 
 /** Count one gateway invoke (called from the tauriCoreShim). */
 export function countInvoke(cmd: string): void {
   if (!enabled || invokes.length >= INVOKE_CAP) return;
-  invokes.push({ cmd, at: performance.now() });
+  try {
+    invokes.push({ cmd, at: performance.now() });
+  } catch {
+    /* the counter is best-effort */
+  }
 }
 
 function invokesWithin(windowMs: number): number {

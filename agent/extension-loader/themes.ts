@@ -5,7 +5,7 @@
  * through `normalizeTheme` before reaching the registry.
  */
 
-import { readdir } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { logger } from "../logger";
 import type { AethonAgentState, ThemeRecord } from "../state";
@@ -73,7 +73,7 @@ export async function loadAethonThemeDirectory(
     if (!name.endsWith(".json")) continue;
     const file = join(dir, name);
     try {
-      const text = await Bun.file(file).text();
+      const text = await readFile(file, "utf8");
       const parsed = JSON.parse(text) as unknown;
       // registerTheme handles validation internally — invalid input emits
       // a notice and resolves with {ok:false}.

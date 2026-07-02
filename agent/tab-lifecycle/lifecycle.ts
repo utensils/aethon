@@ -256,31 +256,38 @@ export async function ensureTab(
   );
 
   const endCreateSessionSpan = options.trace?.span("tab:create-agent-session");
-  const { session } = await createAgentSession({
-    authStorage: authServices.authStorage,
-    modelRegistry: authServices.modelRegistry,
-    settingsManager: state.settingsManager,
-    sessionManager,
-    ...(state.resourceLoader
-      ? { resourceLoader: resourceLoaderForTab(state.resourceLoader, tabId) }
-      : {}),
-    customTools: [
-      devshellBashTool,
-      ...buildSessionTitleTools(state, deps, tabId),
-      ...buildA2uiTools(),
-      ...buildShellTools(),
-      ...buildDashboardTools(state),
-      ...buildEditorTools(),
-      ...buildWindowTools(),
-      ...buildMemoryTools(state, tabId),
-      ...buildSchedulerTools(state, deps, tabId),
-      buildSubagentTaskTool(state, deps, tabId),
-      buildSubagentTaskBatchTool(state, deps, tabId),
-    ],
-    ...(options.initialModel ? { model: options.initialModel } : {}),
-    ...(options.thinkingLevel ? { thinkingLevel: options.thinkingLevel } : {}),
-  });
-  endCreateSessionSpan?.();
+  let created: Awaited<ReturnType<typeof createAgentSession>>;
+  try {
+    created = await createAgentSession({
+      authStorage: authServices.authStorage,
+      modelRegistry: authServices.modelRegistry,
+      settingsManager: state.settingsManager,
+      sessionManager,
+      ...(state.resourceLoader
+        ? { resourceLoader: resourceLoaderForTab(state.resourceLoader, tabId) }
+        : {}),
+      customTools: [
+        devshellBashTool,
+        ...buildSessionTitleTools(state, deps, tabId),
+        ...buildA2uiTools(),
+        ...buildShellTools(),
+        ...buildDashboardTools(state),
+        ...buildEditorTools(),
+        ...buildWindowTools(),
+        ...buildMemoryTools(state, tabId),
+        ...buildSchedulerTools(state, deps, tabId),
+        buildSubagentTaskTool(state, deps, tabId),
+        buildSubagentTaskBatchTool(state, deps, tabId),
+      ],
+      ...(options.initialModel ? { model: options.initialModel } : {}),
+      ...(options.thinkingLevel
+        ? { thinkingLevel: options.thinkingLevel }
+        : {}),
+    });
+  } finally {
+    endCreateSessionSpan?.();
+  }
+  const { session } = created;
   lifecycleLog.info(`session ready tabId=${tabId} cwd=${resolvedCwd}`);
   installAethonRetryClassifier(session);
   installCodexFastModePayloadHook(state, session);
@@ -331,15 +338,18 @@ export async function ensureTab(
   });
   emitContextUsage(state, deps, tabId, rec);
   const endBindSpan = options.trace?.span("tab:bind-extensions");
-  await session.bindExtensions({
-    uiContext: extensionUiContextForTab(),
-    onError: (error) => {
-      lifecycleLog.warn(
-        `pi extension error tabId=${tabId} event=${error.event}: ${error.error}`,
-      );
-    },
-  });
-  endBindSpan?.();
+  try {
+    await session.bindExtensions({
+      uiContext: extensionUiContextForTab(),
+      onError: (error) => {
+        lifecycleLog.warn(
+          `pi extension error tabId=${tabId} event=${error.event}: ${error.error}`,
+        );
+      },
+    });
+  } finally {
+    endBindSpan?.();
+  }
   const previousSlashCommands = JSON.stringify(state.piSlashCommands);
   refreshPiSlashCommands(state, session);
   if (JSON.stringify(state.piSlashCommands) !== previousSlashCommands) {

@@ -105,16 +105,6 @@ export async function loadAethonExtensionPackages(
     });
   }
 
-  async function maybeAddPackage(packageDir: string, fallbackName: string) {
-    const result = await readManifest(packageDir, fallbackName);
-    if (!result) return;
-    if ("manifest" in result) {
-      if (!candidates.has(result.name)) candidates.set(result.name, result);
-    } else {
-      recordManifestFailure(result);
-    }
-  }
-
   async function discoverPackages(
     root: string,
     options?: { skipNodeModules?: boolean },
@@ -130,22 +120,42 @@ export async function loadAethonExtensionPackages(
       }
       return;
     }
-    for (const entry of entries) {
-      if (options?.skipNodeModules && entry === "node_modules") continue;
-      const entryPath = join(root, entry);
-      if (entry.startsWith("@")) {
-        // Scoped namespace — recurse one level.
-        let scoped: string[];
-        try {
-          scoped = await readdir(entryPath);
-        } catch {
-          continue;
+    // Read every manifest concurrently, then record the results in the
+    // original entry order — candidate insertion is first-wins and
+    // failure events are user-visible, so ordering stays deterministic.
+    const slots = await Promise.all(
+      entries.map(
+        async (
+          entry,
+        ): Promise<Array<PackageCandidate | PackageManifestFailure | null>> => {
+          if (options?.skipNodeModules && entry === "node_modules") return [];
+          const entryPath = join(root, entry);
+          if (entry.startsWith("@")) {
+            // Scoped namespace — recurse one level.
+            let scoped: string[];
+            try {
+              scoped = await readdir(entryPath);
+            } catch {
+              return [];
+            }
+            return Promise.all(
+              scoped.map((sub) =>
+                readManifest(join(entryPath, sub), `${entry}/${sub}`),
+              ),
+            );
+          }
+          return [await readManifest(entryPath, entry)];
+        },
+      ),
+    );
+    for (const slot of slots) {
+      for (const result of slot) {
+        if (!result) continue;
+        if ("manifest" in result) {
+          if (!candidates.has(result.name)) candidates.set(result.name, result);
+        } else {
+          recordManifestFailure(result);
         }
-        for (const sub of scoped) {
-          await maybeAddPackage(join(entryPath, sub), `${entry}/${sub}`);
-        }
-      } else {
-        await maybeAddPackage(entryPath, entry);
       }
     }
   }
@@ -155,6 +165,13 @@ export async function loadAethonExtensionPackages(
   });
   await discoverPackages(join(state.userDir, "extensions", "node_modules"));
 
+  // Filter pass: disabled / missing-entry candidates emit their lifecycle
+  // events in discovery order, exactly as before.
+  const loadable: Array<{
+    c: PackageCandidate;
+    entry: string;
+    filePath: string;
+  }> = [];
   for (const c of candidates.values()) {
     if (state.disabledExtensions.has(c.name)) {
       logger.scope("ext-package").info(`${c.name}: disabled by user, skipping`);
@@ -189,11 +206,29 @@ export async function loadAethonExtensionPackages(
       });
       continue;
     }
-    const filePath = join(c.dir, entry);
+    loadable.push({ c, entry, filePath: join(c.dir, entry) });
+  }
+
+  // Parallelize the entry imports (mirrors directory.ts); register()
+  // stays sequential in discovery order so registrations against shared
+  // maps stay deterministic.
+  const imports = await Promise.allSettled(
+    loadable.map(
+      ({ filePath }) =>
+        import(pathToFileURL(filePath).href) as Promise<AethonExtensionModule>,
+    ),
+  );
+
+  for (let i = 0; i < loadable.length; i++) {
+    const { c, entry, filePath } = loadable[i];
+    const result = imports[i];
     try {
-      const mod: AethonExtensionModule = await import(
-        pathToFileURL(filePath).href
-      );
+      if (result.status === "rejected") {
+        throw result.reason instanceof Error
+          ? result.reason
+          : new Error(String(result.reason));
+      }
+      const mod = result.value;
       const register = mod.register ?? mod.default?.register;
       if (typeof register !== "function") {
         logger
