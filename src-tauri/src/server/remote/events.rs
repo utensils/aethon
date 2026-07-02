@@ -29,6 +29,14 @@ pub const TAPPED_TOPICS: &[&str] = &[
     "scheduled-tasks-changed",
     "host-discovered",
     "host-removed",
+    // Phase 4 — terminal / files / git surfaces. shell-output is the
+    // highest-volume topic; the client coalesces per tab (the shell
+    // stream re-fans to per-tab CustomEvents frontend-side unchanged).
+    "shell-output",
+    "shell-title",
+    "shell-exit",
+    "fs-tree-changed",
+    "git-state-changed",
 ];
 
 /// Topics published directly by Rust code rather than tapped from a

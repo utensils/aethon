@@ -13,6 +13,9 @@ interface NavItem {
 const ITEMS: NavItem[] = [
   { screen: "sessions", label: "Sessions", glyph: "☰" },
   { screen: "chat", label: "Chat", glyph: "◆" },
+  { screen: "terminal", label: "Terminal", glyph: "⌘" },
+  { screen: "files", label: "Files", glyph: "▤" },
+  { screen: "git", label: "Git", glyph: "⑃" },
   { screen: "settings", label: "Settings", glyph: "⚙" },
 ];
 

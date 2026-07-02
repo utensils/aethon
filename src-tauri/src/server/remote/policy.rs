@@ -9,13 +9,18 @@
 //!   `mutation_ack` sender, and single writer of persisted state.
 //! - Execution-boundary approvals (MCP, workspace startup, extension
 //!   install) happen physically at the desktop.
-//! - Root-bearing commands (fs/git/shell) stay denied until the phase
-//!   that adds `validate_root_arg` enforcement lands.
+//! - Root-bearing commands (fs/git/shell) are `DirectRootChecked`: the
+//!   relay validates their root/cwd/projectPath arg against the host's
+//!   known project roots before dispatch, and the per-path fs jail still
+//!   applies beneath.
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RemotePolicy {
     /// Dispatch straight to the Rust command.
     Direct,
+    /// Dispatch after validating the command's root/cwd/projectPath arg
+    /// against the host's known project roots (fs/git/shell surfaces).
+    DirectRootChecked,
     /// Dispatch after per-command payload inspection (`agent_command`).
     DirectFiltered,
     /// Forward to the desktop webview via the control-plane machinery;
@@ -107,59 +112,67 @@ pub const COMMAND_POLICIES: &[(&str, RemotePolicy)] = &[
     ("install_aethon_extension", Deny(APPROVAL)),
     ("watch_project_extensions", Deny(LIFECYCLE)),
     ("unwatch_project_extensions", Deny(LIFECYCLE)),
-    // fs (terminal/files/git phase; will require validate_root_arg)
-    ("fs_list_dir", Deny(PHASE_TERMINAL)),
-    ("fs_walk_project", Deny(PHASE_TERMINAL)),
-    ("fs_read_file", Deny(PHASE_TERMINAL)),
-    ("fs_read_file_base64", Deny(PHASE_TERMINAL)),
-    ("fs_exists", Deny(PHASE_TERMINAL)),
-    ("fs_file_mtime", Deny(PHASE_TERMINAL)),
-    ("fs_write_file", Deny(PHASE_TERMINAL)),
-    ("fs_create_file", Deny(PHASE_TERMINAL)),
-    ("fs_create_dir", Deny(PHASE_TERMINAL)),
-    ("fs_rename", Deny(PHASE_TERMINAL)),
-    ("fs_delete", Deny(PHASE_TERMINAL)),
-    ("fs_watch_dirs", Deny(PHASE_TERMINAL)),
-    ("fs_unwatch_root", Deny(PHASE_TERMINAL)),
-    ("fs_discover_project_icon", Deny(PHASE_TERMINAL)),
+    // fs — reads/writes jailed to a validated project root (the
+    // existing helpers::resolve_inside_root + canonicalize guard still
+    // applies beneath). Watch/discover/tab-id ops don't carry a root or
+    // touch desktop-local surfaces, so they stay denied.
+    ("fs_list_dir", DirectRootChecked),
+    ("fs_walk_project", DirectRootChecked),
+    ("fs_read_file", DirectRootChecked),
+    ("fs_read_file_base64", DirectRootChecked),
+    ("fs_exists", DirectRootChecked),
+    ("fs_file_mtime", DirectRootChecked),
+    ("fs_write_file", DirectRootChecked),
+    ("fs_create_file", DirectRootChecked),
+    ("fs_create_dir", DirectRootChecked),
+    ("fs_rename", DirectRootChecked),
+    ("fs_delete", DirectRootChecked),
+    ("fs_watch_dirs", Deny(DESKTOP_ONLY)),
+    ("fs_unwatch_root", Deny(DESKTOP_ONLY)),
+    ("fs_discover_project_icon", DirectRootChecked),
     ("fs_reveal_in_file_manager", Deny(DESKTOP_ONLY)),
     ("fs_open_in_file_manager", Deny(DESKTOP_ONLY)),
     ("fs_open_in_default_app", Deny(DESKTOP_ONLY)),
-    // git + gh (terminal/files/git phase)
-    ("git_status", Deny(PHASE_TERMINAL)),
-    ("git_working_context", Deny(PHASE_TERMINAL)),
-    ("git_fetch_all", Deny(PHASE_TERMINAL)),
-    ("git_file_status", Deny(PHASE_TERMINAL)),
-    ("git_ignored_paths", Deny(PHASE_TERMINAL)),
-    ("git_watch_root", Deny(PHASE_TERMINAL)),
-    ("git_unwatch_root", Deny(PHASE_TERMINAL)),
-    ("git_file_diff", Deny(PHASE_TERMINAL)),
-    ("git_file_diff_hunks", Deny(PHASE_TERMINAL)),
-    ("git_file_diff_stat", Deny(PHASE_TERMINAL)),
-    ("git_show_head", Deny(PHASE_TERMINAL)),
-    ("git_diff_stat", Deny(PHASE_TERMINAL)),
-    ("git_worktrees", Deny(PHASE_TERMINAL)),
-    ("git_worktree_add", Deny(PHASE_TERMINAL)),
-    ("git_worktree_remove", Deny(PHASE_TERMINAL)),
-    ("git_worktree_remove_orphan", Deny(PHASE_TERMINAL)),
-    ("git_branch_list", Deny(PHASE_TERMINAL)),
-    ("gh_branch_status", Deny(PHASE_TERMINAL)),
-    ("gh_repo_overview", Deny(PHASE_TERMINAL)),
-    ("gh_repo_avatar_url", Deny(PHASE_TERMINAL)),
-    ("gh_checks", Deny(PHASE_TERMINAL)),
-    ("gh_issue_list", Deny(PHASE_TERMINAL)),
-    ("gh_issue_view", Deny(PHASE_TERMINAL)),
+    // git + gh — read surfaces scoped to a validated root. Worktree
+    // add/remove mutate the on-disk repo layout; keep those desktop-only
+    // for now (they're a project-management action, not a mobile flow).
+    ("git_status", DirectRootChecked),
+    ("git_working_context", DirectRootChecked),
+    ("git_fetch_all", DirectRootChecked),
+    ("git_file_status", DirectRootChecked),
+    ("git_ignored_paths", DirectRootChecked),
+    ("git_watch_root", Deny(DESKTOP_ONLY)),
+    ("git_unwatch_root", Deny(DESKTOP_ONLY)),
+    ("git_file_diff", DirectRootChecked),
+    ("git_file_diff_hunks", DirectRootChecked),
+    ("git_file_diff_stat", DirectRootChecked),
+    ("git_show_head", DirectRootChecked),
+    ("git_diff_stat", DirectRootChecked),
+    ("git_worktrees", DirectRootChecked),
+    ("git_worktree_add", Deny(DESKTOP_ONLY)),
+    ("git_worktree_remove", Deny(DESKTOP_ONLY)),
+    ("git_worktree_remove_orphan", Deny(DESKTOP_ONLY)),
+    ("git_branch_list", DirectRootChecked),
+    ("gh_branch_status", DirectRootChecked),
+    ("gh_repo_overview", DirectRootChecked),
+    ("gh_repo_avatar_url", DirectRootChecked),
+    ("gh_checks", DirectRootChecked),
+    ("gh_issue_list", DirectRootChecked),
+    ("gh_issue_view", DirectRootChecked),
     ("pick_project_directory", Deny(DESKTOP_ONLY)),
-    // shells (terminal/files/git phase)
-    ("shell_open", Deny(PHASE_TERMINAL)),
-    ("shell_input", Deny(PHASE_TERMINAL)),
-    ("shell_resize", Deny(PHASE_TERMINAL)),
-    ("shell_close", Deny(PHASE_TERMINAL)),
-    ("shell_is_busy", Deny(PHASE_TERMINAL)),
-    ("shell_set_share_mode", Deny(PHASE_TERMINAL)),
-    ("shell_read_scrollback", Deny(PHASE_TERMINAL)),
-    ("shell_list_shareable", Deny(PHASE_TERMINAL)),
-    ("shell_write", Deny(PHASE_TERMINAL)),
+    // shells — the user's own interactive terminals. Per-tab ShareMode
+    // in shell/sharemode.rs gates *agent* access and is untouched; a
+    // paired device driving its own shell is the user, not the agent.
+    // shell_open validates its cwd; the rest key by an already-open tab.
+    ("shell_open", DirectRootChecked),
+    ("shell_input", Direct),
+    ("shell_resize", Direct),
+    ("shell_close", Direct),
+    ("shell_is_busy", Direct),
+    ("shell_set_share_mode", Direct),
+    ("shell_read_scrollback", Direct),
+    ("shell_list_shareable", Direct),
+    ("shell_write", Direct),
     // devshell
     ("devshell_status", Deny(PHASE_SETTINGS)),
     ("devshell_prepare_for_path", Deny(PHASE_SETTINGS)),
@@ -225,6 +238,83 @@ pub fn policy_for(cmd: &str) -> RemotePolicy {
         .find(|(name, _)| *name == cmd)
         .map(|(_, policy)| *policy)
         .unwrap_or(Deny("unknown command"))
+}
+
+/// The arg holding a project root for a root-checked command. Names
+/// vary across the command surface (`root` / `cwd` / `path` /
+/// `projectPath`), and `shell_open` nests its `cwd` inside `args`.
+/// Returns `None` when the command carries no root arg — for
+/// `shell_open` that means "open in the default cwd" (allowed); for
+/// everything else a missing root is a malformed call (denied).
+pub fn root_arg_value(cmd: &str, args: &serde_json::Value) -> Option<String> {
+    if cmd == "shell_open" {
+        return args
+            .get("args")
+            .and_then(|a| a.get("cwd"))
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.is_empty())
+            .map(str::to_string);
+    }
+    let key = match cmd {
+        "git_status" => "path",
+        "git_working_context" => "cwd",
+        "git_worktrees" | "git_branch_list" | "git_fetch_all" | "gh_branch_status"
+        | "gh_checks" | "gh_repo_overview" | "gh_repo_avatar_url" | "gh_issue_list"
+        | "gh_issue_view" | "fs_discover_project_icon" => "projectPath",
+        // fs_* + git diff/status/show family all name it `root`.
+        _ => "root",
+    };
+    args.get(key)
+        .and_then(|v| v.as_str())
+        .map(str::to_string)
+}
+
+/// `shell_open` may omit its cwd (defaults to home); every other
+/// root-checked command requires one.
+pub fn root_is_optional(cmd: &str) -> bool {
+    cmd == "shell_open"
+}
+
+/// Extract the canonical project roots from a `projects.json` document:
+/// `projects[].path` ∪ `workspacesByProject[*][].path` (plus the pre-v5
+/// `worktreesByProject` spelling). Pure so it's unit-testable without a
+/// running app.
+pub fn allowed_roots_from_projects_json(raw: &str) -> Vec<String> {
+    let Ok(doc) = serde_json::from_str::<serde_json::Value>(raw) else {
+        return Vec::new();
+    };
+    let mut roots = Vec::new();
+    let mut push_paths = |arr: Option<&Vec<serde_json::Value>>| {
+        if let Some(items) = arr {
+            for item in items {
+                if let Some(p) = item.get("path").and_then(|v| v.as_str()) {
+                    roots.push(p.to_string());
+                }
+            }
+        }
+    };
+    push_paths(doc.get("projects").and_then(|v| v.as_array()));
+    for key in ["workspacesByProject", "worktreesByProject"] {
+        if let Some(map) = doc.get(key).and_then(|v| v.as_object()) {
+            for group in map.values() {
+                push_paths(group.as_array());
+            }
+        }
+    }
+    roots
+}
+
+/// Whether `candidate` resolves to one of the allowed roots. Both sides
+/// are canonicalized so `..`/symlinks can't dress a non-root up as one;
+/// a candidate that can't canonicalize (missing dir) never matches.
+pub fn root_is_allowed(candidate: &str, allowed: &[String]) -> bool {
+    let Ok(candidate) = std::fs::canonicalize(candidate) else {
+        return false;
+    };
+    allowed
+        .iter()
+        .filter_map(|r| std::fs::canonicalize(r).ok())
+        .any(|r| r == candidate)
 }
 
 /// `agent_command` payload filter: the desktop webview is the sole
@@ -319,7 +409,11 @@ mod tests {
         assert_eq!(policy_for("agent_command"), DirectFiltered);
         assert_eq!(policy_for("ui.chat.send"), ForwardToFrontend("chat.send"));
         assert!(matches!(policy_for("write_state"), Deny(_)));
-        assert!(matches!(policy_for("shell_write"), Deny(_)));
+        assert_eq!(policy_for("shell_write"), Direct);
+        assert_eq!(policy_for("shell_open"), DirectRootChecked);
+        assert_eq!(policy_for("fs_read_file"), DirectRootChecked);
+        assert_eq!(policy_for("git_status"), DirectRootChecked);
+        assert!(matches!(policy_for("git_worktree_add"), Deny(_)));
         assert!(matches!(policy_for("not_a_command"), Deny(_)));
     }
 
@@ -335,5 +429,66 @@ mod tests {
         );
         assert!(agent_command_remote_denial(&json!({"type": "set_model"})).is_none());
         assert!(agent_command_remote_denial(&json!({"no": "type"})).is_none());
+    }
+
+    #[test]
+    fn root_arg_value_reads_the_right_key_per_command() {
+        use serde_json::json;
+        assert_eq!(
+            root_arg_value("fs_read_file", &json!({"root": "/a", "path": "b"})).as_deref(),
+            Some("/a")
+        );
+        assert_eq!(
+            root_arg_value("git_status", &json!({"path": "/repo"})).as_deref(),
+            Some("/repo")
+        );
+        assert_eq!(
+            root_arg_value("git_working_context", &json!({"cwd": "/w"})).as_deref(),
+            Some("/w")
+        );
+        assert_eq!(
+            root_arg_value("gh_checks", &json!({"projectPath": "/p", "branch": "main"}))
+                .as_deref(),
+            Some("/p")
+        );
+        assert_eq!(
+            root_arg_value("shell_open", &json!({"args": {"tabId": "t", "cwd": "/proj"}}))
+                .as_deref(),
+            Some("/proj")
+        );
+        // shell_open with no cwd → None (allowed default); others → None
+        // (missing required root).
+        assert!(root_arg_value("shell_open", &json!({"args": {"tabId": "t"}})).is_none());
+        assert!(root_is_optional("shell_open"));
+        assert!(!root_is_optional("fs_read_file"));
+    }
+
+    #[test]
+    fn allowed_roots_collects_projects_and_workspaces() {
+        let raw = r#"{
+            "projects": [{"path": "/a"}, {"path": "/b"}],
+            "workspacesByProject": {"p1": [{"path": "/a/wt"}]},
+            "worktreesByProject": {"p2": [{"path": "/legacy"}]}
+        }"#;
+        let mut roots = allowed_roots_from_projects_json(raw);
+        roots.sort();
+        assert_eq!(roots, vec!["/a", "/a/wt", "/b", "/legacy"]);
+        assert!(allowed_roots_from_projects_json("not json").is_empty());
+    }
+
+    #[test]
+    fn root_is_allowed_matches_only_canonical_known_roots() {
+        let root = tempfile::tempdir().unwrap();
+        let sub = root.path().join("sub");
+        std::fs::create_dir(&sub).unwrap();
+        let allowed = vec![root.path().to_string_lossy().into_owned()];
+
+        assert!(root_is_allowed(root.path().to_str().unwrap(), &allowed));
+        // A traversal that resolves back to the root still matches (both
+        // canonicalized); a genuine subdir does not (roots are exact).
+        let via_dotdot = sub.join("..");
+        assert!(root_is_allowed(via_dotdot.to_str().unwrap(), &allowed));
+        assert!(!root_is_allowed(sub.to_str().unwrap(), &allowed));
+        assert!(!root_is_allowed("/nonexistent/path", &allowed));
     }
 }

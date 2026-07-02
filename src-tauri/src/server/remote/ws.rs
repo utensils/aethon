@@ -31,6 +31,11 @@ use super::protocol::{ClientFrame, PROTOCOL_VERSION, ServerFrame};
 pub const HELLO_DEADLINE: Duration = Duration::from_secs(5);
 /// Slow-consumer eviction: how long one event frame may block the sink.
 pub const EVENT_SEND_TIMEOUT: Duration = Duration::from_secs(3);
+/// Max hub frames drained per wakeup before writing to the socket.
+const EVENT_BATCH_MAX: usize = 256;
+/// A coalesced shell-output run larger than this is tail-truncated and
+/// flagged; the client resyncs the gap via `shell_read_scrollback`.
+const SHELL_MERGE_CAP: usize = 64 * 1024;
 const PING_INTERVAL: Duration = Duration::from_secs(20);
 /// Two missed pings.
 const IDLE_DEADLINE: Duration = Duration::from_secs(45);
@@ -170,18 +175,42 @@ async fn run_session(
             }
             frame = hub_rx.recv() => {
                 match frame {
-                    Ok(frame) if subs.contains(frame.topic) => {
-                        let send = sink.send(Message::Text(frame.wire.clone()));
-                        match tokio::time::timeout(EVENT_SEND_TIMEOUT, send).await {
-                            Ok(Ok(())) => {}
-                            Ok(Err(_)) => return,
-                            Err(_) => {
-                                send_bye(sink, "slow-consumer").await;
-                                return;
+                    Ok(frame) => {
+                        // Batch-drain whatever else the hub already has so
+                        // bursty streams (a TUI redraw hitting shell-output)
+                        // coalesce per tab instead of one socket write per
+                        // PTY chunk. Draining hits Lagged the same way
+                        // recv() does — treat it identically.
+                        let mut batch = vec![frame];
+                        let mut lagged = false;
+                        while batch.len() < EVENT_BATCH_MAX {
+                            match hub_rx.try_recv() {
+                                Ok(next) => batch.push(next),
+                                Err(broadcast::error::TryRecvError::Empty) => break,
+                                Err(broadcast::error::TryRecvError::Lagged(_)) => {
+                                    lagged = true;
+                                    break;
+                                }
+                                Err(broadcast::error::TryRecvError::Closed) => break,
+                            }
+                        }
+                        if lagged {
+                            send_bye(sink, "slow-consumer").await;
+                            return;
+                        }
+                        batch.retain(|f| subs.contains(f.topic));
+                        for wire in coalesce_batch(&batch) {
+                            let send = sink.send(Message::Text(wire));
+                            match tokio::time::timeout(EVENT_SEND_TIMEOUT, send).await {
+                                Ok(Ok(())) => {}
+                                Ok(Err(_)) => return,
+                                Err(_) => {
+                                    send_bye(sink, "slow-consumer").await;
+                                    return;
+                                }
                             }
                         }
                     }
-                    Ok(_) => {}
                     Err(broadcast::error::RecvError::Lagged(missed)) => {
                         tracing::warn!(
                             target: "aethon::server::remote",
@@ -278,5 +307,196 @@ fn handle_text_frame(
                 }
             });
         }
+    }
+}
+
+/// Merge ADJACENT `shell-output` frames for the same tab into one wire
+/// frame, preserving total frame order exactly (a run never spans a
+/// frame of another topic or tab, so per-tab output/exit ordering
+/// holds). Runs above [`SHELL_MERGE_CAP`] keep their tail and gain
+/// `"truncated": true` so the client knows to resync scrollback.
+/// Single-frame runs pass through byte-identical.
+fn coalesce_batch(batch: &[Arc<super::events::EventFrame>]) -> Vec<String> {
+    #[derive(serde::Deserialize)]
+    struct ShellWire {
+        seq: u64,
+        payload: ShellPayload,
+    }
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct ShellPayload {
+        tab_id: String,
+        content: String,
+    }
+
+    struct Run {
+        tab_id: String,
+        content: String,
+        last_seq: u64,
+        first_wire: String,
+        frames: usize,
+    }
+
+    fn flush(run: Option<Run>, out: &mut Vec<String>) {
+        let Some(run) = run else {
+            return;
+        };
+        if run.frames == 1 {
+            out.push(run.first_wire);
+            return;
+        }
+        let truncated = run.content.len() > SHELL_MERGE_CAP;
+        let content = if truncated {
+            let mut start = run.content.len() - SHELL_MERGE_CAP;
+            while !run.content.is_char_boundary(start) {
+                start += 1;
+            }
+            &run.content[start..]
+        } else {
+            run.content.as_str()
+        };
+        let mut payload = serde_json::json!({
+            "tabId": run.tab_id,
+            "content": content,
+        });
+        if truncated {
+            payload["truncated"] = serde_json::Value::Bool(true);
+        }
+        let frame = serde_json::json!({
+            "t": "event",
+            "topic": "shell-output",
+            "seq": run.last_seq,
+            "payload": payload,
+        });
+        out.push(frame.to_string());
+    }
+
+    let mut out = Vec::with_capacity(batch.len());
+    let mut run: Option<Run> = None;
+    for frame in batch {
+        if frame.topic == "shell-output"
+            && let Ok(parsed) = serde_json::from_str::<ShellWire>(&frame.wire)
+        {
+            match run.as_mut() {
+                Some(open) if open.tab_id == parsed.payload.tab_id => {
+                    open.content.push_str(&parsed.payload.content);
+                    open.last_seq = parsed.seq;
+                    open.frames += 1;
+                }
+                _ => {
+                    flush(run.take(), &mut out);
+                    run = Some(Run {
+                        tab_id: parsed.payload.tab_id,
+                        content: parsed.payload.content,
+                        last_seq: parsed.seq,
+                        first_wire: frame.wire.clone(),
+                        frames: 1,
+                    });
+                }
+            }
+            continue;
+        }
+        flush(run.take(), &mut out);
+        out.push(frame.wire.clone());
+    }
+    flush(run, &mut out);
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::super::events::EventFrame;
+    use super::*;
+
+    fn shell_frame(seq: u64, tab: &str, content: &str) -> Arc<EventFrame> {
+        Arc::new(EventFrame {
+            topic: "shell-output",
+            wire: serde_json::json!({
+                "t": "event", "topic": "shell-output", "seq": seq,
+                "payload": { "tabId": tab, "content": content },
+            })
+            .to_string(),
+        })
+    }
+
+    fn other_frame(seq: u64) -> Arc<EventFrame> {
+        Arc::new(EventFrame {
+            topic: "shell-exit",
+            wire: serde_json::json!({
+                "t": "event", "topic": "shell-exit", "seq": seq,
+                "payload": { "tabId": "t1", "code": 0 },
+            })
+            .to_string(),
+        })
+    }
+
+    #[test]
+    fn adjacent_same_tab_output_merges_with_last_seq() {
+        let batch = vec![
+            shell_frame(1, "t1", "a"),
+            shell_frame(2, "t1", "b"),
+            shell_frame(3, "t1", "c"),
+        ];
+        let out = coalesce_batch(&batch);
+        assert_eq!(out.len(), 1);
+        let parsed: serde_json::Value = serde_json::from_str(&out[0]).unwrap();
+        assert_eq!(parsed["seq"], 3);
+        assert_eq!(parsed["payload"]["content"], "abc");
+        assert!(parsed["payload"].get("truncated").is_none());
+    }
+
+    #[test]
+    fn runs_never_span_other_tabs_or_topics() {
+        let batch = vec![
+            shell_frame(1, "t1", "a"),
+            shell_frame(1, "t2", "x"),
+            shell_frame(2, "t1", "b"),
+            other_frame(1),
+            shell_frame(3, "t1", "c"),
+        ];
+        let out = coalesce_batch(&batch);
+        // Nothing adjacent shares a tab, so total order is preserved 1:1.
+        assert_eq!(out.len(), 5);
+        assert_eq!(out[0], batch[0].wire);
+        assert_eq!(out[3], batch[3].wire);
+    }
+
+    #[test]
+    fn oversized_run_keeps_tail_and_flags_truncation() {
+        let chunk = "x".repeat(40 * 1024);
+        let batch = vec![
+            shell_frame(1, "t1", &chunk),
+            shell_frame(2, "t1", &chunk),
+        ];
+        let out = coalesce_batch(&batch);
+        assert_eq!(out.len(), 1);
+        let parsed: serde_json::Value = serde_json::from_str(&out[0]).unwrap();
+        assert_eq!(parsed["payload"]["truncated"], true);
+        assert_eq!(
+            parsed["payload"]["content"].as_str().unwrap().len(),
+            SHELL_MERGE_CAP
+        );
+    }
+
+    #[test]
+    fn truncation_respects_utf8_boundaries() {
+        // 4-byte scorpions guarantee the naive cut lands mid-char.
+        let chunk = "🦂".repeat(20 * 1024);
+        let batch = vec![
+            shell_frame(1, "t1", &chunk),
+            shell_frame(2, "t1", &chunk),
+        ];
+        let out = coalesce_batch(&batch);
+        let parsed: serde_json::Value = serde_json::from_str(&out[0]).unwrap();
+        let content = parsed["payload"]["content"].as_str().unwrap();
+        assert!(content.len() <= SHELL_MERGE_CAP);
+        assert!(content.chars().all(|c| c == '🦂'));
+    }
+
+    #[test]
+    fn single_frames_pass_through_byte_identical() {
+        let batch = vec![shell_frame(9, "t1", "solo"), other_frame(2)];
+        let out = coalesce_batch(&batch);
+        assert_eq!(out, vec![batch[0].wire.clone(), batch[1].wire.clone()]);
     }
 }
