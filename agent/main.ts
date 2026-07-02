@@ -67,7 +67,6 @@ import {
 import { buildWorkingContextSection } from "./system-prompt/working-context";
 import { getWorkingContext } from "./git-context";
 import { readSessionTranscript } from "./session-history";
-import { readActiveProjectCwd, resolveStartupCwd } from "./active-project-cwd";
 import {
   AethonAgentState,
   type ExtensionFailure,
@@ -81,14 +80,8 @@ import {
   scheduleStateFileWrite as scheduleStateFileWriteImpl,
 } from "./runtime-snapshot";
 import { markFrontendReady } from "./mutation-ack";
-import {
-  loadAethonExtensions,
-  loadAethonExtensionPackages,
-  loadAethonThemeDirectory,
-  loadProjectAethonExtensions,
-  discoverPersistedTabs,
-  discoverPiAethonExtensions,
-} from "./extension-loader";
+import { discoverPersistedTabs } from "./extension-loader";
+import { loadAllExtensions } from "./boot-sequence";
 import { ensureTab, emitReady, tabSessionDir } from "./tab-lifecycle";
 import { seedPreparedEnv } from "./devshell";
 import { getSubagentsForCwd } from "./subagents";
@@ -96,7 +89,7 @@ import { buildExplicitSubagentSteer } from "./subagents/steer";
 import { loadDisabledExtensionsSnapshot } from "./disabled-extensions";
 import { resolveMemoryContext, readMemoryPath } from "./memory/resolver";
 import { renderMemoryPromptSection } from "./memory/renderer";
-import { captureProjectExtensionBaseline, runDispatcher } from "./dispatcher";
+import { runDispatcher } from "./dispatcher";
 import { withWorkerOrigin } from "./origin-gate";
 import { buildAethonMcpExtension } from "./mcp";
 import { createBootTrace, formatBootSummary } from "./boot-trace";
@@ -313,11 +306,14 @@ async function main(): Promise<void> {
       ...resolveAethonSystemPrompt(getRuntimeSnapshot(state)),
     ],
   });
-  await bootTrace.measure("resource-reload-1", () =>
-    state.resourceLoader.reload(),
-  );
-
-  // -- Extension loaders --------------------------------------------------
+  // -- Extension loaders + single resource reload --------------------------
+  // Orchestration (ordering contract + safe concurrency) lives in
+  // boot-sequence.ts. The resource loader reloads ONCE, after every
+  // extension source has registered, so the appended system prompt sees
+  // them all and sessions bind the instances from that reload. (It used
+  // to also reload here, before the loaders — pure duplicate cost: pi
+  // re-imports all ~/.pi extensions per reload and nothing between the
+  // two reloads read loader state.)
   const loadHooks = {
     onLoaded: (name: string) => {
       state.loadFailures.delete(name);
@@ -340,74 +336,20 @@ async function main(): Promise<void> {
       scheduleStateFileWrite();
     },
   };
-  await bootTrace.measure("user-extensions", () =>
-    loadAethonExtensions(
-      state,
-      extDeps,
-      extensionApi,
-      state.loadedExtensions,
+  const { startupCwd } = await loadAllExtensions(
+    state,
+    extDeps,
+    extensionApi,
+    {
+      userDir,
+      workerCwd,
+      projectRoot,
+      trace: bootTrace,
       loadHooks,
-    ),
-  );
-  await bootTrace.measure("extension-packages", () =>
-    loadAethonExtensionPackages(
-      state,
-      extDeps,
-      extensionApi,
-      state.loadedExtensions,
-      {
-        onFrontendEntry: ({ name, entryPath, code }) => {
-          state.extensionFrontendModules.set(name, { name, entryPath, code });
-        },
-        onLoaded: loadHooks.onLoaded,
-        onFailure: loadHooks.onFailure,
+      onFrontendEntry: ({ name, entryPath, code }) => {
+        state.extensionFrontendModules.set(name, { name, entryPath, code });
       },
-    ),
-  );
-  await bootTrace.measure("themes", () =>
-    loadAethonThemeDirectory(state, {
-      registerTheme: (theme) => aethonApi.registerTheme(theme),
-    }),
-  );
-  await bootTrace.measure("pi-discovery", () =>
-    discoverPiAethonExtensions(state.loadedExtensions),
-  );
-
-  // -- Project-extension baseline ----------------------------------------
-  // Snapshot the post-non-project-load state. Anything project-directory
-  // extensions register lands ON TOP of this baseline; switching projects
-  // restores the registries from this snapshot.
-  captureProjectExtensionBaseline(state);
-
-  const activeProjectCwd =
-    workerCwd ??
-    (await bootTrace.measure("active-project-cwd", () =>
-      readActiveProjectCwd(userDir),
-    ));
-  const startupCwd = resolveStartupCwd(
-    activeProjectCwd,
-    projectRoot,
-    userDir,
-    process.cwd(),
-  );
-
-  await bootTrace.measure("project-extensions", () =>
-    loadProjectAethonExtensions(
-      state,
-      extDeps,
-      startupCwd,
-      extensionApi,
-      state.loadedExtensions,
-      state.loadedProjectExtensionFiles,
-      state.failedProjectExtensionFiles,
-      loadHooks,
-    ),
-  );
-  state.currentProjectCwd = startupCwd;
-
-  // Reload so the appendSystemPromptOverride sees the populated extensions.
-  await bootTrace.measure("resource-reload-2", () =>
-    state.resourceLoader.reload(),
+    },
   );
 
   const tabDeps = { send };
@@ -419,14 +361,18 @@ async function main(): Promise<void> {
     // leaks into whatever the user opens next (sessions/default/ is
     // shared across project buckets).
     state.tabProjectCwds.set("default", startupCwd);
-    await bootTrace.measure("ensure-default-tab", () =>
-      ensureTab(state, tabDeps, "default", { trace: bootTrace }),
-    );
-
-    // -- Discover persisted sessions for the "Recent sessions" empty-state -
-    state.discoveredTabs = await bootTrace.measure("discover-tabs", () =>
-      discoverPersistedTabs(state),
-    );
+    // Default-tab creation and persisted-session discovery are
+    // independent (tab construction vs. read-only session-dir metadata
+    // scan), so overlap them. Both must complete before emitReady: the
+    // ready payload carries the default tab's model/thinking level AND
+    // the discoveredTabs list.
+    const [, discovered] = await Promise.all([
+      bootTrace.measure("ensure-default-tab", () =>
+        ensureTab(state, tabDeps, "default", { trace: bootTrace }),
+      ),
+      bootTrace.measure("discover-tabs", () => discoverPersistedTabs(state)),
+    ]);
+    state.discoveredTabs = discovered;
 
     scheduleStateFileWrite();
     emitReady(state, tabDeps);

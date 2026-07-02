@@ -7,7 +7,7 @@
  * We just record presence so the sidebar can surface them.
  */
 
-import { readdir } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { logger } from "../logger";
@@ -46,7 +46,7 @@ export async function discoverPiAethonExtensions(
     if (!/\.(ts|js|mjs)$/.test(name)) continue;
     const file = join(dir, name);
     try {
-      const text = await Bun.file(file).text();
+      const text = await readFile(file, "utf8");
       if (
         !text.includes("globalThis.aethon") &&
         !text.includes("aethon.register")
