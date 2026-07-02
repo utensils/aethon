@@ -47,6 +47,31 @@ describe("lazySurface", () => {
     expect(screen.getByText("loaded")).toBeTruthy();
   });
 
+  it("release flushes a parked load immediately (visible-at-boot surface)", async () => {
+    vi.useFakeTimers();
+    const load = vi.fn(() =>
+      Promise.resolve({ default: () => <div>flushed</div> }),
+    );
+    const Surface = lazySurface("restored-terminal", load);
+
+    render(<Surface {...surfaceProps()} />);
+    expect(load).not.toHaveBeenCalled();
+
+    // Chrome-ready idle: the latch release fires parked loads without
+    // waiting out their own idle timers.
+    await act(async () => {
+      releaseLazySurfaceBootDeferral();
+      await Promise.resolve();
+    });
+    expect(load).toHaveBeenCalledTimes(1);
+    expect(screen.getByText("flushed")).toBeTruthy();
+    // The already-fired idle timer must not double-load.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_000);
+    });
+    expect(load).toHaveBeenCalledTimes(1);
+  });
+
   it("loads immediately once the boot latch is released", async () => {
     releaseLazySurfaceBootDeferral();
     const load = vi.fn(() =>

@@ -1007,18 +1007,23 @@ export default function App() {
       bootMark("chrome-ready-commit");
       reportBootTimeline();
     });
-    const scheduleIdle: (cb: () => void) => void =
-      typeof requestIdleCallback === "function"
-        ? (cb) => requestIdleCallback(cb, { timeout: 5_000 })
-        : (cb) => setTimeout(cb, 2_000);
-    scheduleIdle(() => {
+    const onIdle = () => {
       // Boot is over: lazy surfaces rendered from here on (palette,
-      // settings, first editor tab) load immediately, and the warmup
-      // below pulls every remaining chunk in the background.
+      // settings, first editor tab) load immediately, parked loads
+      // (visible-at-boot surfaces) flush now, and the warmup below
+      // pulls every remaining chunk in the background.
       releaseLazySurfaceBootDeferral();
       preloadDefaultLayoutSurfaces();
-    });
-    return () => cancelAnimationFrame(raf);
+    };
+    const hasIdleCallback = typeof requestIdleCallback === "function";
+    const idleHandle = hasIdleCallback
+      ? requestIdleCallback(onIdle, { timeout: 5_000 })
+      : setTimeout(onIdle, 2_000);
+    return () => {
+      cancelAnimationFrame(raf);
+      if (hasIdleCallback) cancelIdleCallback(idleHandle);
+      else clearTimeout(idleHandle);
+    };
   }, [chromeReady]);
 
   return (

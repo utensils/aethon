@@ -34,14 +34,22 @@ export type LazySurfaceComponent = SurfaceImpl & {
  *  callback; `releaseLazySurfaceBootDeferral()` (App, at chrome-ready)
  *  drops the latch so every later open loads immediately. */
 let bootDeferralActive = true;
+/** Loads parked during the boot window. Released (all at once) the
+ *  moment App declares chrome-ready idle, so a surface that is VISIBLE
+ *  at boot (e.g. a restored-open terminal panel) starts loading at the
+ *  earliest safe moment rather than waiting out its own idle timer. */
+const parkedLoads = new Set<() => void>();
 
 export function releaseLazySurfaceBootDeferral(): void {
   bootDeferralActive = false;
+  for (const fire of [...parkedLoads]) fire();
+  parkedLoads.clear();
 }
 
 /** Test-only. */
 export function resetLazySurfaceBootDeferralForTest(): void {
   bootDeferralActive = true;
+  parkedLoads.clear();
 }
 
 const scheduleIdle: (cb: () => void) => void =
@@ -57,7 +65,15 @@ export function lazySurface(
   const memoLoad = () =>
     (loadPromise ??= bootDeferralActive
       ? new Promise<{ default: SurfaceImpl }>((resolve, reject) => {
-          scheduleIdle(() => load().then(resolve, reject));
+          let fired = false;
+          const fire = () => {
+            if (fired) return;
+            fired = true;
+            parkedLoads.delete(fire);
+            load().then(resolve, reject);
+          };
+          parkedLoads.add(fire);
+          scheduleIdle(fire);
         })
       : load());
   const Lazy = lazy(memoLoad);
