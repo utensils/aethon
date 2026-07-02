@@ -153,6 +153,7 @@ struct FakePlayback {
     appended: Arc<AtomicUsize>,
     completed: Arc<AtomicBool>,
     stopped: Arc<AtomicBool>,
+    paused: Arc<AtomicBool>,
     streams_opened: Arc<AtomicUsize>,
 }
 
@@ -162,6 +163,7 @@ impl FakePlayback {
             appended: Arc::new(AtomicUsize::new(0)),
             completed: Arc::new(AtomicBool::new(false)),
             stopped: Arc::new(AtomicBool::new(false)),
+            paused: Arc::new(AtomicBool::new(false)),
             streams_opened: Arc::new(AtomicUsize::new(0)),
         }
     }
@@ -170,6 +172,7 @@ impl FakePlayback {
 struct FakePlaybackStream {
     appended: Arc<AtomicUsize>,
     completed: Arc<AtomicBool>,
+    paused: Arc<AtomicBool>,
 }
 
 impl StreamingPlayback for FakePlaybackStream {
@@ -178,6 +181,12 @@ impl StreamingPlayback for FakePlaybackStream {
     }
     fn mark_complete(&mut self) {
         self.completed.store(true, Ordering::SeqCst);
+    }
+    fn pause(&mut self) {
+        self.paused.store(true, Ordering::SeqCst);
+    }
+    fn resume(&mut self) {
+        self.paused.store(false, Ordering::SeqCst);
     }
     fn is_drained(&self) -> bool {
         // Drained as soon as sealed — playback latency isn't under test.
@@ -196,6 +205,7 @@ impl PlaybackSink for FakePlayback {
         Ok(Box::new(FakePlaybackStream {
             appended: Arc::clone(&self.appended),
             completed: Arc::clone(&self.completed),
+            paused: Arc::clone(&self.paused),
         }))
     }
     fn stop(&self) {
@@ -384,7 +394,7 @@ async fn speak_end_without_chunks_unwedges_awaiting_brain() {
 }
 
 #[tokio::test]
-async fn barge_in_stops_playback_and_replays_pre_roll() {
+async fn confirmed_barge_in_pauses_then_stops_playback() {
     let h = start_harness(0);
     h.stt_tx
         .send(SttEvent::EndOfTurn {
@@ -396,18 +406,67 @@ async fn barge_in_stops_playback_and_replays_pre_roll() {
     wait_for_state(&h.engine, ConvoState::Speaking).await;
 
     let forwarded_before = h.sent_samples.load(Ordering::SeqCst);
-    // Loud frames worth >200 ms: gate is closed, so nothing forwards until
-    // the barge-in replays the pre-roll ring.
+    // Loud frames worth >200 ms: playback pauses (not stops) and the
+    // pre-roll ring replays into STT for confirmation.
     for _ in 0..6 {
         h.frames_tx.send(vec![0.5; 1024]).unwrap();
     }
-    wait_for_state(&h.engine, ConvoState::Listening).await;
-    assert!(h.playback.stopped.load(Ordering::SeqCst));
-    assert!(h.tts.stopped.load(Ordering::SeqCst));
+    wait_for(
+        || h.playback.paused.load(Ordering::SeqCst),
+        "playback paused for confirmation",
+    )
+    .await;
+    assert!(!h.playback.stopped.load(Ordering::SeqCst));
     assert!(
         h.sent_samples.load(Ordering::SeqCst) > forwarded_before,
         "pre-roll should replay into STT"
     );
+
+    // The recognizer confirms real speech → the reply dies for good.
+    h.stt_tx
+        .send(SttEvent::StartOfTurn {
+            transcript: "wait".into(),
+        })
+        .unwrap();
+    wait_for_state(&h.engine, ConvoState::UserSpeaking).await;
+    assert!(h.playback.stopped.load(Ordering::SeqCst));
+    assert!(h.tts.stopped.load(Ordering::SeqCst));
+}
+
+#[tokio::test]
+async fn false_barge_in_resumes_playback_after_the_confirm_window() {
+    let h = start_harness(0);
+    h.stt_tx
+        .send(SttEvent::EndOfTurn {
+            transcript: "explain".into(),
+        })
+        .unwrap();
+    wait_for_state(&h.engine, ConvoState::AwaitingBrain).await;
+    h.engine.speak_chunk("A long explanation".into()).unwrap();
+    wait_for_state(&h.engine, ConvoState::Speaking).await;
+
+    // A door slam: loud enough to pause…
+    for _ in 0..6 {
+        h.frames_tx.send(vec![0.5; 1024]).unwrap();
+    }
+    wait_for(
+        || h.playback.paused.load(Ordering::SeqCst),
+        "playback paused for confirmation",
+    )
+    .await;
+
+    // …but no recognized speech. After the (test-shortened) confirm window,
+    // quiet frames drive the deadline check and playback resumes.
+    tokio::time::sleep(Duration::from_millis(120)).await;
+    h.frames_tx.send(vec![0.0; 512]).unwrap();
+    wait_for(
+        || !h.playback.paused.load(Ordering::SeqCst),
+        "playback resumed",
+    )
+    .await;
+    assert_eq!(h.engine.state(), ConvoState::Speaking);
+    assert!(!h.playback.stopped.load(Ordering::SeqCst));
+    assert!(!h.tts.stopped.load(Ordering::SeqCst));
 }
 
 #[tokio::test]
@@ -541,6 +600,128 @@ async fn second_start_is_rejected_while_active() {
         )
         .expect_err("second start must fail");
     assert!(err.contains("already running"));
+}
+
+// ── local providers ──────────────────────────────────────────────────────
+
+struct FakeTranscriber {
+    transcript: String,
+}
+
+impl crate::voice::VoiceTranscriber for FakeTranscriber {
+    fn transcribe(
+        &self,
+        _cache_path: &std::path::Path,
+        _audio: crate::voice::CapturedAudio,
+        _cancel: &Arc<AtomicBool>,
+    ) -> Result<String, String> {
+        Ok(self.transcript.clone())
+    }
+}
+
+const SR: usize = 16_000;
+
+#[tokio::test]
+async fn local_stt_segments_an_utterance_and_decodes_it() {
+    let (mut stream, mut events) = super::local::test_local_stt(Arc::new(FakeTranscriber {
+        transcript: "hello there".into(),
+    }));
+    // Quiet lead-in → no events.
+    stream.send_audio(&vec![0.001; SR / 10]).await.unwrap();
+    // Speech onset (300 ms loud) → StartOfTurn.
+    stream.send_audio(&vec![0.3; SR * 3 / 10]).await.unwrap();
+    assert!(matches!(
+        events.try_recv(),
+        Ok(SttEvent::StartOfTurn { .. })
+    ));
+    // 1.2 s of silence → utterance ends → decode → EndOfTurn.
+    stream.send_audio(&vec![0.0; SR * 12 / 10]).await.unwrap();
+    let event = tokio::time::timeout(Duration::from_secs(2), events.recv())
+        .await
+        .expect("decode should finish")
+        .expect("channel open");
+    assert_eq!(
+        event,
+        SttEvent::EndOfTurn {
+            transcript: "hello there".into()
+        }
+    );
+}
+
+#[tokio::test]
+async fn local_stt_finalize_turn_ends_an_in_progress_utterance() {
+    let (mut stream, mut events) = super::local::test_local_stt(Arc::new(FakeTranscriber {
+        transcript: "forced".into(),
+    }));
+    stream.send_audio(&vec![0.3; SR * 3 / 10]).await.unwrap();
+    assert!(matches!(
+        events.try_recv(),
+        Ok(SttEvent::StartOfTurn { .. })
+    ));
+    // Push-to-talk release before any silence accumulated.
+    stream.finalize_turn().await;
+    let event = tokio::time::timeout(Duration::from_secs(2), events.recv())
+        .await
+        .expect("decode should finish")
+        .expect("channel open");
+    assert_eq!(
+        event,
+        SttEvent::EndOfTurn {
+            transcript: "forced".into()
+        }
+    );
+}
+
+struct FakeLfm2 {
+    samples: Vec<f32>,
+}
+
+#[async_trait]
+impl crate::voice::Lfm2Backend for FakeLfm2 {
+    fn binary_available(&self) -> bool {
+        true
+    }
+    async fn asr(
+        &self,
+        _audio: crate::voice::CapturedAudio,
+        _cancel: Arc<AtomicBool>,
+    ) -> Result<String, String> {
+        Err("unused".into())
+    }
+    async fn tts(
+        &self,
+        _text: String,
+        _cancel: Arc<AtomicBool>,
+    ) -> Result<crate::voice::CapturedAudio, String> {
+        Ok(crate::voice::CapturedAudio {
+            samples: self.samples.clone(),
+            sample_rate: 24_000,
+        })
+    }
+}
+
+#[tokio::test]
+async fn lfm2_tts_synthesizes_on_flush_then_closes() {
+    let mut session = super::local::test_lfm2_tts(Arc::new(FakeLfm2 {
+        samples: vec![0.5; 240],
+    }));
+    session.stream.feed("Hello ").await.unwrap();
+    session.stream.feed("world.").await.unwrap();
+    session.stream.flush().await.unwrap();
+    let chunk = tokio::time::timeout(Duration::from_secs(2), session.audio_rx.recv())
+        .await
+        .expect("synthesis should finish")
+        .expect("one chunk");
+    assert_eq!(chunk.len(), 240);
+    // Channel closes after the single chunk = synthesis complete.
+    assert!(session.audio_rx.recv().await.is_none());
+}
+
+#[tokio::test]
+async fn lfm2_tts_flush_with_no_text_just_closes() {
+    let mut session = super::local::test_lfm2_tts(Arc::new(FakeLfm2 { samples: vec![] }));
+    session.stream.flush().await.unwrap();
+    assert!(session.audio_rx.recv().await.is_none());
 }
 
 // ── protocol parsing ─────────────────────────────────────────────────────

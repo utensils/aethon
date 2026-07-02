@@ -23,6 +23,23 @@ impl VoiceProviderRegistry {
         self.active_recording.lock().is_some()
     }
 
+    // Component accessors for the conversation engine's local providers —
+    // the streaming path reuses the batch registry's models and backends
+    // rather than loading its own copies. `pub(super)` because the trait
+    // objects are voice-internal; commands go through the connectors'
+    // `from_registry` constructors.
+    pub(super) fn model_root(&self) -> &Path {
+        &self.model_root
+    }
+
+    pub(super) fn whisper_transcriber(&self) -> Arc<dyn VoiceTranscriber> {
+        Arc::clone(&self.transcriber)
+    }
+
+    pub(super) fn lfm2_backend(&self) -> Arc<dyn Lfm2Backend> {
+        Arc::clone(&self.lfm2)
+    }
+
     pub fn new(model_root: PathBuf) -> Self {
         Self::with_runtime(
             model_root,

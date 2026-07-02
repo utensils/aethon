@@ -15,12 +15,6 @@ pub(crate) struct CascadeKeys {
     pub(crate) cartesia: Option<String>,
 }
 
-impl CascadeKeys {
-    pub(crate) fn complete(&self) -> bool {
-        self.deepgram.is_some() && self.cartesia.is_some()
-    }
-}
-
 pub(crate) fn resolve_cascade_keys(config: &VoiceConfig) -> CascadeKeys {
     CascadeKeys {
         deepgram: resolve_key(DEEPGRAM_KEY_ENV, config.deepgram_api_key.as_deref()),

@@ -16,6 +16,7 @@
 //! its first word.
 
 mod keys;
+mod local;
 mod mic;
 mod stt;
 #[cfg(test)]
@@ -23,6 +24,9 @@ mod tests;
 mod tts;
 
 pub(crate) use keys::resolve_cascade_keys;
+pub(crate) use local::{
+    LOCAL_STT_PROVIDER, LOCAL_TTS_PROVIDER, Lfm2TtsConnector, LocalWhisperConnector,
+};
 pub(crate) use stt::{DeepgramFluxConnector, SttConnector, SttEvent, SttStream};
 pub(crate) use tts::{
     CartesiaConnector, CartesiaVoiceInfo, TtsConnector, TtsStream, list_cartesia_voices,
@@ -67,6 +71,14 @@ const DRAIN_POLL_MS: u64 = 50;
 const STT_RECONNECT_BACKOFF_MS: [u64; 3] = [250, 1_000, 3_000];
 #[cfg(test)]
 const STT_RECONNECT_BACKOFF_MS: [u64; 3] = [10, 10, 10];
+/// How long a suspected barge-in (sustained mic energy during playback) waits
+/// for the recognizer to confirm real speech. Playback pauses — not stops —
+/// for the window, so a cough or door slam costs a moment of silence instead
+/// of the rest of the reply. StartOfTurn inside the window kills the reply.
+#[cfg(not(test))]
+const BARGE_CONFIRM_MS: u64 = 1_500;
+#[cfg(test)]
+const BARGE_CONFIRM_MS: u64 = 100;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "kebab-case")]
@@ -92,6 +104,9 @@ pub(crate) trait PlaybackSink: Send + Sync {
 pub(crate) trait StreamingPlayback: Send {
     fn append(&mut self, samples: &[f32]);
     fn mark_complete(&mut self);
+    /// Hold the cursor (silence) without losing position.
+    fn pause(&mut self);
+    fn resume(&mut self);
     fn is_drained(&self) -> bool;
 }
 
@@ -101,6 +116,12 @@ impl StreamingPlayback for StreamingPlaybackHandle {
     }
     fn mark_complete(&mut self) {
         StreamingPlaybackHandle::mark_complete(self);
+    }
+    fn pause(&mut self) {
+        StreamingPlaybackHandle::pause(self);
+    }
+    fn resume(&mut self) {
+        StreamingPlaybackHandle::resume(self);
     }
     fn is_drained(&self) -> bool {
         StreamingPlaybackHandle::is_drained(self)
@@ -288,6 +309,7 @@ impl ConversationEngine {
             pre_roll: VecDeque::new(),
             current_transcript: String::new(),
             barge_sustain_samples: 0,
+            barge_confirm_deadline: None,
             last_level_emit: Instant::now(),
             speak_requested_at: None,
             tts_first_audio_seen: false,
@@ -414,6 +436,9 @@ struct DriverCtx {
     pre_roll: VecDeque<f32>,
     current_transcript: String,
     barge_sustain_samples: usize,
+    /// Set while a suspected barge-in awaits recognizer confirmation;
+    /// playback is paused and the mic gate is open until the deadline.
+    barge_confirm_deadline: Option<Instant>,
     last_level_emit: Instant,
     speak_requested_at: Option<Instant>,
     tts_first_audio_seen: bool,
@@ -510,11 +535,7 @@ impl DriverCtx {
 
     /// One mic frame (mono f32 @ 16 kHz). Gate open → forward to STT; gate
     /// closed (speaking) → barge-in detection only.
-    async fn handle_frame(
-        &mut self,
-        frame: Vec<f32>,
-        tts_audio_rx: &mut Option<mpsc::UnboundedReceiver<Vec<f32>>>,
-    ) -> Step {
+    async fn handle_frame(&mut self, frame: Vec<f32>) -> Step {
         self.emit_level(&frame);
         self.push_pre_roll(&frame);
 
@@ -526,6 +547,19 @@ impl DriverCtx {
                 }
             }
             ConvoState::Speaking => {
+                if let Some(deadline) = self.barge_confirm_deadline {
+                    // Confirm window: playback is paused and the gate is
+                    // open — forward audio so the recognizer can rule on
+                    // whether this is real speech.
+                    self.outbound.extend_from_slice(&frame);
+                    if let Err(err) = self.forward_outbound().await {
+                        return Step::Reconnect(format!("audio send failed: {err}"));
+                    }
+                    if Instant::now() >= deadline {
+                        self.resume_after_false_barge();
+                    }
+                    return Step::Continue;
+                }
                 let sustain_target =
                     BARGE_IN_SUSTAIN_MS * super::TARGET_SAMPLE_RATE as usize / 1000;
                 if compute_rms(&frame) >= BARGE_IN_RMS {
@@ -535,7 +569,7 @@ impl DriverCtx {
                 }
                 if self.barge_sustain_samples >= sustain_target {
                     self.barge_sustain_samples = 0;
-                    if let Err(err) = self.barge_in(tts_audio_rx).await {
+                    if let Err(err) = self.begin_barge_confirm().await {
                         return Step::Reconnect(format!("barge-in replay failed: {err}"));
                     }
                 }
@@ -545,30 +579,62 @@ impl DriverCtx {
         Step::Continue
     }
 
-    /// The user interrupted playback: cut the audio, kill the in-flight TTS
-    /// context, and replay the pre-roll ring into STT so the recognizer sees
-    /// the interruption from its first word.
-    async fn barge_in(
+    /// Sustained mic energy during playback: PAUSE (don't kill) the reply,
+    /// replay the pre-roll ring into STT so the recognizer hears the
+    /// interruption from its first word, and open the gate. A StartOfTurn
+    /// inside the window confirms the barge-in; silence resumes playback.
+    async fn begin_barge_confirm(&mut self) -> Result<(), String> {
+        if let Some(handle) = self.playback_handle.as_mut() {
+            handle.pause();
+        }
+        let replay: Vec<f32> = self.pre_roll.drain(..).collect();
+        if !replay.is_empty() {
+            self.stt.send_audio(&replay).await?;
+        }
+        self.barge_confirm_deadline =
+            Some(Instant::now() + Duration::from_millis(BARGE_CONFIRM_MS));
+        Ok(())
+    }
+
+    /// The recognizer confirmed real speech during playback: now cut the
+    /// audio and kill the in-flight TTS context.
+    async fn confirm_barge_in(
         &mut self,
         tts_audio_rx: &mut Option<mpsc::UnboundedReceiver<Vec<f32>>>,
-    ) -> Result<(), String> {
+    ) {
+        self.barge_confirm_deadline = None;
         self.playback.stop();
         self.playback_handle = None;
         *tts_audio_rx = None;
         if let Some(mut stream) = self.tts_stream.take() {
             stream.stop().await;
         }
-        let replay: Vec<f32> = self.pre_roll.drain(..).collect();
-        if !replay.is_empty() {
-            self.stt.send_audio(&replay).await?;
-        }
         self.set_state(ConvoState::Listening, Some("barge-in"));
-        Ok(())
     }
 
-    fn handle_stt_event(&mut self, event: SttEvent) -> Step {
+    /// Confirm window elapsed without recognized speech — a cough, not a
+    /// command. Resume the reply where it paused and close the gate.
+    fn resume_after_false_barge(&mut self) {
+        self.barge_confirm_deadline = None;
+        self.barge_sustain_samples = 0;
+        if let Some(handle) = self.playback_handle.as_mut() {
+            handle.resume();
+        }
+    }
+
+    async fn handle_stt_event(
+        &mut self,
+        event: SttEvent,
+        tts_audio_rx: &mut Option<mpsc::UnboundedReceiver<Vec<f32>>>,
+    ) -> Step {
+        let confirming =
+            self.state == ConvoState::Speaking && self.barge_confirm_deadline.is_some();
         match event {
             SttEvent::StartOfTurn { transcript } => {
+                if confirming {
+                    // Real speech over the reply — the barge-in is confirmed.
+                    self.confirm_barge_in(tts_audio_rx).await;
+                }
                 self.current_transcript = transcript.clone();
                 if matches!(
                     self.state,
@@ -583,6 +649,12 @@ impl DriverCtx {
                 self.emit_interim(transcript);
             }
             SttEvent::EndOfTurn { transcript } => {
+                if confirming {
+                    // A complete short command landed inside the confirm
+                    // window ("stop", "wait") — kill the reply AND take the
+                    // turn.
+                    self.confirm_barge_in(tts_audio_rx).await;
+                }
                 // Stale end-of-turns can arrive after a local force-end or
                 // while speech is already playing; the state guard drops them.
                 if matches!(
@@ -682,11 +754,16 @@ impl DriverCtx {
                 self.abandon_speech(tts_audio_rx).await;
             }
             EngineCommand::ForceEndTurn => {
-                if matches!(self.state, ConvoState::Listening | ConvoState::UserSpeaking)
-                    && !self.current_transcript.trim().is_empty()
-                {
-                    let transcript = std::mem::take(&mut self.current_transcript);
-                    self.finish_turn(transcript);
+                if matches!(self.state, ConvoState::Listening | ConvoState::UserSpeaking) {
+                    if self.current_transcript.trim().is_empty() {
+                        // No interim text to promote (local providers don't
+                        // stream interims) — ask the recognizer to end its
+                        // in-progress utterance instead.
+                        self.stt.finalize_turn().await;
+                    } else {
+                        let transcript = std::mem::take(&mut self.current_transcript);
+                        self.finish_turn(transcript);
+                    }
                 }
             }
         }
@@ -697,6 +774,7 @@ impl DriverCtx {
         &mut self,
         tts_audio_rx: &mut Option<mpsc::UnboundedReceiver<Vec<f32>>>,
     ) {
+        self.barge_confirm_deadline = None;
         self.playback.stop();
         self.playback_handle = None;
         *tts_audio_rx = None;
@@ -740,6 +818,7 @@ impl DriverCtx {
     fn finish_speaking(&mut self) {
         self.playback_handle = None;
         self.barge_sustain_samples = 0;
+        self.barge_confirm_deadline = None;
         self.set_state(ConvoState::Listening, None);
     }
 }
@@ -769,13 +848,13 @@ async fn run_driver(
                         ctx.fail("The microphone stream ended unexpectedly".to_string());
                         break;
                     }
-                    Some(frame) => ctx.handle_frame(frame, &mut tts_audio_rx).await,
+                    Some(frame) => ctx.handle_frame(frame).await,
                 }
             }
             maybe_event = stt_rx.recv() => {
                 match maybe_event {
                     None => Step::Reconnect("the speech event stream ended".to_string()),
-                    Some(event) => ctx.handle_stt_event(event),
+                    Some(event) => ctx.handle_stt_event(event, &mut tts_audio_rx).await,
                 }
             }
             maybe_command = cmd_rx.recv() => {

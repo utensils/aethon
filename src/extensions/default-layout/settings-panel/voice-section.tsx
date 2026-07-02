@@ -172,6 +172,45 @@ function ConversationSettings({
           <option value="lfm2">Local (LFM2-Audio)</option>
         </select>
       </Field>
+      <Field label="Speech-to-text (cascade)">
+        <select
+          className="ae-settings-input"
+          value={config.voice.sttProvider}
+          onChange={(e) =>
+            update({
+              voice: {
+                ...config.voice,
+                sttProvider:
+                  e.target.value === "local-whisper"
+                    ? "local-whisper"
+                    : "deepgram-flux",
+              },
+            })
+          }
+        >
+          <option value="deepgram-flux">
+            Deepgram Flux (cloud, semantic turn detection)
+          </option>
+          <option value="local-whisper">Local Whisper (offline)</option>
+        </select>
+      </Field>
+      <Field label="Text-to-speech (cascade)">
+        <select
+          className="ae-settings-input"
+          value={config.voice.ttsProvider}
+          onChange={(e) =>
+            update({
+              voice: {
+                ...config.voice,
+                ttsProvider: e.target.value === "lfm2" ? "lfm2" : "cartesia",
+              },
+            })
+          }
+        >
+          <option value="cartesia">Cartesia (cloud, streaming)</option>
+          <option value="lfm2">LFM2-Audio (offline)</option>
+        </select>
+      </Field>
       <Field label="Voice brain model (empty = default model)">
         <input
           type="text"

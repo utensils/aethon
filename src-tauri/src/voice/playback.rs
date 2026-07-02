@@ -32,6 +32,9 @@ pub(super) struct PlaybackBuffer {
     samples: Vec<f32>,
     pos: usize,
     complete: bool,
+    /// While paused the callback emits silence without advancing the cursor,
+    /// so playback resumes exactly where it stopped (barge-in confirmation).
+    paused: bool,
 }
 
 impl PlaybackBuffer {
@@ -40,6 +43,7 @@ impl PlaybackBuffer {
             samples,
             pos: 0,
             complete: true,
+            paused: false,
         }
     }
 
@@ -48,6 +52,7 @@ impl PlaybackBuffer {
             samples: Vec::new(),
             pos: 0,
             complete: false,
+            paused: false,
         }
     }
 
@@ -59,8 +64,16 @@ impl PlaybackBuffer {
         self.complete = true;
     }
 
-    /// The next mono sample, or `None` once the buffer is drained.
+    pub(super) fn set_paused(&mut self, paused: bool) {
+        self.paused = paused;
+    }
+
+    /// The next mono sample, or `None` once the buffer is drained (or while
+    /// paused — the cursor holds position).
     pub(super) fn next_sample(&mut self) -> Option<f32> {
+        if self.paused {
+            return None;
+        }
         let sample = self.samples.get(self.pos).copied();
         if sample.is_some() {
             self.pos += 1;
@@ -68,8 +81,9 @@ impl PlaybackBuffer {
         sample
     }
 
+    /// A paused clip is never finished — the cursor can't reach the end.
     pub(super) fn finished(&self) -> bool {
-        self.complete && self.pos >= self.samples.len()
+        !self.paused && self.complete && self.pos >= self.samples.len()
     }
 }
 
@@ -240,6 +254,16 @@ impl StreamingPlaybackHandle {
     /// fires `voice://playback-finished` and frees the stream.
     pub(crate) fn mark_complete(&self) {
         self.buffer.lock().mark_complete();
+    }
+
+    /// Hold the cursor (device plays silence) without losing position —
+    /// used while a suspected barge-in awaits recognizer confirmation.
+    pub(crate) fn pause(&self) {
+        self.buffer.lock().set_paused(true);
+    }
+
+    pub(crate) fn resume(&self) {
+        self.buffer.lock().set_paused(false);
     }
 
     pub(crate) fn is_drained(&self) -> bool {

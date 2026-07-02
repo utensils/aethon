@@ -49,6 +49,10 @@ pub(crate) trait SttStream: Send {
     async fn send_audio(&mut self, pcm_16k: &[f32]) -> Result<(), String>;
     /// Keep the socket alive while no audio is being forwarded (best-effort).
     async fn keepalive(&mut self);
+    /// Push-to-talk release landed before any transcript accumulated: end the
+    /// in-progress utterance now if the recognizer segments locally (the
+    /// engine synthesizes the turn itself when it already has interim text).
+    async fn finalize_turn(&mut self) {}
     async fn close(&mut self);
 }
 

@@ -18,7 +18,8 @@ use crate::helpers::config::{AethonConfig, VoiceConfig};
 #[cfg(feature = "voice")]
 use crate::voice::{
     AudioPlayer, CartesiaConnector, CartesiaVoiceInfo, ConversationEngine, ConvoState,
-    DeepgramFluxConnector, SttConnector, TtsConnector, VoiceProviderRegistry, list_cartesia_voices,
+    DeepgramFluxConnector, LOCAL_STT_PROVIDER, LOCAL_TTS_PROVIDER, Lfm2TtsConnector,
+    LocalWhisperConnector, SttConnector, TtsConnector, VoiceProviderRegistry, list_cartesia_voices,
     resolve_cascade_keys,
 };
 
@@ -49,24 +50,51 @@ pub struct VoiceConvoStatus {
 }
 
 #[cfg(feature = "voice")]
+fn configured_stt_provider(config: &VoiceConfig) -> String {
+    config
+        .stt_provider
+        .clone()
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "deepgram-flux".to_string())
+}
+
+#[cfg(feature = "voice")]
+fn configured_tts_provider(config: &VoiceConfig) -> String {
+    config
+        .tts_provider
+        .clone()
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "cartesia".to_string())
+}
+
+#[cfg(feature = "voice")]
 #[tauri::command]
 pub async fn voice_convo_status(
     app: AppHandle,
+    voice: State<'_, VoiceProviderRegistry>,
     convo: State<'_, ConversationEngine>,
 ) -> Result<VoiceConvoStatus, String> {
     let config = load_voice_config(&app);
     let keys = resolve_cascade_keys(&config);
+    let stt_provider = configured_stt_provider(&config);
+    let tts_provider = configured_tts_provider(&config);
+    // Availability follows the CONFIGURED providers: a local provider counts
+    // when its model is ready, a cloud one when its key resolves.
+    let stt_available = if stt_provider == LOCAL_STT_PROVIDER {
+        LocalWhisperConnector::ready(&voice)
+    } else {
+        keys.deepgram.is_some()
+    };
+    let tts_available = if tts_provider == LOCAL_TTS_PROVIDER {
+        Lfm2TtsConnector::ready(&voice)
+    } else {
+        keys.cartesia.is_some()
+    };
     Ok(VoiceConvoStatus {
-        available: keys.complete(),
+        available: stt_available && tts_available,
         state: convo.state(),
-        stt_provider: config
-            .stt_provider
-            .filter(|s| !s.is_empty())
-            .unwrap_or_else(|| "deepgram-flux".to_string()),
-        tts_provider: config
-            .tts_provider
-            .filter(|s| !s.is_empty())
-            .unwrap_or_else(|| "cartesia".to_string()),
+        stt_provider,
+        tts_provider,
         deepgram_key_present: keys.deepgram.is_some(),
         cartesia_key_present: keys.cartesia.is_some(),
         last_error: convo.last_error(),
@@ -86,15 +114,26 @@ pub async fn voice_convo_start(
     }
     let config = load_voice_config(&app);
     let keys = resolve_cascade_keys(&config);
-    let deepgram = keys.deepgram.ok_or_else(|| {
-        "Deepgram API key missing — set DEEPGRAM_API_KEY or add it in Settings → Voice".to_string()
-    })?;
-    let cartesia = keys.cartesia.ok_or_else(|| {
-        "Cartesia API key missing — set CARTESIA_API_KEY or add it in Settings → Voice".to_string()
-    })?;
 
-    let stt = Arc::new(DeepgramFluxConnector::new(deepgram));
-    let tts = Arc::new(CartesiaConnector::new(cartesia, config.tts_voice.clone()));
+    let stt: Arc<dyn SttConnector> = if configured_stt_provider(&config) == LOCAL_STT_PROVIDER {
+        Arc::new(LocalWhisperConnector::from_registry(&voice))
+    } else {
+        let deepgram = keys.deepgram.ok_or_else(|| {
+            "Deepgram API key missing — set DEEPGRAM_API_KEY or add it in Settings → Voice"
+                .to_string()
+        })?;
+        Arc::new(DeepgramFluxConnector::new(deepgram))
+    };
+    let tts: Arc<dyn TtsConnector> = if configured_tts_provider(&config) == LOCAL_TTS_PROVIDER {
+        Arc::new(Lfm2TtsConnector::from_registry(&voice))
+    } else {
+        let cartesia = keys.cartesia.ok_or_else(|| {
+            "Cartesia API key missing — set CARTESIA_API_KEY or add it in Settings → Voice"
+                .to_string()
+        })?;
+        Arc::new(CartesiaConnector::new(cartesia, config.tts_voice.clone()))
+    };
+
     convo
         .start(
             Some(app.clone()),
