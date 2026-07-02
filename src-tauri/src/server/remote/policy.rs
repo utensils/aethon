@@ -296,7 +296,10 @@ pub fn root_arg_value(cmd: &str, args: &serde_json::Value) -> Option<String> {
             .and_then(|v| v.as_str())
             .map(str::to_string);
     }
-    if matches!(cmd, "workspace_startup_status" | "workspace_startup_set_auto_approve") {
+    if matches!(
+        cmd,
+        "workspace_startup_status" | "workspace_startup_set_auto_approve"
+    ) {
         return args
             .get("args")
             .and_then(|a| a.get("root"))

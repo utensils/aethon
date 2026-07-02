@@ -353,12 +353,14 @@ impl TauriRelay {
             }
             "workspace_startup_status" => {
                 let startup = app.state::<crate::commands::startup::WorkspaceStartupState>();
-                to_value(crate::commands::startup::workspace_startup_status(
-                    app.clone(),
-                    startup.clone(),
-                    arg(&args, "args")?,
+                to_value(
+                    crate::commands::startup::workspace_startup_status(
+                        app.clone(),
+                        startup.clone(),
+                        arg(&args, "args")?,
+                    )
+                    .await?,
                 )
-                .await?)
             }
             "workspace_startup_set_auto_approve" => {
                 let startup = app.state::<crate::commands::startup::WorkspaceStartupState>();

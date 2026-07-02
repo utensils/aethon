@@ -6,6 +6,7 @@
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
+use std::sync::{Mutex, MutexGuard, OnceLock};
 
 use rusqlite::{Connection, OptionalExtension, params};
 use tauri::{AppHandle, Manager};
@@ -16,6 +17,8 @@ const DB_RELATIVE_DIR: &str = "state";
 const DB_FILE: &str = "aethon.sqlite3";
 const KV_NAMESPACE_STATE: &str = "state";
 const CURRENT_SCHEMA: i64 = 1;
+
+static MIGRATED_DB_PATHS: OnceLock<Mutex<HashSet<PathBuf>>> = OnceLock::new();
 
 const FILE_BACKED_STATE_NAMES: &[&str] = &[
     "config.toml",
@@ -105,16 +108,36 @@ fn connect_path(path: &Path) -> Result<Connection, String> {
     }
     let conn =
         Connection::open(path).map_err(|e| format!("open sqlite {}: {e}", path.display()))?;
-    conn.pragma_update(None, "journal_mode", "WAL")
-        .map_err(|e| format!("sqlite journal_mode: {e}"))?;
-    conn.pragma_update(None, "foreign_keys", "ON")
-        .map_err(|e| format!("sqlite foreign_keys: {e}"))?;
     conn.pragma_update(None, "busy_timeout", 5000)
         .map_err(|e| format!("sqlite busy_timeout: {e}"))?;
+    ensure_connection_schema(path, &conn)?;
+    conn.pragma_update(None, "foreign_keys", "ON")
+        .map_err(|e| format!("sqlite foreign_keys: {e}"))?;
     conn.pragma_update(None, "synchronous", "NORMAL")
         .map_err(|e| format!("sqlite synchronous: {e}"))?;
-    migrate_connection(&conn)?;
     Ok(conn)
+}
+
+fn migrated_db_paths() -> &'static Mutex<HashSet<PathBuf>> {
+    MIGRATED_DB_PATHS.get_or_init(|| Mutex::new(HashSet::new()))
+}
+
+fn migrated_db_paths_lock() -> MutexGuard<'static, HashSet<PathBuf>> {
+    migrated_db_paths()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+fn ensure_connection_schema(path: &Path, conn: &Connection) -> Result<(), String> {
+    let mut paths = migrated_db_paths_lock();
+    if paths.contains(path) {
+        return Ok(());
+    }
+    conn.pragma_update(None, "journal_mode", "WAL")
+        .map_err(|e| format!("sqlite journal_mode: {e}"))?;
+    migrate_connection(conn)?;
+    paths.insert(path.to_path_buf());
+    Ok(())
 }
 
 pub(crate) fn connect(app: &AppHandle) -> Result<Connection, String> {
@@ -555,6 +578,24 @@ mod tests {
             .optional()
             .unwrap();
         assert_eq!(value.as_deref(), Some("dark"));
+    }
+
+    #[test]
+    fn repeated_connect_skips_schema_write_when_db_already_migrated() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("state").join("aethon.sqlite3");
+        let conn = connect_path(&path).unwrap();
+        conn.execute("BEGIN IMMEDIATE", []).unwrap();
+
+        let second = connect_path(&path).unwrap();
+        let count: i64 = second
+            .query_row("SELECT COUNT(*) FROM schema_migrations", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+
+        assert_eq!(count, 1);
+        conn.execute("ROLLBACK", []).unwrap();
     }
 
     #[test]

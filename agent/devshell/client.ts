@@ -207,7 +207,7 @@ export async function ensurePrepared(
   if (!state.frontendReady) {
     logger
       .scope("devshell")
-      .info(`prepare_for_path(${cwd}) skipped: frontend not ready yet`);
+      .debug(`prepare_for_path(${cwd}) skipped: frontend not ready yet`);
     return;
   }
   const existing = cache.get(cwd);
