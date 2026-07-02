@@ -29,7 +29,6 @@ import { useAtMentionTextarea } from "./use-at-mention-textarea";
 import { useComposerResize } from "./use-composer-resize";
 import { useDraftCommit } from "./use-draft-commit";
 import { useVoiceConversation } from "../../hooks/useVoiceConversation";
-import { useConversationEngineChoice } from "../../hooks/useCascadeConversation";
 import { activeWorkspaceCwd } from "../../utils/activeWorkspaceRoot";
 import { ConversationHud } from "./conversation-hud";
 import {
@@ -145,9 +144,6 @@ export function ChatInput({
         brainModel?: string | null;
       }
     | undefined) ?? { toggleHotkey: "mod+shift+m", holdHotkey: null };
-  const conversationEngine = useConversationEngineChoice(
-    voiceConfig.conversationEngine,
-  );
   // Latest state for event-time context resolution (mirrors optionsRef in
   // the conversation hooks — refs must not be written during render).
   const stateRef = useRef(state);
@@ -160,7 +156,12 @@ export function ChatInput({
     continuous: voiceConfig.conversationContinuous ?? false,
     maxSpokenChars: voiceConfig.speakMaxChars ?? 600,
     onNeedsSetup: (providerId) => onEvent("voice:setup", { providerId }),
-    engine: conversationEngine,
+    engine:
+      voiceConfig.conversationEngine === "cascade"
+        ? "cascade"
+        : voiceConfig.conversationEngine === "lfm2"
+          ? "lfm2"
+          : "auto",
     allowFallback: (voiceConfig.conversationEngine ?? "auto") === "auto",
     getConvoContext: () => {
       const current = stateRef.current;

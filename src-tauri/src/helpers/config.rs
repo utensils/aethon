@@ -120,9 +120,10 @@ pub struct VoiceConfig {
     /// pi model id (`provider/model`) for the voice-brain session. Empty →
     /// the tab's default model.
     pub brain_model: Option<String>,
-    /// Cascade streaming STT provider. Currently only `"deepgram-flux"`.
+    /// Cascade STT provider: `"auto"` (default — cloud when its key
+    /// resolves, else the local model), `"deepgram-flux"`, `"local-whisper"`.
     pub stt_provider: Option<String>,
-    /// Cascade streaming TTS provider. Currently only `"cartesia"`.
+    /// Cascade TTS provider: `"auto"` (default), `"cartesia"`, `"lfm2"`.
     pub tts_provider: Option<String>,
     /// Cartesia voice id for spoken replies. Empty → provider default voice.
     pub tts_voice: Option<String>,
@@ -541,8 +542,8 @@ pub fn parse_config_toml(input: &str) -> serde_json::Value {
             "conversationContinuous": cfg.voice.conversation_continuous.unwrap_or(false),
             "conversationEngine": normalize_conversation_engine(cfg.voice.conversation_engine.as_deref()),
             "brainModel": cfg.voice.brain_model.as_deref().map(str::trim).filter(|s| !s.is_empty()),
-            "sttProvider": cfg.voice.stt_provider.as_deref().filter(|s| !s.is_empty()).unwrap_or("deepgram-flux"),
-            "ttsProvider": cfg.voice.tts_provider.as_deref().filter(|s| !s.is_empty()).unwrap_or("cartesia"),
+            "sttProvider": cfg.voice.stt_provider.as_deref().filter(|s| !s.is_empty()).unwrap_or("auto"),
+            "ttsProvider": cfg.voice.tts_provider.as_deref().filter(|s| !s.is_empty()).unwrap_or("auto"),
             "ttsVoice": cfg.voice.tts_voice.as_deref().map(str::trim).filter(|s| !s.is_empty()),
             // Presence flags only — raw keys never cross into the frontend.
             "deepgramApiKeySet": cfg.voice.deepgram_api_key.as_deref().is_some_and(|s| !s.trim().is_empty()),

@@ -9,8 +9,12 @@ export interface VoiceConvoStatus {
     | "user-speaking"
     | "awaiting-brain"
     | "speaking";
+  /** Resolved provider per stage (what a conversation would actually use). */
   sttProvider: string;
   ttsProvider: string;
+  /** Why a stage can't run, when it can't. */
+  sttError: string | null;
+  ttsError: string | null;
   deepgramKeyPresent: boolean;
   cartesiaKeyPresent: boolean;
   lastError: string | null;

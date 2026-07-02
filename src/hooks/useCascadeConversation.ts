@@ -8,7 +8,6 @@ import {
   speakConvoChunk,
   startVoiceConvo,
   stopVoiceConvo,
-  voiceConvoStatus,
 } from "../services/voiceConvo";
 import { onAgentTurnComplete } from "../utils/agentTurnEvents";
 import { setConversationActive } from "../utils/conversationMode";
@@ -307,32 +306,3 @@ export function useCascadeConversation(
   };
 }
 
-/** Resolve `[voice] conversation_engine` to a concrete pipeline. `"auto"`
- *  asks the Rust engine whether the cascade's provider keys resolve and
- *  falls back to the local LFM2 loop when they don't (or when the probe
- *  fails — e.g. a non-voice build). */
-export function useConversationEngineChoice(
-  configured: string | undefined,
-): "cascade" | "lfm2" {
-  // Explicit choices resolve synchronously in render; only "auto" needs the
-  // async availability probe.
-  const [autoChoice, setAutoChoice] = useState<"cascade" | "lfm2">("lfm2");
-  const isAuto = configured !== "cascade" && configured !== "lfm2";
-  useEffect(() => {
-    if (!isAuto) return;
-    let cancelled = false;
-    voiceConvoStatus()
-      .then((status) => {
-        if (!cancelled) setAutoChoice(status.available ? "cascade" : "lfm2");
-      })
-      .catch(() => {
-        if (!cancelled) setAutoChoice("lfm2");
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [isAuto]);
-  if (configured === "cascade") return "cascade";
-  if (configured === "lfm2") return "lfm2";
-  return autoChoice;
-}

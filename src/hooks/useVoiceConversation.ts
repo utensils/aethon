@@ -7,6 +7,7 @@ import {
   stopAndTranscribeVoice,
   stopVoicePlayback,
 } from "../services/voice";
+import { voiceConvoStatus } from "../services/voiceConvo";
 import { onAgentTurnComplete } from "../utils/agentTurnEvents";
 import { setConversationActive } from "../utils/conversationMode";
 import { LFM2_VOICE_PROVIDER_ID, capSpokenText } from "../utils/voice";
@@ -38,11 +39,11 @@ export interface UseVoiceConversationOptions {
   maxSpokenChars: number;
   /** Routed to Settings when the LFM2 model/binary isn't ready. */
   onNeedsSetup?: (providerId: string) => void;
-  /** Which pipeline drives the conversation. `"lfm2"` (default) is the local
-   *  batch loop below; `"cascade"` is the streaming engine
-   *  (useCascadeConversation) — resolve `"auto"` before passing it in
-   *  (useConversationEngineChoice). */
-  engine?: ConversationEngineKind;
+  /** Which pipeline drives the conversation. `"cascade"` is the streaming
+   *  engine (useCascadeConversation); `"lfm2"` the local batch loop below;
+   *  `"auto"` (default) probes cascade availability at ENTER time — so a key
+   *  saved in Settings takes effect on the next conversation, no reload. */
+  engine?: ConversationEngineKind | "auto";
   /** Runtime context stamped on cascade voice turns (active tab, project,
    *  models). Required for the cascade engine to dispatch tasks. */
   getConvoContext?: () => VoiceConvoContext;
@@ -87,7 +88,12 @@ export function useVoiceConversation(
     getContext: options.getConvoContext ?? (() => ({})),
   });
   const [fellBack, setFellBack] = useState(false);
-  const usingCascade = options.engine === "cascade" && !fellBack;
+  // Which pipeline the CURRENT (or most recent) session runs on. "auto"
+  // resolves here at enter time via a live availability probe.
+  const [resolvedEngine, setResolvedEngine] = useState<ConversationEngineKind>(
+    "lfm2",
+  );
+  const usingCascade = resolvedEngine === "cascade" && !fellBack;
 
   // A dead cascade session (error while idle-but-active: failed start or
   // exhausted mid-session reconnects) hands off to the local loop when the
@@ -104,6 +110,9 @@ export function useVoiceConversation(
   useEffect(() => {
     if (!shouldFallBack) return;
     cascadeExit();
+    // One-shot engine handoff reacting to the cascade's error state — the
+    // set is the transition itself, not a resync loop.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setFellBack(true);
     lfm2Enter();
     void speakVoice(
@@ -112,8 +121,39 @@ export function useVoiceConversation(
   }, [shouldFallBack, cascadeExit, lfm2Enter]);
 
   const controller = usingCascade ? cascade : lfm2;
+  const cascadeEnter = cascade.enter;
   return {
     ...controller,
+    enter: () => {
+      const configured = options.engine ?? "auto";
+      if (configured === "cascade") {
+        setFellBack(false);
+        setResolvedEngine("cascade");
+        cascadeEnter();
+        return;
+      }
+      if (configured === "lfm2") {
+        setResolvedEngine("lfm2");
+        lfm2Enter();
+        return;
+      }
+      // Auto: probe availability NOW, so keys/models added since boot count.
+      void voiceConvoStatus()
+        .then((status) => {
+          if (status.available) {
+            setFellBack(false);
+            setResolvedEngine("cascade");
+            cascadeEnter();
+          } else {
+            setResolvedEngine("lfm2");
+            lfm2Enter();
+          }
+        })
+        .catch(() => {
+          setResolvedEngine("lfm2");
+          lfm2Enter();
+        });
+    },
     exit: () => {
       controller.exit();
       // The next session gets a fresh shot at the cascade.

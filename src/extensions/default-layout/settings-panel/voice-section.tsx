@@ -1,9 +1,11 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { AethonConfig } from "../../../config";
 import {
   listConvoVoices,
   testConvoProviders,
+  voiceConvoStatus,
   type CartesiaVoice,
+  type VoiceConvoStatus,
 } from "../../../services/voiceConvo";
 import { formatVoiceDownloadProgress } from "../../../utils/voice";
 import { Field, Section, type SettingsUpdate } from "./sections";
@@ -115,6 +117,25 @@ function ConversationSettings({
   const [testing, setTesting] = useState(false);
   const [voices, setVoices] = useState<CartesiaVoice[] | null>(null);
   const [voicesError, setVoicesError] = useState<string | null>(null);
+  const [engineStatus, setEngineStatus] = useState<VoiceConvoStatus | null>(
+    null,
+  );
+
+  // Live readiness readout, re-probed whenever a voice setting changes (the
+  // probe is a local file/model check — no network).
+  useEffect(() => {
+    let cancelled = false;
+    voiceConvoStatus()
+      .then((status) => {
+        if (!cancelled) setEngineStatus(status);
+      })
+      .catch(() => {
+        if (!cancelled) setEngineStatus(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [config.voice]);
 
   const runProviderTest = async () => {
     setTesting(true);
@@ -130,6 +151,7 @@ function ConversationSettings({
           : `Cartesia: ${result.cartesiaError ?? "failed"}`,
       ];
       setTestResult(parts.join(" · "));
+      setEngineStatus(await voiceConvoStatus().catch(() => null));
     } catch (err) {
       setTestResult(err instanceof Error ? err.message : String(err));
     } finally {
@@ -146,9 +168,25 @@ function ConversationSettings({
     }
   };
 
+  const statusLine =
+    engineStatus === null
+      ? "Checking availability…"
+      : engineStatus.available
+        ? `Ready — speech-to-text: ${engineStatus.sttProvider}, text-to-speech: ${engineStatus.ttsProvider}.`
+        : `Not ready — ${[engineStatus.sttError, engineStatus.ttsError]
+            .filter(Boolean)
+            .join("; ")}.`;
+
   return (
     <div className="ae-voice-conversation-settings">
       <h4 className="ae-settings-subhead">Conversation</h4>
+      <p
+        className={`ae-settings-note${
+          engineStatus && !engineStatus.available ? " ae-voice-error" : ""
+        }`}
+      >
+        {statusLine}
+      </p>
       <Field label="Conversation engine">
         <select
           className="ae-settings-input"
@@ -183,11 +221,14 @@ function ConversationSettings({
                 sttProvider:
                   e.target.value === "local-whisper"
                     ? "local-whisper"
-                    : "deepgram-flux",
+                    : e.target.value === "deepgram-flux"
+                      ? "deepgram-flux"
+                      : "auto",
               },
             })
           }
         >
+          <option value="auto">Auto (cloud when a key is set)</option>
           <option value="deepgram-flux">
             Deepgram Flux (cloud, semantic turn detection)
           </option>
@@ -202,11 +243,17 @@ function ConversationSettings({
             update({
               voice: {
                 ...config.voice,
-                ttsProvider: e.target.value === "lfm2" ? "lfm2" : "cartesia",
+                ttsProvider:
+                  e.target.value === "lfm2"
+                    ? "lfm2"
+                    : e.target.value === "cartesia"
+                      ? "cartesia"
+                      : "auto",
               },
             })
           }
         >
+          <option value="auto">Auto (cloud when a key is set)</option>
           <option value="cartesia">Cartesia (cloud, streaming)</option>
           <option value="lfm2">LFM2-Audio (offline)</option>
         </select>

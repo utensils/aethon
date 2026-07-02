@@ -106,7 +106,8 @@ export interface AethonConfig {
     /** pi model id (`provider/model`) for the voice-brain session; null
      *  inherits the default model. */
     brainModel: string | null;
-    /** Cascade streaming STT / TTS providers (currently fixed). */
+    /** Cascade STT/TTS providers: "auto" (cloud when its key resolves, else
+     *  the ready local model), or an explicit provider id. */
     sttProvider: string;
     ttsProvider: string;
     /** Cartesia voice id; null uses the provider default voice. */
@@ -213,8 +214,8 @@ const DEFAULTS: AethonConfig = {
     conversationContinuous: false,
     conversationEngine: "auto",
     brainModel: null,
-    sttProvider: "deepgram-flux",
-    ttsProvider: "cartesia",
+    sttProvider: "auto",
+    ttsProvider: "auto",
     ttsVoice: null,
     deepgramApiKeySet: false,
     cartesiaApiKeySet: false,
