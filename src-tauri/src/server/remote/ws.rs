@@ -95,15 +95,12 @@ async fn client_session(ctx: GatewayCtx, socket: WebSocket) {
         }
     }
 
-    tracing::info!(
-        target: "aethon::server::remote",
-        "device {} ({}) connected", device.id, device.name
-    );
-    (ctx.device_changed)(&device);
-    run_session(&ctx, &device, &mut sink, &mut stream, &revoked).await;
+    let visible_connected = run_session(&ctx, &device, &mut sink, &mut stream, &revoked).await;
     ctx.remote.deregister_live(&device.id, &revoked);
-    tracing::info!(target: "aethon::server::remote", "device {} disconnected", device.id);
-    (ctx.device_changed)(&device);
+    if visible_connected && ctx.remote.deregister_connected(&device.id) {
+        tracing::info!(target: "aethon::server::remote", "device {} disconnected", device.id);
+        (ctx.device_changed)(&device);
+    }
 }
 
 async fn authenticate(
@@ -151,23 +148,35 @@ async fn run_session(
     sink: &mut SplitSink<WebSocket, Message>,
     stream: &mut SplitStream<WebSocket>,
     revoked: &Arc<tokio::sync::Notify>,
-) {
+) -> bool {
     let mut subs: HashSet<String> = HashSet::new();
     let mut hub_rx = ctx.remote.hub.subscribe();
     let (results_tx, mut results_rx) = mpsc::channel::<String>(RESULT_QUEUE);
     let mut ping = tokio::time::interval(PING_INTERVAL);
     ping.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     let mut last_inbound = Instant::now();
+    let mut visible_connected = false;
 
     loop {
         tokio::select! {
             inbound = stream.next() => {
                 match inbound {
-                    None | Some(Err(_)) => return,
-                    Some(Ok(Message::Close(_))) => return,
+                    None | Some(Err(_)) => return visible_connected,
+                    Some(Ok(Message::Close(_))) => return visible_connected,
                     Some(Ok(Message::Text(text))) => {
                         last_inbound = Instant::now();
-                        handle_text_frame(ctx, device, &text, &mut subs, &results_tx);
+                        let became_subscribed =
+                            handle_text_frame(ctx, device, &text, &mut subs, &results_tx);
+                        if became_subscribed && !visible_connected {
+                            visible_connected = true;
+                            if ctx.remote.register_connected(&device.id) {
+                                tracing::info!(
+                                    target: "aethon::server::remote",
+                                    "device {} ({}) connected", device.id, device.name
+                                );
+                                (ctx.device_changed)(device);
+                            }
+                        }
                     }
                     Some(Ok(_)) => {
                         // Pong / Ping / Binary — liveness only.
@@ -198,17 +207,17 @@ async fn run_session(
                         }
                         if lagged {
                             send_bye(sink, "slow-consumer").await;
-                            return;
+                            return visible_connected;
                         }
                         batch.retain(|f| subs.contains(f.topic));
                         for wire in coalesce_batch(&batch) {
                             let send = sink.send(Message::Text(wire));
                             match tokio::time::timeout(EVENT_SEND_TIMEOUT, send).await {
                                 Ok(Ok(())) => {}
-                                Ok(Err(_)) => return,
+                                Ok(Err(_)) => return visible_connected,
                                 Err(_) => {
                                     send_bye(sink, "slow-consumer").await;
-                                    return;
+                                    return visible_connected;
                                 }
                             }
                         }
@@ -219,9 +228,9 @@ async fn run_session(
                             "device {} lagged {missed} events", device.id
                         );
                         send_bye(sink, "slow-consumer").await;
-                        return;
+                        return visible_connected;
                     }
-                    Err(broadcast::error::RecvError::Closed) => return,
+                    Err(broadcast::error::RecvError::Closed) => return visible_connected,
                 }
             }
             result = results_rx.recv() => {
@@ -229,21 +238,21 @@ async fn run_session(
                 // None until the loop itself drops them.
                 if let Some(wire) = result
                     && sink.send(Message::Text(wire)).await.is_err() {
-                        return;
+                        return visible_connected;
                     }
             }
             _ = ping.tick() => {
                 if last_inbound.elapsed() > IDLE_DEADLINE {
                     send_bye(sink, "timeout").await;
-                    return;
+                    return visible_connected;
                 }
                 if sink.send(Message::Ping(Vec::new())).await.is_err() {
-                    return;
+                    return visible_connected;
                 }
             }
             _ = revoked.notified() => {
                 send_bye(sink, "revoked").await;
-                return;
+                return visible_connected;
             }
         }
     }
@@ -291,7 +300,7 @@ fn handle_text_frame(
     text: &str,
     subs: &mut HashSet<String>,
     results_tx: &mpsc::Sender<String>,
-) {
+) -> bool {
     let frame: ClientFrame = match serde_json::from_str(text) {
         Ok(frame) => frame,
         Err(e) => {
@@ -299,17 +308,20 @@ fn handle_text_frame(
                 target: "aethon::server::remote",
                 "device {}: unparsable frame: {e}", device.id
             );
-            return;
+            return false;
         }
     };
     match frame {
         ClientFrame::Hello { .. } => {
             // Already authenticated; a stray hello is a no-op.
+            false
         }
         ClientFrame::Sub { topics } => {
+            let mut accepted = false;
             for topic in topics {
                 if is_known_topic(&topic) {
                     subs.insert(topic);
+                    accepted = true;
                 } else {
                     tracing::debug!(
                         target: "aethon::server::remote",
@@ -317,11 +329,13 @@ fn handle_text_frame(
                     );
                 }
             }
+            accepted
         }
         ClientFrame::Unsub { topics } => {
             for topic in topics {
                 subs.remove(&topic);
             }
+            false
         }
         ClientFrame::Invoke { id, cmd, args } => {
             if !ctx.remote.allow_invoke(&device.id) {
@@ -338,7 +352,7 @@ fn handle_text_frame(
                         let _ = results_tx.send(wire).await;
                     });
                 }
-                return;
+                return false;
             }
             let relay = Arc::clone(&ctx.relay);
             let results_tx = results_tx.clone();
@@ -360,6 +374,7 @@ fn handle_text_frame(
                     let _ = results_tx.send(wire).await;
                 }
             });
+            false
         }
     }
 }
@@ -575,5 +590,37 @@ mod tests {
         let handle = state.register_live("device-a");
         state.deregister_live("device-a", &handle);
         assert!(state.allow_invoke("device-a"));
+    }
+
+    #[test]
+    fn visible_connected_state_is_separate_from_live_invoke_sockets() {
+        let state = super::super::RemoteState::in_memory();
+        let handle = state.register_live("device-a");
+        assert!(
+            !state.is_device_live("device-a"),
+            "one-shot invoke sockets must not show as connected"
+        );
+
+        assert!(
+            state.register_connected("device-a"),
+            "first event stream flips visible status on"
+        );
+        assert!(state.is_device_live("device-a"));
+        assert!(
+            !state.register_connected("device-a"),
+            "second event stream is not another visible transition"
+        );
+        assert!(
+            !state.deregister_connected("device-a"),
+            "one stream remains visible"
+        );
+        assert!(state.is_device_live("device-a"));
+        assert!(
+            state.deregister_connected("device-a"),
+            "last event stream flips visible status off"
+        );
+        assert!(!state.is_device_live("device-a"));
+
+        state.deregister_live("device-a", &handle);
     }
 }

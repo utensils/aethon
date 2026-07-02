@@ -38,6 +38,11 @@ pub struct RemoteState {
     /// Live-connection close signals keyed by device id, so revocation
     /// can drop a device's sessions immediately (`bye revoked`).
     live: Mutex<HashMap<String, Vec<Arc<Notify>>>>,
+    /// User-visible connected sessions keyed by device id. One-shot
+    /// command sockets still register in `live` for revocation/rate-limit
+    /// purposes, but only event-stream subscribers count as connected in
+    /// Settings/logs.
+    connected: Mutex<HashMap<String, usize>>,
     /// Invoke rate limiters keyed by device id — shared across a
     /// device's sessions so opening extra sockets doesn't multiply the
     /// budget. Pruned when a device's last session deregisters.
@@ -62,6 +67,7 @@ impl RemoteState {
             pairing: Mutex::new(None),
             hub: Arc::new(EventHub::new()),
             live: Mutex::new(HashMap::new()),
+            connected: Mutex::new(HashMap::new()),
             rate: Mutex::new(HashMap::new()),
             host_forwarders: Mutex::new(HashMap::new()),
         }
@@ -76,6 +82,7 @@ impl RemoteState {
             pairing: Mutex::new(None),
             hub: Arc::new(EventHub::new()),
             live: Mutex::new(HashMap::new()),
+            connected: Mutex::new(HashMap::new()),
             rate: Mutex::new(HashMap::new()),
             host_forwarders: Mutex::new(HashMap::new()),
         }
@@ -109,13 +116,37 @@ impl RemoteState {
     }
 
     pub fn is_device_live(&self, device_id: &str) -> bool {
-        self.live
+        self.connected
             .lock()
-            .map(|live| {
-                live.get(device_id)
-                    .is_some_and(|handles| !handles.is_empty())
-            })
+            .map(|connected| connected.get(device_id).is_some_and(|count| *count > 0))
             .unwrap_or(false)
+    }
+
+    /// Mark a long-lived, event-streaming session as user-visible.
+    /// Returns true only for the transition from 0 -> 1.
+    pub fn register_connected(&self, device_id: &str) -> bool {
+        let Ok(mut connected) = self.connected.lock() else {
+            return false;
+        };
+        let count = connected.entry(device_id.to_string()).or_insert(0);
+        *count += 1;
+        *count == 1
+    }
+
+    /// Unmark a user-visible session. Returns true only for 1 -> 0.
+    pub fn deregister_connected(&self, device_id: &str) -> bool {
+        let Ok(mut connected) = self.connected.lock() else {
+            return false;
+        };
+        let Some(count) = connected.get_mut(device_id) else {
+            return false;
+        };
+        if *count > 1 {
+            *count -= 1;
+            return false;
+        }
+        connected.remove(device_id);
+        true
     }
 
     /// Record an invoke against the device's shared rate budget;
