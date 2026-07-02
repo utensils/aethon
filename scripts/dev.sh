@@ -158,6 +158,16 @@ find_free_port() {
 
 ensure_frontend_deps
 
+# Stage the LFM2-Audio runner when absent (fresh clone / worktree) so the
+# local voice provider resolves in dev without AETHON_LFM2_AUDIO_BIN. The
+# staging script no-ops when the pinned binary is already present; a failed
+# download (offline) degrades to the voice provider reporting needs-setup.
+if [[ ! -x "src-tauri/binaries/lfm2-audio/llama-lfm2-audio" ]]; then
+  echo "[dev] staging LFM2-Audio runner (first run)…" >&2
+  bash scripts/stage-lfm2-runner.sh \
+    || echo "[dev] WARN: LFM2 runner staging failed — local voice TTS will report needs-setup" >&2
+fi
+
 VITE_PORT="$(find_free_port "$VITE_BASE")"
 DEBUG_PORT="$(find_free_port "$DEBUG_BASE")"
 
