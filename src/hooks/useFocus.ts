@@ -25,7 +25,20 @@ const DEFAULT_LEFT_WIDTH = "320px";
 const DEFAULT_RIGHT_WIDTH = "360px";
 const DEFAULT_TERMINAL_HEIGHT = 240;
 
-export const WORKSTATION_AREAS = [
+/** True in the companion bundle (build-time define, tree-shaken). Every
+ *  layout-grid writer below funnels through the exports of this module,
+ *  so gating HERE gives the mobile surface its own default grid without
+ *  chasing each caller (session restore, ready normalize, terminal
+ *  toggles, sidebar resize, …). */
+const IS_MOBILE_SURFACE = import.meta.env.VITE_AETHON_SURFACE === "mobile";
+
+/** The companion's single-column boot grid — must match
+ *  `src/mobile/mobile.a2ui.json`'s `state.layout`. */
+export const MOBILE_AREAS = ["header", "canvas", "composer", "nav"];
+export const MOBILE_ROWS = "auto minmax(0,1fr) auto auto";
+export const MOBILE_COLUMNS = "minmax(0,1fr)";
+
+const DESKTOP_WORKSTATION_AREAS = [
   "sidebar header files-sidebar",
   "sidebar tabs files-sidebar",
   "sidebar canvas files-sidebar",
@@ -33,6 +46,10 @@ export const WORKSTATION_AREAS = [
   "sidebar composer files-sidebar",
   "status status status",
 ];
+
+/** The boot grid areas for the current surface. Name kept from the
+ *  desktop-only era — treat it as "this surface's canonical areas". */
+export const WORKSTATION_AREAS = IS_MOBILE_SURFACE ? MOBILE_AREAS : DESKTOP_WORKSTATION_AREAS;
 
 function parseWidth(token: string | undefined, fallback: string): string {
   return token && /^\d+px$/.test(token) ? token : fallback;
@@ -118,6 +135,16 @@ export function workstationLayout(
 } {
   const { left, right } = pickWidths(current);
 
+  if (IS_MOBILE_SURFACE) {
+    // No sidebars on the phone — the grid is always one column.
+    return {
+      columns: MOBILE_COLUMNS,
+      areas: MOBILE_AREAS,
+      lastLeftWidth: left,
+      lastRightWidth: right,
+    };
+  }
+
   const parts = [
     leftVisible ? left : "0px",
     "minmax(0,1fr)",
@@ -143,6 +170,11 @@ export function workstationRows(
   terminalOpen: boolean,
   terminalHeight: number,
 ): string {
+  if (IS_MOBILE_SURFACE) {
+    // The companion has no bottom terminal track — the terminal is a
+    // full nav screen, so the grid never changes shape.
+    return MOBILE_ROWS;
+  }
   const terminalTrack = terminalOpen
     ? `${Math.max(120, Math.min(720, Math.round(terminalHeight)))}px`
     : "0px";

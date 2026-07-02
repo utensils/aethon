@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		1237749315CA2709E2C15046 /* libapp.a in Resources */ = {isa = PBXBuildFile; fileRef = D53FFF5F235E74CF0801DB4E /* libapp.a */; };
 		37A8D71C1C431310342E569E /* MetalKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 39692A6AC24FA94B0A9BD4C5 /* MetalKit.framework */; };
 		63DB5DF3D32CB498A54D3303 /* WebKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 1A73447EB793F607B5417319 /* WebKit.framework */; };
 		7C5F2103F737F13723F80BD3 /* assets in Resources */ = {isa = PBXBuildFile; fileRef = 0F77EE25BE7798FD0EC6F92A /* assets */; };
@@ -26,12 +27,14 @@
 		0F77EE25BE7798FD0EC6F92A /* assets */ = {isa = PBXFileReference; lastKnownFileType = folder; path = assets; sourceTree = SOURCE_ROOT; };
 		1191C5E2B87FD464ABADFEBB /* main.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = main.mm; sourceTree = "<group>"; };
 		11F00053E7A8E5AAE034777A /* QuartzCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = QuartzCore.framework; path = System/Library/Frameworks/QuartzCore.framework; sourceTree = SDKROOT; };
+		146F7E5113139FBB8DD00F4D /* discovery.rs */ = {isa = PBXFileReference; path = discovery.rs; sourceTree = "<group>"; };
 		1A73447EB793F607B5417319 /* WebKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WebKit.framework; path = System/Library/Frameworks/WebKit.framework; sourceTree = SDKROOT; };
 		24AE62A9C645375B668F5AD6 /* aethon-mobile_iOS.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = "aethon-mobile_iOS.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		377F611CB02C87FCEC9BC910 /* lib.rs */ = {isa = PBXFileReference; path = lib.rs; sourceTree = "<group>"; };
 		39692A6AC24FA94B0A9BD4C5 /* MetalKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = MetalKit.framework; path = System/Library/Frameworks/MetalKit.framework; sourceTree = SDKROOT; };
 		39AA94DE6FBB213D5568C157 /* UIKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = UIKit.framework; path = System/Library/Frameworks/UIKit.framework; sourceTree = SDKROOT; };
 		46D9407A75C3C588818EBE01 /* CoreGraphics.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreGraphics.framework; path = System/Library/Frameworks/CoreGraphics.framework; sourceTree = SDKROOT; };
+		47D99CAEB99B46007B67A368 /* pair.rs */ = {isa = PBXFileReference; path = pair.rs; sourceTree = "<group>"; };
 		55BAFF8E2FA7F78214D82FC4 /* LaunchScreen.storyboard */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; path = LaunchScreen.storyboard; sourceTree = "<group>"; };
 		7089A10ED575D3B89ED30289 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		71788F440E6BBD9A2C97D2B5 /* Security.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Security.framework; path = System/Library/Frameworks/Security.framework; sourceTree = SDKROOT; };
@@ -41,6 +44,7 @@
 		AB5960AA4D22B0CEB74581FE /* bindings.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = bindings.h; sourceTree = "<group>"; };
 		B104B88AD1F104009861E781 /* aethon-mobile_iOS.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "aethon-mobile_iOS.entitlements"; sourceTree = "<group>"; };
 		C1E360E95D28D267D5F4F8A7 /* gateway.rs */ = {isa = PBXFileReference; path = gateway.rs; sourceTree = "<group>"; };
+		D53FFF5F235E74CF0801DB4E /* libapp.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; path = libapp.a; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -65,12 +69,22 @@
 		05C2E46B21154D7E9D56DD24 /* src */ = {
 			isa = PBXGroup;
 			children = (
+				146F7E5113139FBB8DD00F4D /* discovery.rs */,
 				C1E360E95D28D267D5F4F8A7 /* gateway.rs */,
 				377F611CB02C87FCEC9BC910 /* lib.rs */,
 				A26023B2DCB6B322290B0B1F /* main.rs */,
+				47D99CAEB99B46007B67A368 /* pair.rs */,
 			);
 			name = src;
 			path = ../../src;
+			sourceTree = "<group>";
+		};
+		39C0E972FC841D6D35B62102 /* debug */ = {
+			isa = PBXGroup;
+			children = (
+				D53FFF5F235E74CF0801DB4E /* libapp.a */,
+			);
+			path = debug;
 			sourceTree = "<group>";
 		};
 		40AEC3AFF215D09BC1691C4E /* Frameworks */ = {
@@ -99,6 +113,7 @@
 		773407E242805084F3EA059E /* Externals */ = {
 			isa = PBXGroup;
 			children = (
+				BC48334CA9C251DA44B901C1 /* arm64 */,
 			);
 			path = Externals;
 			sourceTree = "<group>";
@@ -119,6 +134,14 @@
 				C3C05F47DEA8004A5F406548 /* bindings */,
 			);
 			path = "aethon-mobile";
+			sourceTree = "<group>";
+		};
+		BC48334CA9C251DA44B901C1 /* arm64 */ = {
+			isa = PBXGroup;
+			children = (
+				39C0E972FC841D6D35B62102 /* debug */,
+			);
+			path = arm64;
 			sourceTree = "<group>";
 		};
 		C3C05F47DEA8004A5F406548 /* bindings */ = {
@@ -150,6 +173,13 @@
 				40AEC3AFF215D09BC1691C4E /* Frameworks */,
 				628F0157248BF10B5AD377B5 /* Products */,
 			);
+			sourceTree = "<group>";
+		};
+		"TEMP_C7148327-F498-4288-BA05-E74639376396" /* x86_64 */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			path = x86_64;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -184,6 +214,10 @@
 				BuildIndependentTargetsInParallel = YES;
 				LastUpgradeCheck = 1430;
 				TargetAttributes = {
+					FBFA6D7B260047944252265D = {
+						DevelopmentTeam = 28X9H69QGE;
+						ProvisioningStyle = Automatic;
+					};
 				};
 			};
 			buildConfigurationList = 0F66FB0923135880EA2D55DC /* Build configuration list for PBXProject "aethon-mobile" */;
@@ -213,6 +247,7 @@
 				95F0A648FCECD704CD4C75FB /* Assets.xcassets in Resources */,
 				C54B46DA53A166874A6602B9 /* LaunchScreen.storyboard in Resources */,
 				7C5F2103F737F13723F80BD3 /* assets in Resources */,
+				1237749315CA2709E2C15046 /* libapp.a in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -327,6 +362,8 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = "aethon-mobile_iOS/aethon-mobile_iOS.entitlements";
 				CODE_SIGN_IDENTITY = "iPhone Developer";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = "28X9H69QGE";
 				ENABLE_BITCODE = NO;
 				"EXCLUDED_ARCHS[sdk=iphoneos*]" = x86_64;
 				FRAMEWORK_SEARCH_PATHS = (
@@ -358,6 +395,8 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = "aethon-mobile_iOS/aethon-mobile_iOS.entitlements";
 				CODE_SIGN_IDENTITY = "iPhone Developer";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = "28X9H69QGE";
 				ENABLE_BITCODE = NO;
 				"EXCLUDED_ARCHS[sdk=iphoneos*]" = x86_64;
 				FRAMEWORK_SEARCH_PATHS = (

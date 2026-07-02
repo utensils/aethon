@@ -143,10 +143,22 @@ export function useWorkspaceStartup({
 
   const prepareOnce = useCallback(
     async (cwd: string): Promise<WorkspaceStartupStatus> => {
-      const status = await invoke<WorkspaceStartupStatus>(
+      const status = await invoke<WorkspaceStartupStatus | null>(
         "workspace_startup_prepare_for_path",
         { args: { cwd } },
       );
+      if (!status) {
+        // A surface without startup approval (the companion stubs the
+        // family — the desktop owns execution-boundary approvals)
+        // answers null; treat it as nothing-to-approve.
+        return {
+          root: cwd,
+          fingerprint: "",
+          state: "disabled",
+          approved: true,
+          commands: [],
+        };
+      }
       return applyStatus(status);
     },
     [applyStatus],

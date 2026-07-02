@@ -356,3 +356,156 @@
   color: var(--text-dim);
   padding: 16px 14px;
 }
+
+/* =============================================================================
+   Pairing — QR scan overlay + nearby-desktops discovery
+   ============================================================================= */
+
+/* The barcode scanner renders the camera BEHIND the webview (windowed
+   mode makes the WKWebView transparent); the page must go transparent
+   too or the camera never shows. Set while ScanOverlay is mounted. */
+html[data-ae-scan],
+html[data-ae-scan] body,
+html[data-ae-scan] #root {
+  background: transparent !important;
+}
+
+.ae-scan-overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 16px;
+  padding: 24px;
+  padding-bottom: calc(24px + env(safe-area-inset-bottom));
+  z-index: 100;
+}
+.ae-scan-cutout {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: min(70vw, 320px);
+  aspect-ratio: 1;
+  transform: translate(-50%, -60%);
+  border-radius: 18px;
+  /* Dim everything except the cutout — the camera stays visible in the
+     hole and washed-out around it. */
+  box-shadow: 0 0 0 100vmax rgba(0, 0, 0, 0.55);
+  outline: 2px solid rgba(255, 255, 255, 0.85);
+}
+.ae-scan-hint {
+  position: relative;
+  margin: 0;
+  color: #fff;
+  text-align: center;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
+  font-size: 0.95rem;
+}
+.ae-scan-cancel {
+  position: relative;
+  min-width: 160px;
+}
+.ae-scan-denied {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: auto;
+  padding: 20px;
+  border-radius: 14px;
+  background: var(--bg-elev, #222);
+  color: var(--text, #eee);
+  max-width: 320px;
+  text-align: center;
+}
+
+.ae-mobile-nearby {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 6px;
+}
+.ae-mobile-nearby-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-dim);
+}
+.ae-mobile-nearby-spinner {
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: ae-mobile-spin 0.9s linear infinite;
+}
+.ae-mobile-nearby-empty {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: 0.85rem;
+}
+.ae-mobile-nearby-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.ae-mobile-nearby-row {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-input);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+.ae-mobile-nearby-name {
+  font-weight: 600;
+}
+.ae-mobile-nearby-meta {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.75rem;
+  color: var(--text-dim);
+}
+.ae-mobile-nearby-code {
+  display: flex;
+  gap: 8px;
+  margin-top: 6px;
+}
+.ae-mobile-nearby-code .ae-mobile-input {
+  flex: 1 1 auto;
+  letter-spacing: 0.2em;
+}
+.ae-mobile-nearby-code .ae-mobile-connect-button {
+  flex: 0 0 auto;
+}
+
+.ae-mobile-manual {
+  margin-top: 8px;
+}
+.ae-mobile-manual summary {
+  color: var(--text-dim);
+  font-size: 0.85rem;
+  cursor: pointer;
+  margin-bottom: 6px;
+}
+.ae-mobile-manual .ae-mobile-field {
+  margin-top: 8px;
+}
+.ae-mobile-manual .ae-mobile-connect-button {
+  margin-top: 10px;
+}

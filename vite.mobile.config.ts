@@ -87,6 +87,11 @@ export default defineConfig({
     host: host || false,
     port: 1430,
     strictPort: true,
+    // Tauri's mobile dev loop proxies this server through the
+    // tauri://localhost custom scheme, which WKWebView treats as an
+    // opaque origin — module-script loads then run in CORS mode and
+    // need this header or they all fail (white screen).
+    headers: { "access-control-allow-origin": "*" },
     hmr: host ? { protocol: "ws", host, port: 1431 } : undefined,
     watch: {
       ignored: ["**/.direnv/**", "**/target/**", "**/node_modules/**"],

@@ -14,6 +14,13 @@ const port = Number(process.env.VITE_PORT ?? 1420);
 export default defineConfig({
   plugins: [react()],
   clearScreen: false,
+  optimizeDeps: {
+    // The dep scanner treats every root-level .html as an entry, which
+    // pulls in index.mobile.html → the @tauri-real/* aliases that only
+    // vite.mobile.config.ts defines. Scope the desktop scan to the
+    // desktop entry.
+    entries: ["index.html"],
+  },
   server: {
     port,
     strictPort: true,

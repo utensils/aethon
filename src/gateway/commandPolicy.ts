@@ -18,8 +18,17 @@ export type CommandRoute = "local" | "stub" | "gateway";
 
 /** Native plugin commands handled by the mobile shell's own runtime. */
 function isLocalPlugin(cmd: string): boolean {
-  return cmd.startsWith("plugin:notification|") || cmd.startsWith("plugin:opener|");
+  return (
+    cmd.startsWith("plugin:notification|") ||
+    cmd.startsWith("plugin:opener|") ||
+    cmd.startsWith("plugin:barcode-scanner|")
+  );
 }
+
+/** The mobile shell's own commands (WS bridge, pairing, Bonjour scan) —
+ *  they must run against the local Tauri runtime, never be forwarded to
+ *  the desktop they exist to reach. */
+const LOCAL_PREFIXES = ["gateway_", "discovery_"];
 
 /** Desktop-only commands stubbed with a canned value. Prefix match for
  *  the families; exact match otherwise. Terminal/files/git flows are
@@ -33,6 +42,10 @@ const STUB_PREFIXES = [
   // fs reads/writes forward to the gateway.
   "fs_watch",
   "fs_unwatch",
+  // Execution-boundary approvals stay physically at the desktop; the
+  // phone treats startup as nothing-to-approve (null stub — the
+  // workspace-startup hook maps it to "disabled").
+  "workspace_startup_",
 ];
 
 const STUB_EXACT = new Set<string>([
@@ -89,6 +102,7 @@ export const GATEWAY_TRANSLATIONS: Record<string, string> = {
 
 export function routeFor(cmd: string): CommandRoute {
   if (isLocalPlugin(cmd)) return "local";
+  if (LOCAL_PREFIXES.some((p) => cmd.startsWith(p))) return "local";
   if (cmd in GATEWAY_TRANSLATIONS) return "gateway";
   if (STUB_EXACT.has(cmd)) return "stub";
   if (STUB_PREFIXES.some((p) => cmd.startsWith(p))) return "stub";

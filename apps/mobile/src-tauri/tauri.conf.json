@@ -29,7 +29,7 @@
     "shortDescription": "Aethon companion — drive a running desktop instance from your phone.",
     "longDescription": "The Aethon iOS companion pairs with a running Aethon desktop instance over the LAN and reuses the same A2UI web UI, so sessions, chat, terminals, files, and git are all reachable from the phone. The desktop remains the executor; the companion is a thin, authenticated remote client.",
     "iOS": {
-      "developmentTeam": null
+      "developmentTeam": "28X9H69QGE"
     }
   }
 }

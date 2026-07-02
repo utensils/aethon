@@ -1,0 +1,14 @@
+{
+  "$schema": "../gen/schemas/mobile-schema.json",
+  "identifier": "mobile-scanner",
+  "description": "Camera QR scanning for pairing — the plugin only exists on the mobile OSes, so these permissions are platform-scoped",
+  "windows": ["main"],
+  "platforms": ["iOS", "android"],
+  "permissions": [
+    "barcode-scanner:allow-scan",
+    "barcode-scanner:allow-cancel",
+    "barcode-scanner:allow-check-permissions",
+    "barcode-scanner:allow-request-permissions",
+    "barcode-scanner:allow-open-app-settings"
+  ]
+}

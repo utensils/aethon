@@ -8,6 +8,7 @@
 
 import { useEffect, useState } from "react";
 
+import { PairingQr } from "./pairing-qr";
 import { Field, Section } from "./sections";
 import { useRemoteDevices } from "./useRemoteDevices";
 
@@ -46,9 +47,11 @@ function PairingCode({
 
   return (
     <div className="ae-remote-pairing" data-testid="remote-pairing-code">
+      <PairingQr payload={qrPayload} />
       <div className="ae-remote-pairing-code">{code}</div>
       <p className="ae-remote-pairing-hint">
-        Enter this code on the device to pair. Expires in {secondsLeft}s.
+        Scan the QR with the Aethon app, or enter this code on the device. Expires in{" "}
+        {secondsLeft}s.
       </p>
       <details className="ae-remote-pairing-payload">
         <summary>Pairing payload (QR)</summary>

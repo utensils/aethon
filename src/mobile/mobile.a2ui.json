@@ -4,9 +4,15 @@
       "id": "root-layout",
       "type": "layout",
       "props": {
-        "columns": { "$ref": "/layout/columns" },
-        "rows": { "$ref": "/layout/rows" },
-        "areas": { "$ref": "/layout/areas" },
+        "columns": {
+          "$ref": "/layout/columns"
+        },
+        "rows": {
+          "$ref": "/layout/rows"
+        },
+        "areas": {
+          "$ref": "/layout/areas"
+        },
         "slotMap": {
           "sessions": "canvas",
           "terminal-screen": "canvas",
@@ -30,17 +36,32 @@
               "id": "mobile-pill",
               "type": "agent-pulse",
               "props": {
-                "label": { "$ref": "/agentStatus/label" },
-                "state": { "$ref": "/agentStatus/state" }
+                "label": {
+                  "$ref": "/agentStatus/label"
+                },
+                "state": {
+                  "$ref": "/agentStatus/state"
+                }
               }
             },
             {
               "id": "mobile-header-spacer",
               "type": "container",
-              "props": { "direction": "row", "className": "ae-header-spacer" }
+              "props": {
+                "direction": "row",
+                "className": "ae-header-spacer"
+              }
             },
-            { "id": "mobile-model", "type": "model-picker", "props": {} },
-            { "id": "mobile-conn", "type": "connection-badge", "props": {} }
+            {
+              "id": "mobile-model",
+              "type": "model-picker",
+              "props": {}
+            },
+            {
+              "id": "mobile-conn",
+              "type": "connection-badge",
+              "props": {}
+            }
           ]
         },
         {
@@ -48,8 +69,12 @@
           "type": "main-canvas",
           "props": {
             "area": "canvas",
-            "visible": { "$ref": "/mobileNav/isChat" },
-            "messages": { "$ref": "/messages" }
+            "visible": {
+              "$ref": "/mobileNav/isChat"
+            },
+            "messages": {
+              "$ref": "/messages"
+            }
           }
         },
         {
@@ -57,7 +82,9 @@
           "type": "mobile-sessions",
           "props": {
             "area": "sessions",
-            "visible": { "$ref": "/mobileNav/isSessions" }
+            "visible": {
+              "$ref": "/mobileNav/isSessions"
+            }
           }
         },
         {
@@ -65,8 +92,12 @@
           "type": "terminal-panel",
           "props": {
             "area": "terminal-screen",
-            "visible": { "$ref": "/mobileNav/isTerminal" },
-            "activeSubId": { "$ref": "/terminalPanel/activeSubId" }
+            "visible": {
+              "$ref": "/mobileNav/isTerminal"
+            },
+            "activeSubId": {
+              "$ref": "/terminalPanel/activeSubId"
+            }
           }
         },
         {
@@ -74,7 +105,9 @@
           "type": "mobile-file-list",
           "props": {
             "area": "files",
-            "visible": { "$ref": "/mobileNav/isFiles" }
+            "visible": {
+              "$ref": "/mobileNav/isFiles"
+            }
           }
         },
         {
@@ -82,8 +115,12 @@
           "type": "source-control-panel",
           "props": {
             "area": "git",
-            "visible": { "$ref": "/mobileNav/isGit" },
-            "source": { "$ref": "/vcs" }
+            "visible": {
+              "$ref": "/mobileNav/isGit"
+            },
+            "source": {
+              "$ref": "/vcs"
+            }
           }
         },
         {
@@ -92,11 +129,17 @@
           "props": {
             "area": "composer",
             "direction": "column",
-            "visible": { "$ref": "/mobileNav/isChat" },
+            "visible": {
+              "$ref": "/mobileNav/isChat"
+            },
             "className": "ae-mobile-composer"
           },
           "children": [
-            { "id": "mobile-chat-input", "type": "chat-input", "props": {} }
+            {
+              "id": "mobile-chat-input",
+              "type": "chat-input",
+              "props": {}
+            }
           ]
         },
         {
@@ -104,13 +147,17 @@
           "type": "mobile-file-viewer",
           "props": {
             "area": "canvas",
-            "visible": { "$ref": "/mobileFileViewer/open" }
+            "visible": {
+              "$ref": "/mobileFileViewer/open"
+            }
           }
         },
         {
           "id": "mobile-bottom-nav",
           "type": "mobile-nav",
-          "props": { "area": "nav" }
+          "props": {
+            "area": "nav"
+          }
         }
       ]
     }
@@ -122,14 +169,16 @@
       "areas": ["header", "canvas", "composer", "nav"]
     },
     "mobileNav": {
-      "active": "chat",
-      "isSessions": false,
-      "isChat": true,
+      "active": "sessions",
+      "isSessions": true,
+      "isChat": false,
       "isTerminal": false,
       "isFiles": false,
       "isGit": false,
       "isSettings": false
     },
-    "mobileFileViewer": { "open": false }
+    "mobileFileViewer": {
+      "open": false
+    }
   }
 }

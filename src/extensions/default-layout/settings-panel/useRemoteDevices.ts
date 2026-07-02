@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
   remoteDeviceRename,
@@ -34,6 +34,10 @@ export function useRemoteDevices(open: boolean): RemoteDevicesState {
   const [pairing, setPairing] = useState<PairingBegin | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // Device ids that existed when pairing began — a poll that returns a
+  // NEW id means a device just redeemed the code, so the pairing card
+  // can dismiss instead of lingering until the 120s expiry.
+  const pairingBaseline = useRef<Set<string> | null>(null);
 
   const refresh = useCallback(async () => {
     try {
@@ -41,29 +45,41 @@ export function useRemoteDevices(open: boolean): RemoteDevicesState {
         remoteStatus(),
         remoteDevicesList(),
       ]);
+      const list = Array.isArray(nextDevices) ? nextDevices : [];
       setStatus(nextStatus ?? null);
-      setDevices(Array.isArray(nextDevices) ? nextDevices : []);
+      setDevices(list);
       setError(null);
+      const baseline = pairingBaseline.current;
+      if (baseline && list.some((device) => !baseline.has(device.id))) {
+        pairingBaseline.current = null;
+        setPairing(null);
+      }
     } catch (err) {
       setError(String(err));
     }
   }, []);
 
+  const pairingOpen = pairing !== null;
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
     // Async data fetch on open + light poll so lastSeen / connection
     // count stay live; neither mutates state synchronously in the effect.
+    // While a pairing code is showing, poll fast so the card dismisses
+    // promptly when the device redeems it.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void refresh();
-    const timer = window.setInterval(() => {
-      if (!cancelled) void refresh();
-    }, 5000);
+    const timer = window.setInterval(
+      () => {
+        if (!cancelled) void refresh();
+      },
+      pairingOpen ? 1500 : 5000,
+    );
     return () => {
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [open, refresh]);
+  }, [open, pairingOpen, refresh]);
 
   // Auto-expire the displayed pairing code. The clear always goes
   // through the timer (delay clamped to 0) so state never mutates
@@ -71,14 +87,19 @@ export function useRemoteDevices(open: boolean): RemoteDevicesState {
   useEffect(() => {
     if (!pairing) return;
     const remaining = Math.max(0, pairing.expiresAt - Date.now());
-    const timer = setTimeout(() => setPairing(null), remaining);
+    const timer = setTimeout(() => {
+      pairingBaseline.current = null;
+      setPairing(null);
+    }, remaining);
     return () => clearTimeout(timer);
   }, [pairing]);
 
   const beginPairing = useCallback(async () => {
     setBusy(true);
     try {
-      setPairing(await remotePairingBegin());
+      const begun = await remotePairingBegin();
+      pairingBaseline.current = new Set(devices.map((device) => device.id));
+      setPairing(begun);
       setError(null);
       await refresh();
     } catch (err) {
@@ -86,9 +107,10 @@ export function useRemoteDevices(open: boolean): RemoteDevicesState {
     } finally {
       setBusy(false);
     }
-  }, [refresh]);
+  }, [devices, refresh]);
 
   const cancelPairing = useCallback(async () => {
+    pairingBaseline.current = null;
     setPairing(null);
     try {
       await remotePairingCancel();

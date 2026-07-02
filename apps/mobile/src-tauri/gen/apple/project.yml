@@ -12,6 +12,9 @@ settingGroups:
     base:
       PRODUCT_NAME: Aethon
       PRODUCT_BUNDLE_IDENTIFIER: com.utensils.aethon.mobile
+      # Signed device builds (ios-device). Simulator builds ignore it.
+      DEVELOPMENT_TEAM: 28X9H69QGE
+      CODE_SIGN_STYLE: Automatic
 targetTemplates:
   app:
     type: application

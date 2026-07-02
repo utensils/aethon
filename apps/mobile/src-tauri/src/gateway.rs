@@ -109,12 +109,18 @@ impl rustls::client::danger::ServerCertVerifier for PinnedCert {
     }
 }
 
-fn pinned_tls_connector(fingerprint: String) -> tokio_tungstenite::Connector {
+/// Client config trusting exactly the pinned cert — shared by the WS
+/// bridge here and the pair.rs HTTPS POST.
+pub(crate) fn pinned_client_config(fingerprint: String) -> Arc<rustls::ClientConfig> {
     let config = rustls::ClientConfig::builder()
         .dangerous()
         .with_custom_certificate_verifier(Arc::new(PinnedCert { fingerprint }))
         .with_no_client_auth();
-    tokio_tungstenite::Connector::Rustls(Arc::new(config))
+    Arc::new(config)
+}
+
+fn pinned_tls_connector(fingerprint: String) -> tokio_tungstenite::Connector {
+    tokio_tungstenite::Connector::Rustls(pinned_client_config(fingerprint))
 }
 
 /// Open (or reopen) the socket. `fingerprint` empty → plaintext `ws://`
@@ -169,13 +175,11 @@ pub async fn gateway_connect(
 }
 
 #[tauri::command]
-pub async fn gateway_send(
-    state: State<'_, Arc<GatewayState>>,
-    text: String,
-) -> Result<(), String> {
+pub async fn gateway_send(state: State<'_, Arc<GatewayState>>, text: String) -> Result<(), String> {
     let guard = state.tx.lock().await;
     let tx = guard.as_ref().ok_or("gateway not connected")?;
-    tx.send(Message::Text(text)).map_err(|_| "gateway closed".to_string())
+    tx.send(Message::Text(text))
+        .map_err(|_| "gateway closed".to_string())
 }
 
 #[tauri::command]

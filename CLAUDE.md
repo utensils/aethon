@@ -31,7 +31,8 @@ helpers (defined in `flake.nix`):
 | ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
 | `dev`                  | `scripts/dev.sh` → `cargo tauri dev` with port auto-increment                                                                       |
 | `ios-dev`              | `scripts/ios.sh dev` → iOS companion in the Simulator (needs Xcode + CocoaPods; see `docs/mobile.md`)                               |
-| `ios-build`            | `scripts/ios.sh build` — pass `--debug --target aarch64-sim` for an unsigned simulator .app                                         |
+| `ios-build`            | `scripts/ios.sh build` — no args = unsigned simulator .app                                                                          |
+| `ios-device`           | `scripts/ios.sh device` — signed build installed + launched on the connected iPhone via devicectl                                   |
 | `docs`                 | `vitepress dev` from `website/` bound to `0.0.0.0` (LAN-reachable; :5173)                                                           |
 | `build-app`            | `cargo tauri build` — release bundle                                                                                                |
 | `check`                | CI gate: clippy + tsc + ESLint + cargo test + vitest                                                                                |

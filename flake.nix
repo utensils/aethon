@@ -437,6 +437,12 @@
                 command = "exec ./scripts/ios.sh run \"$@\"";
               }
               {
+                category = "dev";
+                name = "ios-device";
+                help = "Signed device build + install/launch on the connected iPhone via devicectl (AETHON_IOS_UDID overrides device pick)";
+                command = "exec ./scripts/ios.sh device \"$@\"";
+              }
+              {
                 category = "build";
                 name = "ios-build";
                 help = "Build the iOS companion app (cargo tauri ios build; needs Xcode + CocoaPods). No args = unsigned simulator build; --target aarch64 = device (needs a development team).";
