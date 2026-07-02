@@ -11,7 +11,14 @@
  * `extensionToggleState` live in `menuItems.ts` as pure data.
  */
 
-import { Fragment, useCallback, useEffect, useRef, useState } from "react";
+import {
+  Fragment,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import type {
   BooleanValue,
   SidebarItem,
@@ -117,21 +124,42 @@ export function Sidebar({
   const useHostGroups = props.hostGroups
     ? resolveBoolean(props.hostGroups, state)
     : false;
-  const hosts = useHostGroups
-    ? (resolveSidebarItems(props.hosts, state) as unknown as HostGroupItem[])
-    : [];
-
-  // Per-host collapse state for the project list (local UI only — the
-  // active host defaults to expanded). Keyed by host id.
-  const [collapsedHosts, setCollapsedHosts] = useState<Set<string>>(
-    () => new Set(),
+  const hosts = useMemo(
+    () =>
+      useHostGroups
+        ? (resolveSidebarItems(
+            props.hosts,
+            state,
+          ) as unknown as HostGroupItem[])
+        : [],
+    [props.hosts, state, useHostGroups],
   );
-  const toggleHostCollapsed = (id: string) =>
-    setCollapsedHosts((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
+
+  // Per-host expansion state for project lists (local UI only). Seed the
+  // current active host open once, then let each host stay independently
+  // expanded/collapsed as the user switches around the mesh.
+  const [hostExpansionOverrides, setHostExpansionOverrides] = useState<
+    Record<string, boolean>
+  >({});
+  const preserveExpandedHosts = useCallback(() => {
+    setHostExpansionOverrides((prev) => {
+      let next: Record<string, boolean> | null = null;
+      for (const host of hosts) {
+        const expanded = prev[host.id] ?? host.active;
+        if (!expanded || prev[host.id] === true) continue;
+        next ??= { ...prev };
+        next[host.id] = true;
+      }
+      return next ?? prev;
+    });
+  }, [hosts]);
+  const toggleHostExpanded = (id: string, currentExpanded: boolean) =>
+    setHostExpansionOverrides((prev) => {
+      if (prev[id] === !currentExpanded) return prev;
+      return {
+        ...prev,
+        [id]: !currentExpanded,
+      };
     });
 
   const allSections = composeSidebarSections({
@@ -143,8 +171,7 @@ export function Sidebar({
   // inside the active host's group; everything else stays top-level.
   const groupHosts = useHostGroups && hosts.length > 0;
   const hostWorkspaceSelected =
-    groupHosts &&
-    (state.project === null || state.project === undefined);
+    groupHosts && (state.project === null || state.project === undefined);
   const projectsSection = groupHosts
     ? allSections.find((s) => s.id === "projects")
     : undefined;
@@ -152,8 +179,12 @@ export function Sidebar({
     ? allSections.filter((s) => s.id !== "projects")
     : allSections;
 
-  const renderSection = (section: SidebarSectionExt) => {
-    const items = resolveSidebarItems(section.items, state);
+  const renderSection = (
+    section: SidebarSectionExt,
+    sectionState: Record<string, unknown> = state,
+    eventHandler: BuiltinComponentProps["onEvent"] = onEvent,
+  ) => {
+    const items = resolveSidebarItems(section.items, sectionState);
     if (section.hideWhenEmpty === true && items.length === 0) {
       return null;
     }
@@ -165,8 +196,8 @@ export function Sidebar({
           section={section}
           items={items}
           componentId={component.id}
-          state={state}
-          onEvent={onEvent}
+          state={sectionState}
+          onEvent={eventHandler}
           onItemContextMenu={menu.openItemContextMenu}
           renderChildWithState={renderChildWithState}
         />
@@ -179,8 +210,8 @@ export function Sidebar({
         items={items}
         monoItems={monoItems}
         componentId={component.id}
-        state={state}
-        onEvent={onEvent}
+        state={sectionState}
+        onEvent={eventHandler}
         renderChildWithState={renderChildWithState}
         openItemContextMenu={menu.openItemContextMenu}
         openWorkspaceContextMenu={menu.openWorkspaceContextMenu}
@@ -227,31 +258,61 @@ export function Sidebar({
       <div className="a2ui-sidebar-sections">
         {groupHosts
           ? hosts.map((host) => {
-              const collapsed = collapsedHosts.has(host.id);
-              // Only the active host shows its projects today; selecting
-              // another host switches the active one (then its projects
-              // show). Designed to scale to per-host project lists.
-              const showsProjects = host.active && !!projectsSection;
+              const sidebarState =
+                (state.sidebar as Record<string, unknown> | undefined) ?? {};
+              const projectsByHost =
+                (sidebarState.projectsByHost as
+                  | Record<string, unknown>
+                  | undefined) ?? {};
+              const hostProjects = Array.isArray(projectsByHost[host.id])
+                ? (projectsByHost[host.id] as SidebarItem[])
+                : host.active && Array.isArray(sidebarState.projects)
+                  ? (sidebarState.projects as SidebarItem[])
+                  : [];
+              const canRenderProjects =
+                !!projectsSection &&
+                (hostProjects.length > 0 ||
+                  host.paired === true ||
+                  (host.hint ?? "").toLowerCase() === "this mac");
+              const expanded =
+                canRenderProjects &&
+                (hostExpansionOverrides[host.id] ?? host.active);
+              const hostState = {
+                ...state,
+                sidebar: {
+                  ...sidebarState,
+                  projects: hostProjects,
+                },
+              };
+              const hostOnEvent: BuiltinComponentProps["onEvent"] = (
+                eventType,
+                data,
+                id,
+              ) => {
+                preserveExpandedHosts();
+                return onEvent(eventType, data, id);
+              };
               return (
                 <HostGroup
                   key={host.id}
                   host={host}
                   selected={host.active && hostWorkspaceSelected}
-                  collapsible={showsProjects}
-                  expanded={showsProjects && !collapsed}
-                  onToggleExpand={() => toggleHostCollapsed(host.id)}
-                  onSelectHost={() =>
+                  collapsible={canRenderProjects}
+                  expanded={expanded}
+                  onToggleExpand={() => toggleHostExpanded(host.id, expanded)}
+                  onSelectHost={() => {
+                    preserveExpandedHosts();
                     onEvent(
                       "select",
                       { sectionId: "hosts", itemId: host.id },
                       host.id,
-                    )
-                  }
+                    );
+                  }}
                   onPairHost={(event) => menu.openHostPairMenu(event, host)}
                   onHostContextMenu={menu.openHostContextMenu}
                 >
-                  {showsProjects && projectsSection
-                    ? renderSection(projectsSection)
+                  {expanded && projectsSection
+                    ? renderSection(projectsSection, hostState, hostOnEvent)
                     : null}
                 </HostGroup>
               );
@@ -392,7 +453,9 @@ function SidebarSectionBlock({
     draggedWorkspaceId: string,
   ) =>
     Array.from(
-      root.querySelectorAll<HTMLElement>(".ae-workspace-row[data-workspace-id]"),
+      root.querySelectorAll<HTMLElement>(
+        ".ae-workspace-row[data-workspace-id]",
+      ),
     ).filter(
       (el) =>
         el.dataset.projectId === projectId &&

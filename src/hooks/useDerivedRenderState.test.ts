@@ -179,16 +179,13 @@ describe("useDerivedRenderState", () => {
 
   it("does not expose a selected session tab while workspace landing owns the canvas", () => {
     const agent = makeEmptyTab("agent-1", "Tab 1");
-    const buildSidebarHistory = vi.fn(
-      (_tabs, activeId) =>
-        [
-          {
-            id: "agent-1",
-            label: "Tab 1",
-            active: activeId === "agent-1",
-          },
-        ],
-    );
+    const buildSidebarHistory = vi.fn((_tabs, activeId) => [
+      {
+        id: "agent-1",
+        label: "Tab 1",
+        active: activeId === "agent-1",
+      },
+    ]);
     const { result } = renderHook(() =>
       useDerivedRenderState({
         state: {
@@ -468,6 +465,21 @@ describe("useDerivedRenderState", () => {
         iconUrl: "data:image/png;base64,REMOTE",
       },
     ]);
+    expect(
+      (
+        result.current.renderState.sidebar as {
+          projectsByHost?: Record<string, unknown[]>;
+        }
+      ).projectsByHost,
+    ).toMatchObject({
+      "local:one": [{ id: "local-only" }],
+      "remote:bender": [
+        {
+          id: "remote:bender::project::aethon",
+          iconUrl: "data:image/png;base64,REMOTE",
+        },
+      ],
+    });
     expect(result.current.renderState.host).toMatchObject({
       id: "remote:bender",
       displayName: "bender",
@@ -529,8 +541,11 @@ describe("useDerivedRenderState", () => {
       id: "remote:bender",
     });
     expect(
-      (result.current.renderState.sidebar as { hosts?: Array<{ id: string; hint: string }> })
-        .hosts,
+      (
+        result.current.renderState.sidebar as {
+          hosts?: Array<{ id: string; hint: string }>;
+        }
+      ).hosts,
     ).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ id: "remote:bender", hint: "available" }),

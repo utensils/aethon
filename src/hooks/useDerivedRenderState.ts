@@ -106,15 +106,18 @@ export function useDerivedRenderState({
     );
     const activeKind = activeTabKind(tabs, activeTabId);
     const overviewActive = activeKind === null || activeKind === "shell";
-    const explicitLanding =
-      state.landing as { kind?: string } | null | undefined;
+    const explicitLanding = state.landing as
+      | { kind?: string }
+      | null
+      | undefined;
     const landing =
       explicitLanding ??
       (overviewActive ? implicitWorkspaceLanding(state) : null);
     const workspaceLandingVisible = !!landing && landing.kind === "workspace";
     const mobileDeviceLandingVisible =
       !!landing && landing.kind === "mobile-device";
-    const landingVisible = workspaceLandingVisible || mobileDeviceLandingVisible;
+    const landingVisible =
+      workspaceLandingVisible || mobileDeviceLandingVisible;
     const effectiveActiveTabId = landingVisible ? OVERVIEW_TAB_ID : activeTabId;
     const history = buildSidebarHistory(
       tabs,
@@ -321,6 +324,24 @@ export function useDerivedRenderState({
           attentionIds,
         )
       : hostScopedProjects;
+    const projectsByHost: Record<string, unknown[]> = {};
+    for (const host of hostInfo.hosts) {
+      const hostProjects =
+        host.id === hostInfo.localHostId
+          ? sidebarProjects
+          : (hostInfo.remoteProjectsByHost[host.id] ?? []);
+      projectsByHost[host.id] = Array.isArray(hostProjects)
+        ? attachAgentActivity(
+            hostProjects as Array<{
+              id: string;
+              workspaces?: { path?: string; isMain?: boolean }[];
+            }>,
+            agentTabs,
+            runningIds,
+            attentionIds,
+          )
+        : [];
+    }
 
     return {
       ...state,
@@ -343,6 +364,7 @@ export function useDerivedRenderState({
       sidebar: {
         ...sidebar,
         projects: sidebarProjectsWithAgent,
+        projectsByHost,
         history,
         hosts: sidebarHosts,
         mobileDevices: sidebarMobileDevices,

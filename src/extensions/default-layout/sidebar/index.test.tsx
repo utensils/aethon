@@ -1,6 +1,13 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 // Force the macOS branch so the brand-strip drag-region assertion is
 // deterministic under jsdom (navigator.platform is empty there).
 vi.mock("../../../utils/platform", () => ({ isMacOS: () => true }));
@@ -430,9 +437,7 @@ describe("Sidebar project menu", () => {
     });
 
     fireEvent.contextMenu(screen.getByText("feature-x").closest("li")!);
-    fireEvent.click(
-      screen.getByRole("menuitem", { name: /Rename workspace/ }),
-    );
+    fireEvent.click(screen.getByRole("menuitem", { name: /Rename workspace/ }));
 
     expect(prompt).not.toHaveBeenCalled();
     expect(screen.queryByRole("menu")).toBeNull();
@@ -638,6 +643,81 @@ describe("Sidebar host groups", () => {
       { sectionId: "hosts", itemId: "remote:bender" },
       "remote:bender",
     );
+  });
+
+  it("keeps multiple host project trees expanded across host selection", async () => {
+    const component = sidebarComponent({
+      brandMark: true,
+      version: "v9.9",
+      hostGroups: true,
+      hosts: { $ref: "/sidebar/hosts" },
+      sections: [
+        {
+          id: "projects",
+          title: "projects",
+          items: { $ref: "/sidebar/projects" },
+        },
+      ],
+    });
+    const localProjects = [{ id: "project:local", label: "local-aethon" }];
+    const remoteProjects = [
+      { id: "remote:bender::project::nix", label: "nix" },
+    ];
+    const stateFor = (activeHostId: string) => ({
+      project: null,
+      sidebar: {
+        hosts: [
+          {
+            id: "local:abc",
+            label: "halcyon",
+            hint: "this mac",
+            active: activeHostId === "local:abc",
+          },
+          {
+            id: "remote:bender",
+            label: "bender",
+            hint: "paired",
+            paired: true,
+            active: activeHostId === "remote:bender",
+          },
+        ],
+        projects:
+          activeHostId === "remote:bender" ? remoteProjects : localProjects,
+        projectsByHost: {
+          "local:abc": localProjects,
+          "remote:bender": remoteProjects,
+        },
+      },
+    });
+
+    const view = render(
+      <Sidebar
+        component={component}
+        state={stateFor("local:abc")}
+        onEvent={vi.fn<SidebarOnEvent>()}
+        renderChildWithState={() => null}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("local-aethon")).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Expand host" }));
+    expect(screen.getByText("local-aethon")).toBeTruthy();
+    expect(screen.getByText("nix")).toBeTruthy();
+    fireEvent.click(screen.getByText("bender"));
+
+    view.rerender(
+      <Sidebar
+        component={component}
+        state={stateFor("remote:bender")}
+        onEvent={vi.fn<SidebarOnEvent>()}
+        renderChildWithState={() => null}
+      />,
+    );
+
+    expect(screen.getByText("local-aethon")).toBeTruthy();
+    expect(screen.getByText("nix")).toBeTruthy();
   });
 
   it("offers pairing directly on visible discovered desktop hosts", () => {
