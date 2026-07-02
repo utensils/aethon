@@ -8,7 +8,7 @@ const eventListeners = new Map<string, Array<(event: { payload: unknown }) => vo
 
 const remoteDevices: unknown[] = [];
 const remoteHosts: unknown[] = [];
-const remoteSnapshots = new Map<string, unknown>();
+const remoteSnapshots = new Map<string, { projects: unknown; icons?: unknown }>();
 
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: (cmd: string) =>
@@ -25,7 +25,11 @@ vi.mock("@tauri-apps/api/core", () => ({
           : cmd === "remote_hosts_list"
             ? remoteHosts
             : cmd === "remote_host_project_snapshot"
-              ? { hostId: "remote:bender", projects: remoteSnapshots.get("remote:bender") ?? {} }
+              ? {
+                  hostId: "remote:bender",
+                  projects: remoteSnapshots.get("remote:bender")?.projects ?? {},
+                  icons: remoteSnapshots.get("remote:bender")?.icons ?? {},
+                }
           : null,
     ),
 }));
@@ -159,10 +163,23 @@ describe("useHostInfo", () => {
       lastSeenAt: 2,
     });
     remoteSnapshots.set("remote:bender", {
-      projects: [{ id: "p1", label: "aethon", path: "/repo/aethon", uiExpanded: true }],
-      workspacesByProject: {
-        p1: [{ id: "w1", projectId: "p1", path: "/repo/aethon", branch: "main", isMain: true }],
+      projects: {
+        projects: [
+          { id: "p1", label: "aethon", path: "/repo/aethon", uiExpanded: true },
+        ],
+        workspacesByProject: {
+          p1: [
+            {
+              id: "w1",
+              projectId: "p1",
+              path: "/repo/aethon",
+              branch: "main",
+              isMain: true,
+            },
+          ],
+        },
       },
+      icons: JSON.stringify({ p1: "data:image/png;base64,REMOTE" }),
     });
 
     const { result } = renderHook(() => useHostInfo());
@@ -177,6 +194,7 @@ describe("useHostInfo", () => {
         id: "remote:bender::project::p1",
         remoteId: "p1",
         label: "aethon",
+        iconUrl: "data:image/png;base64,REMOTE",
         workspaces: [
           expect.objectContaining({
             id: "remote:bender::workspace::w1",

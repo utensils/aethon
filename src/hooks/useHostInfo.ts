@@ -39,6 +39,7 @@ export interface RemoteProjectMirror {
   label: string;
   tooltip: string;
   path: string;
+  iconUrl?: string;
   active: boolean;
   expanded: boolean;
   workspaces: RemoteWorkspaceMirror[];
@@ -261,7 +262,10 @@ export function useHostInfo(): UseHostInfo {
         hostIds.map(async (hostId) => {
           try {
             const snapshot = await remoteHostProjectSnapshot(hostId);
-            return [hostId, projectMirrorsFromSnapshot(hostId, snapshot.projects)] as const;
+            return [
+              hostId,
+              projectMirrorsFromSnapshot(hostId, snapshot.projects, snapshot.icons),
+            ] as const;
           } catch {
             return [hostId, []] as const;
           }
@@ -363,13 +367,17 @@ function stringArraysEqual(a?: string[], b?: string[]): boolean {
 function projectMirrorsFromSnapshot(
   hostId: string,
   snapshot: unknown,
+  iconsSnapshot: unknown = {},
 ): RemoteProjectMirror[] {
-  if (!snapshot || typeof snapshot !== "object") return [];
-  const doc = snapshot as {
+  const snapshotDoc = snapshotObject(snapshot);
+  if (!snapshotDoc) return [];
+  const icons = projectIconsFromSnapshot(iconsSnapshot);
+  const doc = snapshotDoc as {
     projects?: Array<{
       id?: unknown;
       label?: unknown;
       path?: unknown;
+      iconUrl?: unknown;
       uiExpanded?: unknown;
       workspaceSortMode?: unknown;
     }>;
@@ -385,13 +393,24 @@ function projectMirrorsFromSnapshot(
         : {};
   return projects
     .filter(
-      (p): p is { id: string; label: string; path: string; uiExpanded?: unknown } =>
+      (p): p is {
+        id: string;
+        label: string;
+        path: string;
+        iconUrl?: unknown;
+        uiExpanded?: unknown;
+      } =>
         typeof p.id === "string" &&
         typeof p.label === "string" &&
         typeof p.path === "string",
     )
     .map((project) => {
       const projectId = `${hostId}::project::${project.id}`;
+      const inlineIcon =
+        typeof project.iconUrl === "string" && project.iconUrl.length > 0
+          ? project.iconUrl
+          : undefined;
+      const iconUrl = icons[project.id] ?? inlineIcon;
       const rawWorkspaces = Array.isArray(byProject[project.id])
         ? (byProject[project.id] as Array<Record<string, unknown>>)
         : [];
@@ -428,9 +447,35 @@ function projectMirrorsFromSnapshot(
         label: project.label,
         tooltip: project.path,
         path: project.path,
+        ...(iconUrl ? { iconUrl } : {}),
         active: false,
         expanded: project.uiExpanded === true,
         workspaces,
       };
     });
+}
+
+function projectIconsFromSnapshot(snapshot: unknown): Record<string, string> {
+  const doc = snapshotObject(snapshot);
+  if (!doc) return {};
+  const out: Record<string, string> = {};
+  for (const [id, url] of Object.entries(doc)) {
+    if (typeof url === "string" && url.length > 0) out[id] = url;
+  }
+  return out;
+}
+
+function snapshotObject(snapshot: unknown): Record<string, unknown> | null {
+  if (typeof snapshot === "string") {
+    try {
+      const parsed: unknown = JSON.parse(snapshot);
+      return snapshotObject(parsed);
+    } catch {
+      return null;
+    }
+  }
+  if (!snapshot || typeof snapshot !== "object" || Array.isArray(snapshot)) {
+    return null;
+  }
+  return snapshot as Record<string, unknown>;
 }

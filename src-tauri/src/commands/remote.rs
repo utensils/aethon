@@ -229,6 +229,7 @@ pub async fn remote_host_invoke(
 pub struct RemoteProjectSnapshot {
     pub host_id: String,
     pub projects: serde_json::Value,
+    pub icons: serde_json::Value,
 }
 
 #[tauri::command]
@@ -236,21 +237,91 @@ pub async fn remote_host_project_snapshot(
     id: String,
     remote: State<'_, Arc<RemoteState>>,
 ) -> Result<RemoteProjectSnapshot, String> {
-    let data = remote_host_invoke(
-        id.clone(),
-        "read_state".into(),
+    let host = remote
+        .hosts
+        .get(&id)
+        .ok_or_else(|| format!("unknown remote host {id}"))?;
+    let data = crate::server::remote::client::invoke(
+        &host,
+        "read_state",
         serde_json::json!({ "name": "projects.json" }),
-        remote,
     )
     .await?;
-    let raw = data.as_str().unwrap_or("");
-    let projects = if raw.trim().is_empty() {
-        serde_json::json!({})
-    } else {
-        serde_json::from_str(raw).map_err(|e| format!("remote projects.json: {e}"))?
+    let projects = parse_remote_state_json(&data, "remote projects.json")?;
+    let icons_data = crate::server::remote::client::invoke(
+        &host,
+        "read_state",
+        serde_json::json!({ "name": "project-icons.json" }),
+    )
+    .await;
+    let icons = match icons_data {
+        Ok(value) => match parse_remote_state_json(&value, "remote project-icons.json") {
+            Ok(parsed) => parsed,
+            Err(err) => {
+                tracing::debug!(host_id = %id, error = %err, "remote project icon sidecar invalid");
+                serde_json::json!({})
+            }
+        },
+        Err(err) => {
+            tracing::debug!(host_id = %id, error = %err, "remote project icon sidecar unavailable");
+            serde_json::json!({})
+        }
     };
     Ok(RemoteProjectSnapshot {
         host_id: id,
         projects,
+        icons,
     })
+}
+
+fn parse_remote_state_json(
+    value: &serde_json::Value,
+    label: &str,
+) -> Result<serde_json::Value, String> {
+    match value {
+        serde_json::Value::String(raw) => {
+            if raw.trim().is_empty() {
+                Ok(serde_json::json!({}))
+            } else {
+                serde_json::from_str(raw).map_err(|e| format!("{label}: {e}"))
+            }
+        }
+        serde_json::Value::Null => Ok(serde_json::json!({})),
+        serde_json::Value::Object(_) => Ok(value.clone()),
+        _ => Err(format!("{label}: expected JSON object state")),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_remote_state_json;
+    use serde_json::json;
+
+    #[test]
+    fn parse_remote_state_json_accepts_empty_state() {
+        assert_eq!(
+            parse_remote_state_json(&json!(""), "remote project-icons.json").unwrap(),
+            json!({})
+        );
+    }
+
+    #[test]
+    fn parse_remote_state_json_decodes_string_state() {
+        assert_eq!(
+            parse_remote_state_json(
+                &json!(r#"{"p1":"data:image/png;base64,AAAA"}"#),
+                "remote project-icons.json"
+            )
+            .unwrap(),
+            json!({ "p1": "data:image/png;base64,AAAA" })
+        );
+    }
+
+    #[test]
+    fn parse_remote_state_json_accepts_object_state() {
+        assert_eq!(
+            parse_remote_state_json(&json!({ "projects": [] }), "remote projects.json").unwrap(),
+            json!({ "projects": [] })
+        );
+    }
 }

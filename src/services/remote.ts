@@ -36,6 +36,7 @@ export interface RemoteHost {
 export interface RemoteProjectSnapshot {
   hostId: string;
   projects: unknown;
+  icons?: unknown;
 }
 
 /** What `remote_pairing_begin` returns: a one-time code + the QR the

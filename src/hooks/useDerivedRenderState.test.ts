@@ -423,6 +423,7 @@ describe("useDerivedRenderState", () => {
             label: "aethon",
             tooltip: "/Users/jamesbrink/Projects/utensils/aethon",
             path: "/Users/jamesbrink/Projects/utensils/aethon",
+            iconUrl: "data:image/png;base64,REMOTE",
             active: false,
             expanded: false,
             workspaces: [],
@@ -453,6 +454,7 @@ describe("useDerivedRenderState", () => {
         remoteId: "aethon",
         hostId: "remote:bender",
         label: "aethon",
+        iconUrl: "data:image/png;base64,REMOTE",
       },
     ]);
     expect(
@@ -463,6 +465,7 @@ describe("useDerivedRenderState", () => {
         remoteId: "aethon",
         hostId: "remote:bender",
         label: "aethon",
+        iconUrl: "data:image/png;base64,REMOTE",
       },
     ]);
     expect(result.current.renderState.host).toMatchObject({
