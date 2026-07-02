@@ -90,6 +90,8 @@ export function useVoiceConversation(
   const lfm2 = useLfm2Conversation(options);
   const cascade = useCascadeConversation({
     getContext: options.getConvoContext ?? (() => ({})),
+    submitTranscript: options.submitText,
+    getActiveTabId: options.getActiveTabId,
     ...(options.getTaskActivity
       ? { getTaskActivity: options.getTaskActivity }
       : {}),

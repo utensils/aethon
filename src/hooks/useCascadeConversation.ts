@@ -49,6 +49,11 @@ export interface VoiceTaskActivity {
 
 export interface UseCascadeConversationOptions {
   getContext: () => VoiceConvoContext;
+  /** Send the final transcript to the work agent (the composer submit path —
+   *  speech reaches the agent with no LLM in between). */
+  submitTranscript: (text: string) => void;
+  /** The tab the transcript lands in, so its progress/completion is spoken. */
+  getActiveTabId: () => string | undefined;
   /** Resolve a dispatched tab's live activity; null/undefined = unknown. */
   getTaskActivity?: (tabId: string) => VoiceTaskActivity | null;
 }
@@ -57,6 +62,16 @@ export interface UseCascadeConversationOptions {
 export const TASK_PROGRESS_INTERVAL_MS = 30_000;
 /** Cap on the activity digest forwarded to the brain per progress tick. */
 const TASK_PROGRESS_TEXT_CAP = 700;
+/** Instant spoken confirmation that the transcript reached the agent. */
+const SUBMIT_ACK_PHRASE = "On it.";
+
+/** A short speakable label for the submitted request (progress/completion
+ *  announcements name the task by it). */
+export function taskLabelFromTranscript(transcript: string): string {
+  const words = transcript.split(/\s+/).filter(Boolean);
+  const label = words.slice(0, 6).join(" ");
+  return words.length > 6 ? `${label}…` : label;
+}
 
 /** Rust ConversationEngine state (voice://convo/state payloads). */
 type EngineState =
@@ -227,12 +242,23 @@ export function useCascadeConversation(
     });
     subscribe<{ transcript: string }>("voice://convo/turn", (payload) => {
       setInterimText(null);
-      const context = optionsRef.current.getContext();
-      sendVoiceBridgeMessage({
-        type: "voice_turn",
-        text: payload.transcript,
-        context,
-      });
+      // The spoken words go STRAIGHT to the work agent — the same path as
+      // typing into the composer. No LLM sits between the user's speech and
+      // the agent; a canned ack plays immediately, and the voice brain's
+      // only job is summarizing the agent's progress/completion for speech.
+      const opts = optionsRef.current;
+      const transcript = payload.transcript.trim();
+      if (!transcript) {
+        void cancelConvoSpeech().catch(() => {});
+        return;
+      }
+      opts.submitTranscript(transcript);
+      const tabId = opts.getActiveTabId();
+      if (tabId) {
+        dispatchedRef.current.set(tabId, taskLabelFromTranscript(transcript));
+      }
+      void speakConvoChunk(SUBMIT_ACK_PHRASE).catch(() => {});
+      void endConvoSpeech().catch(() => {});
     });
     subscribe<{ message: string }>("voice://convo/error", (payload) => {
       setError(payload.message);
@@ -301,6 +327,7 @@ export function useCascadeConversation(
         label,
         status: "completed",
         finalText: stripForSpeechSource(text),
+        context: optionsRef.current.getContext(),
       });
     });
   }, []);
@@ -330,6 +357,7 @@ export function useCascadeConversation(
           label,
           status: "progress",
           finalText: digest,
+          context: optionsRef.current.getContext(),
         });
       }
     }, TASK_PROGRESS_INTERVAL_MS);

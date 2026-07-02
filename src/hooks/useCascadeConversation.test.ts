@@ -49,6 +49,7 @@ async function flush() {
 }
 
 function makeController() {
+  const submitTranscript = vi.fn();
   const { result, unmount } = renderHook(() =>
     useCascadeConversation({
       getContext: () => ({
@@ -56,9 +57,11 @@ function makeController() {
         projectPath: "/repo",
         defaultModel: "anthropic/claude-x",
       }),
+      submitTranscript,
+      getActiveTabId: () => "t1",
     }),
   );
-  return { result, unmount };
+  return { result, unmount, submitTranscript };
 }
 
 describe("useCascadeConversation", () => {
@@ -71,8 +74,8 @@ describe("useCascadeConversation", () => {
   });
   afterEach(() => cleanup());
 
-  it("enter starts the engine; a turn forwards to the brain with context", async () => {
-    const { result } = makeController();
+  it("enter starts the engine; a turn goes straight to the work agent", async () => {
+    const { result, submitTranscript } = makeController();
     act(() => result.current.enter());
     await flush();
     expect(mocks.startVoiceConvo).toHaveBeenCalledTimes(1);
@@ -86,19 +89,31 @@ describe("useCascadeConversation", () => {
 
     act(() => {
       fire("voice://convo/turn", { transcript: "fix the flaky test" });
-      fire("voice://convo/state", { state: "awaiting-brain" });
     });
-    expect(mocks.sendVoiceBridgeMessage).toHaveBeenCalledWith({
-      type: "voice_turn",
-      text: "fix the flaky test",
-      context: {
-        activeTabId: "t1",
-        projectPath: "/repo",
-        defaultModel: "anthropic/claude-x",
-      },
-    });
-    expect(result.current.phase).toBe("thinking");
+    // No LLM between speech and the agent: the transcript submits directly,
+    // a canned ack speaks, and the utterance seals.
+    expect(submitTranscript).toHaveBeenCalledWith("fix the flaky test");
+    expect(mocks.sendVoiceBridgeMessage).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: "voice_turn" }),
+    );
+    expect(mocks.speakConvoChunk).toHaveBeenCalledWith("On it.");
+    expect(mocks.endConvoSpeech).toHaveBeenCalledTimes(1);
     expect(result.current.interimText).toBeNull();
+
+    // The submitted tab is tracked: its turn completion announces via the
+    // brain with a label derived from the transcript.
+    mocks.sendVoiceBridgeMessage.mockClear();
+    act(() => {
+      emitAgentTurnComplete({ tabId: "t1", text: "Fixed. Tests green." });
+    });
+    expect(mocks.sendVoiceBridgeMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "voice_task_event",
+        taskTabId: "t1",
+        label: "fix the flaky test",
+        status: "completed",
+      }),
+    );
 
     act(() => result.current.exit());
     expect(isConversationActive()).toBe(false);

@@ -46,6 +46,10 @@ export interface VoiceTaskEventMessage {
   /** Work agent's final prose (frontend strips code fences + caps length;
    *  the cap here is a defensive re-check). */
   finalText: string;
+  /** Runtime context (brain model, project). Task events are the brain's
+   *  primary input — transcripts go straight to the work agent — so the
+   *  context has to ride here too. */
+  context?: VoiceTurnContext;
 }
 
 /** Defensive ceiling on work-agent text entering the brain's context. */
@@ -57,6 +61,40 @@ function asRecord(value: unknown): Record<string, unknown> | null {
     : null;
 }
 
+function parseTurnContext(raw: unknown): VoiceTurnContext {
+  const ctx = asRecord(raw);
+  const context: VoiceTurnContext = {};
+  if (!ctx) return context;
+  for (const key of [
+    "activeTabId",
+    "projectPath",
+    "defaultModel",
+    "brainModel",
+  ] as const) {
+    const value = ctx[key];
+    if (typeof value === "string" && value.trim()) {
+      context[key] = value.trim();
+    }
+  }
+  if (Array.isArray(ctx.knownProjects)) {
+    const projects = ctx.knownProjects
+      .flatMap((entry) => {
+        const rec = asRecord(entry);
+        const label = rec?.label;
+        const path = rec?.path;
+        return typeof label === "string" &&
+          label.trim() &&
+          typeof path === "string" &&
+          path.trim()
+          ? [{ label: label.trim(), path: path.trim() }]
+          : [];
+      })
+      .slice(0, VOICE_KNOWN_PROJECTS_CAP);
+    if (projects.length > 0) context.knownProjects = projects;
+  }
+  return context;
+}
+
 export function parseVoiceTurn(msg: unknown): VoiceTurnMessage | null {
   const rec = asRecord(msg);
   if (!rec || rec.type !== "voice_turn" || typeof rec.text !== "string") {
@@ -64,38 +102,7 @@ export function parseVoiceTurn(msg: unknown): VoiceTurnMessage | null {
   }
   const text = rec.text.trim();
   if (!text) return null;
-  const ctx = asRecord(rec.context);
-  const context: VoiceTurnContext = {};
-  if (ctx) {
-    for (const key of [
-      "activeTabId",
-      "projectPath",
-      "defaultModel",
-      "brainModel",
-    ] as const) {
-      const value = ctx[key];
-      if (typeof value === "string" && value.trim()) {
-        context[key] = value.trim();
-      }
-    }
-    if (Array.isArray(ctx.knownProjects)) {
-      const projects = ctx.knownProjects
-        .flatMap((entry) => {
-          const rec = asRecord(entry);
-          const label = rec?.label;
-          const path = rec?.path;
-          return typeof label === "string" &&
-            label.trim() &&
-            typeof path === "string" &&
-            path.trim()
-            ? [{ label: label.trim(), path: path.trim() }]
-            : [];
-        })
-        .slice(0, VOICE_KNOWN_PROJECTS_CAP);
-      if (projects.length > 0) context.knownProjects = projects;
-    }
-  }
-  return { type: "voice_turn", text, context };
+  return { type: "voice_turn", text, context: parseTurnContext(rec.context) };
 }
 
 export function parseVoiceTaskEvent(msg: unknown): VoiceTaskEventMessage | null {
@@ -112,11 +119,13 @@ export function parseVoiceTaskEvent(msg: unknown): VoiceTaskEventMessage | null 
     typeof rec.finalText === "string"
       ? rec.finalText.slice(0, VOICE_TASK_EVENT_TEXT_CAP)
       : "";
+  const context = parseTurnContext(rec.context);
   return {
     type: "voice_task_event",
     taskTabId: rec.taskTabId,
     ...(typeof rec.label === "string" && rec.label ? { label: rec.label } : {}),
     status,
     finalText,
+    ...(Object.keys(context).length > 0 ? { context } : {}),
   };
 }

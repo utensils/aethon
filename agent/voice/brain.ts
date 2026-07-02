@@ -26,6 +26,7 @@ import {
 } from "../subagents/progress-events";
 import { withTimeout } from "../subagents/timeout";
 import {
+  VOICE_BRAIN_PREAMBLE,
   buildTaskEventPrompt,
   buildTurnPrompt,
 } from "./prompt";
@@ -131,14 +132,21 @@ export class VoiceBrain {
    *  parked and delivered after the current turn settles (progress digests
    *  are dropped instead — they're periodic, the next tick re-reports). */
   handleTaskEvent(msg: VoiceTaskEventMessage): void {
+    if (msg.context) this.context = { ...this.context, ...msg.context };
     const known = this.dispatched.get(msg.taskTabId);
     if (known && msg.status !== "progress") {
       known.status = msg.status === "error" ? "error" : "completed";
     }
-    const prompt = buildTaskEventPrompt({
+    const body = buildTaskEventPrompt({
       ...msg,
       ...(msg.label ? {} : known?.label ? { label: known.label } : {}),
     });
+    // Task events are the brain's PRIMARY input (transcripts go straight to
+    // the work agent), so the speakable-prose preamble must ride the first
+    // one — it is no longer guaranteed that a voice_turn ever arrives.
+    const prompt = this.firstPrompt
+      ? `${VOICE_BRAIN_PREAMBLE}\n\n---\n\n${body}`
+      : body;
     if (this.turnActive) {
       if (msg.status !== "progress") this.deferredTaskPrompts.push(prompt);
       return;
