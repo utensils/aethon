@@ -748,4 +748,40 @@ describe("Sidebar mobile devices", () => {
       label: "iPhone",
     });
   });
+
+  it("renames phones from the context menu inline input", () => {
+    const { onEvent } = renderSidebar({
+      props: {
+        sections: [
+          {
+            id: "mobile-devices",
+            title: "mobile devices",
+            items: [
+              {
+                id: "device:dev-iphone",
+                label: "iPhone",
+                icon: "phone",
+                hint: "paired",
+              },
+            ],
+          },
+        ],
+      },
+    });
+
+    fireEvent.contextMenu(screen.getByText("iPhone").closest("li")!);
+    fireEvent.click(screen.getByRole("menuitem", { name: /Rename device/ }));
+    fireEvent.change(screen.getByLabelText("Device name"), {
+      target: { value: "Pocket Aethon" },
+    });
+    fireEvent.submit(screen.getByLabelText("Device name").closest("form")!);
+
+    expect(onEvent).toHaveBeenCalledWith("rename-mobile-device", {
+      sectionId: "mobile-devices",
+      itemId: "device:dev-iphone",
+      deviceId: "device:dev-iphone",
+      label: "Pocket Aethon",
+      previousLabel: "iPhone",
+    });
+  });
 });

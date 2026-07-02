@@ -46,6 +46,23 @@ describe("MobileDeviceLanding", () => {
     expect(screen.getByText("Uses this desktop host")).toBeTruthy();
     expect(screen.getByText("dev-iphone")).toBeTruthy();
 
+    fireEvent.click(screen.getByRole("button", { name: "Rename device" }));
+    fireEvent.change(screen.getByLabelText("Device name"), {
+      target: { value: "Pocket Aethon" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save name" }));
+    expect(onEvent).toHaveBeenCalledWith(
+      "rename-mobile-device",
+      {
+        sectionId: "mobile-devices",
+        itemId: "device:dev-iphone",
+        deviceId: "device:dev-iphone",
+        label: "Pocket Aethon",
+        previousLabel: "James's iPhone",
+      },
+      "device:dev-iphone",
+    );
+
     fireEvent.click(screen.getByRole("button", { name: "Unpair device" }));
     expect(onEvent).toHaveBeenCalledWith(
       "unpair-mobile-device",

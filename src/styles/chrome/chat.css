@@ -337,23 +337,97 @@
   font-size: var(--text-xs);
 }
 
+.a2ui-mobile-device-landing-rename {
+  display: flex;
+  width: min(100%, 360px);
+  align-self: center;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.a2ui-mobile-device-landing-rename label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--text-dim);
+  font-size: var(--text-xs);
+  font-weight: 650;
+}
+
+.a2ui-mobile-device-landing-rename input {
+  min-height: 34px;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-input);
+  color: var(--text);
+  font: inherit;
+}
+
+.a2ui-mobile-device-landing-rename input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: var(--focus-ring);
+}
+
+.a2ui-mobile-device-landing-rename div {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
 .a2ui-mobile-device-landing-actions {
   display: flex;
   justify-content: center;
   width: 100%;
+  gap: var(--space-2);
   padding-top: var(--space-2);
 }
 
+.a2ui-mobile-device-landing-rename-save,
+.a2ui-mobile-device-landing-rename-cancel,
+.a2ui-mobile-device-landing-rename-button,
 .a2ui-mobile-device-landing-unpair {
   min-height: 34px;
   padding: 0 var(--space-4);
-  border: 1px solid
-    color-mix(in srgb, var(--danger, #ff5c5c) 42%, var(--border));
   border-radius: var(--radius-sm);
-  background: color-mix(in srgb, var(--danger, #ff5c5c) 12%, var(--surface-2));
-  color: var(--danger, #ff5c5c);
   font-size: var(--text-sm);
   font-weight: 650;
+}
+
+.a2ui-mobile-device-landing-rename-save,
+.a2ui-mobile-device-landing-rename-button {
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+.a2ui-mobile-device-landing-rename-save:hover,
+.a2ui-mobile-device-landing-rename-button:hover {
+  border-color: color-mix(in srgb, var(--accent) 34%, var(--border));
+  background: color-mix(in srgb, var(--accent) 8%, var(--surface-2));
+}
+
+.a2ui-mobile-device-landing-rename-save:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.a2ui-mobile-device-landing-rename-cancel {
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-dim);
+}
+
+.a2ui-mobile-device-landing-rename-cancel:hover {
+  color: var(--text);
+}
+
+.a2ui-mobile-device-landing-unpair {
+  border: 1px solid
+    color-mix(in srgb, var(--danger, #ff5c5c) 42%, var(--border));
+  background: color-mix(in srgb, var(--danger, #ff5c5c) 12%, var(--surface-2));
+  color: var(--danger, #ff5c5c);
 }
 
 .a2ui-mobile-device-landing-unpair:hover {

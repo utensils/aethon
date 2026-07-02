@@ -26,6 +26,7 @@ export interface SidebarContextMenuState {
     | "project-base"
     | "workspace"
     | "mobile-device"
+    | "mobile-device-rename"
     | "session"
     | "extension-enabled"
     | "extension-disabled";
@@ -73,6 +74,8 @@ export interface SidebarMenuHandlers {
   renameContextWorkspace: () => void;
   removeContextWorkspace: () => void;
   // Session + extension (unchanged)
+  renameContextMobileDevice: () => void;
+  submitContextMobileDeviceRename: (name: string) => void;
   unpairContextMobileDevice: () => void;
   renameContextSession: () => void;
   deleteContextSession: () => void;
@@ -211,12 +214,32 @@ export function buildSidebarMenuItems(
     case "mobile-device":
       return [
         {
+          id: "rename-mobile-device",
+          label: "Rename device…",
+          keepOpenOnSelect: true,
+          onSelect: h.renameContextMobileDevice,
+        },
+        { type: "separator" },
+        {
           id: "unpair-mobile-device",
           label: "Unpair device",
           danger: true,
           onSelect: h.unpairContextMobileDevice,
         },
         { type: "note", label: "Revokes this client's token" },
+      ];
+    case "mobile-device-rename":
+      return [
+        { type: "header", label: "Rename device" },
+        {
+          type: "input",
+          id: "mobile-device-name-input",
+          label: "Device name",
+          defaultValue: state.label,
+          placeholder: "iPhone",
+          submitLabel: "Rename",
+          onSubmit: h.submitContextMobileDeviceRename,
+        },
       ];
     case "session":
       return [

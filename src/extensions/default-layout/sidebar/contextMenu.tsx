@@ -286,6 +286,24 @@ export function useSidebarContextMenu(
     });
     close();
   };
+  const renameContextMobileDevice = () => {
+    if (!contextMenu) return;
+    setContextMenu({
+      ...contextMenu,
+      kind: "mobile-device-rename",
+    });
+  };
+  const submitContextMobileDeviceRename = (name: string) => {
+    if (!contextMenu) return;
+    onEvent("rename-mobile-device", {
+      sectionId: contextMenu.sectionId,
+      itemId: contextMenu.itemId,
+      deviceId: contextMenu.itemId,
+      label: name,
+      previousLabel: contextMenu.label,
+    });
+    close();
+  };
 
   return {
     contextMenu,
@@ -305,6 +323,8 @@ export function useSidebarContextMenu(
       copyContextWorkspacePath,
       renameContextWorkspace,
       removeContextWorkspace,
+      renameContextMobileDevice,
+      submitContextMobileDeviceRename,
       unpairContextMobileDevice,
       renameContextSession,
       deleteContextSession,

@@ -12,6 +12,7 @@ import {
   handleSidebarStopWorkspaceAgent,
   handleSidebarSwitchWorkspace,
   handleSidebarToggleExtension,
+  handleSidebarRenameMobileDevice,
   handleSidebarUnpairMobileDevice,
   handleSectionedSelect,
 } from "./sidebar";
@@ -738,6 +739,66 @@ describe("handleSectionedSelect", () => {
       expect.objectContaining({
         title: "Device unpaired",
         message: "James's iPhone",
+        kind: "success",
+      }),
+    );
+  });
+
+  it("rename-mobile-device persists the raw device id and updates the landing", async () => {
+    const { ctx, mocks, applySetState } = buildRouteFixture({
+      state: {
+        landing: {
+          kind: "mobile-device",
+          deviceId: "device:dev-iphone",
+          label: "iPhone",
+        },
+        sidebar: {
+          mobileDevices: [
+            {
+              id: "device:dev-iphone",
+              label: "iPhone",
+            },
+          ],
+        },
+      },
+    });
+    const handled = await handleSidebarRenameMobileDevice(
+      {
+        component: { id: "sidebar" },
+        eventType: "rename-mobile-device",
+        data: {
+          sectionId: "mobile-devices",
+          itemId: "device:dev-iphone",
+          label: "Pocket Aethon",
+          previousLabel: "iPhone",
+        },
+      },
+      ctx,
+    );
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(handled).toBe(true);
+    expect(mocks.invoke).toHaveBeenCalledWith("remote_device_rename", {
+      id: "dev-iphone",
+      name: "Pocket Aethon",
+    });
+    expect(applySetState().landing).toMatchObject({
+      kind: "mobile-device",
+      deviceId: "device:dev-iphone",
+      label: "Pocket Aethon",
+    });
+    expect(
+      (
+        applySetState().sidebar as {
+          mobileDevices: Array<{ id: string; label: string }>;
+        }
+      ).mobileDevices[0],
+    ).toMatchObject({ label: "Pocket Aethon" });
+    expect(mocks.pushNotification).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: "Device renamed",
+        message: "Pocket Aethon",
         kind: "success",
       }),
     );

@@ -6,6 +6,7 @@
 
 import type { BuiltinComponentProps } from "../../../components/A2UIRenderer";
 import { resolvePointer } from "../../../utils/jsonPointer";
+import { useState } from "react";
 
 interface MobileDeviceLandingState {
   kind?: string;
@@ -33,6 +34,8 @@ export function MobileDeviceLanding({
     if (!raw || typeof raw !== "object") return null;
     return raw as MobileDeviceLandingState;
   })();
+  const [renaming, setRenaming] = useState(false);
+  const [renameValue, setRenameValue] = useState("");
   if (!landing || landing.kind !== "mobile-device") return null;
 
   const title = landing.label || "Mobile device";
@@ -41,6 +44,27 @@ export function MobileDeviceLanding({
   const pairedAt = formatDeviceDate(landing.createdAt);
   const lastSeen = formatDeviceDate(landing.lastSeenAt);
   const deviceId = landing.deviceId?.replace(/^device:/, "") || "unknown";
+  const trimmedRename = renameValue.trim();
+
+  const submitRename = () => {
+    if (!landing.deviceId || !trimmedRename || trimmedRename === title) {
+      setRenaming(false);
+      setRenameValue(title);
+      return;
+    }
+    onEvent(
+      "rename-mobile-device",
+      {
+        sectionId: "mobile-devices",
+        itemId: landing.deviceId,
+        deviceId: landing.deviceId,
+        label: trimmedRename,
+        previousLabel: title,
+      },
+      landing.deviceId,
+    );
+    setRenaming(false);
+  };
 
   return (
     <div className="a2ui-empty-state a2ui-mobile-device-landing">
@@ -64,6 +88,50 @@ export function MobileDeviceLanding({
           </svg>
         </div>
         <h1 className="a2ui-empty-state-title">{title}</h1>
+        {renaming ? (
+          <form
+            className="a2ui-mobile-device-landing-rename"
+            onSubmit={(event) => {
+              event.preventDefault();
+              submitRename();
+            }}
+          >
+            <label>
+              <span>Device name</span>
+              <input
+                value={renameValue}
+                autoFocus
+                onChange={(event) => setRenameValue(event.currentTarget.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Escape") {
+                    event.preventDefault();
+                    setRenaming(false);
+                    setRenameValue(title);
+                  }
+                }}
+              />
+            </label>
+            <div>
+              <button
+                type="submit"
+                className="a2ui-mobile-device-landing-rename-save"
+                disabled={!trimmedRename}
+              >
+                Save name
+              </button>
+              <button
+                type="button"
+                className="a2ui-mobile-device-landing-rename-cancel"
+                onClick={() => {
+                  setRenaming(false);
+                  setRenameValue(title);
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+          </form>
+        ) : null}
         <p className="a2ui-empty-state-subtitle">
           Client-only companion using this desktop host for projects, sessions,
           and agent work.
@@ -87,6 +155,16 @@ export function MobileDeviceLanding({
           <DeviceFact label="Device id" value={deviceId} mono />
         </dl>
         <div className="a2ui-mobile-device-landing-actions">
+          <button
+            type="button"
+            className="a2ui-mobile-device-landing-rename-button"
+            onClick={() => {
+              setRenameValue(title);
+              setRenaming(true);
+            }}
+          >
+            Rename device
+          </button>
           <button
             type="button"
             className="a2ui-mobile-device-landing-unpair"
