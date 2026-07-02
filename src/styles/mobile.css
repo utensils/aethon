@@ -412,7 +412,12 @@ body:has(.ae-mobile-nav) .ae-mobile-header .ae-mobile-conn-label {
   display: flex;
   flex-direction: column;
   gap: 10px;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
   height: 100%;
+  box-sizing: border-box;
+  overflow-x: hidden;
   overflow-y: auto;
   padding: 12px;
   padding-bottom: 18px;
@@ -434,7 +439,10 @@ body:has(.ae-mobile-nav) .ae-mobile-header .ae-mobile-conn-label {
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
   gap: 9px;
+  max-width: 100%;
+  min-width: 0;
   min-height: 44px;
+  box-sizing: border-box;
   padding: 8px 10px;
   border: 1px solid var(--border);
   border-radius: 10px;
@@ -490,6 +498,9 @@ body:has(.ae-mobile-nav) .ae-mobile-header .ae-mobile-conn-label {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
   padding: 8px;
   border: 1px solid var(--border);
   border-radius: 10px;
@@ -504,7 +515,9 @@ body:has(.ae-mobile-nav) .ae-mobile-header .ae-mobile-conn-label {
   align-items: center;
   gap: 9px;
   width: 100%;
+  min-width: 0;
   min-height: 50px;
+  box-sizing: border-box;
   padding: 4px;
   border-radius: 8px;
   border: 0;
@@ -554,12 +567,16 @@ body:has(.ae-mobile-nav) .ae-mobile-header .ae-mobile-conn-label {
   min-width: 24px;
 }
 .ae-mobile-project-active {
+  max-width: 72px;
+  overflow: hidden;
   border-radius: 999px;
   padding: 3px 7px;
   background: color-mix(in srgb, var(--accent) 13%, transparent);
   color: var(--accent);
   font-size: 0.72rem;
   font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .ae-mobile-project-meta,
 .ae-mobile-workspace-meta {
@@ -589,15 +606,20 @@ body:has(.ae-mobile-nav) .ae-mobile-header .ae-mobile-conn-label {
 }
 .ae-mobile-workspaces {
   display: flex;
+  max-width: 100%;
+  min-width: 0;
   flex-direction: column;
   gap: 4px;
 }
 .ae-mobile-workspace {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(88px, auto);
+  grid-template-columns: minmax(0, 1fr) minmax(76px, max-content);
   gap: 6px;
   align-items: center;
+  max-width: 100%;
+  min-width: 0;
   min-height: 46px;
+  box-sizing: border-box;
   padding: 5px;
   border-radius: 8px;
   background: transparent;
@@ -607,7 +629,9 @@ body:has(.ae-mobile-nav) .ae-mobile-header .ae-mobile-conn-label {
 }
 .ae-mobile-workspace-select,
 .ae-mobile-workspace-start {
+  min-width: 0;
   min-height: 40px;
+  box-sizing: border-box;
   border-radius: 8px;
   font-size: 0.86rem;
 }
@@ -626,11 +650,15 @@ body:has(.ae-mobile-nav) .ae-mobile-header .ae-mobile-conn-label {
   color: var(--accent);
 }
 .ae-mobile-workspace-start {
+  width: 100%;
+  max-width: 96px;
+  overflow: hidden;
   padding: 0 10px;
   border: 1px solid color-mix(in srgb, var(--accent) 42%, var(--border));
   background: var(--bg);
   color: var(--accent);
   font-weight: 600;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 .ae-mobile-workspace-start:active {
@@ -642,7 +670,12 @@ body:has(.ae-mobile-nav) .ae-mobile-header .ae-mobile-conn-label {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
   height: 100%;
+  box-sizing: border-box;
+  overflow-x: hidden;
   overflow-y: auto;
   padding: 12px;
   padding-bottom: 18px;
@@ -657,13 +690,16 @@ body:has(.ae-mobile-nav) .ae-mobile-header .ae-mobile-conn-label {
   align-items: center;
   justify-content: space-between;
   gap: 10px;
+  min-width: 0;
 }
 .ae-mobile-detail-back,
 .ae-mobile-detail-primary,
 .ae-mobile-detail-section-head button,
 .ae-mobile-detail-row-action,
 .ae-mobile-detail-actions button {
+  min-width: 0;
   min-height: 40px;
+  box-sizing: border-box;
   border-radius: 8px;
   font-size: 0.86rem;
   font-weight: 650;
@@ -675,16 +711,23 @@ body:has(.ae-mobile-nav) .ae-mobile-header .ae-mobile-conn-label {
   color: var(--text);
 }
 .ae-mobile-detail-primary {
+  max-width: 132px;
+  overflow: hidden;
   padding: 0 13px;
   border: 1px solid color-mix(in srgb, var(--accent) 48%, var(--border));
   background: color-mix(in srgb, var(--accent) 12%, var(--bg));
   color: var(--accent);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .ae-mobile-detail-hero {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
   gap: 12px;
   align-items: center;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
   padding: 10px;
   border: 1px solid var(--border);
   border-radius: 10px;
@@ -728,6 +771,8 @@ body:has(.ae-mobile-nav) .ae-mobile-header .ae-mobile-conn-label {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
+  max-width: 100%;
+  min-width: 0;
 }
 .ae-mobile-detail-strip span {
   display: flex;
@@ -751,6 +796,8 @@ body:has(.ae-mobile-nav) .ae-mobile-header .ae-mobile-conn-label {
 }
 .ae-mobile-detail-section {
   display: flex;
+  max-width: 100%;
+  min-width: 0;
   flex-direction: column;
   gap: 8px;
 }
@@ -759,25 +806,37 @@ body:has(.ae-mobile-nav) .ae-mobile-header .ae-mobile-conn-label {
   align-items: center;
   justify-content: space-between;
   gap: 10px;
+  min-width: 0;
 }
 .ae-mobile-detail-section-head h2 {
+  min-width: 0;
   margin: 0;
+  overflow: hidden;
   color: var(--text);
   font-size: 0.86rem;
   font-weight: 750;
   letter-spacing: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .ae-mobile-detail-section-head button {
+  max-width: 86px;
+  overflow: hidden;
   min-width: 54px;
   padding: 0 10px;
   border: 1px solid var(--border);
   background: var(--bg-elev);
   color: var(--text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .ae-mobile-detail-facts {
   display: grid;
-  grid-template-columns: minmax(94px, auto) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 0.58fr) minmax(0, 1fr);
   gap: 8px 10px;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
   padding: 10px;
   border: 1px solid var(--border);
   border-radius: 10px;
@@ -798,14 +857,19 @@ body:has(.ae-mobile-nav) .ae-mobile-header .ae-mobile-conn-label {
 }
 .ae-mobile-detail-list {
   display: flex;
+  max-width: 100%;
+  min-width: 0;
   flex-direction: column;
   gap: 7px;
 }
 .ae-mobile-detail-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) minmax(64px, max-content);
   gap: 7px;
   align-items: center;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
   padding: 8px;
   border: 1px solid var(--border);
   border-radius: 10px;
@@ -849,17 +913,23 @@ body:has(.ae-mobile-nav) .ae-mobile-header .ae-mobile-conn-label {
   white-space: nowrap;
 }
 .ae-mobile-detail-row-action {
-  min-width: 64px;
+  max-width: 96px;
+  overflow: hidden;
   padding: 0 10px;
   border: 1px solid color-mix(in srgb, var(--accent) 42%, var(--border));
   background: var(--bg);
   color: var(--accent);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .ae-mobile-detail-issue {
   display: grid;
-  grid-template-columns: minmax(92px, auto) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 0.54fr) minmax(0, 1fr);
   gap: 9px;
   align-items: center;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
   min-height: 44px;
   padding: 9px 10px;
   border: 1px solid var(--border);
@@ -873,15 +943,17 @@ body:has(.ae-mobile-nav) .ae-mobile-header .ae-mobile-conn-label {
   border-color: color-mix(in srgb, var(--danger, #ff5c5c) 38%, var(--border));
 }
 .ae-mobile-detail-issue.is-gh {
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) minmax(72px, max-content);
   gap: 10px;
   min-height: 68px;
   padding: 8px;
 }
 .ae-mobile-detail-issue-main {
   display: flex;
+  max-width: 100%;
   min-width: 0;
   min-height: 52px;
+  box-sizing: border-box;
   flex-direction: column;
   justify-content: center;
   align-items: flex-start;
@@ -892,10 +964,15 @@ body:has(.ae-mobile-nav) .ae-mobile-header .ae-mobile-conn-label {
   text-align: left;
 }
 .ae-mobile-detail-issue span {
+  max-width: 100%;
+  overflow: hidden;
   color: var(--text-dim);
   font-size: 0.76rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .ae-mobile-detail-issue strong {
+  max-width: 100%;
   overflow: hidden;
   color: var(--text);
   font-size: 0.82rem;
@@ -927,6 +1004,8 @@ body:has(.ae-mobile-nav) .ae-mobile-header .ae-mobile-conn-label {
 }
 .ae-mobile-detail-session {
   min-height: 50px;
+  max-width: 100%;
+  box-sizing: border-box;
   padding: 9px 10px;
   border: 1px solid var(--border);
   border-radius: 10px;
@@ -936,11 +1015,16 @@ body:has(.ae-mobile-nav) .ae-mobile-header .ae-mobile-conn-label {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
+  max-width: 100%;
+  min-width: 0;
 }
 .ae-mobile-detail-actions button {
+  overflow: hidden;
   border: 1px solid var(--border);
   background: var(--bg-elev);
   color: var(--text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .ae-mobile-detail-back:active,
 .ae-mobile-detail-primary:active,
@@ -950,6 +1034,27 @@ body:has(.ae-mobile-nav) .ae-mobile-header .ae-mobile-conn-label {
 .ae-mobile-detail-session:active,
 .ae-mobile-detail-row-main:active {
   background: color-mix(in srgb, var(--accent) 12%, var(--bg-elev));
+}
+
+@media (max-width: 380px) {
+  .ae-mobile-workspace,
+  .ae-mobile-detail-row,
+  .ae-mobile-detail-issue,
+  .ae-mobile-detail-issue.is-gh {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .ae-mobile-workspace-start,
+  .ae-mobile-detail-row-action,
+  .ae-mobile-detail-issue.is-gh .ae-mobile-detail-row-action {
+    width: 100%;
+    max-width: none;
+    justify-self: stretch;
+  }
+
+  .ae-mobile-detail-facts {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 /* Sessions screen */
