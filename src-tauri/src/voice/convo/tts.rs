@@ -158,9 +158,11 @@ pub(super) fn parse_cartesia_message(raw: &str) -> CartesiaMessage {
             let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(data) else {
                 return CartesiaMessage::Error("undecodable audio chunk".to_string());
             };
+            // Requested as raw pcm_s16le — the format every documented
+            // Cartesia example uses — then widened to the engine's f32.
             let samples = bytes
-                .chunks_exact(4)
-                .map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+                .chunks_exact(2)
+                .map(|b| f32::from(i16::from_le_bytes([b[0], b[1]])) / f32::from(i16::MAX))
                 .collect();
             CartesiaMessage::Chunk(samples)
         }
@@ -191,7 +193,7 @@ impl CartesiaTts {
             "voice": { "mode": "id", "id": self.voice_id },
             "output_format": {
                 "container": "raw",
-                "encoding": "pcm_f32le",
+                "encoding": "pcm_s16le",
                 "sample_rate": TTS_SAMPLE_RATE,
             },
             "context_id": self.context_id,
@@ -276,4 +278,43 @@ pub(crate) async fn list_cartesia_voices(api_key: &str) -> Result<Vec<CartesiaVo
         })
         .take(200)
         .collect())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cartesia_chunk_decodes_s16le_to_f32() {
+        // i16::MAX, 0, i16::MIN → 1.0, 0.0, ~-1.0 after widening.
+        let pcm: Vec<u8> = [i16::MAX, 0, i16::MIN]
+            .iter()
+            .flat_map(|s| s.to_le_bytes())
+            .collect();
+        let data = base64::engine::general_purpose::STANDARD.encode(pcm);
+        let raw = format!(r#"{{"type":"chunk","data":"{data}"}}"#);
+        let CartesiaMessage::Chunk(samples) = parse_cartesia_message(&raw) else {
+            panic!("expected chunk");
+        };
+        assert_eq!(samples.len(), 3);
+        assert!((samples[0] - 1.0).abs() < 1e-6);
+        assert_eq!(samples[1], 0.0);
+        assert!(samples[2] < -0.999);
+    }
+
+    #[test]
+    fn cartesia_error_and_done_messages_parse() {
+        assert!(matches!(
+            parse_cartesia_message(r#"{"type":"error","message":"bad key"}"#),
+            CartesiaMessage::Error(msg) if msg == "bad key"
+        ));
+        assert!(matches!(
+            parse_cartesia_message(r#"{"type":"done"}"#),
+            CartesiaMessage::Done
+        ));
+        assert!(matches!(
+            parse_cartesia_message("not json"),
+            CartesiaMessage::Other
+        ));
+    }
 }

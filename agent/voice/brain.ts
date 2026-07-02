@@ -92,6 +92,9 @@ export class VoiceBrain {
   /** Monotonic turn id; stale turns must not emit terminal events. */
   private generation = 0;
   private turnActive = false;
+  /** Completion/error announcements that arrived mid-turn, delivered once
+   *  the active turn settles (never allowed to supersede a user exchange). */
+  private deferredTaskPrompts: string[] = [];
   private firstPrompt = true;
   private replyText = "";
   private endError: string | undefined;
@@ -118,18 +121,27 @@ export class VoiceBrain {
   }
 
   /** A dispatched work agent finished a turn — or, for `progress` events,
-   *  is still mid-task (those must not flip the tracked status). */
+   *  is still mid-task (those must not flip the tracked status).
+   *
+   *  A task event must never SUPERSEDE the user's in-flight exchange the way
+   *  a fresh voice turn does — a background task finishing mid-answer would
+   *  silently cancel the answer. While a turn is active the announcement is
+   *  parked and delivered after the current turn settles (progress digests
+   *  are dropped instead — they're periodic, the next tick re-reports). */
   handleTaskEvent(msg: VoiceTaskEventMessage): void {
     const known = this.dispatched.get(msg.taskTabId);
     if (known && msg.status !== "progress") {
       known.status = msg.status === "error" ? "error" : "completed";
     }
-    void this.runPrompt(
-      buildTaskEventPrompt({
-        ...msg,
-        ...(msg.label ? {} : known?.label ? { label: known.label } : {}),
-      }),
-    );
+    const prompt = buildTaskEventPrompt({
+      ...msg,
+      ...(msg.label ? {} : known?.label ? { label: known.label } : {}),
+    });
+    if (this.turnActive) {
+      if (msg.status !== "progress") this.deferredTaskPrompts.push(prompt);
+      return;
+    }
+    void this.runPrompt(prompt);
   }
 
   /** Barge-in: kill the in-flight brain turn (its terminal event is
@@ -162,6 +174,7 @@ export class VoiceBrain {
     this.session = undefined;
     this.sessionModelKey = undefined;
     this.dispatched.clear();
+    this.deferredTaskPrompts = [];
     this.firstPrompt = true;
   }
 
@@ -212,8 +225,27 @@ export class VoiceBrain {
       if (includedPreamble) this.firstPrompt = true;
       this.emitError(err, generation);
     } finally {
-      if (generation === this.generation) this.turnActive = false;
+      if (generation === this.generation) {
+        this.turnActive = false;
+        this.drainDeferredTaskPrompts();
+      }
     }
+  }
+
+  /** Deliver one parked task announcement after the active turn settled.
+   *  One at a time: each delivery is itself a turn whose completion drains
+   *  the next, so announcements queue instead of superseding each other. */
+  private drainDeferredTaskPrompts(): void {
+    const next = this.deferredTaskPrompts.shift();
+    if (next === undefined) return;
+    queueMicrotask(() => {
+      if (this.turnActive) {
+        // A user turn slipped in between settle and drain — re-park.
+        this.deferredTaskPrompts.unshift(next);
+        return;
+      }
+      void this.runPrompt(next);
+    });
   }
 
   private emitError(err: unknown, generation: number): void {

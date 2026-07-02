@@ -308,4 +308,68 @@ describe("VoiceBrain task events", () => {
     expect(progressPrompt).toContain("still working");
     expect(progressPrompt).toContain("Running vitest against the suite.");
   });
+
+  it("defers a completion arriving mid-turn instead of superseding it", async () => {
+    const session = new FakeSession();
+    const h = makeBrain(session);
+    let releaseTurn: (() => void) | undefined;
+    session.respond = (_prompt, s) =>
+      new Promise<void>((resolve) => {
+        releaseTurn = () => {
+          s.emitText("Here is your answer.");
+          s.emitEnd();
+          resolve();
+        };
+      });
+
+    h.brain.handleTurn({ type: "voice_turn", text: "explain the build" });
+    await until(() => session.promptCalls.length === 1, "turn start");
+
+    // Background task completes while the user's answer is streaming.
+    h.brain.handleTaskEvent({
+      type: "voice_task_event",
+      taskTabId: "tab-9",
+      status: "completed",
+      finalText: "Task finished cleanly.",
+    });
+    expect(session.promptCalls).toHaveLength(1);
+    expect(session.aborted).toBe(0);
+
+    session.respond = (_prompt, s) => {
+      s.emitText("That background task wrapped up.");
+      s.emitEnd();
+    };
+    releaseTurn?.();
+    await until(
+      () => ofType(h.sent, "voice_brain_end").length === 2,
+      "deferred announcement",
+    );
+    expect(ofType(h.sent, "voice_brain_end")[0]?.text).toBe(
+      "Here is your answer.",
+    );
+    expect(session.promptCalls[1]).toContain("Task finished cleanly.");
+
+    // Progress digests are dropped, not queued, while a turn is active.
+    session.respond = (_prompt, s) =>
+      new Promise<void>((resolve) => {
+        releaseTurn = () => {
+          s.emitEnd();
+          resolve();
+        };
+      });
+    h.brain.handleTurn({ type: "voice_turn", text: "another question" });
+    await until(() => session.promptCalls.length === 3, "third turn");
+    h.brain.handleTaskEvent({
+      type: "voice_task_event",
+      taskTabId: "tab-9",
+      status: "progress",
+      finalText: "still going",
+    });
+    releaseTurn?.();
+    await until(
+      () => ofType(h.sent, "voice_brain_end").length === 3,
+      "third end",
+    );
+    expect(session.promptCalls).toHaveLength(3);
+  });
 });

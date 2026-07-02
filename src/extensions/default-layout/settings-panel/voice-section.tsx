@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import type { AethonConfig } from "../../../config";
+import { writeConfigPatch } from "../../../configWrites";
 import {
   listConvoVoices,
   testConvoProviders,
@@ -358,23 +359,15 @@ function ConversationSettings({
       </Field>
       <ApiKeyField
         label="Deepgram API key"
-        stored={
-          config.voice.deepgramApiKeySet || !!config.voice.deepgramApiKey
-        }
+        stored={config.voice.deepgramApiKeySet}
         envVar="DEEPGRAM_API_KEY"
-        onSave={(value) =>
-          update({ voice: { ...config.voice, deepgramApiKey: value } })
-        }
+        configField="deepgramApiKey"
       />
       <ApiKeyField
         label="Cartesia API key"
-        stored={
-          config.voice.cartesiaApiKeySet || !!config.voice.cartesiaApiKey
-        }
+        stored={config.voice.cartesiaApiKeySet}
         envVar="CARTESIA_API_KEY"
-        onSave={(value) =>
-          update({ voice: { ...config.voice, cartesiaApiKey: value } })
-        }
+        configField="cartesiaApiKey"
       />
       <Field label="Connection check">
         <div className="ae-voice-key-row">
@@ -396,24 +389,37 @@ function ConversationSettings({
 }
 
 /** Masked, write-only key input: the stored value never round-trips to the
- *  UI. Saving sends the typed key once; clearing sends an explicit "".
- *  `justSet` mirrors the action locally so the field flips to "stored"
+ *  UI. Saving writes the typed key straight to config.toml via a focused
+ *  `write_config` patch — one write-only IPC crossing, bypassing the shared
+ *  settings `pending` state entirely so the secret never sits in the app
+ *  state tree (or anything mirrored from it). Clearing writes an explicit
+ *  "". `justSet` mirrors the action locally so the field flips to "stored"
  *  immediately — the config snapshot's `*ApiKeySet` boolean only refreshes
  *  when the panel reopens. */
 function ApiKeyField({
   label,
   stored,
   envVar,
-  onSave,
+  configField,
 }: {
   label: string;
   stored: boolean;
   envVar: string;
-  onSave: (value: string) => void;
+  configField: "deepgramApiKey" | "cartesiaApiKey";
 }) {
   const [draft, setDraft] = useState("");
   const [justSet, setJustSet] = useState<boolean | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const hasKey = justSet ?? stored;
+  const writeKey = (value: string, storedAfter: boolean) => {
+    setSaveError(null);
+    setDraft("");
+    setJustSet(storedAfter);
+    writeConfigPatch({ voice: { [configField]: value } }).catch(() => {
+      setJustSet(null);
+      setSaveError("Saving the key failed — check config.toml permissions.");
+    });
+  };
   return (
     <Field label={label}>
       <div className="ae-voice-key-row">
@@ -429,11 +435,7 @@ function ApiKeyField({
           type="button"
           className="ae-settings-secondary"
           disabled={!draft.trim()}
-          onClick={() => {
-            onSave(draft.trim());
-            setDraft("");
-            setJustSet(true);
-          }}
+          onClick={() => writeKey(draft.trim(), true)}
         >
           {hasKey ? "Replace key" : "Set key"}
         </button>
@@ -441,16 +443,15 @@ function ApiKeyField({
           <button
             type="button"
             className="ae-settings-secondary"
-            onClick={() => {
-              onSave("");
-              setDraft("");
-              setJustSet(false);
-            }}
+            onClick={() => writeKey("", false)}
           >
             Clear
           </button>
         ) : null}
       </div>
+      {saveError ? (
+        <p className="ae-settings-note ae-voice-error">{saveError}</p>
+      ) : null}
     </Field>
   );
 }
