@@ -71,10 +71,12 @@ ios-dev --host              # dev loop on a physical device over LAN
 
 Device signing comes from `DEVELOPMENT_TEAM` + `CODE_SIGN_STYLE: Automatic`
 in `gen/apple/project.yml` (mirrored in `tauri.conf.json`
-`bundle.iOS.developmentTeam` for future regens); `ios-device` passes
-`-allowProvisioningUpdates` through to xcodebuild so the profile mints
-itself. If provisioning still fails on a fresh machine, run `ios-dev
---open` once and press Run in Xcode (keep the CLI running — a bare
+`bundle.iOS.developmentTeam` for future regens), signing against the
+team's locally-installed development cert + provisioning profile. Note
+that `cargo tauri ios build -- <args>` forwards trailing args to CARGO,
+not xcodebuild — there is no way to pass `-allowProvisioningUpdates`
+through, so a machine with no usable profile must mint one once: run
+`ios-dev --open` and press Run in Xcode (keep the CLI running — a bare
 xcodebuild dies at the Build Rust Code phase with "Connection refused").
 
 Only one `ios-dev` session can run at a time: the xcodebuild "Build Rust
