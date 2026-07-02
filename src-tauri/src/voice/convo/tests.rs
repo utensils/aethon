@@ -701,19 +701,24 @@ impl crate::voice::Lfm2Backend for FakeLfm2 {
 }
 
 #[tokio::test]
-async fn lfm2_tts_synthesizes_on_flush_then_closes() {
+async fn lfm2_tts_synthesizes_each_clause_then_closes() {
     let mut session = super::local::test_lfm2_tts(Arc::new(FakeLfm2 {
         samples: vec![0.5; 240],
     }));
-    session.stream.feed("Hello ").await.unwrap();
-    session.stream.feed("world.").await.unwrap();
+    // Each fed clause is its own synthesis call — the first chunk can play
+    // while later clauses are still synthesizing (and no single call ever
+    // approaches the runner's generation ceiling).
+    session.stream.feed("Hello there.").await.unwrap();
+    session.stream.feed("How are you?").await.unwrap();
     session.stream.flush().await.unwrap();
-    let chunk = tokio::time::timeout(Duration::from_secs(2), session.audio_rx.recv())
-        .await
-        .expect("synthesis should finish")
-        .expect("one chunk");
-    assert_eq!(chunk.len(), 240);
-    // Channel closes after the single chunk = synthesis complete.
+    for _ in 0..2 {
+        let chunk = tokio::time::timeout(Duration::from_secs(2), session.audio_rx.recv())
+            .await
+            .expect("synthesis should finish")
+            .expect("clause chunk");
+        assert_eq!(chunk.len(), 240);
+    }
+    // Channel closes after the queued clauses drain = synthesis complete.
     assert!(session.audio_rx.recv().await.is_none());
 }
 

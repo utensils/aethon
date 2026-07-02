@@ -21,7 +21,14 @@ export interface VoiceTurnContext {
   /** Optional dedicated brain model (`[voice] brain_model`); empty inherits
    *  the default tab's model. */
   brainModel?: string;
+  /** The app's project list (label + root path). Lets the brain dispatch to
+   *  a project the user NAMES even when none is active — without this,
+   *  "check out claudex" with no active project had no path to dispatch to. */
+  knownProjects?: { label: string; path: string }[];
 }
+
+/** Ceiling on known-project entries carried per turn (prompt budget). */
+export const VOICE_KNOWN_PROJECTS_CAP = 12;
 
 export interface VoiceTurnMessage {
   type: "voice_turn";
@@ -70,6 +77,22 @@ export function parseVoiceTurn(msg: unknown): VoiceTurnMessage | null {
       if (typeof value === "string" && value.trim()) {
         context[key] = value.trim();
       }
+    }
+    if (Array.isArray(ctx.knownProjects)) {
+      const projects = ctx.knownProjects
+        .flatMap((entry) => {
+          const rec = asRecord(entry);
+          const label = rec?.label;
+          const path = rec?.path;
+          return typeof label === "string" &&
+            label.trim() &&
+            typeof path === "string" &&
+            path.trim()
+            ? [{ label: label.trim(), path: path.trim() }]
+            : [];
+        })
+        .slice(0, VOICE_KNOWN_PROJECTS_CAP);
+      if (projects.length > 0) context.knownProjects = projects;
     }
   }
   return { type: "voice_turn", text, context };

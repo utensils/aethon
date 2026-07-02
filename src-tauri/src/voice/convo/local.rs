@@ -110,17 +110,7 @@ pub(super) fn test_local_stt(
 /// Test seam: an LFM2 TTS stream with an injected backend.
 #[cfg(test)]
 pub(super) fn test_lfm2_tts(lfm2: Arc<dyn Lfm2Backend>) -> TtsSession {
-    let (tx, rx) = mpsc::unbounded_channel();
-    TtsSession {
-        stream: Box::new(Lfm2Tts {
-            lfm2,
-            buffer: String::new(),
-            audio_tx: Some(tx),
-            cancel: Arc::new(AtomicBool::new(false)),
-        }),
-        audio_rx: rx,
-        sample_rate: LFM2_TTS_SAMPLE_RATE,
-    }
+    lfm2_tts_session(lfm2)
 }
 
 struct LocalWhisperStt {
@@ -265,51 +255,34 @@ impl TtsConnector for Lfm2TtsConnector {
                 "The LFM2-Audio model isn't ready — set it up in Settings → Voice".to_string(),
             );
         }
-        let (tx, rx) = mpsc::unbounded_channel();
-        Ok(TtsSession {
-            stream: Box::new(Lfm2Tts {
-                lfm2: Arc::clone(&self.lfm2),
-                buffer: String::new(),
-                audio_tx: Some(tx),
-                cancel: Arc::new(AtomicBool::new(false)),
-            }),
-            audio_rx: rx,
-            sample_rate: LFM2_TTS_SAMPLE_RATE,
-        })
+        Ok(lfm2_tts_session(Arc::clone(&self.lfm2)))
     }
 }
 
-struct Lfm2Tts {
-    lfm2: Arc<dyn Lfm2Backend>,
-    buffer: String,
-    audio_tx: Option<mpsc::UnboundedSender<Vec<f32>>>,
-    cancel: Arc<AtomicBool>,
-}
+/// Build the per-clause LFM2 synthesis pipeline. Each fed clause synthesizes
+/// as its own one-shot runner call, and its audio ships the moment it's done
+/// — the first clause plays while later ones are still synthesizing. The old
+/// whole-reply single shot produced no audio until the very end and hit the
+/// runner's ~60 s generation ceiling on long replies, cutting them off
+/// mid-sentence; per-clause inputs sit far below that ceiling. When `jobs_tx`
+/// drops (flush/stop) the worker drains the queue, then drops `audio_tx` —
+/// the engine's fully-synthesized signal.
+fn lfm2_tts_session(lfm2: Arc<dyn Lfm2Backend>) -> TtsSession {
+    let (audio_tx, audio_rx) = mpsc::unbounded_channel();
+    let (jobs_tx, mut jobs_rx) = mpsc::unbounded_channel::<String>();
+    let cancel = Arc::new(AtomicBool::new(false));
 
-#[async_trait]
-impl TtsStream for Lfm2Tts {
-    async fn feed(&mut self, text: &str) -> Result<(), String> {
-        // LFM2's runner is one-shot: buffer until flush, then synthesize the
-        // whole reply. The engine pipeline is unchanged — audio just arrives
-        // in one late chunk instead of streaming.
-        self.buffer.push_str(text);
-        Ok(())
-    }
-
-    async fn flush(&mut self) -> Result<(), String> {
-        let Some(tx) = self.audio_tx.take() else {
-            return Ok(());
-        };
-        let text = std::mem::take(&mut self.buffer);
-        if text.trim().is_empty() {
-            return Ok(()); // dropping tx closes the channel = synthesis done
-        }
-        let lfm2 = Arc::clone(&self.lfm2);
-        let cancel = Arc::clone(&self.cancel);
-        tokio::spawn(async move {
-            match lfm2.tts(text, cancel).await {
+    let worker_cancel = Arc::clone(&cancel);
+    tokio::spawn(async move {
+        while let Some(text) = jobs_rx.recv().await {
+            if worker_cancel.load(Ordering::SeqCst) {
+                break;
+            }
+            match lfm2.tts(text, Arc::clone(&worker_cancel)).await {
                 Ok(audio) => {
-                    let _ = tx.send(audio.samples);
+                    if audio_tx.send(audio.samples).is_err() {
+                        break; // engine gone (barge-in teardown)
+                    }
                 }
                 Err(err) => {
                     tracing::warn!(
@@ -317,15 +290,50 @@ impl TtsStream for Lfm2Tts {
                         error = %err,
                         "local TTS synthesis failed"
                     );
+                    break;
                 }
             }
-            // tx drops here → the engine seals the clip.
-        });
+        }
+        // audio_tx drops here → the engine seals the clip.
+    });
+
+    TtsSession {
+        stream: Box::new(Lfm2Tts {
+            jobs_tx: Some(jobs_tx),
+            cancel,
+        }),
+        audio_rx,
+        sample_rate: LFM2_TTS_SAMPLE_RATE,
+    }
+}
+
+struct Lfm2Tts {
+    jobs_tx: Option<mpsc::UnboundedSender<String>>,
+    cancel: Arc<AtomicBool>,
+}
+
+#[async_trait]
+impl TtsStream for Lfm2Tts {
+    async fn feed(&mut self, text: &str) -> Result<(), String> {
+        let trimmed = text.trim();
+        if trimmed.is_empty() {
+            return Ok(());
+        }
+        if let Some(tx) = &self.jobs_tx {
+            let _ = tx.send(trimmed.to_string());
+        }
+        Ok(())
+    }
+
+    async fn flush(&mut self) -> Result<(), String> {
+        // No more input: dropping the job sender lets the worker finish the
+        // queued clauses, then close the audio channel.
+        self.jobs_tx = None;
         Ok(())
     }
 
     async fn stop(&mut self) {
         self.cancel.store(true, Ordering::SeqCst);
-        self.audio_tx = None;
+        self.jobs_tx = None;
     }
 }

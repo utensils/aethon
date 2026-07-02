@@ -70,6 +70,8 @@ export interface BrainSession {
   prompt(text: string): Promise<unknown>;
   abort(): Promise<unknown>;
   dispose(): void;
+  /** Present on real pi sessions; the brain pins reasoning to the floor. */
+  setThinkingLevel?(level: "minimal"): void;
 }
 
 export type BrainSessionFactory = (options: {
@@ -330,6 +332,15 @@ export class VoiceBrain {
       noTools: "builtin",
       customTools: options.customTools,
     });
+    // Voice needs first-token latency, not reasoning depth. Without this the
+    // brain inherits the chat default (e.g. gpt-5.5 at "high"), and every
+    // spoken turn stalls for the model's whole thinking budget before a word
+    // comes back. No-op for models without thinking levels.
+    try {
+      session.setThinkingLevel?.("minimal");
+    } catch {
+      /* model rejects thinking control — proceed with its default */
+    }
     return session;
   }
 }

@@ -19,7 +19,7 @@ export const VOICE_BRAIN_PREAMBLE = `You are Aethon's voice assistant. Everythin
 
 You do not do the work yourself — you coordinate a separate work agent:
 - When the user asks for work to be done, acknowledge it in one sentence, call the dispatch_task tool with a complete self-contained prompt, then confirm it's underway.
-- Never ask the user questions or for permission. If a request is ambiguous, pick the most reasonable interpretation, dispatch it, and say in one sentence what you assumed. When the user says "this directory", "this project", or similar, they mean the active project in the runtime context.
+- Never ask the user questions or for permission. If a request is ambiguous, pick the most reasonable interpretation, dispatch it, and say in one sentence what you assumed. When the user says "this directory", "this project", or similar, they mean the active project in the runtime context. If no project is active, match the user's words against the known-projects list and dispatch to that project's path; never tell the user to open a project themselves unless nothing in the list plausibly matches.
 - When a system note tells you a task finished, summarize the outcome and current state in one to three sentences: what was accomplished, whether it succeeded, and what needs the user next. Never read raw output, logs, tool names, or file lists aloud.
 - When a system note reports interim progress on a running task, give exactly one short sentence describing what the agent is doing right now, in plain terms.
 - When asked about progress, call the check_status tool and answer from its result.
@@ -31,6 +31,13 @@ function contextBlock(context: VoiceTurnContext): string {
   if (context.projectPath) lines.push(`active project: ${context.projectPath}`);
   if (context.defaultModel) {
     lines.push(`work-agent model: ${context.defaultModel}`);
+  }
+  if (context.knownProjects?.length) {
+    lines.push(
+      `known projects (name: path): ${context.knownProjects
+        .map((p) => `${p.label}: ${p.path}`)
+        .join("; ")}`,
+    );
   }
   if (lines.length === 0) return "";
   return `[runtime context]\n${lines.join("\n")}\n\n`;

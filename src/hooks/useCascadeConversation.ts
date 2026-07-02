@@ -33,6 +33,9 @@ export interface VoiceConvoContext {
   projectPath?: string;
   defaultModel?: string;
   brainModel?: string;
+  /** Project list (label + root path) so the brain can dispatch to a project
+   *  the user names even when none is active. */
+  knownProjects?: { label: string; path: string }[];
 }
 
 /** Live activity of a dispatched task tab, for spoken progress updates. */

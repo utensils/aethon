@@ -172,6 +172,18 @@ export function ChatInput({
         (typeof current.model === "string" && current.model) ||
         (typeof current.piDefaultModel === "string" && current.piDefaultModel) ||
         undefined;
+      // The project list (label + path) lets the brain dispatch to a project
+      // the user NAMES even when none is active in the sidebar.
+      const knownProjects = (
+        (current.projects as { label?: unknown; path?: unknown }[] | undefined) ??
+        []
+      )
+        .flatMap((p) =>
+          typeof p.label === "string" && typeof p.path === "string" && p.path
+            ? [{ label: p.label, path: p.path }]
+            : [],
+        )
+        .slice(0, 12);
       return {
         ...(activeTabId ? { activeTabId } : {}),
         ...(activeWorkspaceCwd(current)
@@ -179,6 +191,7 @@ export function ChatInput({
           : {}),
         ...(model ? { defaultModel: model } : {}),
         ...(voice?.brainModel ? { brainModel: voice.brainModel } : {}),
+        ...(knownProjects.length > 0 ? { knownProjects } : {}),
       };
     },
     getTaskActivity: (tabId) => {

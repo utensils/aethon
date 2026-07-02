@@ -29,6 +29,22 @@ describe("buildTurnPrompt", () => {
   it("omits the context block when empty", () => {
     expect(buildTurnPrompt("hi", {}, false)).not.toContain("[runtime context]");
   });
+
+  it("lists known projects so dispatch works without an active project", () => {
+    const prompt = buildTurnPrompt(
+      "check out claudex",
+      {
+        knownProjects: [
+          { label: "claudex", path: "/repo/claudex" },
+          { label: "aethon", path: "/repo/aethon" },
+        ],
+      },
+      false,
+    );
+    expect(prompt).toContain(
+      "known projects (name: path): claudex: /repo/claudex; aethon: /repo/aethon",
+    );
+  });
 });
 
 describe("buildTaskEventPrompt", () => {
