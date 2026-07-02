@@ -8,6 +8,7 @@
 // types never appear in the workstation layout.
 
 import type { EventRouteHandler } from "./types";
+import { handleProjectDashboard } from "./dashboard";
 import { restoreSessionFromSelection } from "./sessionRestore";
 import {
   handleSectionedSelect,
@@ -17,6 +18,7 @@ import {
 
 type Screen =
   | "projects"
+  | "project-detail"
   | "sessions"
   | "chat"
   | "terminal"
@@ -25,9 +27,12 @@ type Screen =
   | "settings";
 
 function screenFlags(active: Screen): Record<string, unknown> {
+  const navActive = active === "project-detail" ? "projects" : active;
   return {
-    active,
+    active: navActive,
+    detail: active,
     isProjects: active === "projects",
+    isProjectDetail: active === "project-detail",
     isSessions: active === "sessions",
     isChat: active === "chat",
     isTerminal: active === "terminal",
@@ -56,6 +61,7 @@ function setScreen(
 
 const SCREENS: readonly Screen[] = [
   "projects",
+  "project-detail",
   "sessions",
   "chat",
   "terminal",
@@ -64,7 +70,12 @@ const SCREENS: readonly Screen[] = [
   "settings",
 ];
 
-const PROJECT_SCREENS = new Set<Screen>(["terminal", "files", "git"]);
+const PROJECT_SCREENS = new Set<Screen>([
+  "project-detail",
+  "terminal",
+  "files",
+  "git",
+]);
 
 function asScreen(value: unknown): Screen | undefined {
   return SCREENS.find((s) => s === value);
@@ -102,6 +113,19 @@ export const handleMobileNav: EventRouteHandler = async (
   if (component.type === "mobile-projects") {
     if (eventType === "select") {
       await handleSectionedSelect({ component, eventType, data }, ctx);
+      const selected = data as
+        | { sectionId?: unknown; itemId?: unknown }
+        | undefined;
+      if (
+        selected?.sectionId === "projects" &&
+        typeof selected.itemId === "string"
+      ) {
+        ctx.setState((prev) => ({
+          ...prev,
+          mobileProjectDetail: { projectId: selected.itemId },
+        }));
+        setScreen(ctx, "project-detail");
+      }
       return true;
     }
     if (eventType === "switch-workspace") {
@@ -112,6 +136,51 @@ export const handleMobileNav: EventRouteHandler = async (
       await handleSidebarStartSession({ component, eventType, data }, ctx);
       setScreen(ctx, "chat");
       return true;
+    }
+    return true;
+  }
+
+  if (component.type === "mobile-project-detail") {
+    if (eventType === "back") {
+      setScreen(ctx, "projects");
+      return true;
+    }
+    if (eventType === "select") {
+      await handleSectionedSelect({ component, eventType, data }, ctx);
+      setScreen(ctx, "project-detail");
+      return true;
+    }
+    if (eventType === "open-screen") {
+      const screen = asScreen(
+        (data as { screen?: unknown } | undefined)?.screen,
+      );
+      if (screen) {
+        if (PROJECT_SCREENS.has(screen) && !hasProjectContext(ctx.stateRef.current)) {
+          setScreen(ctx, "projects");
+        } else {
+          setScreen(ctx, screen);
+        }
+      }
+      return true;
+    }
+    if (eventType === "start-session") {
+      await handleSidebarStartSession({ component, eventType, data }, ctx);
+      setScreen(ctx, "chat");
+      return true;
+    }
+    if (eventType === "switch-workspace") {
+      await handleSidebarSwitchWorkspace({ component, eventType, data }, ctx);
+      setScreen(ctx, "project-detail");
+      return true;
+    }
+    if (
+      eventType === "restore-session" ||
+      eventType === "delete-session" ||
+      eventType === "create-workspace" ||
+      eventType === "remove-workspace" ||
+      eventType === "open-url"
+    ) {
+      return handleProjectDashboard({ component, eventType, data }, ctx);
     }
     return true;
   }

@@ -296,6 +296,15 @@ describe("ChatInput", () => {
     });
   });
 
+  it("clears the visible draft immediately after submit", () => {
+    const { input } = renderInput();
+
+    fireEvent.change(input, { target: { value: "send and clear" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    expect((input as HTMLTextAreaElement).value).toBe("");
+  });
+
   it("submits command-enter as a steering message", () => {
     const { input, onEvent } = renderInput();
 

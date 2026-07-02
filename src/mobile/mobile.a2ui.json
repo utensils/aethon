@@ -35,6 +35,16 @@
           }
         },
         {
+          "id": "mobile-project-detail-screen",
+          "type": "mobile-project-detail",
+          "props": {
+            "area": "canvas",
+            "visible": {
+              "$ref": "/mobileNav/isProjectDetail"
+            }
+          }
+        },
+        {
           "id": "mobile-chat-canvas",
           "type": "main-canvas",
           "props": {
@@ -140,7 +150,9 @@
     },
     "mobileNav": {
       "active": "projects",
+      "detail": "projects",
       "isProjects": true,
+      "isProjectDetail": false,
       "isSessions": false,
       "isChat": false,
       "isTerminal": false,

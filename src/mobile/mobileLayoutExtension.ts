@@ -10,6 +10,7 @@ import { MobileFileList } from "./composites/mobile-file-list";
 import { MobileFileViewer } from "./composites/mobile-file-viewer";
 import { MobileHeader } from "./composites/mobile-header";
 import { MobileNav } from "./composites/mobile-nav";
+import { MobileProjectDetail } from "./composites/mobile-project-detail";
 import { MobileProjects } from "./composites/mobile-projects";
 import { MobileSessions } from "./composites/mobile-sessions";
 import mobilePayload from "./mobile.a2ui.json";
@@ -23,6 +24,7 @@ export const mobileLayoutExtension: A2UIExtension = {
     "connection-badge": ConnectionBadge,
     "mobile-header": MobileHeader,
     "mobile-nav": MobileNav,
+    "mobile-project-detail": MobileProjectDetail,
     "mobile-projects": MobileProjects,
     "mobile-sessions": MobileSessions,
     "mobile-file-list": MobileFileList,

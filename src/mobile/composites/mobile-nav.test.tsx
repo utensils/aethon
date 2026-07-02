@@ -60,4 +60,18 @@ describe("MobileNav", () => {
     expect(screen.getByRole("button", { name: /terminal/i })).toBeDefined();
     expect(screen.getByRole("button", { name: /git/i })).toBeDefined();
   });
+
+  it("highlights Projects while the project detail screen is visible", () => {
+    render(
+      <MobileNav
+        component={{ id: "nav", type: "mobile-nav" }}
+        state={{ activeProjectId: "p1", mobileNav: { active: "projects" } }}
+        onEvent={vi.fn()}
+      />,
+    );
+
+    expect(
+      screen.getByRole("button", { name: /projects/i }).className,
+    ).toContain("ae-mobile-nav-item--active");
+  });
 });

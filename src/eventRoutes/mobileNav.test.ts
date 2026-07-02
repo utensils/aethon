@@ -14,7 +14,9 @@ describe("handleMobileNav", () => {
     const state = applySetState({});
     expect(state.mobileNav).toEqual({
       active: "sessions",
+      detail: "sessions",
       isProjects: false,
+      isProjectDetail: false,
       isSessions: true,
       isChat: false,
       isTerminal: false,
@@ -81,7 +83,7 @@ describe("handleMobileNav", () => {
   });
 
   it("routes mobile project selection through the project selector", async () => {
-    const { ctx, mocks } = buildRouteFixture({
+    const { ctx, mocks, applySetState } = buildRouteFixture({
       state: { project: null, activeWorkspaceId: "wt-old" },
     });
 
@@ -97,6 +99,79 @@ describe("handleMobileNav", () => {
     expect(handled).toBe(true);
     expect(mocks.activateWorkspace).toHaveBeenCalledWith(null);
     expect(mocks.setActiveProjectById).toHaveBeenCalledWith("p1");
+    const state = applySetState({});
+    expect(state.mobileProjectDetail).toEqual({ projectId: "p1" });
+    expect(state.mobileNav).toMatchObject({
+      active: "projects",
+      detail: "project-detail",
+      isProjectDetail: true,
+    });
+  });
+
+  it("keeps the Projects tab active while showing project detail", async () => {
+    const { ctx, applySetState } = buildRouteFixture({
+      state: { activeProjectId: "p1" },
+    });
+
+    await handleMobileNav(
+      {
+        component: { id: "nav", type: "mobile-nav" },
+        eventType: "mobile-nav",
+        data: { screen: "project-detail" },
+      },
+      ctx,
+    );
+
+    const state = applySetState({});
+    expect(state.mobileNav).toMatchObject({
+      active: "projects",
+      detail: "project-detail",
+      isProjects: false,
+      isProjectDetail: true,
+    });
+  });
+
+  it("routes project-detail workspace selection and stays on overview", async () => {
+    const { ctx, mocks, applySetState } = buildRouteFixture({
+      state: { activeProjectId: "p1" },
+    });
+
+    const handled = await handleMobileNav(
+      {
+        component: { id: "detail", type: "mobile-project-detail" },
+        eventType: "switch-workspace",
+        data: { projectId: "p1", workspaceId: "wt-1" },
+      },
+      ctx,
+    );
+
+    expect(handled).toBe(true);
+    expect(mocks.activateWorkspace).toHaveBeenCalledWith("wt-1");
+    expect(applySetState({}).mobileNav).toMatchObject({
+      detail: "project-detail",
+      isProjectDetail: true,
+    });
+  });
+
+  it("starts a project-detail session and jumps to chat", async () => {
+    const { ctx, mocks, applySetState } = buildRouteFixture();
+
+    await handleMobileNav(
+      {
+        component: { id: "detail", type: "mobile-project-detail" },
+        eventType: "start-session",
+        data: { projectId: "p1", path: "/repo" },
+      },
+      ctx,
+    );
+
+    expect(mocks.setActiveProjectById).toHaveBeenCalledWith("p1");
+    expect(mocks.newTab).toHaveBeenCalledWith(
+      undefined,
+      undefined,
+      expect.objectContaining({ cwd: "/repo" }),
+    );
+    expect((applySetState({}).mobileNav as { active?: string }).active).toBe("chat");
   });
 
   it("starts a project session from mobile projects and jumps to chat", async () => {
