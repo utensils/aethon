@@ -57,6 +57,8 @@ test-results/
 *.png
 *.zip
 !src-tauri/icons/*.png
+!apps/mobile/src-tauri/icons/*.png
+!apps/mobile/src-tauri/gen/apple/Assets.xcassets/**/*.png
 !assets/brand/aethon-app-screenshot.png
 !website/public/*.png
 
