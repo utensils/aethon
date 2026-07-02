@@ -419,6 +419,24 @@
                 '';
               }
               {
+                category = "dev";
+                name = "ios-dev";
+                # The iOS companion (apps/mobile) reuses the web UI over
+                # the remote gateway. Xcode + CocoaPods live outside Nix;
+                # the wrapper puts Homebrew on PATH, scaffolds gen/apple
+                # on first run, then runs `cargo tauri ios dev`. Point the
+                # app at a running desktop instance (Settings → Remote
+                # Devices) to pair.
+                help = "Run the iOS companion in the Simulator (needs Xcode + `brew install cocoapods`)";
+                command = "exec ./scripts/ios.sh dev \"$@\"";
+              }
+              {
+                category = "build";
+                name = "ios-build";
+                help = "Build the iOS companion app (cargo tauri ios build; needs Xcode + CocoaPods). Pass --debug --target aarch64-sim for an unsigned simulator build.";
+                command = "exec ./scripts/ios.sh build \"$@\"";
+              }
+              {
                 category = "docs";
                 name = "docs";
                 # Bound to 0.0.0.0 on purpose so the dev site is reachable

@@ -4,8 +4,8 @@
   "version": "0.11.2",
   "identifier": "com.utensils.aethon.mobile",
   "build": {
-    "beforeDevCommand": "bun --cwd ../.. run dev:mobile",
-    "beforeBuildCommand": "bun --cwd ../.. run build:mobile",
+    "beforeDevCommand": "bash -c 'cd \"$(git rev-parse --show-toplevel)\" && bun run dev:mobile'",
+    "beforeBuildCommand": "bash -c 'cd \"$(git rev-parse --show-toplevel)\" && bun run build:mobile'",
     "devUrl": "http://localhost:1430",
     "frontendDist": "../../../dist-mobile"
   },
