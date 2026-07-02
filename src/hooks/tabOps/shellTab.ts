@@ -7,8 +7,8 @@ import {
   activeHostIdForNewTab,
   activeProjectIdForNewTab,
   cwdForNewTab,
-  isRemoteHostId,
 } from "./helpers";
+import { isRemoteHostId } from "../../remoteInvoke";
 import { remoteHostInvoke } from "../../services/remote";
 
 export interface NewShellTabDeps {

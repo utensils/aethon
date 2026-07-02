@@ -29,7 +29,7 @@
 // stay until the user dismisses them (the row carries Retry / Dismiss
 // actions in the sidebar UI).
 
-import { invoke } from "@tauri-apps/api/core";
+import { invokeForHost } from "./remoteInvoke";
 
 export type WorkspacePendingState =
   | "queued"
@@ -248,8 +248,13 @@ export function reorderExtraWorkspaceToIndex(
 
 export async function gitWorktrees(
   projectPath: string,
+  hostId?: string | null,
 ): Promise<GitWorktreeRecord[]> {
-  return invoke<GitWorktreeRecord[]>("git_worktrees", { projectPath });
+  return invokeForHost<GitWorktreeRecord[]>(
+    hostId,
+    "git_worktrees",
+    { projectPath },
+  );
 }
 
 export async function gitWorktreeAdd(args: {
@@ -257,18 +262,25 @@ export async function gitWorktreeAdd(args: {
   targetPath: string;
   branch: string;
   base?: string;
+  hostId?: string | null;
 }): Promise<GitWorktreeRecord> {
-  return invoke<GitWorktreeRecord>("git_worktree_add", args);
+  const { hostId, ...payload } = args;
+  return invokeForHost<GitWorktreeRecord>(
+    hostId,
+    "git_worktree_add",
+    payload,
+  );
 }
 
 export async function gitWorktreeRemove(args: {
   projectPath: string;
   workspacePath: string;
   force?: boolean;
+  hostId?: string | null;
 }): Promise<void> {
   // Wire key stays `worktreePath` — the Rust command removes a literal
   // git worktree (git mechanics layer).
-  await invoke("git_worktree_remove", {
+  await invokeForHost(args.hostId, "git_worktree_remove", {
     projectPath: args.projectPath,
     worktreePath: args.workspacePath,
     force: args.force ?? false,
@@ -281,8 +293,9 @@ export async function gitWorktreeRemove(args: {
 export async function gitWorktreeRemoveOrphan(args: {
   projectPath: string;
   workspacePath: string;
+  hostId?: string | null;
 }): Promise<void> {
-  await invoke("git_worktree_remove_orphan", {
+  await invokeForHost(args.hostId, "git_worktree_remove_orphan", {
     projectPath: args.projectPath,
     worktreePath: args.workspacePath,
   });
@@ -290,6 +303,11 @@ export async function gitWorktreeRemoveOrphan(args: {
 
 export async function gitBranchList(
   projectPath: string,
+  hostId?: string | null,
 ): Promise<GitBranchInfo[]> {
-  return invoke<GitBranchInfo[]>("git_branch_list", { projectPath });
+  return invokeForHost<GitBranchInfo[]>(
+    hostId,
+    "git_branch_list",
+    { projectPath },
+  );
 }

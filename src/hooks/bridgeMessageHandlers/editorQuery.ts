@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { invokeForHost } from "../../remoteInvoke";
 import type { BridgeMessageHandler } from "./types";
 
 function asRecord(data: unknown): Record<string, unknown> {
@@ -37,6 +37,7 @@ function matchingEditorTabId(
   tabs: unknown,
   filePath: string,
   rootPath: string,
+  hostId?: string,
 ): string | undefined {
   if (!Array.isArray(tabs)) return undefined;
   for (const tab of tabs) {
@@ -44,11 +45,13 @@ function matchingEditorTabId(
     const rec = tab as {
       id?: unknown;
       kind?: unknown;
+      hostId?: unknown;
       editor?: { filePath?: unknown; rootPath?: unknown; diff?: unknown };
     };
     if (
       typeof rec.id === "string" &&
       rec.kind === "editor" &&
+      rec.hostId === hostId &&
       rec.editor?.filePath === filePath &&
       (rec.editor.rootPath ?? "") === rootPath &&
       rec.editor.diff !== true
@@ -89,7 +92,8 @@ export const handleEditorQuery: BridgeMessageHandler = (data, ctx) => {
     const filePath = isAbsolutePath(requestedPath)
       ? requestedPath
       : joinRoot(rootPath, requestedPath);
-    const exists = await invoke("fs_exists", {
+    const hostId = ctx.sourceHostId;
+    const exists = await invokeForHost(hostId, "fs_exists", {
       root: rootPath,
       path: filePath,
     });
@@ -101,8 +105,9 @@ export const handleEditorQuery: BridgeMessageHandler = (data, ctx) => {
       ctx.stateRef.current.tabs,
       filePath,
       rootPath,
+      hostId,
     );
-    ctx.newEditorTab(filePath, { rootPath });
+    ctx.newEditorTab(filePath, { rootPath, hostId });
     return {
       filePath,
       rootPath,

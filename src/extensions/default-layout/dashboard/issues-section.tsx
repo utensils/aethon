@@ -50,6 +50,7 @@ interface ProjectInfo {
   id: string;
   label: string;
   path: string;
+  hostId?: string;
   workspaceBaseBranch?: string;
 }
 
@@ -248,8 +249,12 @@ export function IssuesSection({
     let cancelled = false;
     void (async () => {
       const [fetched, templateConfig] = await Promise.all([
-        refreshIssues(project.path, limit),
-        loadIssueTemplates(project.path),
+        project.hostId
+          ? refreshIssues(project.path, limit, project.hostId)
+          : refreshIssues(project.path, limit),
+        project.hostId
+          ? loadIssueTemplates(project.path, project.hostId)
+          : loadIssueTemplates(project.path),
       ]);
       if (cancelled) return;
       setIssues(fetched);
@@ -321,7 +326,9 @@ export function IssuesSection({
       }
       setSending(issue.number);
       try {
-        const detail = await getIssueDetail(project.path, issue.number);
+        const detail = project.hostId
+          ? await getIssueDetail(project.path, issue.number, project.hostId)
+          : await getIssueDetail(project.path, issue.number);
         const matching = matchingIssueTemplates(issueTemplates, issue);
         const selectedTemplate =
           options.template === null
@@ -417,8 +424,12 @@ export function IssuesSection({
             void (async () => {
               try {
                 const [fresh, templateConfig] = await Promise.all([
-                  refreshIssues(project.path, limit),
-                  loadIssueTemplates(project.path),
+                  project.hostId
+                    ? refreshIssues(project.path, limit, project.hostId)
+                    : refreshIssues(project.path, limit),
+                  project.hostId
+                    ? loadIssueTemplates(project.path, project.hostId)
+                    : loadIssueTemplates(project.path),
                 ]);
                 setIssues(fresh);
                 onEvent(

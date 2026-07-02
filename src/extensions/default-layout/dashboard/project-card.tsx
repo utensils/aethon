@@ -30,6 +30,7 @@ interface ProjectCardData {
   id: string;
   label: string;
   path: string;
+  hostId?: string;
   active?: boolean;
   gitStatus?: GitStatus | null;
   iconUrl?: string;
@@ -90,7 +91,11 @@ export function ProjectCard({
   const active = typeof props?.active === "boolean" ? props.active : false;
   const containerRef = useRef<HTMLButtonElement | null>(null);
   const [overview, setOverview] = useState<GhRepoOverview | null>(() =>
-    project ? peekRepoOverview(project.path) : null,
+    project
+      ? project.hostId
+        ? peekRepoOverview(project.path, project.hostId)
+        : peekRepoOverview(project.path)
+      : null,
   );
   const [overviewLoading, setOverviewLoading] = useState(false);
 
@@ -104,7 +109,9 @@ export function ProjectCard({
       void (async () => {
         setOverviewLoading(true);
         try {
-          const o = await getRepoOverview(project.path);
+          const o = project.hostId
+            ? await getRepoOverview(project.path, project.hostId)
+            : await getRepoOverview(project.path);
           setOverview(o);
         } finally {
           setOverviewLoading(false);
@@ -120,7 +127,9 @@ export function ProjectCard({
             void (async () => {
               setOverviewLoading(true);
               try {
-                const o = await getRepoOverview(project.path);
+                const o = project.hostId
+                  ? await getRepoOverview(project.path, project.hostId)
+                  : await getRepoOverview(project.path);
                 setOverview(o);
               } finally {
                 setOverviewLoading(false);

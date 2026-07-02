@@ -25,7 +25,7 @@ import { listen } from "@tauri-apps/api/event";
 import { getGhBranchStatus, type GhPr } from "../ghBranchStatusCache";
 import { getGhChecks, type GhCheckRun } from "../ghChecksCache";
 import { remoteHostInvoke } from "../services/remote";
-import { isRemoteHostId } from "./tabOps/helpers";
+import { isRemoteHostId } from "../remoteInvoke";
 import {
   getCachedVcsSlice,
   hydrateVcsSliceCache,
@@ -391,8 +391,14 @@ export function useVcsStatus({
         let ghAvailable = false;
         if (branch) {
           const [branchStatus, checks] = await Promise.all([
-            getGhBranchStatus(root, branch).catch(() => null),
-            getGhChecks(root, branch).catch(() => null),
+            (hostId
+              ? getGhBranchStatus(root, branch, hostId)
+              : getGhBranchStatus(root, branch)
+            ).catch(() => null),
+            (hostId
+              ? getGhChecks(root, branch, hostId)
+              : getGhChecks(root, branch)
+            ).catch(() => null),
           ]);
           if (branchStatus) {
             ghAvailable = branchStatus.ghAvailable;

@@ -2,9 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   activeHostIdForNewTab,
   activeProjectIdForNewTab,
-  isRemoteHostId,
   modelForNewProjectTab,
 } from "./helpers";
+import { isRemoteHostId } from "../../remoteInvoke";
 import { emptyProjectsState, type ProjectsState } from "../../projects";
 
 describe("modelForNewProjectTab", () => {

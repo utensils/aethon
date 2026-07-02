@@ -110,6 +110,7 @@ export interface EventRouteContext {
     filePath: string,
     opts?: {
       rootPath?: string;
+      hostId?: string;
       diff?: boolean;
       diffSnapshot?: EditorDiffSnapshot;
     },

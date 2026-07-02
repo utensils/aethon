@@ -28,6 +28,8 @@ import {
   joinRoot,
 } from "../hooks/bridgeMessageHandlers/editorQuery";
 import { WORKSTATION_AREAS } from "../hooks/useFocus";
+import { isRemoteHostId } from "../remoteInvoke";
+import { remoteHostInvoke } from "../services/remote";
 import { isEditorDiffSnapshot } from "../utils/editorDiffSnapshot";
 
 function asRecord(data: unknown): Record<string, unknown> {
@@ -145,12 +147,22 @@ export const handleEditorCanvas: EventRouteHandler = async (
         | undefined;
       const tabs =
         (ctx.stateRef.current.tabs as
-          | Array<{ id: string; editor?: { rootPath?: string } }>
+          | Array<{ id: string; hostId?: string; editor?: { rootPath?: string } }>
           | undefined) ?? [];
-      const tabRoot = tabs.find((t) => t.id === tabId)?.editor?.rootPath;
+      const tab = tabs.find((t) => t.id === tabId);
+      const tabRoot = tab?.editor?.rootPath;
       const root = tabRoot ?? project?.path ?? "";
       try {
-        await ctx.invoke("fs_write_file", { root, path: filePath, content });
+        const args = {
+          root,
+          path: filePath,
+          content,
+        };
+        if (isRemoteHostId(tab?.hostId)) {
+          await remoteHostInvoke(tab.hostId, "fs_write_file", args);
+        } else {
+          await ctx.invoke("fs_write_file", args);
+        }
         ctx.updateEditorMeta(tabId, { isDirty: false });
         ctx.pushNotification({
           title: `Saved ${filePath.split("/").pop() ?? filePath}`,

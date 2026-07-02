@@ -47,6 +47,7 @@ interface ProjectLite {
   id: string;
   label: string;
   path: string;
+  hostId?: string;
   workspaceBaseBranch?: string;
 }
 
@@ -333,6 +334,7 @@ export function TaskLauncher({
     !hostSelected && workspaceChoice.kind === "existing"
       ? workspaceChoice.path
       : (selectedProject?.path ?? null);
+  const atHostId = !hostSelected ? (selectedProject?.hostId ?? null) : null;
   const {
     atMatch,
     atHighlightIdx,
@@ -346,6 +348,7 @@ export function TaskLauncher({
     onValueCommit: () => setTouched(true),
     textareaRef,
     root: atRoot,
+    hostId: atHostId,
     enabled: !submitting && !slashMatch,
   });
 

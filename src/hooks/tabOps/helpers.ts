@@ -98,12 +98,6 @@ export function activeHostIdForNewTab(
   return typeof hostId === "string" && hostId.length > 0 ? hostId : undefined;
 }
 
-export function isRemoteHostId(
-  hostId: string | null | undefined,
-): hostId is string {
-  return typeof hostId === "string" && hostId.startsWith("remote:");
-}
-
 /** Model displayed by overview-owned surfaces. Shell tabs can be the
  *  active tab for terminal focus, but the overview still owns the composer
  *  and header in that state, so the visible model must be the model a new

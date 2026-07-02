@@ -46,8 +46,9 @@ pub fn advertise(
     fingerprint: &str,
 ) -> Result<ServiceDaemon, Box<dyn std::error::Error>> {
     let mdns = ServiceDaemon::new()?;
-    let hostname = local_mdns_hostname().unwrap_or_else(|| "localhost.local".to_string());
-    let host_label = hostname.trim_end_matches(".local");
+    let system_hostname = local_mdns_hostname().unwrap_or_else(|| "localhost.local".to_string());
+    let host_label = system_hostname.trim_end_matches(".local");
+    let hostname = advertised_mdns_hostname(fingerprint);
     let suffix = &fingerprint[..fingerprint.len().min(8)];
     let instance_name = format!("{display_name} ({host_label}, {suffix})");
     let version = env!("CARGO_PKG_VERSION");
@@ -74,6 +75,25 @@ pub fn advertise(
     .enable_addr_auto();
     mdns.register(service)?;
     Ok(mdns)
+}
+
+/// Fingerprint-derived service target hostname for Aethon's own mDNS
+/// advertisement. Using the system LocalHostName as the target can collide on
+/// networks where another Mac already owns `name.local`, which triggers macOS'
+/// "local hostname is already in use" rename dialog. A synthetic hostname keeps
+/// the service unique while TXT `name` retains the human display label.
+pub(crate) fn advertised_mdns_hostname(fingerprint: &str) -> String {
+    let suffix: String = fingerprint
+        .chars()
+        .filter(|ch| ch.is_ascii_alphanumeric())
+        .take(12)
+        .collect();
+    let suffix = if suffix.is_empty() {
+        "unknown".to_string()
+    } else {
+        suffix.to_ascii_lowercase()
+    };
+    format!("aethon-{suffix}.local")
 }
 
 /// Local host name that Bonjour can resolve, without the trailing dot.
@@ -248,5 +268,14 @@ mod tests {
         let hostname = local_mdns_hostname_from(None, "halcyon").unwrap();
 
         assert_eq!(hostname, "halcyon.local");
+    }
+
+    #[test]
+    fn advertised_mdns_hostname_is_fingerprint_scoped() {
+        assert_eq!(
+            advertised_mdns_hostname("AB:CD:EF:12:34"),
+            "aethon-abcdef1234.local"
+        );
+        assert_eq!(advertised_mdns_hostname("::"), "aethon-unknown.local");
     }
 }

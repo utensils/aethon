@@ -17,7 +17,7 @@ import { SESSION_UI_SNAPSHOT_FLUSH_EVENT } from "../../state/sessionUiSnapshot";
 import { projectScopeBucketKey } from "../projectOps/tabBuckets";
 import type { TabBucket } from "../projectOps/types";
 import { remoteHostInvoke } from "../../services/remote";
-import { isRemoteHostId } from "./helpers";
+import { isRemoteHostId } from "../../remoteInvoke";
 
 export interface CloseTabDeps {
   setState: Dispatch<SetStateAction<Record<string, unknown>>>;
@@ -56,6 +56,7 @@ export interface CloseTabDeps {
     filePath: string,
     opts?: {
       rootPath?: string;
+      hostId?: string;
       diff?: boolean;
       diffSnapshot?: EditorDiffSnapshot;
     },
@@ -131,6 +132,7 @@ export function useCloseTabActions(deps: CloseTabDeps): CloseTabActions {
       kind: tab.kind,
       label: tab.label,
       projectId: tab.projectId,
+      ...(tab.hostId ? { hostId: tab.hostId } : {}),
       ...(tab.kind === "shell" && tab.shell
         ? {
             cwd: tab.shell.cwd,
@@ -189,6 +191,7 @@ export function useCloseTabActions(deps: CloseTabDeps): CloseTabActions {
       // unsaved buffer state is intentionally not preserved across close.
       newEditorTab(entry.filePath, {
         ...(entry.rootPath ? { rootPath: entry.rootPath } : {}),
+        ...(entry.hostId ? { hostId: entry.hostId } : {}),
         ...(entry.diff ? { diff: true } : {}),
         ...(entry.diffSnapshot ? { diffSnapshot: entry.diffSnapshot } : {}),
       });

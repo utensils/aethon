@@ -6,6 +6,7 @@
 //! time. `/pair` answers 404 whenever no session is active, so outside
 //! a pairing window the route is indistinguishable from absent.
 
+use std::collections::HashSet;
 use std::time::{Duration, Instant};
 
 use axum::Json;
@@ -68,7 +69,7 @@ pub fn new_device_token() -> String {
 
 /// Non-loopback addresses a phone could dial, most-useful first:
 /// IPv4 (incl. Tailscale's 100.x), then the Bonjour-resolvable mDNS name.
-pub(crate) fn candidate_hosts() -> Vec<String> {
+pub(crate) fn candidate_hosts(fingerprint: Option<&str>) -> Vec<String> {
     let mut hosts: Vec<String> = Vec::new();
     if let Ok(ifaces) = if_addrs::get_if_addrs() {
         for iface in ifaces {
@@ -84,6 +85,11 @@ pub(crate) fn candidate_hosts() -> Vec<String> {
     if let Some(mdns) = crate::server::mdns::local_mdns_hostname() {
         hosts.push(mdns);
     }
+    if let Some(fingerprint) = fingerprint {
+        hosts.push(crate::server::mdns::advertised_mdns_hostname(fingerprint));
+    }
+    let mut seen = HashSet::new();
+    hosts.retain(|host| seen.insert(host.clone()));
     hosts
 }
 
@@ -97,7 +103,7 @@ pub fn begin(display_name: &str, port: u16, fingerprint: &str) -> (PairingSessio
     let qr_payload = json!({
         "v": 1,
         "name": display_name,
-        "hosts": candidate_hosts(),
+        "hosts": candidate_hosts(Some(fingerprint)),
         "port": port,
         "fp": fingerprint,
         "code": code,

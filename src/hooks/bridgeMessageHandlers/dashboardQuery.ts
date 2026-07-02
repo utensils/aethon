@@ -133,14 +133,24 @@ export const handleDashboardQuery: BridgeMessageHandler = (data, ctx) => {
       if (!projectPath) {
         throw new Error("get_repo_overview requires projectPath");
       }
-      const overview = await getRepoOverview(projectPath);
+      const resolved = resolveTaskProject(ctx.projectsRef.current, projectPath);
+      const hostId = resolved?.project.hostId;
+      const overview = hostId
+        ? await getRepoOverview(projectPath, hostId)
+        : await getRepoOverview(projectPath);
       return overview;
     }
 
     if (op === "refresh") {
       const projectPath = args.projectPath as string | undefined;
       if (projectPath) {
-        await refreshRepoOverview(projectPath);
+        const resolved = resolveTaskProject(ctx.projectsRef.current, projectPath);
+        const hostId = resolved?.project.hostId;
+        if (hostId) {
+          await refreshRepoOverview(projectPath, hostId);
+        } else {
+          await refreshRepoOverview(projectPath);
+        }
       } else {
         // Global refresh — bust every cache entry so the next gh
         // read for each project triggers a fresh shell-out. Includes
@@ -159,7 +169,11 @@ export const handleDashboardQuery: BridgeMessageHandler = (data, ctx) => {
       }
       const limit =
         typeof args.limit === "number" ? Math.max(1, Math.min(100, args.limit)) : 30;
-      const issues = await getIssues(projectPath, limit);
+      const resolved = resolveTaskProject(ctx.projectsRef.current, projectPath);
+      const hostId = resolved?.project.hostId;
+      const issues = hostId
+        ? await getIssues(projectPath, limit, hostId)
+        : await getIssues(projectPath, limit);
       return { issues, limit };
     }
 
@@ -172,7 +186,11 @@ export const handleDashboardQuery: BridgeMessageHandler = (data, ctx) => {
           "get_issue requires projectPath + positive integer number",
         );
       }
-      const detail = await getIssueDetail(projectPath, number);
+      const resolved = resolveTaskProject(ctx.projectsRef.current, projectPath);
+      const hostId = resolved?.project.hostId;
+      const detail = hostId
+        ? await getIssueDetail(projectPath, number, hostId)
+        : await getIssueDetail(projectPath, number);
       return detail;
     }
 

@@ -20,8 +20,8 @@
 // the resolved url back onto `Project.iconUrl` so the next cold start
 // paints synchronously off the projects.json record.
 
-import { invoke } from "@tauri-apps/api/core";
 import type { Project } from "./projects";
+import { invokeForHost } from "./remoteInvoke";
 
 const LIVE_TTL_MS = 30 * 60 * 1000; // 30 min — icons don't change minute-to-minute
 const NEG_TTL_MS = 24 * 60 * 60 * 1000; // 24 hr — avoid re-hammering gh on every paint
@@ -33,22 +33,36 @@ interface CacheEntry {
 
 const cache = new Map<string, CacheEntry>();
 
-async function tryLocalScan(projectPath: string): Promise<string | null> {
+function cacheKey(project: Pick<Project, "path" | "hostId">): string {
+  return `${project.hostId ?? "local"}|${project.path}`;
+}
+
+async function tryLocalScan(
+  projectPath: string,
+  hostId?: string | null,
+): Promise<string | null> {
   try {
-    const url = await invoke<string | null>("fs_discover_project_icon", {
-      projectPath,
-    });
+    const url = await invokeForHost<string | null>(
+      hostId,
+      "fs_discover_project_icon",
+      { projectPath },
+    );
     return url ?? null;
   } catch {
     return null;
   }
 }
 
-async function tryGhAvatar(projectPath: string): Promise<string | null> {
+async function tryGhAvatar(
+  projectPath: string,
+  hostId?: string | null,
+): Promise<string | null> {
   try {
-    const url = await invoke<string | null>("gh_repo_avatar_url", {
-      projectPath,
-    });
+    const url = await invokeForHost<string | null>(
+      hostId,
+      "gh_repo_avatar_url",
+      { projectPath },
+    );
     return url ?? null;
   } catch {
     return null;
@@ -65,7 +79,7 @@ export function iconForProject(project: Project): string | null {
 /** Async discovery — runs the resolution chain. Memoized in-process by
  *  project path; safe to call eagerly on every render. */
 export async function discoverIcon(project: Project): Promise<string | null> {
-  const key = project.path;
+  const key = cacheKey(project);
   const now = Date.now();
   const hit = cache.get(key);
   if (hit && hit.expires > now) return hit.value;
@@ -82,9 +96,9 @@ export async function discoverIcon(project: Project): Promise<string | null> {
     // logo/favicon once. Falls back to the persisted avatar, then a fresh
     // gh lookup, then null.
     resolved =
-      (await tryLocalScan(project.path)) ??
+      (await tryLocalScan(project.path, project.hostId)) ??
       project.iconUrl ??
-      (await tryGhAvatar(project.path));
+      (await tryGhAvatar(project.path, project.hostId));
   } catch {
     resolved = project.iconUrl ?? null;
   }

@@ -1,6 +1,6 @@
 import { useRef, type MutableRefObject } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import type { Tab } from "../types/tab";
+import { invokeForHost } from "../remoteInvoke";
 
 /** Lifetime of an Allow/Deny prompt for `aethon.shells.write` in
  *  read-write mode. Set ~30 s under the bridge-side ack timeout
@@ -217,7 +217,7 @@ export function useShellConsent(
       throw new Error(`share mode "${mode}" does not allow agent writes`);
     }
     if (mode === "read-write-trusted") {
-      await invoke("shell_write", { tabId, data: text });
+      await invokeForHost(tab.hostId, "shell_write", { tabId, data: text });
       return { ok: true };
     }
     const allowed = await promptShellWriteConfirmation({
@@ -228,7 +228,7 @@ export function useShellConsent(
     if (!allowed) {
       throw new Error("user denied agent write");
     }
-    await invoke("shell_write", { tabId, data: text });
+    await invokeForHost(tab.hostId, "shell_write", { tabId, data: text });
     return { ok: true };
   }
 

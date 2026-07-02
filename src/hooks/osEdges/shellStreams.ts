@@ -4,7 +4,7 @@ import type { MutableRefObject } from "react";
 import type { ShellMeta, Tab } from "../../types/tab";
 import { TERMINAL_REPLAY_MAX } from "../useTabs";
 import { remoteHostInvoke } from "../../services/remote";
-import { isRemoteHostId } from "../tabOps/helpers";
+import { isRemoteHostId } from "../../remoteInvoke";
 
 export interface ShellStreamsDeps {
   updateTab: (tabId: string, mutator: (tab: Tab) => Tab) => void;

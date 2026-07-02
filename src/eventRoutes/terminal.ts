@@ -4,7 +4,7 @@ import type { Tab } from "../types/tab";
 import { WORKSTATION_AREAS, workstationRows } from "../hooks/useFocus";
 import { reorderTabToIndex } from "../utils/tabReorder";
 import { remoteHostInvoke } from "../services/remote";
-import { isRemoteHostId } from "../hooks/tabOps/helpers";
+import { isRemoteHostId } from "../remoteInvoke";
 
 const TERMINAL_PANEL_MIN_HEIGHT = 120;
 const TERMINAL_PANEL_MAX_HEIGHT = 720;

@@ -111,6 +111,7 @@ export function FileTreePanel({
     return project?.path ?? activeEditorRoot ?? aethonRoot;
   }, [activeEditorRoot, activeWorkspaceId, aethonRoot, project?.path, state]);
   const rootLabel = (project?.name ?? basename(projectPath)) || "files";
+  const hostId = project?.hostId;
 
   const { collapsed, hidden, height, setCollapsed, setHidden, setHeight } =
     useFileTreePrefs();
@@ -132,9 +133,10 @@ export function FileTreePanel({
     toggleFolder,
     visibleNodes,
     watchedDirs,
-  } = useFileTreeData({ hidden, projectPath, rootLabel });
+  } = useFileTreeData({ hidden, projectPath, hostId, rootLabel });
 
   useFileTreeWatch({
+    hostId,
     projectPath,
     projectPathRef,
     refreshFolder,
@@ -151,6 +153,7 @@ export function FileTreePanel({
     renamingPath,
     setContextMenu,
   } = useFileTreeActions({
+    hostId,
     onEvent,
     projectPath,
     projectPathRef,

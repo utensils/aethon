@@ -20,7 +20,7 @@ import type { ShareMode } from "../../../utils/shareMode";
 import { resolveNumber, resolveString } from "../../../utils/dataBinding";
 import { RegistryComponent } from "../../../components/A2UIRenderer";
 import { remoteHostInvoke } from "../../../services/remote";
-import { isRemoteHostId } from "../../../hooks/tabOps/helpers";
+import { isRemoteHostId } from "../../../remoteInvoke";
 import type {
   A2UIEventHandler,
   BuiltinComponentProps,

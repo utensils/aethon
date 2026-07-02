@@ -13,9 +13,9 @@
  * registered component type via `aethon.registerComponent`).
  */
 import { useEffect, useMemo, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import type { BuiltinComponentProps } from "../../../components/A2UIRenderer";
 import { resolvePointer } from "../../../utils/jsonPointer";
+import { invokeForHost } from "../../../remoteInvoke";
 import { GhStatsStrip } from "./gh-stats-strip";
 import { TaskLauncher } from "./task-launcher";
 import { AeMarkInline } from "../layout";
@@ -30,6 +30,7 @@ interface ProjectInfo {
   id: string;
   label: string;
   path: string;
+  hostId?: string;
   iconUrl?: string;
 }
 
@@ -174,16 +175,19 @@ export function ProjectDashboard({
   // doesn't lag a project switch.
   useEffect(() => {
     const projectPath = project?.path;
+    const hostId = project?.hostId;
     if (!projectPath) return;
     let cancelled = false;
     void (async () => {
-      const o = await refreshRepoOverview(projectPath);
+      const o = hostId
+        ? await refreshRepoOverview(projectPath, hostId)
+        : await refreshRepoOverview(projectPath);
       if (!cancelled) setOverview({ path: projectPath, data: o });
     })();
     return () => {
       cancelled = true;
     };
-  }, [project?.path]);
+  }, [project?.hostId, project?.path]);
   const overviewData = overview?.path === project?.path ? overview?.data : null;
 
   useEffect(() => {
@@ -194,7 +198,8 @@ export function ProjectDashboard({
       setStartupPolicy(null);
       setStartupPolicyError(null);
       try {
-        const status = await invoke<StartupPolicyStatus>(
+        const status = await invokeForHost<StartupPolicyStatus>(
+          project.hostId,
           "workspace_startup_status",
           { args: { root: projectPath } },
         );
@@ -208,7 +213,7 @@ export function ProjectDashboard({
     return () => {
       cancelled = true;
     };
-  }, [project?.path]);
+  }, [project?.hostId, project?.path]);
 
   if (!project) return null;
   const iconUrl =
@@ -229,7 +234,8 @@ export function ProjectDashboard({
     setStartupPolicySaving(true);
     setStartupPolicyError(null);
     try {
-      const status = await invoke<StartupPolicyStatus>(
+      const status = await invokeForHost<StartupPolicyStatus>(
+        project.hostId,
         "workspace_startup_set_auto_approve",
         { args: { root: project.path, enabled } },
       );

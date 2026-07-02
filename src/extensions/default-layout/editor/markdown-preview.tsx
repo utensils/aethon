@@ -23,12 +23,12 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import ReactMarkdown from "react-markdown";
 import type { Options as ReactMarkdownOptions } from "react-markdown";
 
 import type { BuiltinComponentProps } from "../../../components/A2UIRenderer";
+import { invokeForHost } from "../../../remoteInvoke";
 import {
   MARKDOWN_PREVIEW_PROPS,
   safeMarkdownImageSrc,
@@ -37,6 +37,7 @@ import { resolveMarkdownLinkPath, safeExternalHttpUrl } from "./markdown-links";
 
 interface MarkdownPreviewProps {
   filePath: string;
+  hostId?: string;
   projectPath: string;
   /** The editor tab this preview belongs to — needed so the Edit button
    *  routes the preview-toggle event back to the right tab. */
@@ -89,10 +90,12 @@ function PreviewMarkdownImage({
   alt,
   node,
   currentFilePath,
+  hostId,
   projectPath,
   ...rest
 }: React.ImgHTMLAttributes<HTMLImageElement> & {
   currentFilePath: string;
+  hostId?: string;
   projectPath: string;
   node?: unknown;
 }) {
@@ -112,7 +115,7 @@ function PreviewMarkdownImage({
     if (!imagePath || !projectPath || !localImageKey) return;
 
     let cancelled = false;
-    void invoke<string>("fs_read_file_base64", {
+    void invokeForHost<string>(hostId, "fs_read_file_base64", {
       root: projectPath,
       path: imagePath,
     })
@@ -129,7 +132,7 @@ function PreviewMarkdownImage({
     return () => {
       cancelled = true;
     };
-  }, [imagePath, localImageKey, projectPath]);
+  }, [hostId, imagePath, localImageKey, projectPath]);
 
   const imageSrc =
     safeDirectSrc ??
@@ -142,6 +145,7 @@ export function MarkdownPreview(props: BuiltinComponentProps) {
   const componentProps =
     (props.component.props as Partial<MarkdownPreviewProps>) ?? {};
   const filePath = componentProps.filePath ?? "";
+  const hostId = componentProps.hostId;
   const projectPath = componentProps.projectPath ?? "";
   const tabId = componentProps.tabId ?? "";
   const refreshKey = componentProps.refreshKey ?? 0;
@@ -207,12 +211,13 @@ export function MarkdownPreview(props: BuiltinComponentProps) {
           {...rest}
           node={node}
           currentFilePath={filePath}
+          hostId={hostId}
           projectPath={projectPath}
         />
       );
     }
     return MarkdownPreviewImage;
-  }, [filePath, projectPath]);
+  }, [filePath, hostId, projectPath]);
   const markdownProps = useMemo<ReactMarkdownOptions>(() => {
     const components = {
       ...MARKDOWN_PREVIEW_PROPS.components,
@@ -236,7 +241,10 @@ export function MarkdownPreview(props: BuiltinComponentProps) {
       setLoading(true);
     }
     setError("");
-    void invoke<string>("fs_read_file", { root: projectPath, path: filePath })
+    void invokeForHost<string>(hostId, "fs_read_file", {
+      root: projectPath,
+      path: filePath,
+    })
       .then((value) => {
         if (cancelled) return;
         loadedPreviewTargetRef.current = previewTarget;
@@ -251,7 +259,7 @@ export function MarkdownPreview(props: BuiltinComponentProps) {
     return () => {
       cancelled = true;
     };
-  }, [filePath, projectPath, refreshKey]);
+  }, [filePath, hostId, projectPath, refreshKey]);
 
   return (
     <div className="ae-md-preview" style={{ gridArea: "canvas" }}>

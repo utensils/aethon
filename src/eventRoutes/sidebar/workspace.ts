@@ -41,9 +41,11 @@ export const handleSidebarSwitchWorkspace: EventRouteHandler = (
           projects?: {
             id: string;
             label: string;
+            hostId?: string;
             iconUrl?: string;
             workspaces?: {
               id: string;
+              hostId?: string;
               label?: string;
               branch?: string;
               path?: string;
@@ -96,6 +98,7 @@ export const handleSidebarSwitchWorkspace: EventRouteHandler = (
           kind: "workspace",
           projectId: project.id,
           projectLabel: project.label,
+          hostId: workspace.hostId ?? project.hostId,
           iconUrl: project.iconUrl,
           workspaceId: workspace.id,
           workspaceLabel: workspace.label,

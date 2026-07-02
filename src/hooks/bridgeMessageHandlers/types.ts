@@ -77,6 +77,8 @@ export interface BridgeMessageContext {
   lastExtensionStateKeysRef: MutableRefObject<Set<string>>;
   pendingTabOpens: MutableRefObject<Map<string, Promise<unknown>>>;
   nativeWindowsRef: NativeWindowsRef;
+  /** Host that produced the bridge message. Undefined for the local bridge. */
+  sourceHostId?: string;
 
   // ─── Tab actions (from useTabs) ─────────────────────────────────────
   updateTab: (tabId: string, updater: (tab: Tab) => Tab) => void;
@@ -99,6 +101,7 @@ export interface BridgeMessageContext {
     filePath: string,
     opts?: {
       rootPath?: string;
+      hostId?: string;
       diff?: boolean;
       diffSnapshot?: EditorDiffSnapshot;
     },

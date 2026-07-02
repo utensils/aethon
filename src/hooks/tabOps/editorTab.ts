@@ -8,7 +8,11 @@ import {
 import type { ProjectsState } from "../../projects";
 import { languageFromPath } from "../../monaco/language-detection";
 import { TAB_MIRROR_KEYS } from "./constants";
-import { editorLabelForPath } from "./helpers";
+import {
+  activeHostIdForNewTab,
+  activeProjectIdForNewTab,
+  editorLabelForPath,
+} from "./helpers";
 import { diffSnapshotKey } from "../../utils/editorDiffSnapshot";
 
 export interface EditorTabDeps {
@@ -28,6 +32,7 @@ export interface EditorTabActions {
     filePath: string,
     opts?: {
       rootPath?: string;
+      hostId?: string;
       diff?: boolean;
       diffSnapshot?: EditorDiffSnapshot;
     },
@@ -50,12 +55,15 @@ export function useEditorTabActions(deps: EditorTabDeps): EditorTabActions {
     filePath: string,
     opts: {
       rootPath?: string;
+      hostId?: string;
       diff?: boolean;
       diffSnapshot?: EditorDiffSnapshot;
     } = {},
   ): void {
     if (!filePath) return;
     const rootPath = opts.rootPath;
+    const hostId =
+      opts.hostId ?? activeHostIdForNewTab(projectsRef.current, stateRef.current);
     const diff = opts.diff === true;
     const diffSnapshot = diff ? opts.diffSnapshot : undefined;
     const snapshotKey = diffSnapshotKey(diffSnapshot);
@@ -66,6 +74,7 @@ export function useEditorTabActions(deps: EditorTabDeps): EditorTabActions {
       (t) =>
         t.kind === "editor" &&
         t.editor?.filePath === filePath &&
+        t.hostId === hostId &&
         (t.editor.rootPath ?? "") === (rootPath ?? "") &&
         !!t.editor.diff === diff &&
         diffSnapshotKey(t.editor.diffSnapshot) === snapshotKey,
@@ -75,7 +84,10 @@ export function useEditorTabActions(deps: EditorTabDeps): EditorTabActions {
       return;
     }
     const id = crypto.randomUUID();
-    const projectId = projectsRef.current.activeId;
+    const projectId = activeProjectIdForNewTab(
+      projectsRef.current,
+      stateRef.current,
+    );
     const language = languageFromPath(filePath);
     const baseLabel = editorLabelForPath(filePath);
     const tab: Tab = {
@@ -85,6 +97,7 @@ export function useEditorTabActions(deps: EditorTabDeps): EditorTabActions {
         projectId,
         "editor",
       ),
+      ...(hostId ? { hostId } : {}),
       editor: {
         filePath,
         ...(rootPath ? { rootPath } : {}),

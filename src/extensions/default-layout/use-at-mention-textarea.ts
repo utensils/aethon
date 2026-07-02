@@ -13,6 +13,7 @@ export function useAtMentionTextarea({
   onValueCommit,
   textareaRef,
   root,
+  hostId,
   enabled,
 }: {
   value: string;
@@ -20,6 +21,7 @@ export function useAtMentionTextarea({
   onValueCommit?: (value: string) => void;
   textareaRef: RefObject<HTMLTextAreaElement | null>;
   root: string | null;
+  hostId?: string | null;
   enabled: boolean;
 }) {
   const [cursor, setCursor] = useState(0);
@@ -28,7 +30,7 @@ export function useAtMentionTextarea({
     highlightIdx,
     setHighlightIdx,
     dismissPicker,
-  } = useAtMention({ value, cursor, root, enabled });
+  } = useAtMention({ value, cursor, root, hostId, enabled });
 
   const insertAtMention = useCallback(
     (match: AtMentionMatch) => {

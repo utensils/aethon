@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 
 import { readState, writeState } from "../../../persist";
+import { invokeForHost } from "../../../remoteInvoke";
 import { isGitIndexLockedError } from "../../../utils/gitErrors";
 import {
   EXPANDED_CAP_PER_PROJECT,
@@ -60,11 +60,13 @@ function cacheTree(projectPath: string, entry: TreeCacheEntry): void {
 interface UseFileTreeDataArgs {
   hidden: boolean;
   projectPath: string;
+  hostId?: string | null;
   rootLabel: string;
 }
 
 function useFileTreeData({
   hidden,
+  hostId,
   projectPath,
   rootLabel,
 }: UseFileTreeDataArgs) {
@@ -87,6 +89,31 @@ function useFileTreeData({
   useEffect(() => {
     projectPathRef.current = projectPath;
   }, [projectPath]);
+
+  const listDir = useCallback(
+    (rootPath: string, path: string) =>
+      invokeForHost<FsEntry[]>(hostId, "fs_list_dir", {
+        root: rootPath,
+        path,
+      }),
+    [hostId],
+  );
+
+  const gitFileStatus = useCallback(
+    (rootPath: string) =>
+      invokeForHost<GitFileStatusEntry[] | null>(hostId, "git_file_status", {
+        root: rootPath,
+      }),
+    [hostId],
+  );
+
+  const gitIgnoredPaths = useCallback(
+    (rootPath: string) =>
+      invokeForHost<string[] | null>(hostId, "git_ignored_paths", {
+        root: rootPath,
+      }),
+    [hostId],
+  );
 
   // Mirror `expanded` into a ref so the sub-tree expand/collapse callbacks can
   // read the current set without re-subscribing on every toggle.
@@ -145,10 +172,8 @@ function useFileTreeData({
       // tick repaints both. `git_ignored_paths` is `--directory`-collapsed,
       // so this stays cheap even on trees with a huge node_modules.
       const [entries, ignored] = await Promise.all([
-        invoke<GitFileStatusEntry[] | null>("git_file_status", {
-          root: rootPath,
-        }),
-        invoke<string[] | null>("git_ignored_paths", { root: rootPath }),
+        gitFileStatus(rootPath),
+        gitIgnoredPaths(rootPath),
       ]);
       if (projectPathRef.current !== rootPath) return;
       setGitStatuses(gitStatusesFromEntries(entries));
@@ -164,7 +189,7 @@ function useFileTreeData({
         setIgnoredPaths([]);
       }
     }
-  }, []);
+  }, [gitFileStatus, gitIgnoredPaths]);
 
   const scheduleGitStatusRefresh = useCallback(
     (rootPath = projectPathRef.current) => {
@@ -198,10 +223,7 @@ function useFileTreeData({
     setExpanded(new Set(expandedStoreRef.current.byProject[projectPath] ?? []));
     if (!projectPath) return;
     let cancelled = false;
-    void invoke<FsEntry[]>("fs_list_dir", {
-      root: projectPath,
-      path: projectPath,
-    })
+    void listDir(projectPath, projectPath)
       .then(async (entries) => {
         if (cancelled) return;
         const rootNode: TreeNode = {
@@ -223,10 +245,7 @@ function useFileTreeData({
         for (const folderPath of ordered) {
           if (cancelled) return;
           try {
-            const childEntries = await invoke<FsEntry[]>("fs_list_dir", {
-              root: projectPath,
-              path: folderPath,
-            });
+            const childEntries = await listDir(projectPath, folderPath);
             if (cancelled) return;
             setRoot((r) =>
               r ? graftChildren(r, folderPath, childEntries) : r,
@@ -244,7 +263,7 @@ function useFileTreeData({
     return () => {
       cancelled = true;
     };
-  }, [projectPath, refreshGitStatuses, rootLabel]);
+  }, [listDir, projectPath, refreshGitStatuses, rootLabel]);
 
   // Keep the warm cache in sync with the live tree. Only cache when the
   // rendered root actually belongs to the current projectPath — this
@@ -290,17 +309,14 @@ function useFileTreeData({
     async (node: TreeNode): Promise<TreeNode[] | null> => {
       if (!projectPathRef.current) return null;
       try {
-        const entries = await invoke<FsEntry[]>("fs_list_dir", {
-          root: projectPathRef.current,
-          path: node.entry.path,
-        });
+        const entries = await listDir(projectPathRef.current, node.entry.path);
         return nodesFromEntries(entries, node.depth + 1, node.children);
       } catch (err) {
         node.loadError = String(err);
         return null;
       }
     },
-    [],
+    [listDir],
   );
 
   const toggleFolder = useCallback(
@@ -389,10 +405,7 @@ function useFileTreeData({
             if (projectPathRef.current !== projectKey) return;
             let entries: FsEntry[];
             try {
-              entries = await invoke<FsEntry[]>("fs_list_dir", {
-                root: projectKey,
-                path,
-              });
+              entries = await listDir(projectKey, path);
             } catch {
               continue;
             }
@@ -425,7 +438,7 @@ function useFileTreeData({
         expandAllInFlightRef.current = false;
       }
     },
-    [ignoreMatcher, schedulePersist],
+    [ignoreMatcher, listDir, schedulePersist],
   );
 
   const clearRevealTarget = useCallback(() => setRevealTarget(null), []);
@@ -441,10 +454,7 @@ function useFileTreeData({
       const expandNext = new Set(expandedRef.current);
       for (const dir of ancestors) {
         try {
-          const entries = await invoke<FsEntry[]>("fs_list_dir", {
-            root: projectKey,
-            path: dir,
-          });
+          const entries = await listDir(projectKey, dir);
           if (projectPathRef.current !== projectKey) return;
           setRoot((r) => (r ? graftChildren(r, dir, entries) : r));
           expandNext.add(dir);
@@ -458,7 +468,7 @@ function useFileTreeData({
       schedulePersist(expandNext);
       setRevealTarget(filePath);
     },
-    [schedulePersist],
+    [listDir, schedulePersist],
   );
 
   const deletedChildrenByParent = useMemo(
@@ -505,10 +515,7 @@ function useFileTreeData({
     async (folderPath: string) => {
       if (!projectPathRef.current) return;
       try {
-        const entries = await invoke<FsEntry[]>("fs_list_dir", {
-          root: projectPathRef.current,
-          path: folderPath,
-        });
+        const entries = await listDir(projectPathRef.current, folderPath);
         setRoot((r) => {
           if (!r) return r;
           if (r.entry.path === folderPath) {
@@ -539,7 +546,7 @@ function useFileTreeData({
         scheduleGitStatusRefresh();
       }
     },
-    [invalidateFolder, scheduleGitStatusRefresh],
+    [invalidateFolder, listDir, scheduleGitStatusRefresh],
   );
 
   const refreshVisibleFolders = useCallback(async () => {

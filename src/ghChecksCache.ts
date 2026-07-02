@@ -8,7 +8,7 @@
  * index, so a fresh cold-start fetch is the safe default. The hot path is
  * in-session revisits + the periodic poll in `useVcsStatus`.
  */
-import { invoke } from "@tauri-apps/api/core";
+import { invokeForHost } from "./remoteInvoke";
 
 export interface GhCheckRun {
   name: string;
@@ -50,8 +50,12 @@ interface CacheEntry {
 const cache = new Map<string, CacheEntry>();
 const inFlight = new Map<string, Promise<GhChecks>>();
 
-function cacheKey(projectPath: string, branch: string): string {
-  return `${projectPath}|${branch}`;
+function cacheKey(
+  projectPath: string,
+  branch: string,
+  hostId?: string | null,
+): string {
+  return `${hostId ?? "local"}|${projectPath}|${branch}`;
 }
 
 function ttlFor(checks: GhChecks): number {
@@ -68,15 +72,20 @@ function isFresh(entry: CacheEntry): boolean {
 export async function getGhChecks(
   projectPath: string,
   branch: string,
+  hostId?: string | null,
 ): Promise<GhChecks> {
-  const key = cacheKey(projectPath, branch);
+  const key = cacheKey(projectPath, branch, hostId);
   const hit = cache.get(key);
   if (hit && isFresh(hit)) return hit.checks;
 
   const pending = inFlight.get(key);
   if (pending) return pending;
 
-  const promise = invoke<GhChecks>("gh_checks", { projectPath, branch })
+  const promise = invokeForHost<GhChecks>(
+    hostId,
+    "gh_checks",
+    { projectPath, branch },
+  )
     .then((checks) => {
       cache.set(key, { checks, fetchedAt: Date.now() });
       return checks;
@@ -92,9 +101,10 @@ export async function getGhChecks(
 export async function refreshGhChecks(
   projectPath: string,
   branch: string,
+  hostId?: string | null,
 ): Promise<GhChecks> {
-  cache.delete(cacheKey(projectPath, branch));
-  return getGhChecks(projectPath, branch);
+  cache.delete(cacheKey(projectPath, branch, hostId));
+  return getGhChecks(projectPath, branch, hostId);
 }
 
 /** Test hook — wipe all entries so each test starts fresh. */

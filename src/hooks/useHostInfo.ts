@@ -6,7 +6,7 @@
 // already debounces, so we just maintain a Map keyed by id and emit a
 // stable derived list `[local, ...remotes]`.
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { getLocalHost, type Host } from "../hosts";
 import {
@@ -332,10 +332,14 @@ export function useHostInfo(): UseHostInfo {
     };
   }, []);
 
+  const pairedHostIds = useMemo(
+    () => new Set(pairedHosts.map((host) => host.id)),
+    [pairedHosts],
+  );
   const hosts: Host[] = [
     ...(localHost ? [localHost] : []),
     ...pairedHosts,
-    ...remotes.filter((remote) => !pairedHostsRef.current.has(remote.id)),
+    ...remotes.filter((remote) => !pairedHostIds.has(remote.id)),
   ];
   const setActiveHost = useCallback((id: string | null) => {
     setActiveHostState(id);
@@ -403,6 +407,7 @@ function projectMirrorsFromSnapshot(
           remoteId: workspace.id,
           projectId,
           remoteProjectId: project.id,
+          hostId,
           label: workspace.label ?? workspace.branch ?? "workspace",
           branch: workspace.branch,
           path: workspace.path,

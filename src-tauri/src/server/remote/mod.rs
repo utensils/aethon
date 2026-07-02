@@ -150,10 +150,10 @@ impl RemoteState {
 
     pub fn replace_host_forwarder(&self, host_id: &str) -> Arc<Notify> {
         let notify = Arc::new(Notify::new());
-        if let Ok(mut forwarders) = self.host_forwarders.lock() {
-            if let Some(old) = forwarders.insert(host_id.to_string(), Arc::clone(&notify)) {
-                old.notify_one();
-            }
+        if let Ok(mut forwarders) = self.host_forwarders.lock()
+            && let Some(old) = forwarders.insert(host_id.to_string(), Arc::clone(&notify))
+        {
+            old.notify_one();
         }
         notify
     }

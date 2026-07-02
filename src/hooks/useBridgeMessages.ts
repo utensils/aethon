@@ -4,7 +4,7 @@ import { listen } from "@tauri-apps/api/event";
 import type { A2UIPayload } from "../types/a2ui";
 import type { Tab } from "../types/tab";
 import { remoteHostInvoke } from "../services/remote";
-import { isRemoteHostId } from "./tabOps/helpers";
+import { isRemoteHostId } from "../remoteInvoke";
 import {
   bridgeMessageHandlers,
   type BridgeMessage,
@@ -240,6 +240,7 @@ export function processBridgePayload(
   payload: string,
   options: UseBridgeMessagesOptions,
   ackMutation: UseBridgeMessagesActions["ackMutation"],
+  sourceHostId?: string,
 ): void {
   let data: BridgeMessage;
   try {
@@ -265,6 +266,7 @@ export function processBridgePayload(
     hangWarnNotifId,
     hangWarnMs: options.hangWarnMs ?? DEFAULT_HANG_WARN_MS,
     bootLayout: options.bootLayout,
+    sourceHostId,
   };
   try {
     refreshHangWarnForBridgeMessage(data, fullCtx);
@@ -355,6 +357,7 @@ export function useBridgeMessages(
         envelope.body,
         optionsRef.current,
         ackMutationForHost(envelope.hostId),
+        envelope.hostId,
       );
     });
     const unlistenRemote = listen<RemoteHostEvent>(

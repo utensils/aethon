@@ -226,6 +226,7 @@ export interface ClosedTabEntry {
   kind: TabKind;
   label: string;
   projectId: string | null;
+  hostId?: string;
   /** Agent and shell tabs — passed back to reopen/restore paths. */
   cwd?: string;
   command?: string;

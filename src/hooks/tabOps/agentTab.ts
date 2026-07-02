@@ -12,10 +12,10 @@ import {
   activeHostIdForNewTab,
   activeProjectIdForNewTab,
   cwdForNewTab,
-  isRemoteHostId,
   modelForNewProjectTab,
   sessionLabelFromMessages,
 } from "./helpers";
+import { isRemoteHostId } from "../../remoteInvoke";
 import { remoteHostInvoke } from "../../services/remote";
 
 export interface NewTabDeps {

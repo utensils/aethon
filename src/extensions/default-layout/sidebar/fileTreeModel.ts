@@ -60,6 +60,7 @@ interface ExpandedStore {
 interface ProjectShape {
   path?: string;
   name?: string;
+  hostId?: string;
 }
 
 interface ContextMenuState {

@@ -9,7 +9,7 @@
  * git index state, so a fresh cold-start fetch is the safe default.
  * In-session revisits are the hot path this layer targets.
  */
-import { invoke } from "@tauri-apps/api/core";
+import { invokeForHost } from "./remoteInvoke";
 
 export interface GhPr {
   number: number;
@@ -50,8 +50,12 @@ interface CacheEntry {
 const cache = new Map<string, CacheEntry>();
 const inFlight = new Map<string, Promise<GhBranchStatus>>();
 
-function cacheKey(projectPath: string, branch: string): string {
-  return `${projectPath}|${branch}`;
+function cacheKey(
+  projectPath: string,
+  branch: string,
+  hostId?: string | null,
+): string {
+  return `${hostId ?? "local"}|${projectPath}|${branch}`;
 }
 
 function ttlFor(status: GhBranchStatus): number {
@@ -73,18 +77,20 @@ function isFresh(entry: CacheEntry): boolean {
 export async function getGhBranchStatus(
   projectPath: string,
   branch: string,
+  hostId?: string | null,
 ): Promise<GhBranchStatus> {
-  const key = cacheKey(projectPath, branch);
+  const key = cacheKey(projectPath, branch, hostId);
   const hit = cache.get(key);
   if (hit && isFresh(hit)) return hit.status;
 
   const pending = inFlight.get(key);
   if (pending) return pending;
 
-  const promise = invoke<GhBranchStatus>("gh_branch_status", {
-    projectPath,
-    branch,
-  })
+  const promise = invokeForHost<GhBranchStatus>(
+    hostId,
+    "gh_branch_status",
+    { projectPath, branch },
+  )
     .then((status) => {
       cache.set(key, { status, fetchedAt: Date.now() });
       return status;
@@ -101,9 +107,10 @@ export async function getGhBranchStatus(
 export async function refreshGhBranchStatus(
   projectPath: string,
   branch: string,
+  hostId?: string | null,
 ): Promise<GhBranchStatus> {
-  cache.delete(cacheKey(projectPath, branch));
-  return getGhBranchStatus(projectPath, branch);
+  cache.delete(cacheKey(projectPath, branch, hostId));
+  return getGhBranchStatus(projectPath, branch, hostId);
 }
 
 /** Test hook — wipe all entries so each test starts fresh. */

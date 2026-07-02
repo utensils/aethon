@@ -136,7 +136,7 @@ pub async fn remote_host_pair(
         return Err("local server is not running — start it before pairing a desktop host".into());
     };
     let reciprocal_token = pairing::new_device_token();
-    let reciprocal_candidates = pairing::candidate_hosts()
+    let reciprocal_candidates = pairing::candidate_hosts(Some(&local_info.fingerprint))
         .into_iter()
         .map(|h| candidate_with_port(&h, port))
         .collect::<Vec<_>>();

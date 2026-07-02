@@ -29,7 +29,6 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
 // Side-effect import: worker factories + loader binding + language
 // registration. Must evaluate before the first `<Editor>` mount or
@@ -39,6 +38,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import "../../../monaco/setup";
 import * as monaco from "monaco-editor";
 
+import { invokeForHost } from "../../../remoteInvoke";
 import type { StringValue } from "../../../types/a2ui";
 import type { EditorDiffSnapshot } from "../../../types/tab";
 import { resolveString } from "../../../utils/dataBinding";
@@ -77,6 +77,7 @@ function scrollbarSizePx(): number {
 interface EditorTabLike {
   id: string;
   kind?: string;
+  hostId?: string;
   editor?: {
     filePath?: string;
     rootPath?: string;
@@ -110,6 +111,7 @@ export function EditorCanvas({
   const tabs = (state["tabs"] as EditorTabLike[] | undefined) ?? [];
   const boundTab = tabs.find((t) => t.id === tabId);
   const editorMeta = boundTab?.editor;
+  const hostId = boundTab?.hostId;
   const project = state["project"] as { path?: string } | undefined;
   const projectPath = editorMeta?.rootPath ?? project?.path ?? "";
   // Cheap primitive that changes when the working tree shifts under us
@@ -186,7 +188,10 @@ export function EditorCanvas({
     if (!buf) return;
     const root = projectPathRef.current;
     if (!root) return;
-    void invoke<string>("fs_read_file", { root, path: buf.filePath })
+    void invokeForHost<string>(hostId, "fs_read_file", {
+      root,
+      path: buf.filePath,
+    })
       .then((text) => {
         if (buf.model.getValue() !== text) {
           buf.loading = true;
@@ -202,7 +207,7 @@ export function EditorCanvas({
       .catch(() => {
         /* file vanished or unreadable — leave the buffer as-is */
       });
-  }, []);
+  }, [hostId]);
 
   // Imperative editor operations for the menubar (Edit / View / Go +
   // reveal / close). Created once in the mount effect (where ref access
@@ -213,6 +218,7 @@ export function EditorCanvas({
     useEditorExternalChange({
       tabId,
       filePath: editorMeta?.filePath ?? "",
+      hostId,
       root: projectPath,
       isDirtyRef,
       reload: reloadActiveBuffer,
@@ -278,7 +284,7 @@ export function EditorCanvas({
           getEditorBuffer(currentTabIdRef.current)?.filePath ?? "",
         getRoot: () => projectPathRef.current,
         getTabId: () => currentTabIdRef.current,
-        invoke,
+        invoke: (cmd, args) => invokeForHost(hostId, cmd, args ?? {}),
         closeTab: (id) => onEventRef.current("editor-close", { tabId: id }),
       }),
     );
@@ -358,7 +364,7 @@ export function EditorCanvas({
       ed.dispose();
       editorRef.current = null;
     };
-  }, [reloadActiveBuffer]);
+  }, [hostId, reloadActiveBuffer]);
 
   // Initial cursor for a NEW (just-loaded) buffer comes from the
   // persisted editor meta. We capture it via a ref to avoid putting
@@ -435,7 +441,10 @@ export function EditorCanvas({
 
     const path = editorMeta.filePath;
     const initialBuf = buf;
-    void invoke<string>("fs_read_file", { root: projectPath, path })
+    void invokeForHost<string>(hostId, "fs_read_file", {
+      root: projectPath,
+      path,
+    })
       .then((text) => {
         // If the user typed before the read landed, keep their
         // content — overwriting it now would silently destroy edits.
@@ -473,7 +482,7 @@ export function EditorCanvas({
           setLoadError(String(err));
         }
       });
-  }, [tabId, editorMeta?.filePath, projectPath]);
+  }, [hostId, tabId, editorMeta?.filePath, projectPath]);
 
   // ─── Apply View-menu settings to the live editor ───────────────────
   // updateOptions is editor-wide (survives setModel), so applying on
@@ -549,7 +558,10 @@ export function EditorCanvas({
       collection.clear();
     }
     let cancelled = false;
-    void invoke<DiffHunk[] | null>("git_file_diff_hunks", { root, path })
+    void invokeForHost<DiffHunk[] | null>(hostId, "git_file_diff_hunks", {
+      root,
+      path,
+    })
       .then((hunks) => {
         if (cancelled || currentTabIdRef.current !== forTabId) return;
         const model = ed.getModel();
@@ -575,6 +587,7 @@ export function EditorCanvas({
     tabId,
     editorMeta?.filePath,
     editorMeta?.isDirty,
+    hostId,
     projectPath,
     showMonaco,
     vcsSignal,
@@ -611,7 +624,7 @@ export function EditorCanvas({
           onEvent={(_c, eventType, data) => {
             onEvent(eventType, data);
           }}
-          componentProps={{ filePath, projectPath }}
+          componentProps={{ filePath, hostId, projectPath }}
         />
       )}
       {showPreview && (
@@ -623,6 +636,7 @@ export function EditorCanvas({
           }}
           componentProps={{
             filePath,
+            hostId,
             projectPath,
             tabId,
             refreshKey: editorMeta?.previewRefreshKey ?? 0,
@@ -638,6 +652,7 @@ export function EditorCanvas({
           }}
           componentProps={{
             filePath,
+            hostId,
             projectPath,
             tabId,
             // Re-read the diff when the working tree shifts (save, discard,

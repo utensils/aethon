@@ -2,12 +2,14 @@ import { useEffect, useRef, type RefObject } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 
+import { isRemoteHostId } from "../../../remoteInvoke";
 import {
   visibleChangedDirs,
   type FsTreeChangedPayload,
 } from "./file-tree-watch";
 
 interface UseFileTreeWatchArgs {
+  hostId?: string | null;
   projectPath: string;
   projectPathRef: RefObject<string>;
   refreshFolder: (folderPath: string) => Promise<void>;
@@ -15,6 +17,7 @@ interface UseFileTreeWatchArgs {
 }
 
 function useFileTreeWatch({
+  hostId,
   projectPath,
   projectPathRef,
   refreshFolder,
@@ -28,7 +31,7 @@ function useFileTreeWatch({
   useEffect(() => {
     if (watchSyncTimerRef.current) clearTimeout(watchSyncTimerRef.current);
     const previousRoot = watchedRootRef.current;
-    if (!projectPath || watchedDirs.length === 0) {
+    if (isRemoteHostId(hostId) || !projectPath || watchedDirs.length === 0) {
       if (previousRoot) {
         watchedRootRef.current = "";
         void invoke("fs_unwatch_root", { root: previousRoot }).catch(() => {
@@ -57,16 +60,16 @@ function useFileTreeWatch({
         watchSyncTimerRef.current = null;
       }
     };
-  }, [projectPath, watchedDirs]);
+  }, [hostId, projectPath, watchedDirs]);
 
   useEffect(() => {
     if (!projectPath) return;
     let disposed = false;
     let unlisten: (() => void) | undefined;
     const pendingRefreshDirs = pendingRefreshDirsRef.current;
-    void listen<FsTreeChangedPayload>("fs-tree-changed", (event) => {
-      if (disposed || event.payload.root !== projectPathRef.current) return;
-      for (const dir of event.payload.dirs) {
+    const handlePayload = (payload: FsTreeChangedPayload) => {
+      if (disposed || payload.root !== projectPathRef.current) return;
+      for (const dir of payload.dirs) {
         pendingRefreshDirs.add(dir);
       }
       if (refreshDebounceRef.current) return;
@@ -74,7 +77,7 @@ function useFileTreeWatch({
         refreshDebounceRef.current = null;
         const dirs = visibleChangedDirs(
           {
-            root: event.payload.root,
+            root: payload.root,
             dirs: [...pendingRefreshDirs],
           },
           projectPathRef.current,
@@ -85,6 +88,27 @@ function useFileTreeWatch({
           void refreshFolder(dir);
         }
       }, 120);
+    };
+    const eventName = isRemoteHostId(hostId)
+      ? "remote-host-event"
+      : "fs-tree-changed";
+    void listen<{
+      hostId?: string;
+      topic?: string;
+      payload?: unknown;
+      root?: string;
+      dirs?: string[];
+    }>(eventName, (event) => {
+      if (isRemoteHostId(hostId)) {
+        if (event.payload.hostId !== hostId || event.payload.topic !== "fs-tree-changed") {
+          return;
+        }
+        const payload = event.payload.payload as FsTreeChangedPayload | undefined;
+        if (!payload) return;
+        handlePayload(payload);
+        return;
+      }
+      handlePayload(event.payload as FsTreeChangedPayload);
     }).then((fn) => {
       if (disposed) {
         fn();
@@ -101,7 +125,7 @@ function useFileTreeWatch({
       pendingRefreshDirs.clear();
       unlisten?.();
     };
-  }, [projectPath, projectPathRef, refreshFolder, watchedDirs]);
+  }, [hostId, projectPath, projectPathRef, refreshFolder, watchedDirs]);
 
   useEffect(() => {
     return () => {

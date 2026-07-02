@@ -8,7 +8,7 @@ import { flushDeferredTabOpen } from "./bridgeMessageHandlers/readyEffects";
 import { queueOf, withQueue } from "./chatQueue";
 import type { UseChatContext } from "./useChat";
 import { remoteHostInvoke } from "../services/remote";
-import { isRemoteHostId } from "./tabOps/helpers";
+import { isRemoteHostId } from "../remoteInvoke";
 
 export interface SendChatOptions {
   mode?: "normal" | "steer";

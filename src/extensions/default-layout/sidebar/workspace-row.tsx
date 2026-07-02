@@ -33,9 +33,10 @@ export const WORKSPACE_PENDING_CI_REFRESH_MS = 45_000;
 async function liveBranchStillMatches(
   path: string,
   branch: string,
+  hostId?: string | null,
 ): Promise<boolean> {
   try {
-    const live = await gitWorktrees(path);
+    const live = hostId ? await gitWorktrees(path, hostId) : await gitWorktrees(path);
     const row = live.find((w) => w.path === path);
     if (!row) return true;
     return row.branch === branch;
@@ -47,6 +48,7 @@ async function liveBranchStillMatches(
 export interface WorkspaceSidebarItem {
   id: string;
   projectId?: string;
+  hostId?: string;
   /** User-visible label (defaults to branch name when absent). */
   label: string;
   /** Short branch name; falls back to "detached" for detached HEAD. */
@@ -153,7 +155,7 @@ export function WorkspaceRow({
         setPrChip(null);
       }
       try {
-        if (!(await liveBranchStillMatches(item.path, branch))) {
+        if (!(await liveBranchStillMatches(item.path, branch, item.hostId))) {
           if (!cancelled) {
             loadedOnce = true;
             setPrChip(null);
@@ -161,13 +163,18 @@ export function WorkspaceRow({
           }
           return;
         }
-        const status = await getGhBranchStatus(item.path, branch);
+        const status = item.hostId
+          ? await getGhBranchStatus(item.path, branch, item.hostId)
+          : await getGhBranchStatus(item.path, branch);
         const checks =
           status.ghAvailable &&
           status.repo &&
           !status.workspaceBroken &&
           status.prs.length > 0
-            ? await getGhChecks(item.path, branch).catch(() => null)
+            ? await (item.hostId
+                ? getGhChecks(item.path, branch, item.hostId)
+                : getGhChecks(item.path, branch)
+              ).catch(() => null)
             : null;
         if (!cancelled) {
           const chip = summarizeWorkspacePrStatus(status, checks);
@@ -204,7 +211,7 @@ export function WorkspaceRow({
       window.removeEventListener("focus", onFocus);
       document.removeEventListener("visibilitychange", onVisibility);
     };
-  }, [item.branch, item.path, prEligible]);
+  }, [item.branch, item.hostId, item.path, prEligible]);
 
   const className = [
     "a2ui-sidebar-item",
