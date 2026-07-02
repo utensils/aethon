@@ -81,7 +81,17 @@ function openRestoredTab(
   const opening = (async () => {
     if (restoredCwd && ctx.prepareWorkspaceStartup) {
       const ready = await ctx.prepareWorkspaceStartup(restoredCwd);
-      if (!ready) return;
+      if (!ready) {
+        // Startup not approved/ready — no tab_open was sent. Re-park
+        // the open so the next interaction (or ready re-fire) retries
+        // instead of stranding the tab with a consumed thunk.
+        replayedTabIds.delete(t.id);
+        deferredTabOpens.set(t.id, () => {
+          deferredTabOpens.delete(t.id);
+          return openRestoredTab(ctx, t, restoredCwd);
+        });
+        return;
+      }
     }
     return await invoke("agent_command", {
       payload: JSON.stringify({

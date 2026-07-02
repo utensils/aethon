@@ -108,6 +108,50 @@ describe("runReadyEffects", () => {
     expect(flushDeferredTabOpen("tab-bg")).toBeUndefined();
   });
 
+  it("re-parks a flushed open when workspace startup is not ready", async () => {
+    const { ctx } = buildHandlerFixture({
+      state: {
+        activeTabId: "default",
+        tabs: [
+          { id: "tab-bg", label: "Background", model: "claude", cwd: "/repo/b" },
+        ],
+      },
+    });
+    const prepare = vi
+      .fn()
+      .mockResolvedValueOnce(false)
+      .mockResolvedValue(true);
+    ctx.prepareWorkspaceStartup = prepare;
+
+    runReadyEffects(ctx, {
+      currentProjectCwd: null,
+      priorActiveTabCwd: null,
+      priorActiveTabId: "default",
+      bridgeTabIds: new Set<string>(),
+    });
+
+    // First flush: startup not approved — no tab_open, thunk re-parked.
+    await flushDeferredTabOpen("tab-bg");
+    expect(harness.invoke).not.toHaveBeenCalledWith(
+      "agent_command",
+      expect.anything(),
+    );
+    expect(hasDeferredTabOpen("tab-bg")).toBe(true);
+
+    // Next interaction retries and succeeds.
+    await flushDeferredTabOpen("tab-bg");
+    expect(harness.invoke).toHaveBeenCalledWith("agent_command", {
+      payload: JSON.stringify({
+        type: "tab_open",
+        tabId: "tab-bg",
+        model: "claude",
+        cwd: "/repo/b",
+        restoreHistory: true,
+      }),
+    });
+    expect(hasDeferredTabOpen("tab-bg")).toBe(false);
+  });
+
   it("discards a deferred open without touching the bridge", () => {
     const { ctx } = buildHandlerFixture({
       state: {
