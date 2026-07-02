@@ -94,9 +94,10 @@ const STUB_RESULTS: Record<string, unknown> = {
 
 /** Commands renamed on the wire: the gateway exposes some flows as
  *  `ui.*` forwards executed by the desktop webview rather than the raw
- *  command. `write_config` → the gated config.write forward so companion
- *  Settings edits persist without breaking the single-writer invariant. */
+ *  command. These keep UI-owned companion edits behind the desktop
+ *  webview's single-writer boundary. */
 export const GATEWAY_TRANSLATIONS: Record<string, string> = {
+  set_theme: "ui.theme.set",
   write_config: "ui.config.write",
 };
 

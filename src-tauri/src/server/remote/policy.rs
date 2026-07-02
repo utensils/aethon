@@ -240,6 +240,7 @@ pub const COMMAND_POLICIES: &[(&str, RemotePolicy)] = &[
     ("ui.chat.wait", ForwardToFrontend("chat.wait")),
     ("ui.accounts.use", ForwardToFrontend("accounts.use")),
     ("ui.agent.stop", ForwardToFrontend("agent.stop")),
+    ("ui.theme.set", ForwardToFrontend("theme.set")),
     // Companion Settings edits: the desktop webview applies + persists,
     // preserving the single-writer invariant on config.toml.
     ("ui.config.write", ForwardToFrontend("config.write")),
@@ -427,6 +428,7 @@ mod tests {
         assert_eq!(policy_for("send_message"), Direct);
         assert_eq!(policy_for("agent_command"), DirectFiltered);
         assert_eq!(policy_for("ui.chat.send"), ForwardToFrontend("chat.send"));
+        assert_eq!(policy_for("ui.theme.set"), ForwardToFrontend("theme.set"));
         assert!(matches!(policy_for("write_state"), Deny(_)));
         assert_eq!(policy_for("shell_write"), Direct);
         assert_eq!(policy_for("shell_open"), DirectRootChecked);

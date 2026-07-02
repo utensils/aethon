@@ -67,11 +67,13 @@ describe("mobile command policy", () => {
     }
   });
 
-  it("translates write_config to the gated config.write forward", () => {
+  it("translates explicit UI-owned mutations to gated frontend forwards", () => {
     // Routed to the gateway (not stubbed) but under the ui.* method the
     // desktop webview applies + persists.
     expect(routeFor("write_config")).toBe("gateway");
     expect(gatewayCommand("write_config")).toBe("ui.config.write");
+    expect(routeFor("set_theme")).toBe("gateway");
+    expect(gatewayCommand("set_theme")).toBe("ui.theme.set");
     // Untranslated commands keep their name.
     expect(gatewayCommand("send_message")).toBe("send_message");
   });

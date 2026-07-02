@@ -27,6 +27,7 @@ pub const TAPPED_TOPICS: &[&str] = &[
     "agent-reloaded",
     "agent-stderr",
     "scheduled-tasks-changed",
+    "theme-changed",
     "host-discovered",
     "host-removed",
     // Phase 4 — terminal / files / git surfaces. shell-output is the
@@ -201,6 +202,7 @@ mod tests {
             ]
         );
         assert!(rx.try_recv().is_err(), "menu must not be tapped");
+        assert!(is_known_topic("theme-changed"));
     }
 
     #[test]
