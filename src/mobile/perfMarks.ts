@@ -41,19 +41,23 @@ export function perfMark(name: string): void {
   if (!enabled) return;
   try {
     performance.mark(PREFIX + name);
+    if (name === "hello-ok" && helloOkAt === null) {
+      helloOkAt = performance.now();
+      reportTimer = setTimeout(perfReport, REPORT_DELAY_MS);
+    }
   } catch {
     /* marks are best-effort */
-  }
-  if (name === "hello-ok" && helloOkAt === null) {
-    helloOkAt = performance.now();
-    reportTimer = setTimeout(perfReport, REPORT_DELAY_MS);
   }
 }
 
 /** Count one gateway invoke (called from the tauriCoreShim). */
 export function countInvoke(cmd: string): void {
   if (!enabled || invokes.length >= INVOKE_CAP) return;
-  invokes.push({ cmd, at: performance.now() });
+  try {
+    invokes.push({ cmd, at: performance.now() });
+  } catch {
+    /* the counter is best-effort */
+  }
 }
 
 function invokesWithin(windowMs: number): number {

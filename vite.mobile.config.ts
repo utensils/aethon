@@ -43,11 +43,24 @@ export default defineConfig({
           // startup report here so on-device numbers land in this
           // terminal without Safari's inspector attached.
           if (req.url === "/__perf" && req.method === "POST") {
+            // Bound the body: this server can be LAN-reachable via
+            // TAURI_DEV_HOST, and perf reports are ~1 KB.
+            const MAX_PERF_BODY = 64 * 1024;
             let body = "";
+            let overflow = false;
             req.on("data", (chunk: Buffer) => {
+              if (overflow) return;
               body += chunk.toString();
+              if (body.length > MAX_PERF_BODY) {
+                overflow = true;
+                body = "";
+                res.statusCode = 413;
+                res.end();
+                req.destroy();
+              }
             });
             req.on("end", () => {
+              if (overflow) return;
               console.log("[aethon:mobile-perf]", body);
               res.statusCode = 204;
               res.end();
