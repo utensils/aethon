@@ -126,6 +126,8 @@ export function useBootConfig(ctx: UseBootConfigContext): UseBootConfigActions {
         speakAgentReplies: fresh.voice.speakAgentReplies,
         speakMaxChars: fresh.voice.speakMaxChars,
         conversationContinuous: fresh.voice.conversationContinuous,
+        conversationEngine: fresh.voice.conversationEngine,
+        brainModel: fresh.voice.brainModel,
       },
       // Global transcript-visibility defaults, mirrored into state so the
       // renderer's resolver can read them via $ref. Per-tab overrides win.
@@ -228,6 +230,8 @@ export function useBootConfig(ctx: UseBootConfigContext): UseBootConfigActions {
             speakAgentReplies: config.voice.speakAgentReplies,
             speakMaxChars: config.voice.speakMaxChars,
             conversationContinuous: config.voice.conversationContinuous,
+            conversationEngine: config.voice.conversationEngine,
+            brainModel: config.voice.brainModel,
           },
           transcriptVisibility: {
             thinking: config.ui.thinkingVisibility,

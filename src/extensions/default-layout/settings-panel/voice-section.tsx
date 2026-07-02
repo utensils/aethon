@@ -268,7 +268,9 @@ function ConversationSettings({
       </Field>
       <ApiKeyField
         label="Deepgram API key"
-        stored={config.voice.deepgramApiKeySet}
+        stored={
+          config.voice.deepgramApiKeySet || !!config.voice.deepgramApiKey
+        }
         envVar="DEEPGRAM_API_KEY"
         onSave={(value) =>
           update({ voice: { ...config.voice, deepgramApiKey: value } })
@@ -276,7 +278,9 @@ function ConversationSettings({
       />
       <ApiKeyField
         label="Cartesia API key"
-        stored={config.voice.cartesiaApiKeySet}
+        stored={
+          config.voice.cartesiaApiKeySet || !!config.voice.cartesiaApiKey
+        }
         envVar="CARTESIA_API_KEY"
         onSave={(value) =>
           update({ voice: { ...config.voice, cartesiaApiKey: value } })
@@ -302,7 +306,10 @@ function ConversationSettings({
 }
 
 /** Masked, write-only key input: the stored value never round-trips to the
- *  UI. Saving sends the typed key once; clearing sends an explicit "". */
+ *  UI. Saving sends the typed key once; clearing sends an explicit "".
+ *  `justSet` mirrors the action locally so the field flips to "stored"
+ *  immediately — the config snapshot's `*ApiKeySet` boolean only refreshes
+ *  when the panel reopens. */
 function ApiKeyField({
   label,
   stored,
@@ -315,6 +322,8 @@ function ApiKeyField({
   onSave: (value: string) => void;
 }) {
   const [draft, setDraft] = useState("");
+  const [justSet, setJustSet] = useState<boolean | null>(null);
+  const hasKey = justSet ?? stored;
   return (
     <Field label={label}>
       <div className="ae-voice-key-row">
@@ -322,7 +331,7 @@ function ApiKeyField({
           type="password"
           className="ae-settings-input"
           value={draft}
-          placeholder={stored ? "•••••••• (stored)" : `or set ${envVar}`}
+          placeholder={hasKey ? "•••••••• (key stored)" : `or set ${envVar}`}
           autoComplete="off"
           onChange={(e) => setDraft(e.target.value)}
         />
@@ -333,17 +342,19 @@ function ApiKeyField({
           onClick={() => {
             onSave(draft.trim());
             setDraft("");
+            setJustSet(true);
           }}
         >
-          Set key
+          {hasKey ? "Replace key" : "Set key"}
         </button>
-        {stored ? (
+        {hasKey ? (
           <button
             type="button"
             className="ae-settings-secondary"
             onClick={() => {
               onSave("");
               setDraft("");
+              setJustSet(false);
             }}
           >
             Clear
