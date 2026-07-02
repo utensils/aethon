@@ -94,6 +94,12 @@ jobs:
       - name: Build mobile bundle
         run: bun run build:mobile
       - name: Cargo check (aarch64-apple-ios-sim)
+        # RUSTUP_TOOLCHAIN outranks the repo-root rust-toolchain.toml
+        # (channel = "stable"), which would otherwise steer the rustup
+        # proxy to the runner's preinstalled stable — a toolchain that
+        # lacks the ios-sim std installed above.
+        env:
+          RUSTUP_TOOLCHAIN: "1.92.0"
         run: cargo check --manifest-path apps/mobile/src-tauri/Cargo.toml --target aarch64-apple-ios-sim
 
   rust:
