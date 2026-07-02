@@ -69,10 +69,17 @@ fn parse_txt(bytes: &[u8]) -> Vec<(String, String)> {
 /// Build the wire shape from one resolved service. `None` when the TXT
 /// carries no fingerprint — without it the phone can't pin, so the
 /// entry is useless (and likely not an Aethon desktop at all).
+///
+/// `ipv4` comes from mDNS address resolution: connect by the concrete
+/// address whenever one was learned. Handing `<hostname>.local` to a
+/// plain `connect()` makes getaddrinfo walk a pile of link-local
+/// `fe80::` AAAA records first (observed live: 7 of them before any
+/// routable address), which eats the pairing timeout.
 fn desktop_from_resolved(
     hosttarget: &str,
     port: u16,
     txt: &[(String, String)],
+    ipv4: Option<std::net::Ipv4Addr>,
 ) -> Option<DiscoveredDesktop> {
     let get = |k: &str| {
         txt.iter()
@@ -93,10 +100,14 @@ fn desktop_from_resolved(
             n
         }
     };
+    let connect_host = match ipv4 {
+        Some(ip) => ip.to_string(),
+        None => hostname.clone(),
+    };
     Some(DiscoveredDesktop {
         id: format!("remote:{fingerprint}"),
         name,
-        host: format!("{hostname}:{port}"),
+        host: format!("{connect_host}:{port}"),
         hostname,
         port,
         fingerprint,
@@ -156,6 +167,20 @@ mod dnssd {
         context: *mut c_void,
     );
 
+    type GetAddrInfoReply = unsafe extern "C" fn(
+        sd_ref: DNSServiceRef,
+        flags: DNSServiceFlags,
+        interface_index: u32,
+        error: DNSServiceErrorType,
+        hostname: *const c_char,
+        address: *const libc::sockaddr,
+        ttl: u32,
+        context: *mut c_void,
+    );
+
+    /// kDNSServiceProtocol_IPv4
+    const PROTOCOL_IPV4: u32 = 0x01;
+
     unsafe extern "C" {
         fn DNSServiceBrowse(
             sd_ref: *mut DNSServiceRef,
@@ -176,6 +201,15 @@ mod dnssd {
             callback: ResolveReply,
             context: *mut c_void,
         ) -> DNSServiceErrorType;
+        fn DNSServiceGetAddrInfo(
+            sd_ref: *mut DNSServiceRef,
+            flags: DNSServiceFlags,
+            interface_index: u32,
+            protocol: u32,
+            hostname: *const c_char,
+            callback: GetAddrInfoReply,
+            context: *mut c_void,
+        ) -> DNSServiceErrorType;
         fn DNSServiceRefSockFD(sd_ref: DNSServiceRef) -> i32;
         fn DNSServiceProcessResult(sd_ref: DNSServiceRef) -> DNSServiceErrorType;
         fn DNSServiceRefDeallocate(sd_ref: DNSServiceRef);
@@ -189,11 +223,27 @@ mod dnssd {
         interface_index: u32,
     }
 
-    /// One in-flight resolve; `done` flips inside the callback.
+    /// (hosttarget, port, txt) captured by a resolve callback.
+    type Resolved = (String, u16, Vec<(String, String)>);
+
+    /// One in-flight resolve; `done` flips inside the callback, and the
+    /// pump takes `resolved` to start the address lookup.
     struct ResolveSlot {
         service: DNSServiceRef,
         done: bool,
-        result: Option<DiscoveredDesktop>,
+        resolved: Option<Resolved>,
+    }
+
+    /// One in-flight IPv4 lookup for a resolved service; `done` flips
+    /// on the first routable address (more callbacks may follow — one
+    /// per interface — but one usable address is all connect needs).
+    struct AddrSlot {
+        service: DNSServiceRef,
+        done: bool,
+        hosttarget: String,
+        port: u16,
+        txt: Vec<(String, String)>,
+        ipv4: Option<std::net::Ipv4Addr>,
     }
 
     #[derive(Default)]
@@ -247,7 +297,35 @@ mod dnssd {
         } else {
             parse_txt(unsafe { std::slice::from_raw_parts(txt_record, txt_len as usize) })
         };
-        slot.result = desktop_from_resolved(&hosttarget, u16::from_be(port_be), &txt);
+        slot.resolved = Some((hosttarget.into_owned(), u16::from_be(port_be), txt));
+    }
+
+    unsafe extern "C" fn addr_reply(
+        _sd_ref: DNSServiceRef,
+        _flags: DNSServiceFlags,
+        _interface_index: u32,
+        error: DNSServiceErrorType,
+        _hostname: *const c_char,
+        address: *const libc::sockaddr,
+        _ttl: u32,
+        context: *mut c_void,
+    ) {
+        let slot = unsafe { &mut *(context as *mut AddrSlot) };
+        if error != 0 || address.is_null() {
+            return;
+        }
+        if i32::from(unsafe { (*address).sa_family }) != libc::AF_INET {
+            return;
+        }
+        let sin = unsafe { &*(address as *const libc::sockaddr_in) };
+        let ip = std::net::Ipv4Addr::from(u32::from_be(sin.sin_addr.s_addr));
+        // Loopback/link-local answers can't be dialed from another
+        // machine — keep waiting for a routable one.
+        if ip.is_loopback() || ip.is_link_local() || ip.is_unspecified() {
+            return;
+        }
+        slot.ipv4 = Some(ip);
+        slot.done = true;
     }
 
     pub fn scan(timeout: Duration) -> Result<Vec<DiscoveredDesktop>, String> {
@@ -271,8 +349,9 @@ mod dnssd {
         }
 
         // Slots are boxed so their addresses stay stable for the C
-        // callbacks while the Vec grows.
-        let mut slots: Vec<Box<ResolveSlot>> = Vec::new();
+        // callbacks while the Vecs grow.
+        let mut resolves: Vec<Box<ResolveSlot>> = Vec::new();
+        let mut addrs: Vec<Box<AddrSlot>> = Vec::new();
 
         loop {
             let remaining = deadline.saturating_duration_since(Instant::now());
@@ -285,7 +364,7 @@ mod dnssd {
                 let mut slot = Box::new(ResolveSlot {
                     service: std::ptr::null_mut(),
                     done: false,
-                    result: None,
+                    resolved: None,
                 });
                 let err = unsafe {
                     DNSServiceResolve(
@@ -300,26 +379,75 @@ mod dnssd {
                     )
                 };
                 if err == 0 {
-                    slots.push(slot);
+                    resolves.push(slot);
                 }
             }
 
-            // Poll the browse fd plus every unfinished resolve fd.
-            let mut fds: Vec<libc::pollfd> = Vec::with_capacity(1 + slots.len());
+            // Start IPv4 lookups for freshly resolved services.
+            for slot in resolves.iter_mut() {
+                let Some((hosttarget, port, txt)) = slot.resolved.take() else {
+                    continue;
+                };
+                let mut addr = Box::new(AddrSlot {
+                    service: std::ptr::null_mut(),
+                    done: false,
+                    hosttarget,
+                    port,
+                    txt,
+                    ipv4: None,
+                });
+                let Ok(host_c) = CString::new(addr.hosttarget.clone()) else {
+                    continue;
+                };
+                let err = unsafe {
+                    DNSServiceGetAddrInfo(
+                        &mut addr.service,
+                        0,
+                        0,
+                        PROTOCOL_IPV4,
+                        host_c.as_ptr(),
+                        addr_reply,
+                        (&mut *addr) as *mut AddrSlot as *mut c_void,
+                    )
+                };
+                if err != 0 {
+                    // No lookup ref to pump — finish with the hostname
+                    // fallback instead of dropping the desktop.
+                    addr.service = std::ptr::null_mut();
+                    addr.done = true;
+                }
+                addrs.push(addr);
+            }
+
+            // Poll the browse fd plus every unfinished resolve/addr fd.
+            let mut fds: Vec<libc::pollfd> = Vec::with_capacity(1 + resolves.len() + addrs.len());
             fds.push(libc::pollfd {
                 fd: unsafe { DNSServiceRefSockFD(browse) },
                 events: libc::POLLIN,
                 revents: 0,
             });
-            let live: Vec<usize> = slots
+            let live_resolves: Vec<usize> = resolves
                 .iter()
                 .enumerate()
                 .filter(|(_, s)| !s.done)
                 .map(|(i, _)| i)
                 .collect();
-            for &i in &live {
+            for &i in &live_resolves {
                 fds.push(libc::pollfd {
-                    fd: unsafe { DNSServiceRefSockFD(slots[i].service) },
+                    fd: unsafe { DNSServiceRefSockFD(resolves[i].service) },
+                    events: libc::POLLIN,
+                    revents: 0,
+                });
+            }
+            let live_addrs: Vec<usize> = addrs
+                .iter()
+                .enumerate()
+                .filter(|(_, s)| !s.done && !s.service.is_null())
+                .map(|(i, _)| i)
+                .collect();
+            for &i in &live_addrs {
+                fds.push(libc::pollfd {
+                    fd: unsafe { DNSServiceRefSockFD(addrs[i].service) },
                     events: libc::POLLIN,
                     revents: 0,
                 });
@@ -333,22 +461,45 @@ mod dnssd {
             if fds[0].revents & libc::POLLIN != 0 {
                 unsafe { DNSServiceProcessResult(browse) };
             }
-            for (pos, &i) in live.iter().enumerate() {
-                if fds[pos + 1].revents & libc::POLLIN != 0 {
-                    unsafe { DNSServiceProcessResult(slots[i].service) };
+            let mut pos = 1;
+            for &i in &live_resolves {
+                if fds[pos].revents & libc::POLLIN != 0 {
+                    unsafe { DNSServiceProcessResult(resolves[i].service) };
                 }
+                pos += 1;
+            }
+            for &i in &live_addrs {
+                if fds[pos].revents & libc::POLLIN != 0 {
+                    unsafe { DNSServiceProcessResult(addrs[i].service) };
+                }
+                pos += 1;
             }
         }
 
         unsafe { DNSServiceRefDeallocate(browse) };
-        let mut out: Vec<DiscoveredDesktop> = Vec::new();
-        for slot in slots {
+        for slot in &resolves {
             unsafe { DNSServiceRefDeallocate(slot.service) };
-            if let Some(desktop) = slot.result {
+        }
+        let mut out: Vec<DiscoveredDesktop> = Vec::new();
+        for slot in addrs {
+            if !slot.service.is_null() {
+                unsafe { DNSServiceRefDeallocate(slot.service) };
+            }
+            if let Some(desktop) =
+                desktop_from_resolved(&slot.hosttarget, slot.port, &slot.txt, slot.ipv4)
+            {
                 // Dedupe by fingerprint — one desktop can resolve on
-                // several interfaces.
-                if !out.iter().any(|d| d.fingerprint == desktop.fingerprint) {
-                    out.push(desktop);
+                // several interfaces; prefer an entry that got an IPv4.
+                match out
+                    .iter_mut()
+                    .find(|d| d.fingerprint == desktop.fingerprint)
+                {
+                    Some(existing) => {
+                        if slot.ipv4.is_some() && existing.host.starts_with(&existing.hostname) {
+                            *existing = desktop;
+                        }
+                    }
+                    None => out.push(desktop),
                 }
             }
         }
@@ -398,16 +549,50 @@ mod tests {
             ("fingerprint".to_string(), "ff".repeat(32)),
             ("version".to_string(), "1.0.0".to_string()),
         ];
-        let desktop = desktop_from_resolved("halcyon.local.", 48213, &txt).unwrap();
+        let desktop = desktop_from_resolved("halcyon.local.", 48213, &txt, None).unwrap();
         assert_eq!(desktop.hostname, "halcyon.local");
+        // No resolved address → hostname fallback for connect.
         assert_eq!(desktop.host, "halcyon.local:48213");
         assert_eq!(desktop.name, "halcyon"); // .local trimmed for the fallback
         assert_eq!(desktop.id, format!("remote:{}", "ff".repeat(32)));
     }
 
     #[test]
+    fn prefers_the_resolved_ipv4_for_the_connect_host() {
+        let txt = vec![
+            ("fingerprint".to_string(), "ff".repeat(32)),
+            ("name".to_string(), "halcyon".to_string()),
+        ];
+        let ip = "192.168.1.142".parse().unwrap();
+        let desktop = desktop_from_resolved("halcyon.local.", 48213, &txt, Some(ip)).unwrap();
+        // Connect by address (a .local hostname makes getaddrinfo walk
+        // fe80:: records first); hostname stays for display.
+        assert_eq!(desktop.host, "192.168.1.142:48213");
+        assert_eq!(desktop.hostname, "halcyon.local");
+    }
+
+    #[test]
     fn drops_services_without_a_fingerprint() {
         let txt = vec![("name".to_string(), "imposter".to_string())];
-        assert!(desktop_from_resolved("other.local.", 80, &txt).is_none());
+        assert!(desktop_from_resolved("other.local.", 80, &txt, None).is_none());
+    }
+}
+
+#[cfg(all(test, target_vendor = "apple"))]
+mod live_tests {
+    use super::*;
+
+    /// Live scan against whatever advertises on this LAN — needs a
+    /// running desktop, so it's opt-in:
+    /// `cargo test --lib -- --ignored live_scan`
+    #[test]
+    #[ignore]
+    fn live_scan_prints_nearby_desktops() {
+        let found = scan_blocking(Duration::from_millis(3000)).expect("scan failed");
+        eprintln!("live scan found: {found:#?}");
+        assert!(
+            found.iter().all(|d| !d.host.is_empty()),
+            "every entry must carry a connectable host"
+        );
     }
 }
