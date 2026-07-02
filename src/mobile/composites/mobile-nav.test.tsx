@@ -44,6 +44,22 @@ describe("MobileNav", () => {
     expect(screen.queryByRole("button", { name: /git/i })).toBeNull();
   });
 
+  it("keeps Chat visible when a non-agent surface owns the active tab", () => {
+    render(
+      <MobileNav
+        component={{ id: "nav", type: "mobile-nav" }}
+        state={{
+          activeTabId: "overview",
+          tabs: [{ id: "tab-1", kind: "agent" }],
+          mobileNav: { active: "projects" },
+        }}
+        onEvent={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: /chat/i })).toBeDefined();
+  });
+
   it("shows project-bound work surfaces when a project is active", () => {
     render(
       <MobileNav

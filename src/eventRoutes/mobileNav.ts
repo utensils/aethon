@@ -93,6 +93,25 @@ function hasProjectContext(state: Record<string, unknown>): boolean {
   );
 }
 
+/** Opening the Chat screen while a non-agent surface owns the active
+ *  tab (e.g. the overview pseudo-tab after a host tap) would render an
+ *  empty canvas — fall back to the most recent agent tab. */
+function ensureAgentTabActive(ctx: Parameters<EventRouteHandler>[1]): void {
+  const state = ctx.stateRef.current;
+  const tabs = (Array.isArray(state.tabs) ? state.tabs : []) as {
+    id?: string;
+    kind?: string;
+  }[];
+  const activeTabId =
+    typeof state.activeTabId === "string" ? state.activeTabId : undefined;
+  const isAgent = (tab: { kind?: string }) => (tab.kind ?? "agent") === "agent";
+  if (tabs.some((tab) => tab.id === activeTabId && isAgent(tab))) return;
+  const fallback = [...tabs]
+    .reverse()
+    .find((tab) => isAgent(tab) && typeof tab.id === "string");
+  if (fallback?.id) ctx.activateTabAnywhere(fallback.id);
+}
+
 export const handleMobileNav: EventRouteHandler = async (
   { component, eventType, data },
   ctx,
@@ -111,6 +130,7 @@ export const handleMobileNav: EventRouteHandler = async (
         ) {
           setScreen(ctx, "projects");
         } else {
+          if (screen === "chat") ensureAgentTabActive(ctx);
           setScreen(ctx, screen);
         }
       }
@@ -169,6 +189,7 @@ export const handleMobileNav: EventRouteHandler = async (
         ) {
           setScreen(ctx, "projects");
         } else {
+          if (screen === "chat") ensureAgentTabActive(ctx);
           setScreen(ctx, screen);
         }
       }

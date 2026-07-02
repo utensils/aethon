@@ -25,6 +25,22 @@ describe("MobileHeader", () => {
     expect(container.querySelector(".app-header-pill")).toBeNull();
   });
 
+  it("keeps agent chrome when a session exists but a non-agent surface is active", () => {
+    const { container } = render(
+      <MobileHeader
+        component={{ id: "mobile-header", type: "mobile-header" }}
+        state={{
+          activeTabId: "overview",
+          tabs: [{ id: "tab-1", kind: "agent" }],
+          agentStatus: { label: "agent live", state: "live" },
+        }}
+        onEvent={vi.fn()}
+      />,
+    );
+
+    expect(container.querySelector(".app-header-pill")).not.toBeNull();
+  });
+
   it("restores agent/model chrome inside a project context", () => {
     const { container } = render(
       <MobileHeader

@@ -20,12 +20,10 @@ function hasProjectContext(state: Record<string, unknown>): boolean {
 }
 
 function hasSessionContext(state: Record<string, unknown>): boolean {
+  // Any agent tab counts — the active tab can be a non-agent surface
+  // (overview after a host tap) while a session still exists.
   const tabs = (Array.isArray(state.tabs) ? state.tabs : []) as TabLike[];
-  const activeTabId =
-    typeof state.activeTabId === "string" ? state.activeTabId : undefined;
-  return tabs.some(
-    (tab) => (tab.kind ?? "agent") === "agent" && (!activeTabId || tab.id === activeTabId),
-  );
+  return tabs.some((tab) => (tab.kind ?? "agent") === "agent");
 }
 
 export function MobileHeader(props: BuiltinComponentProps) {

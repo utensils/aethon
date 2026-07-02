@@ -323,6 +323,53 @@ describe("handleMobileNav", () => {
     );
   });
 
+  it("re-activates the latest agent tab when chat opens on a non-agent surface", async () => {
+    const { ctx, mocks, applySetState } = buildRouteFixture({
+      state: {
+        activeTabId: "overview",
+        tabs: [
+          { id: "tab-1", kind: "agent" },
+          { id: "tab-2", kind: "agent" },
+          { id: "shell-1", kind: "shell" },
+        ],
+      },
+    });
+
+    await handleMobileNav(
+      {
+        component: { id: "nav", type: "mobile-nav" },
+        eventType: "mobile-nav",
+        data: { screen: "chat" },
+      },
+      ctx,
+    );
+
+    expect(mocks.activateTabAnywhere).toHaveBeenCalledWith("tab-2");
+    expect((applySetState({}).mobileNav as { isChat?: boolean }).isChat).toBe(
+      true,
+    );
+  });
+
+  it("keeps the active agent tab when chat opens with one already active", async () => {
+    const { ctx, mocks } = buildRouteFixture({
+      state: {
+        activeTabId: "tab-1",
+        tabs: [{ id: "tab-1", kind: "agent" }],
+      },
+    });
+
+    await handleMobileNav(
+      {
+        component: { id: "nav", type: "mobile-nav" },
+        eventType: "mobile-nav",
+        data: { screen: "chat" },
+      },
+      ctx,
+    );
+
+    expect(mocks.activateTabAnywhere).not.toHaveBeenCalled();
+  });
+
   it("rejects unknown screen values instead of blanking every flag", async () => {
     const { ctx, applySetState } = buildRouteFixture({
       state: { mobileNav: { active: "chat", isChat: true } },

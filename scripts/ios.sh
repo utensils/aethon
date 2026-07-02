@@ -91,6 +91,13 @@ pick_physical_ios_device() {
     return 0
   fi
 
+  if ! command -v python3 >/dev/null 2>&1; then
+    echo "error: python3 not found — needed to parse devicectl JSON." >&2
+    echo "       Install the Xcode Command Line Tools (xcode-select --install)," >&2
+    echo "       or set AETHON_IOS_UDID to skip device discovery." >&2
+    return 1
+  fi
+
   local json_file
   json_file="$(mktemp -t aethon-devicectl-devices.XXXXXX.json)"
   if ! xcrun devicectl list devices --json-output "$json_file" >/dev/null; then
