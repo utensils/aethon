@@ -49,9 +49,7 @@ describe("handleSidebarResize", () => {
 });
 
 describe("handleSectionedSelect remote host pairing", () => {
-  it("prompts for the visible host code and invokes desktop pairing", async () => {
-    const promptSpy = vi.fn(() => "1234 5678");
-    vi.stubGlobal("window", { prompt: promptSpy });
+  it("uses the visible host code and invokes desktop pairing", async () => {
     const { ctx, mocks } = buildRouteFixture();
 
     const handled = await handleSectionedSelect(
@@ -65,13 +63,13 @@ describe("handleSectionedSelect remote host pairing", () => {
           hostname: "aethon-123.local",
           fingerprint: "abcdef",
           candidates: ["aethon-123.local:38123"],
+          code: "1234 5678",
         },
       },
       ctx,
     );
 
     expect(handled).toBe(true);
-    expect(promptSpy).toHaveBeenCalled();
     expect(mocks.invoke).toHaveBeenCalledWith("remote_host_pair", {
       host: "aethon-123.local:38123",
       fingerprint: "abcdef",
@@ -80,6 +78,35 @@ describe("handleSectionedSelect remote host pairing", () => {
     expect(mocks.pushNotification).toHaveBeenCalledWith(
       expect.objectContaining({ kind: "success", title: "Paired bender" }),
     );
+  });
+
+  it("keeps the prompt fallback for legacy pairing callers without a code", async () => {
+    const promptSpy = vi.fn(() => "8765 4321");
+    vi.stubGlobal("window", { prompt: promptSpy });
+    const { ctx, mocks } = buildRouteFixture();
+
+    const handled = await handleSectionedSelect(
+      {
+        component: { id: "sidebar", type: "sidebar" },
+        eventType: "pair-remote-host",
+        data: {
+          sectionId: "hosts",
+          itemId: "remote:bender",
+          label: "bender",
+          hostname: "aethon-123.local",
+          fingerprint: "abcdef",
+        },
+      },
+      ctx,
+    );
+
+    expect(handled).toBe(true);
+    expect(promptSpy).toHaveBeenCalled();
+    expect(mocks.invoke).toHaveBeenCalledWith("remote_host_pair", {
+      host: "aethon-123.local",
+      fingerprint: "abcdef",
+      code: "87654321",
+    });
   });
 });
 
@@ -781,8 +808,16 @@ describe("handleSectionedSelect", () => {
     expect(mocks.setActiveTab).toHaveBeenCalledWith("abc123");
   });
 
-  it("hosts section routes select to setActiveHost", async () => {
-    const { ctx } = buildRouteFixture();
+  it("hosts section selects the host overview and clears project context", async () => {
+    const { ctx, applySetState } = buildRouteFixture({
+      state: {
+        activeHostId: "local:one",
+        activeProjectId: "proj-1",
+        activeWorkspaceId: "wt-1",
+        activeTabId: "tab-7",
+        project: { id: "proj-1", hostId: "local:one" },
+      },
+    });
     await handleSectionedSelect(
       {
         component: { id: "sidebar" },
@@ -791,7 +826,17 @@ describe("handleSectionedSelect", () => {
       },
       ctx,
     );
+    const next = applySetState();
     expect(ctx.setActiveHost).toHaveBeenCalledWith("remote:bender");
+    expect(ctx.activateWorkspace).toHaveBeenCalledWith(null);
+    expect(ctx.clearActiveProject).toHaveBeenCalled();
+    expect(next).toMatchObject({
+      activeTabId: OVERVIEW_TAB_ID,
+      activeProjectId: null,
+      activeWorkspaceId: null,
+      project: null,
+      landing: null,
+    });
   });
 
   it("mobile devices section selects the device detail view", async () => {
@@ -1064,7 +1109,7 @@ describe("handleSectionedSelect", () => {
     expect(next.activeTabId).toBe(OVERVIEW_TAB_ID);
   });
 
-  it("clicking a different host does NOT force the overview sentinel", async () => {
+  it("clicking a different host opens that host overview", async () => {
     const { ctx, applySetState } = buildRouteFixture({
       state: { activeHostId: "local:one", activeTabId: "tab-7" },
     });
@@ -1080,6 +1125,6 @@ describe("handleSectionedSelect", () => {
       activeHostId: "local:one",
       activeTabId: "tab-7",
     });
-    expect(next.activeTabId).toBe("tab-7");
+    expect(next.activeTabId).toBe(OVERVIEW_TAB_ID);
   });
 });

@@ -141,6 +141,10 @@ export function useDerivedRenderState({
       activeHostId && activeHostId !== hostInfo.localHostId
         ? (hostInfo.remoteProjectsByHost[activeHostId] ?? [])
         : sidebarProjects;
+    const remoteHostActive =
+      activeHostId !== null &&
+      activeHostId !== undefined &&
+      activeHostId !== hostInfo.localHostId;
     const activeProjectSidebarEntry = hostScopedProjects.find(
       (p) => p.id === activeProjectId,
     );
@@ -149,9 +153,12 @@ export function useDerivedRenderState({
     const projectsArr = Array.isArray(state.projects)
       ? (state.projects as { id: string }[])
       : [];
-    const otherProjects = activeProjectId
-      ? projectsArr.filter((p) => p.id !== activeProjectId)
+    const activeHostProjects = remoteHostActive
+      ? (hostScopedProjects as { id: string }[])
       : projectsArr;
+    const otherProjects = activeProjectId
+      ? activeHostProjects.filter((p) => p.id !== activeProjectId)
+      : activeHostProjects;
     const existingProjectDashboard =
       (state.projectDashboard as { widgets?: unknown[] } | undefined) ?? {};
     const projectDashboard = {
@@ -310,6 +317,7 @@ export function useDerivedRenderState({
 
     return {
       ...state,
+      projects: activeHostProjects,
       activeTabId: effectiveActiveTabId,
       hasTabs,
       hasSessionTabs,

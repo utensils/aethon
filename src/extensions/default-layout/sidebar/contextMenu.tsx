@@ -37,6 +37,10 @@ export interface SidebarContextMenuController {
     e: React.MouseEvent<HTMLElement>,
     host: HostGroupItem,
   ) => void;
+  openHostPairMenu: (
+    e: React.MouseEvent<HTMLElement>,
+    host: HostGroupItem,
+  ) => void;
   handlers: SidebarMenuHandlers;
 }
 
@@ -125,6 +129,23 @@ export function useSidebarContextMenu(
     });
   };
 
+  const openHostPairMenu = (
+    e: React.MouseEvent<HTMLElement>,
+    host: HostGroupItem,
+  ) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setContextMenu({
+      x: e.clientX,
+      y: e.clientY,
+      sectionId: "hosts",
+      itemId: host.id,
+      label: host.label,
+      kind: "host-pair",
+      host,
+    });
+  };
+
   const removeContextProject = () => {
     if (!contextMenu) return;
     onEvent("remove-project", {
@@ -137,6 +158,13 @@ export function useSidebarContextMenu(
   };
   const pairContextRemoteHost = () => {
     if (!contextMenu?.host) return;
+    setContextMenu({
+      ...contextMenu,
+      kind: "host-pair",
+    });
+  };
+  const submitContextRemoteHostPair = (code: string) => {
+    if (!contextMenu?.host) return;
     onEvent(
       "pair-remote-host",
       {
@@ -146,6 +174,7 @@ export function useSidebarContextMenu(
         hostname: contextMenu.host.hostname,
         fingerprint: contextMenu.host.fingerprint,
         candidates: contextMenu.host.candidates,
+        code,
       },
       contextMenu.host.id,
     );
@@ -401,6 +430,7 @@ export function useSidebarContextMenu(
     openItemContextMenu,
     openWorkspaceContextMenu,
     openHostContextMenu,
+    openHostPairMenu,
     handlers: {
       closeContextMenu: close,
       createWorkspaceForContextProject,
@@ -412,6 +442,7 @@ export function useSidebarContextMenu(
       renameContextProject,
       removeContextProject,
       pairContextRemoteHost,
+      submitContextRemoteHostPair,
       reconnectContextRemoteHost,
       renameContextRemoteHost,
       submitContextRemoteHostRename,

@@ -231,6 +231,18 @@ describe("remoteBridgePayloadTargetsHost", () => {
     ).toBe(false);
     expect(
       remoteBridgePayloadTargetsHost(
+        JSON.stringify({
+          type: "devshell_query",
+          op: "env_for_path",
+          mutationId: "m1",
+          args: { cwd: "/repo/app" },
+        }),
+        "remote:fp",
+        state,
+      ),
+    ).toBe(true);
+    expect(
+      remoteBridgePayloadTargetsHost(
         JSON.stringify({ type: "response_delta", tabId: "local-tab" }),
         "remote:fp",
         state,

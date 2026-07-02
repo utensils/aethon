@@ -35,6 +35,7 @@ pub fn router(
     remote: Arc<RemoteState>,
     relay: Arc<dyn RelayExec>,
     device_changed: Arc<dyn Fn(&crate::server::remote::devices::DeviceView) + Send + Sync>,
+    host_changed: Arc<dyn Fn(&str) + Send + Sync>,
 ) -> Router {
     let status_info = info.clone();
     let ctx = GatewayCtx {
@@ -42,6 +43,7 @@ pub fn router(
         remote,
         relay,
         device_changed,
+        host_changed,
     };
     Router::new()
         .route("/health", get(|| async { "aethon" }))
@@ -127,7 +129,20 @@ pub async fn serve(
             serde_json::json!({ "id": device.id }),
         );
     });
-    let app = router(info, remote, relay, device_changed);
+    let app_for_hosts = app.clone();
+    let remote_for_hosts = Arc::clone(&remote);
+    let host_changed = Arc::new(move |host_id: &str| {
+        if let Some(host) = remote_for_hosts.hosts.get(host_id) {
+            let cancel = remote_for_hosts.replace_host_forwarder(host_id);
+            crate::server::remote::client::spawn_event_forwarder(
+                host,
+                app_for_hosts.clone(),
+                cancel,
+            );
+        }
+        let _ = app_for_hosts.emit("remote-hosts-changed", serde_json::json!({ "id": host_id }));
+    });
+    let app = router(info, remote, relay, device_changed, host_changed);
     match tls {
         Some(identity) => {
             crate::server::tls::install_crypto_provider();

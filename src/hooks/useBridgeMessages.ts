@@ -148,7 +148,7 @@ export function remoteBridgePayloadTargetsHost(
   const candidates = [data.tabId, data.originTabId].filter(
     (id): id is string => typeof id === "string" && id.length > 0,
   );
-  if (candidates.length === 0) return false;
+  if (candidates.length === 0) return data.type === "devshell_query";
   return candidates.some((tabId) => tabHostIdFromState(state, tabId) === hostId);
 }
 

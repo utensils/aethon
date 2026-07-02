@@ -38,6 +38,7 @@ interface RemoteHostPairItem {
   hostname?: string;
   fingerprint?: string;
   candidates?: string[];
+  code?: string;
 }
 
 function candidateHost(item: RemoteHostPairItem): string {
@@ -81,9 +82,12 @@ export const handleSectionedSelect: EventRouteHandler = async (
       return true;
     }
     const label = item?.label || host;
-    const rawCode = window.prompt(
-      `Enter the pairing code shown on ${label}.\n\nOn ${label}: Settings -> Remote Devices -> Start pairing.`,
-    );
+    const rawCode =
+      typeof item?.code === "string"
+        ? item.code
+        : window.prompt(
+            `Enter the pairing code shown on ${label}.\n\nOn ${label}: Settings -> Remote Devices -> Start pairing.`,
+          );
     const code = (rawCode ?? "").replace(/\D/g, "");
     if (!code) return true;
     if (code.length !== 8) {
@@ -216,13 +220,17 @@ export const handleSectionedSelect: EventRouteHandler = async (
     return true;
   }
   if (selected?.sectionId === "hosts" && selected.itemId) {
-    const wasAlreadyActiveHost =
-      ctx.stateRef.current.activeHostId === selected.itemId;
+    ctx.activateWorkspace(null);
+    ctx.clearActiveProject();
     ctx.setActiveHost(selected.itemId);
-    ctx.setState((prev) => ({ ...prev, landing: null }));
-    if (wasAlreadyActiveHost) {
-      activateOverview(ctx);
-    }
+    ctx.setState((prev) => ({
+      ...prev,
+      activeTabId: OVERVIEW_TAB_ID,
+      activeProjectId: null,
+      activeWorkspaceId: null,
+      project: null,
+      landing: null,
+    }));
     return true;
   }
   if (selected?.sectionId === "mobile-devices" && selected.itemId) {

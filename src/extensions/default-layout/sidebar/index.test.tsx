@@ -658,6 +658,10 @@ describe("Sidebar host groups", () => {
       ],
     });
     fireEvent.click(screen.getByRole("button", { name: "Pair bender" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Pairing code" }), {
+      target: { value: "12345678" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Pair" }));
     expect(onEvent).toHaveBeenCalledWith(
       "pair-remote-host",
       {
@@ -667,6 +671,7 @@ describe("Sidebar host groups", () => {
         hostname: "aethon-123.local",
         fingerprint: "123456",
         candidates: ["aethon-123.local:38123"],
+        code: "12345678",
       },
       "remote:bender",
     );
@@ -694,6 +699,10 @@ describe("Sidebar host groups", () => {
       screen.getByText("bender").closest(".ae-host-group-header")!,
     );
     fireEvent.click(screen.getByRole("menuitem", { name: /Pair host/ }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Pairing code" }), {
+      target: { value: "87654321" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Pair" }));
 
     expect(onEvent).toHaveBeenCalledWith(
       "pair-remote-host",
@@ -704,6 +713,7 @@ describe("Sidebar host groups", () => {
         hostname: "aethon-123.local",
         fingerprint: "123456",
         candidates: ["aethon-123.local:38123"],
+        code: "87654321",
       },
       "remote:bender",
     );

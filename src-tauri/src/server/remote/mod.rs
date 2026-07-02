@@ -195,4 +195,5 @@ pub struct GatewayCtx {
     pub remote: Arc<RemoteState>,
     pub relay: Arc<dyn relay::RelayExec>,
     pub device_changed: Arc<dyn Fn(&devices::DeviceView) + Send + Sync>,
+    pub host_changed: Arc<dyn Fn(&str) + Send + Sync>,
 }

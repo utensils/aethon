@@ -45,7 +45,7 @@ export interface HostGroupProps {
   collapsible: boolean;
   onToggleExpand: () => void;
   onSelectHost: () => void;
-  onPairHost?: () => void;
+  onPairHost?: (e: MouseEvent<HTMLElement>) => void;
   onHostContextMenu?: (
     e: MouseEvent<HTMLElement>,
     host: HostGroupItem,
@@ -147,7 +147,7 @@ export function HostGroup({
             aria-label={`Pair ${host.label}`}
             onClick={(event) => {
               event.stopPropagation();
-              onPairHost?.();
+              onPairHost?.(event);
             }}
           >
             Pair

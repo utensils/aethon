@@ -217,13 +217,17 @@ pub async fn pair_handler(
                     (req.host.clone(), req.reciprocal_token.clone())
             {
                 let candidates = req.reciprocal_candidates.unwrap_or_default();
-                if let Err(e) = ctx.remote.hosts.upsert(host, reciprocal_token, candidates) {
-                    tracing::warn!(
-                        target: "aethon::server::remote",
-                        "desktop reciprocal host store failed: {e}"
-                    );
-                } else {
-                    (ctx.device_changed)(&device);
+                match ctx.remote.hosts.upsert(host, reciprocal_token, candidates) {
+                    Ok(view) => {
+                        (ctx.device_changed)(&device);
+                        (ctx.host_changed)(&view.id);
+                    }
+                    Err(e) => {
+                        tracing::warn!(
+                            target: "aethon::server::remote",
+                            "desktop reciprocal host store failed: {e}"
+                        );
+                    }
                 }
             }
             tracing::info!(
@@ -241,7 +245,7 @@ pub async fn pair_handler(
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
+    use std::sync::{Arc, Mutex};
 
     use super::*;
     use crate::server::remote::RemoteState;
@@ -257,6 +261,7 @@ mod tests {
             remote: Arc::new(RemoteState::in_memory()),
             relay: Arc::new(crate::server::remote::relay::EchoRelay),
             device_changed: Arc::new(|_| {}),
+            host_changed: Arc::new(|_| {}),
         }
     }
 
@@ -315,6 +320,46 @@ mod tests {
         .err()
         .expect("must fail");
         assert_eq!(replay.0, StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn desktop_pairing_stores_and_notifies_reciprocal_host() {
+        let notified = Arc::new(Mutex::new(Vec::<String>::new()));
+        let notified_for_ctx = Arc::clone(&notified);
+        let ctx = GatewayCtx {
+            host_changed: Arc::new(move |id| {
+                notified_for_ctx.lock().unwrap().push(id.to_string());
+            }),
+            ..test_ctx()
+        };
+        let b = arm(&ctx);
+        let remote_fingerprint = "a".repeat(64);
+
+        let res = pair_handler(
+            State(ctx.clone()),
+            Json(PairRequest {
+                code: b.code,
+                device_name: "bender".into(),
+                platform: Some("desktop".into()),
+                host: Some(HostInfo {
+                    id: "local:bender".into(),
+                    hostname: "bender.local".into(),
+                    display_name: "bender".into(),
+                    fingerprint: remote_fingerprint.clone(),
+                }),
+                reciprocal_token: Some("token".into()),
+                reciprocal_candidates: Some(vec!["bender.local:38123".into()]),
+            }),
+        )
+        .await
+        .expect("pairs");
+
+        assert!(ctx.remote.devices.verify_token(&res.device_token).is_some());
+        let host_id = format!("remote:{remote_fingerprint}");
+        let host = ctx.remote.hosts.get(&host_id).expect("reciprocal host");
+        assert_eq!(host.hostname, "bender.local");
+        assert_eq!(host.token, "token");
+        assert_eq!(notified.lock().unwrap().as_slice(), &[host_id]);
     }
 
     #[tokio::test]

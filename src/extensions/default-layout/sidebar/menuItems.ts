@@ -26,6 +26,7 @@ export interface SidebarContextMenuState {
     | "project"
     | "project-base"
     | "host"
+    | "host-pair"
     | "host-rename"
     | "host-forget"
     | "workspace"
@@ -88,6 +89,7 @@ export interface SidebarMenuHandlers {
   // Host actions — row click selects the host; menu handles auth and
   // paired-host maintenance.
   pairContextRemoteHost: () => void;
+  submitContextRemoteHostPair: (code: string) => void;
   reconnectContextRemoteHost: () => void;
   renameContextRemoteHost: () => void;
   submitContextRemoteHostRename: (name: string) => void;
@@ -221,6 +223,7 @@ export function buildSidebarMenuItems(
           id: "pair-remote-host",
           label: "Pair host…",
           disabled: !pairable,
+          keepOpenOnSelect: true,
           onSelect: h.pairContextRemoteHost,
         },
         {
@@ -250,6 +253,22 @@ export function buildSidebarMenuItems(
           : { type: "note", label: "Pair before remote projects can load" },
       ];
     }
+    case "host-pair":
+      return [
+        { type: "header", label: `Pair ${state.label}` },
+        {
+          type: "input",
+          id: "remote-host-code-input",
+          label: "Pairing code",
+          placeholder: "12345678",
+          submitLabel: "Pair",
+          onSubmit: h.submitContextRemoteHostPair,
+        },
+        {
+          type: "note",
+          label: "Start pairing on the other host, then enter its 8-digit code.",
+        },
+      ];
     case "host-rename":
       return [
         { type: "header", label: "Rename host" },

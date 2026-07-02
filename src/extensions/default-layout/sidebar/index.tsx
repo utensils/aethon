@@ -247,20 +247,7 @@ export function Sidebar({
                       host.id,
                     )
                   }
-                  onPairHost={() =>
-                    onEvent(
-                      "pair-remote-host",
-                      {
-                        sectionId: "hosts",
-                        itemId: host.id,
-                        label: host.label,
-                        hostname: host.hostname,
-                        fingerprint: host.fingerprint,
-                        candidates: host.candidates,
-                      },
-                      host.id,
-                    )
-                  }
+                  onPairHost={(event) => menu.openHostPairMenu(event, host)}
                   onHostContextMenu={menu.openHostContextMenu}
                 >
                   {showsProjects && projectsSection

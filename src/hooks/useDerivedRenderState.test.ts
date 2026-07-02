@@ -399,6 +399,78 @@ describe("useDerivedRenderState", () => {
     });
   });
 
+  it("uses the active remote host snapshot for host overview projects", () => {
+    const remoteHostInfo: UseHostInfo = {
+      ...hostInfo,
+      activeHostId: "remote:bender",
+      hosts: [
+        ...hostInfo.hosts,
+        {
+          id: "remote:bender",
+          hostname: "bender.local",
+          displayName: "bender",
+          isLocal: false,
+          paired: true,
+          connected: true,
+        },
+      ],
+      remoteProjectsByHost: {
+        "remote:bender": [
+          {
+            id: "remote:bender::project::aethon",
+            remoteId: "aethon",
+            hostId: "remote:bender",
+            label: "aethon",
+            tooltip: "/Users/jamesbrink/Projects/utensils/aethon",
+            path: "/Users/jamesbrink/Projects/utensils/aethon",
+            active: false,
+            expanded: false,
+            workspaces: [],
+          },
+        ],
+      },
+    };
+    const { result } = renderHook(() =>
+      useDerivedRenderState({
+        state: {
+          tabs: [],
+          activeTabId: OVERVIEW_TAB_ID,
+          project: null,
+          projects: [{ id: "local-only", label: "local", path: "/local" }],
+          sidebar: {
+            projects: [{ id: "local-only", label: "local", path: "/local" }],
+          },
+        },
+        buildSidebarHistory: vi.fn(() => []),
+        hostInfo: remoteHostInfo,
+      }),
+    );
+
+    expect(result.current.renderState.emptyAndNoProject).toBe(true);
+    expect(result.current.renderState.projects).toMatchObject([
+      {
+        id: "remote:bender::project::aethon",
+        remoteId: "aethon",
+        hostId: "remote:bender",
+        label: "aethon",
+      },
+    ]);
+    expect(
+      (result.current.renderState.sidebar as { projects?: unknown[] }).projects,
+    ).toMatchObject([
+      {
+        id: "remote:bender::project::aethon",
+        remoteId: "aethon",
+        hostId: "remote:bender",
+        label: "aethon",
+      },
+    ]);
+    expect(result.current.renderState.host).toMatchObject({
+      id: "remote:bender",
+      displayName: "bender",
+    });
+  });
+
   it("keeps workspace sessions visible on the project dashboard", () => {
     const { result } = renderHook(() =>
       useDerivedRenderState({

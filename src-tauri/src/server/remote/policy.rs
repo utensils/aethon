@@ -5,8 +5,9 @@
 //! remote posture fails CI.
 //!
 //! Grounding invariants (see the plan in the repo history):
-//! - The desktop webview is the sole `*_query` answerer, sole
-//!   `mutation_ack` sender, and single writer of persisted state.
+//! - The desktop webview is the sole `*_query` answerer and single
+//!   writer of persisted state; paired desktop-host relays may return
+//!   `mutation_ack` messages to their own bridge.
 //! - Execution-boundary approvals (MCP, workspace startup, extension
 //!   install) happen physically at the desktop.
 //! - Root-bearing commands (fs/git/shell) are `DirectRootChecked`: the
@@ -178,11 +179,11 @@ pub const COMMAND_POLICIES: &[(&str, RemotePolicy)] = &[
     ("shell_read_scrollback", Direct),
     ("shell_list_shareable", Direct),
     ("shell_write", Direct),
-    // devshell
-    ("devshell_status", Deny(PHASE_SETTINGS)),
-    ("devshell_prepare_for_path", Deny(PHASE_SETTINGS)),
-    ("devshell_env_for_path", Deny(PHASE_SETTINGS)),
-    ("devshell_refresh", Deny(PHASE_SETTINGS)),
+    // devshell — host-level environment preparation for remote agent tabs.
+    ("devshell_status", DirectRootChecked),
+    ("devshell_prepare_for_path", DirectRootChecked),
+    ("devshell_env_for_path", DirectRootChecked),
+    ("devshell_refresh", DirectRootChecked),
     // voice (device-local audio)
     ("voice_list_providers", Deny(DESKTOP_ONLY)),
     ("voice_set_selected_provider", Deny(DESKTOP_ONLY)),
@@ -281,6 +282,20 @@ pub fn root_arg_value(cmd: &str, args: &serde_json::Value) -> Option<String> {
             .filter(|s| !s.is_empty())
             .map(str::to_string);
     }
+    if matches!(cmd, "devshell_status" | "devshell_refresh") {
+        return args
+            .get("args")
+            .and_then(|a| a.get("root"))
+            .and_then(|v| v.as_str())
+            .map(str::to_string);
+    }
+    if matches!(cmd, "devshell_env_for_path" | "devshell_prepare_for_path") {
+        return args
+            .get("args")
+            .and_then(|a| a.get("cwd"))
+            .and_then(|v| v.as_str())
+            .map(str::to_string);
+    }
     let key = match cmd {
         "git_status" => "path",
         "git_working_context" => "cwd",
@@ -352,12 +367,11 @@ pub fn root_is_allowed(candidate: &str, allowed: &[String]) -> bool {
         .any(|r| r == candidate)
 }
 
-/// `agent_command` payload filter: the desktop webview is the sole
-/// mutation-ack sender and frontend-state mirror — a remote client
-/// echoing either would race it (double-ack) or poison the mirror.
+/// `agent_command` payload filter: paired desktop hosts must be able to
+/// return mutation acks to their own bridge, but frontend-state mirroring
+/// and boot-layout hydration stay owned by the local desktop webview.
 pub fn agent_command_remote_denial(payload: &serde_json::Value) -> Option<&'static str> {
     match payload.get("type").and_then(|t| t.as_str()) {
-        Some("mutation_ack") => Some("mutation_ack is reserved for the desktop webview"),
         Some("frontend_state_patch") => {
             Some("frontend_state_patch is reserved for the desktop webview")
         }
@@ -453,6 +467,7 @@ mod tests {
         assert_eq!(policy_for("git_worktree_add"), DirectRootChecked);
         assert_eq!(policy_for("git_worktree_remove"), DirectRootChecked);
         assert_eq!(policy_for("read_issue_templates"), DirectRootChecked);
+        assert_eq!(policy_for("devshell_env_for_path"), DirectRootChecked);
         assert!(matches!(policy_for("not_a_command"), Deny(_)));
     }
 
@@ -461,7 +476,7 @@ mod tests {
         use serde_json::json;
         assert!(
             agent_command_remote_denial(&json!({"type": "mutation_ack", "mutationId": "m1"}))
-                .is_some()
+                .is_none()
         );
         assert!(agent_command_remote_denial(&json!({"type": "frontend_state_patch"})).is_some());
         assert!(agent_command_remote_denial(&json!({"type": "boot_layout"})).is_some());
@@ -475,6 +490,18 @@ mod tests {
         assert_eq!(
             root_arg_value("fs_read_file", &json!({"root": "/a", "path": "b"})).as_deref(),
             Some("/a")
+        );
+        assert_eq!(
+            root_arg_value(
+                "devshell_prepare_for_path",
+                &json!({"args": {"cwd": "/repo"}})
+            )
+            .as_deref(),
+            Some("/repo")
+        );
+        assert_eq!(
+            root_arg_value("devshell_status", &json!({"args": {"root": "/repo"}})).as_deref(),
+            Some("/repo")
         );
         assert_eq!(
             root_arg_value("git_status", &json!({"path": "/repo"})).as_deref(),
