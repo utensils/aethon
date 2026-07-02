@@ -84,6 +84,31 @@ fn prefer_stable_linux_webview_backend() {
 #[cfg(not(target_os = "linux"))]
 fn prefer_stable_linux_webview_backend() {}
 
+/// Read `[boot] prespawn_agent` (default true) straight from the raw
+/// config TOML. Deliberately NOT part of `parse_config_toml`'s typed
+/// config: this is a Rust-only emergency kill-switch for the post-show
+/// global-bridge pre-spawn, not a Settings-surfaced option.
+fn boot_prespawn_agent_from_config_text(raw: &str) -> bool {
+    toml::from_str::<toml::Value>(raw)
+        .ok()
+        .as_ref()
+        .and_then(|v| v.get("boot"))
+        .and_then(|b| b.get("prespawn_agent"))
+        .and_then(|v| v.as_bool())
+        .unwrap_or(true)
+}
+
+fn boot_prespawn_agent_enabled(app: &tauri::AppHandle) -> bool {
+    use tauri::Manager;
+    let Ok(home) = app.path().home_dir() else {
+        return true;
+    };
+    let user_dir =
+        helpers::aethon_dir(Some(home.clone())).unwrap_or_else(|| home.join(".aethon"));
+    let raw = std::fs::read_to_string(user_dir.join("config.toml")).unwrap_or_default();
+    boot_prespawn_agent_from_config_text(&raw)
+}
+
 /// Time a boot-phase step and emit it on the `aethon::boot` target so the
 /// startup timeline is greppable (`AETHON_LOG=aethon::boot=info`, the dev
 /// default). Wraps synchronous `setup()` steps only — spawned/async work
@@ -371,9 +396,6 @@ pub fn run() {
                     tracing::warn!(target: "aethon::storage", "initialize sqlite storage: {e}");
                 }
             });
-            boot_span("orphan_cleanup", || {
-                agent_process::cleanup_orphaned_dev_agents();
-            });
             if let Some(watcher) = commands::extensions::start_agent_watcher(app.handle().clone()) {
                 app.manage(watcher);
             }
@@ -456,6 +478,38 @@ pub fn run() {
             if let Err(err) = commands::native_windows::restore_on_setup(app.handle()) {
                 tracing::warn!(target: "aethon::native_windows", "restore failed: {err}");
             }
+            // Dev-only orphan reaping shells out to `ps` + `kill` — run it
+            // off-thread now that the window is visible instead of blocking
+            // first paint. Safe alongside the pre-spawn below: it only kills
+            // agents re-parented to launchd (ppid == 1), never our children.
+            tauri::async_runtime::spawn_blocking(agent_process::cleanup_orphaned_dev_agents);
+
+            // Pre-spawn the global agent bridge so its boot (bun cold start
+            // in dev, sidecar in release) overlaps webview creation + JS
+            // parse instead of starting at the frontend's first IPC. The
+            // frontend's `start_agent` becomes an idempotent no-op; `ready`
+            // frames emitted before the JS listener attaches are re-requested
+            // via the existing `report` handshake. Kill-switch:
+            // `[boot] prespawn_agent = false` in ~/.aethon/config.toml.
+            if boot_prespawn_agent_enabled(app.handle()) {
+                let handle = app.handle().clone();
+                tauri::async_runtime::spawn_blocking(move || {
+                    let state = handle.state::<agent_process::AgentProcesses>();
+                    let started = std::time::Instant::now();
+                    match agent_process::ensure_global_agent(&state, &handle) {
+                        Ok(()) => tracing::info!(
+                            target: "aethon::boot",
+                            elapsed_ms = started.elapsed().as_millis() as u64,
+                            "global bridge pre-spawned"
+                        ),
+                        Err(e) => tracing::warn!(
+                            target: "aethon::agent",
+                            "pre-spawn global bridge: {e}"
+                        ),
+                    }
+                });
+            }
+
             // Built-in HTTP + mDNS server. Failures inside `boot` are
             // logged + swallowed so a port collision or LAN hiccup
             // never blocks the UI.
@@ -656,6 +710,40 @@ mod tests {
         assert!(
             sentinel_pos < restore_pos,
             "setup must detect a post-update probation launch before restoring the main window so updater relaunches come back to the foreground",
+        );
+    }
+
+    #[test]
+    fn prespawn_kill_switch_parses_from_raw_toml() {
+        assert!(super::boot_prespawn_agent_from_config_text(""));
+        assert!(super::boot_prespawn_agent_from_config_text(
+            "[server]\nenabled = true\n"
+        ));
+        assert!(super::boot_prespawn_agent_from_config_text(
+            "[boot]\nprespawn_agent = true\n"
+        ));
+        assert!(!super::boot_prespawn_agent_from_config_text(
+            "[boot]\nprespawn_agent = false\n"
+        ));
+        // Malformed TOML falls back to the default rather than failing boot.
+        assert!(super::boot_prespawn_agent_from_config_text("[boot\noops"));
+    }
+
+    /// The window must be visible before the deferred orphan sweep and
+    /// the agent pre-spawn — both used to (or would) block first paint.
+    #[test]
+    fn deferred_boot_work_runs_after_window_show() {
+        let src = include_str!("lib.rs");
+        let restore_pos = src
+            .find("restore_on_setup(app.handle(), activate_after_update)")
+            .unwrap();
+        let cleanup_pos = src
+            .find("spawn_blocking(agent_process::cleanup_orphaned_dev_agents)")
+            .unwrap();
+        let prespawn_pos = src.find("boot_prespawn_agent_enabled(app.handle())").unwrap();
+        assert!(
+            restore_pos < cleanup_pos && restore_pos < prespawn_pos,
+            "orphan cleanup and agent pre-spawn must not block window visibility",
         );
     }
 }
