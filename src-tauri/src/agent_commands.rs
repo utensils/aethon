@@ -229,6 +229,8 @@ pub(crate) fn reload_agent(state: State<'_, AgentProcesses>, app: AppHandle) -> 
         guard.drain().collect()
     };
     if !children.is_empty() {
+        let kill_started = std::time::Instant::now();
+        let child_count = children.len();
         if let Ok(mut exits) = state.intentional_exits.lock() {
             for (key, _) in &children {
                 exits.insert(key.clone());
@@ -249,6 +251,12 @@ pub(crate) fn reload_agent(state: State<'_, AgentProcesses>, app: AppHandle) -> 
         if let Ok(mut meta) = state.meta.lock() {
             meta.clear();
         }
+        tracing::info!(
+            target: "aethon::boot",
+            children = child_count,
+            elapsed_ms = kill_started.elapsed().as_millis() as u64,
+            "reload_agent kill+wait complete"
+        );
     }
     let _ = app.emit("agent-reloaded", "extension-toggle");
     Ok(())

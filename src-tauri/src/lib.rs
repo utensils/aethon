@@ -84,6 +84,21 @@ fn prefer_stable_linux_webview_backend() {
 #[cfg(not(target_os = "linux"))]
 fn prefer_stable_linux_webview_backend() {}
 
+/// Time a boot-phase step and emit it on the `aethon::boot` target so the
+/// startup timeline is greppable (`AETHON_LOG=aethon::boot=info`, the dev
+/// default). Wraps synchronous `setup()` steps only — spawned/async work
+/// reports through its own targets.
+fn boot_span<T>(phase: &str, f: impl FnOnce() -> T) -> T {
+    let started = std::time::Instant::now();
+    let out = f();
+    tracing::info!(
+        target: "aethon::boot",
+        phase,
+        elapsed_ms = started.elapsed().as_millis() as u64
+    );
+    out
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     prefer_stable_linux_webview_backend();
@@ -350,10 +365,15 @@ pub fn run() {
 
     let app = builder
         .setup(move |app| {
-            if let Err(e) = storage::initialize(app.handle()) {
-                tracing::warn!(target: "aethon::storage", "initialize sqlite storage: {e}");
-            }
-            agent_process::cleanup_orphaned_dev_agents();
+            let setup_started = std::time::Instant::now();
+            boot_span("storage_init", || {
+                if let Err(e) = storage::initialize(app.handle()) {
+                    tracing::warn!(target: "aethon::storage", "initialize sqlite storage: {e}");
+                }
+            });
+            boot_span("orphan_cleanup", || {
+                agent_process::cleanup_orphaned_dev_agents();
+            });
             if let Some(watcher) = commands::extensions::start_agent_watcher(app.handle().clone()) {
                 app.manage(watcher);
             }
@@ -369,15 +389,17 @@ pub fn run() {
             // healthy render. Both calls are no-ops when there's no
             // sentinel/report on disk — they don't slow normal launches.
             let mut activate_after_update = false;
-            if let Ok(home) = app.path().home_dir()
-                && let Some(data_dir) = helpers::aethon_dir(Some(home))
-            {
-                activate_after_update = boot_probation::has_pending_probation(&data_dir);
-                boot_probation::show_pending_report(app.handle(), &data_dir);
-                let boot_state =
-                    Arc::clone(&app.state::<updater_state::UpdaterState>().boot_probation);
-                boot_probation::start_monitor(app.handle().clone(), boot_state, data_dir);
-            }
+            boot_span("boot_probation", || {
+                if let Ok(home) = app.path().home_dir()
+                    && let Some(data_dir) = helpers::aethon_dir(Some(home))
+                {
+                    activate_after_update = boot_probation::has_pending_probation(&data_dir);
+                    boot_probation::show_pending_report(app.handle(), &data_dir);
+                    let boot_state =
+                        Arc::clone(&app.state::<updater_state::UpdaterState>().boot_probation);
+                    boot_probation::start_monitor(app.handle().clone(), boot_state, data_dir);
+                }
+            });
 
             // Native menu — replaces Tauri's auto-generated default. Each
             // app-specific item emits a `menu` Tauri event whose payload
@@ -386,7 +408,7 @@ pub fn run() {
             // keyboard shortcuts always do the same thing. Predefined
             // macOS items (Quit / Hide / Cut / Copy / Minimize / etc.)
             // get native NS actions for free, no event handler needed.
-            commands::extensions::install_app_menu(app.handle(), &[])?;
+            boot_span("menu", || commands::extensions::install_app_menu(app.handle(), &[]))?;
             // Register the menu-click → "menu" event forwarder ONCE here.
             // install_app_menu rebuilds and re-attaches the NSMenu whenever
             // extension menu items change, but Tauri's `on_menu_event`
@@ -396,7 +418,9 @@ pub fn run() {
                 let id = event.id().0.as_str();
                 let _ = app.emit("menu", id);
             });
-            commands::extensions::install_tray(app.handle(), &[], &[])?;
+            boot_span("tray", || {
+                commands::extensions::install_tray(app.handle(), &[], &[])
+            })?;
             // Initialize the extension menu store empty; the bridge
             // ships items via `extension_menu_items` events that the
             // frontend forwards to `set_extension_menu_items`, which
@@ -409,22 +433,26 @@ pub fn run() {
             // primary monitor", replacing the previous hardcoded
             // `maximize()` that worked around the unreliable manifest
             // `"maximized": true` on macOS.
-            if let Err(err) = window_state::restore_on_setup(app.handle(), activate_after_update) {
-                tracing::warn!(target: "aethon::window_state", "restore failed: {err}");
-                // Best-effort: show the window anyway so a corrupt
-                // state file can never strand the user.
-                if let Some(w) = app.get_webview_window("main") {
-                    if activate_after_update {
-                        #[cfg(target_os = "macos")]
-                        let _ = app.handle().show();
-                        let _ = w.unminimize();
-                    }
-                    let _ = w.show();
-                    if activate_after_update {
-                        let _ = w.set_focus();
+            boot_span("window_restore_show", || {
+                if let Err(err) =
+                    window_state::restore_on_setup(app.handle(), activate_after_update)
+                {
+                    tracing::warn!(target: "aethon::window_state", "restore failed: {err}");
+                    // Best-effort: show the window anyway so a corrupt
+                    // state file can never strand the user.
+                    if let Some(w) = app.get_webview_window("main") {
+                        if activate_after_update {
+                            #[cfg(target_os = "macos")]
+                            let _ = app.handle().show();
+                            let _ = w.unminimize();
+                        }
+                        let _ = w.show();
+                        if activate_after_update {
+                            let _ = w.set_focus();
+                        }
                     }
                 }
-            }
+            });
             if let Err(err) = commands::native_windows::restore_on_setup(app.handle()) {
                 tracing::warn!(target: "aethon::native_windows", "restore failed: {err}");
             }
@@ -455,6 +483,11 @@ pub fn run() {
             tauri::async_runtime::spawn(async move {
                 commands::devshell::boot_init_cache(&app_handle, &cache).await;
             });
+            tracing::info!(
+                target: "aethon::boot",
+                total_ms = setup_started.elapsed().as_millis() as u64,
+                "setup complete"
+            );
             Ok(())
         })
         .build(tauri::generate_context!())

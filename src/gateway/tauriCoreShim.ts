@@ -14,6 +14,7 @@ export * from "@tauri-real/core";
 
 import { gatewayCommand, routeFor, stubResult } from "./commandPolicy";
 import { gateway } from "./transport";
+import { countInvoke } from "../mobile/perfMarks";
 
 interface TauriInternals {
   invoke: (cmd: string, args?: unknown, options?: unknown) => Promise<unknown>;
@@ -39,6 +40,7 @@ export function invoke<T = unknown>(
     case "stub":
       return Promise.resolve(stubResult(cmd) as T);
     case "gateway":
+      countInvoke(cmd);
       return gateway.request<T>(gatewayCommand(cmd), args);
   }
 }

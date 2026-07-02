@@ -149,7 +149,17 @@ pub(crate) fn mark_worker_ready(meta: &Arc<Mutex<HashMap<String, WorkerMeta>>>, 
     let mut map = lock_recover(meta, "worker meta (ready)");
     if let Some(entry) = map.get_mut(key) {
         entry.last_activity = Instant::now();
-        entry.bridge_ready = true;
+        // Log only the not-ready → ready transition; `report` re-emits
+        // `ready` later and a spawn-relative elapsed would be misleading.
+        if !entry.bridge_ready {
+            entry.bridge_ready = true;
+            tracing::info!(
+                target: "aethon::boot",
+                key,
+                elapsed_ms = entry.spawned_at.elapsed().as_millis() as u64,
+                "bridge ready"
+            );
+        }
     }
 }
 
@@ -193,6 +203,14 @@ async fn wait_for_worker_ready(
     let start = Instant::now();
     while start.elapsed() < timeout {
         if worker_ready(meta, key) {
+            // This wait is the hidden stall between "user acted" and the
+            // fresh worker accepting its first payload — surface it.
+            tracing::info!(
+                target: "aethon::boot",
+                key,
+                waited_ms = start.elapsed().as_millis() as u64,
+                "waited for worker ready"
+            );
             return Ok(());
         }
         if let Some(status) = lock_recover(child, "agent child (ready wait)")

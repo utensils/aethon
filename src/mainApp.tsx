@@ -18,6 +18,11 @@ import "./monaco/setup";
 import "./styles/tokens.css";
 import "./styles/themes.css";
 import "./styles/chrome.css";
+import { bootMark } from "./utils/bootTrace";
+
+// Everything above this line — including the monaco/setup side effects —
+// has evaluated by the time this mark lands.
+bootMark("mainapp-eval");
 
 // Expose Tauri's invoke globally in dev so the aethon-debug skill's TCP eval
 // server can wrap user JS to call back via __AETHON_INVOKE__('debug_eval_result', ...).
@@ -37,6 +42,7 @@ const params = new URLSearchParams(window.location.search);
 const surface = params.get("surface");
 const canvasWindowId = params.get("id") ?? "";
 
+bootMark("render-start");
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     {surface === "canvas-window" ? (

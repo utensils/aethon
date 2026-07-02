@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { getConfig } from "../config";
+import { bootMark } from "../utils/bootTrace";
 
 /// Background auto-update poll interval. 30 minutes matches Claudette and
 /// is well below GitHub's anonymous-API rate limits even with several
@@ -356,6 +357,7 @@ export function useUpdater(ctx: UseUpdaterContext): {
   useEffect(() => {
     let cancelled = false;
     let raf: number | null = null;
+    bootMark("react-mounted");
     invoke("boot_stage", { stage: "react_mounted", detail: null }).catch(
       () => {},
     );

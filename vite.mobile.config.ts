@@ -13,6 +13,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+import { visualizer } from "rollup-plugin-visualizer";
 
 const shim = (p: string) => fileURLToPath(new URL(p, import.meta.url));
 
@@ -37,7 +38,22 @@ export default defineConfig({
         if (existsSync(from)) renameSync(from, join(dir, "index.html"));
       },
       configureServer(server) {
-        server.middlewares.use((req, _res, next) => {
+        server.middlewares.use((req, res, next) => {
+          // Dev-only perf beacon: src/mobile/perfMarks.ts POSTs its
+          // startup report here so on-device numbers land in this
+          // terminal without Safari's inspector attached.
+          if (req.url === "/__perf" && req.method === "POST") {
+            let body = "";
+            req.on("data", (chunk: Buffer) => {
+              body += chunk.toString();
+            });
+            req.on("end", () => {
+              console.log("[aethon:mobile-perf]", body);
+              res.statusCode = 204;
+              res.end();
+            });
+            return;
+          }
           if (req.url === "/" || req.url?.startsWith("/?")) {
             req.url = `/index.mobile.html${req.url.slice(1)}`;
           }
@@ -45,6 +61,10 @@ export default defineConfig({
         });
       },
     },
+    // `ANALYZE=1 bun run build:mobile` writes dist-mobile/stats.html.
+    ...(process.env.ANALYZE
+      ? [visualizer({ filename: "dist-mobile/stats.html", gzipSize: true })]
+      : []),
   ],
   clearScreen: false,
   resolve: {
