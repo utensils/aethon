@@ -47,7 +47,9 @@ afterEach(() => {
   cleanup();
 });
 
-function wt(overrides: Partial<WorkspaceSidebarItem> = {}): WorkspaceSidebarItem {
+function wt(
+  overrides: Partial<WorkspaceSidebarItem> = {},
+): WorkspaceSidebarItem {
   return {
     id: "wt-1",
     projectId: "p1",
@@ -206,9 +208,7 @@ describe("WorkspaceRow", () => {
   });
 
   it("renders pending status with cancel button when queued/starting", () => {
-    const { onEvent } = harness(
-      wt({ pendingState: "starting", label: "wip" }),
-    );
+    const { onEvent } = harness(wt({ pendingState: "starting", label: "wip" }));
     expect(screen.getByText(/creating/i)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: /cancel/i }));
     expect(onEvent).toHaveBeenCalledWith(
@@ -223,9 +223,7 @@ describe("WorkspaceRow", () => {
   });
 
   it("renders removing status without actions", () => {
-    const { onEvent } = harness(
-      wt({ pendingState: "removing", label: "wip" }),
-    );
+    const { onEvent } = harness(wt({ pendingState: "removing", label: "wip" }));
     expect(screen.getByText(/removing/i)).toBeTruthy();
     expect(screen.queryByRole("button", { name: /cancel/i })).toBeNull();
     fireEvent.click(screen.getByText("wip").closest("li")!);
@@ -277,9 +275,7 @@ describe("WorkspaceRow", () => {
     harness(wt());
     await waitFor(() => expect(screen.getByText("open #42")).toBeTruthy());
     expect(screen.getByLabelText(/Open PR #42/)).toBeTruthy();
-    expect(
-      document.querySelector(".ae-workspace-pr-ci--pending"),
-    ).toBeTruthy();
+    expect(document.querySelector(".ae-workspace-pr-ci--pending")).toBeTruthy();
   });
 
   it("opens PR badge links in the user's browser without switching workspaces", async () => {
@@ -414,14 +410,9 @@ describe("WorkspaceRow", () => {
       "feature-x",
     );
     expect(checksMock).toHaveBeenCalledTimes(2);
-    expect(checksMock).toHaveBeenLastCalledWith(
-      "/repo-feature-x",
-      "feature-x",
-    );
+    expect(checksMock).toHaveBeenLastCalledWith("/repo-feature-x", "feature-x");
     expect(screen.getByText("merged #42")).toBeTruthy();
-    expect(
-      document.querySelector(".ae-workspace-pr-ci--success"),
-    ).toBeTruthy();
+    expect(document.querySelector(".ae-workspace-pr-ci--success")).toBeTruthy();
   });
 
   it("does not show an empty PR slot during background refreshes without a PR", async () => {
@@ -513,7 +504,8 @@ describe("WorkspaceRow", () => {
     fireEvent.click(screen.getByRole("button", { name: "Remove feature-x" }));
     expect(onEvent).not.toHaveBeenCalled();
     expect(
-      screen.getByRole("button", { name: "Confirm remove feature-x" }).textContent,
+      screen.getByRole("button", { name: "Confirm remove feature-x" })
+        .textContent,
     ).toBe("Confirm");
     fireEvent.click(row);
     expect(onEvent).not.toHaveBeenCalled();
@@ -554,6 +546,13 @@ describe("WorkspaceRow", () => {
     expect(screen.queryByRole("button", { name: "Remove main" })).toBeNull();
   });
 
+  it("does not show inline remove for remote workspaces", () => {
+    harness(wt({ hostId: "remote:bender", remoteId: "feature" }));
+    expect(
+      screen.queryByRole("button", { name: "Remove feature-x" }),
+    ).toBeNull();
+  });
+
   it("flags main workspace with accent glyph", () => {
     harness(wt({ isMain: true, label: "main" }));
     const row = screen.getByText("main").closest("li")!;
@@ -567,7 +566,9 @@ describe("WorkspaceRow", () => {
   });
 
   it("renders an inline rename input when rename mode begins", () => {
-    const { rerender } = harness(wt({ label: "Display name", branch: "feat/x" }));
+    const { rerender } = harness(
+      wt({ label: "Display name", branch: "feat/x" }),
+    );
 
     rerender(
       <ul>
@@ -646,7 +647,9 @@ describe("WorkspaceRow", () => {
   it("ends inline rename when a blurred row unmounts", () => {
     vi.useFakeTimers();
     const { onRenameEnd, unmount } = harness(wt(), { renaming: true });
-    expect(screen.getByRole("textbox", { name: /rename workspace/i })).toBeTruthy();
+    expect(
+      screen.getByRole("textbox", { name: /rename workspace/i }),
+    ).toBeTruthy();
     act(() => {
       vi.runAllTimers();
     });
@@ -683,7 +686,9 @@ describe("WorkspaceRow", () => {
       vi.runAllTimers();
     });
 
-    expect(screen.getByRole("textbox", { name: /rename workspace/i })).toBeTruthy();
+    expect(
+      screen.getByRole("textbox", { name: /rename workspace/i }),
+    ).toBeTruthy();
     expect(onRenameEnd).not.toHaveBeenCalled();
   });
 
@@ -707,8 +712,9 @@ describe("WorkspaceRow", () => {
     );
 
     expect(
-      screen.getByRole<HTMLInputElement>("textbox", { name: /rename workspace/i })
-        .value,
+      screen.getByRole<HTMLInputElement>("textbox", {
+        name: /rename workspace/i,
+      }).value,
     ).toBe("half typed");
   });
 

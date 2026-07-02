@@ -91,6 +91,14 @@ export interface WorkspaceRowProps {
   consumeSuppressedClick?: () => boolean;
 }
 
+function isRemoteWorkspaceItem(item: WorkspaceSidebarItem): boolean {
+  return (
+    typeof item.remoteId === "string" ||
+    typeof item.remoteProjectId === "string" ||
+    (typeof item.hostId === "string" && item.hostId.startsWith("remote:"))
+  );
+}
+
 export function WorkspaceRow({
   item,
   sectionId,
@@ -117,8 +125,13 @@ export function WorkspaceRow({
   const isFailed = pending === "failed";
   const agentRunning = item.agent?.status === "running";
   const canRenameInline = renaming && !isPendingActive && !isFailed;
+  const isRemote = isRemoteWorkspaceItem(item);
   const canRemoveInline =
-    !item.isMain && !isPendingActive && !isFailed && !canRenameInline;
+    !isRemote &&
+    !item.isMain &&
+    !isPendingActive &&
+    !isFailed &&
+    !canRenameInline;
   const prEligible =
     !item.isMain && !isPendingActive && !isFailed && item.branch != null;
 

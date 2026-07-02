@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { canRemoveWorkspace, canRenameWorkspace } from "./menuItems";
+import {
+  buildSidebarMenuItems,
+  canRemoveWorkspace,
+  canRenameWorkspace,
+  isRemoteWorkspace,
+  type SidebarMenuHandlers,
+} from "./menuItems";
 import type { WorkspaceSidebarItem } from "./workspace-row";
 
 function wt(
@@ -32,6 +38,12 @@ describe("canRenameWorkspace", () => {
     expect(canRenameWorkspace(wt({ pendingState: "removing" }))).toBe(false);
     expect(canRenameWorkspace(wt({ pendingState: "failed" }))).toBe(false);
   });
+
+  it("rejects remote workspaces", () => {
+    expect(
+      canRenameWorkspace(wt({ hostId: "remote:bender", remoteId: "feature" })),
+    ).toBe(false);
+  });
 });
 
 describe("canRemoveWorkspace", () => {
@@ -47,5 +59,49 @@ describe("canRemoveWorkspace", () => {
   it("allows removable live workspaces", () => {
     expect(canRemoveWorkspace(wt())).toBe(true);
     expect(canRemoveWorkspace(wt({ pendingState: "succeeded" }))).toBe(true);
+  });
+
+  it("rejects remote workspaces", () => {
+    expect(
+      canRemoveWorkspace(wt({ hostId: "remote:bender", remoteId: "feature" })),
+    ).toBe(false);
+  });
+});
+
+describe("isRemoteWorkspace", () => {
+  it("detects remote workspace mirrors", () => {
+    expect(isRemoteWorkspace(wt({ hostId: "remote:bender" }))).toBe(true);
+    expect(isRemoteWorkspace(wt({ remoteId: "feature" }))).toBe(true);
+    expect(isRemoteWorkspace(wt({ hostId: "local:bender" }))).toBe(false);
+  });
+});
+
+describe("buildSidebarMenuItems workspace", () => {
+  const noop = () => {};
+  const handlers = new Proxy(
+    {},
+    { get: () => noop },
+  ) as unknown as SidebarMenuHandlers;
+
+  it("hides local-only workspace verbs for remote rows", () => {
+    const items = buildSidebarMenuItems(
+      {
+        x: 0,
+        y: 0,
+        sectionId: "projects",
+        itemId: "remote:bender::workspace::feature",
+        label: "feature",
+        kind: "workspace",
+        workspace: wt({ hostId: "remote:bender", remoteId: "feature" }),
+      },
+      handlers,
+    );
+    const ids = items.flatMap((item) => ("id" in item ? [item.id] : []));
+
+    expect(ids).toEqual(["copy-path"]);
+    expect(items).toContainEqual({
+      type: "note",
+      label: "Remote workspace actions run on that host.",
+    });
   });
 });

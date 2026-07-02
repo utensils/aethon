@@ -52,17 +52,30 @@ function isLocalHost(item: HostGroupItem | undefined): boolean {
 }
 
 function canPairHost(item: HostGroupItem | undefined): boolean {
-  return !isLocalHost(item) && item?.paired !== true && item?.discovered === true;
+  return (
+    !isLocalHost(item) && item?.paired !== true && item?.discovered === true
+  );
 }
 
 function canManageHost(item: HostGroupItem | undefined): boolean {
   return !isLocalHost(item) && item?.paired === true;
 }
 
+export function isRemoteWorkspace(
+  item: WorkspaceSidebarItem | undefined,
+): boolean {
+  return (
+    typeof item?.remoteId === "string" ||
+    typeof item?.remoteProjectId === "string" ||
+    (typeof item?.hostId === "string" && item.hostId.startsWith("remote:"))
+  );
+}
+
 export function canRenameWorkspace(
   item: WorkspaceSidebarItem | undefined,
 ): boolean {
   if (!item) return false;
+  if (isRemoteWorkspace(item)) return false;
   const pending = item.pendingState;
   return !pending || pending === "succeeded";
 }
@@ -71,6 +84,7 @@ export function canRemoveWorkspace(
   item: WorkspaceSidebarItem | undefined,
 ): boolean {
   if (!item || item.isMain) return false;
+  if (isRemoteWorkspace(item)) return false;
   const pending = item.pendingState;
   return !pending || pending === "succeeded";
 }
@@ -266,7 +280,8 @@ export function buildSidebarMenuItems(
         },
         {
           type: "note",
-          label: "Start pairing on the other host, then enter its 8-digit code.",
+          label:
+            "Start pairing on the other host, then enter its 8-digit code.",
         },
       ];
     case "host-rename":
@@ -302,19 +317,36 @@ export function buildSidebarMenuItems(
         },
       ];
     case "workspace": {
+      const remote = isRemoteWorkspace(state.workspace);
       const isMain = state.workspace?.isMain === true;
       const canRemove = canRemoveWorkspace(state.workspace);
-      return [
-        {
-          id: "open-finder",
-          label: "Open in Finder",
-          onSelect: h.openContextWorkspaceInFinder,
-        },
+      const safeItems: ContextMenuItem[] = [
+        ...(remote
+          ? []
+          : [
+              {
+                id: "open-finder",
+                label: "Open in Finder",
+                onSelect: h.openContextWorkspaceInFinder,
+              } satisfies ContextMenuItem,
+            ]),
         {
           id: "copy-path",
           label: "Copy path",
           onSelect: h.copyContextWorkspacePath,
         },
+      ];
+      if (remote) {
+        return [
+          ...safeItems,
+          {
+            type: "note",
+            label: "Remote workspace actions run on that host.",
+          },
+        ];
+      }
+      return [
+        ...safeItems,
         {
           id: "rename-workspace",
           label: "Rename workspace…",
@@ -386,7 +418,11 @@ export function buildSidebarMenuItems(
       ];
     case "session":
       return [
-        { id: "rename-session", label: "Rename session…", onSelect: h.renameContextSession },
+        {
+          id: "rename-session",
+          label: "Rename session…",
+          onSelect: h.renameContextSession,
+        },
         {
           id: "delete-session",
           label: "Delete session…",
