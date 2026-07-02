@@ -52,5 +52,9 @@ pub use app_menu::*;
 pub use installer::*;
 pub use menu_items::*;
 pub use project_watch::*;
+// Re-export `reload`'s command (+ its macro-generated siblings) for the
+// generate_handler list; the debounce worker stays wired through
+// `watcher` internally.
+pub(crate) use reload::*;
 pub use tray::*;
 pub use watcher::*;

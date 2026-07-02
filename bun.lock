@@ -5,6 +5,11 @@
     "": {
       "name": "aethon",
       "dependencies": {
+        "@fontsource/geist-mono": "^5.2.8",
+        "@fontsource/geist-sans": "^5.2.5",
+        "@fontsource/inter": "^5.2.8",
+        "@fontsource/jetbrains-mono": "^5.2.8",
+        "@fontsource/playfair-display": "^5.2.8",
         "@mariozechner/pi-agent-core": "^0.73.1",
         "@mariozechner/pi-ai": "^0.73.1",
         "@mariozechner/pi-coding-agent": "^0.73.1",
@@ -38,11 +43,6 @@
       },
       "devDependencies": {
         "@eslint/js": "^10.0.1",
-        "@fontsource/geist-mono": "^5.2.8",
-        "@fontsource/geist-sans": "^5.2.5",
-        "@fontsource/inter": "^5.2.8",
-        "@fontsource/jetbrains-mono": "^5.2.8",
-        "@fontsource/playfair-display": "^5.2.8",
         "@playwright/test": "^1.60.0",
         "@tauri-apps/cli": "^2.11.0",
         "@testing-library/dom": "^10.4.1",

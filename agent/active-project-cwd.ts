@@ -72,9 +72,16 @@ export function activeProjectCwdFromJson(text: string): string | undefined {
 export async function readActiveProjectCwd(
   userDir: string,
 ): Promise<string | undefined> {
-  const sqliteProjects = readSqliteStateValue("projects.json");
-  if (sqliteProjects !== undefined) {
-    return activeProjectCwdFromJson(sqliteProjects);
+  // A missing/corrupt state db must degrade to the JSON fallback, not
+  // fatal the bridge boot — SQLITE_CANTOPEN here previously killed
+  // main() before the dispatcher ever started.
+  try {
+    const sqliteProjects = readSqliteStateValue("projects.json");
+    if (sqliteProjects !== undefined) {
+      return activeProjectCwdFromJson(sqliteProjects);
+    }
+  } catch {
+    /* fall through to the on-disk projects.json */
   }
   try {
     return activeProjectCwdFromJson(

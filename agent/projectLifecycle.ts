@@ -155,6 +155,19 @@ export function unloadProjectExtensions(
     (p) => ({ path: p.path, value: p.value }),
   );
 
+  emitExtensionRegistrySnapshot(state, deps);
+  deps.scheduleStateFileWrite();
+}
+
+/** Wholesale re-emit of every extension registry + the effective layout.
+ *  The single source of truth for "the registries changed out from
+ *  under the frontend" — used by the project-switch unload above and by
+ *  the extension hot-toggle reload. Sent unstamped from the global
+ *  bridge, so origin gating treats it as authoritative. */
+export function emitExtensionRegistrySnapshot(
+  state: AethonAgentState,
+  deps: Pick<DispatcherDeps, "send">,
+): void {
   deps.send({
     type: "extension_components",
     components: Object.fromEntries(state.extensionComponents),
@@ -199,7 +212,7 @@ export function unloadProjectExtensions(
     type: "extension_highlight_grammars",
     grammars: [...state.extensionHighlightGrammars.values()],
   });
-  // Push the restored layout to the frontend.
+  // Push the effective layout to the frontend.
   const effective = (() => {
     if (state.extensionLayout) return state.extensionLayout;
     if (!state.bootLayout) return null;
@@ -213,7 +226,6 @@ export function unloadProjectExtensions(
   if (effective) {
     deps.send({ type: "layout_set", payload: effective });
   }
-  deps.scheduleStateFileWrite();
 }
 
 export async function handleSetProject(
