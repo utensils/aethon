@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useRef, type MutableRefObject } from "react";
 import type { ProjectsState } from "../projects";
 import { discoverIcon } from "../projectIcons";
-import { scheduleAfterMobileBootWindow } from "./mobileBootDefer";
+import {
+  mobileBootWindowElapsed,
+  scheduleAfterMobileBootWindow,
+} from "./mobileBootDefer";
 import type { Tab } from "../types/tab";
 import { workspaceIdForCwd } from "./useProjectOps";
 
@@ -73,17 +76,28 @@ export function useProjectSyncEffects({
     }
   }, [projectsRef, setProjectIconUrl]);
 
-  // First run defers past the mobile boot window (fs_discover_project_icon
-  // + gh_repo_avatar_url per icon-less project would otherwise burn the
-  // gateway's boot invoke budget); later project-list changes are user
-  // actions and run immediately. Desktop is unchanged — the helper runs
-  // synchronously there.
-  const iconsBootDeferredRef = useRef(false);
+  // Inside the mobile boot window, coalesce every trigger — including
+  // the pre-hydration empty-list run AND the re-run when
+  // syncProjectsToState mirrors the persisted list — into ONE sweep at
+  // window end, so the deferred run sees the hydrated projects and the
+  // fs_discover_project_icon / gh_repo_avatar_url burst stays out of
+  // the gateway's boot budget. After the window (and always on
+  // desktop), runs are immediate.
+  const iconSweepScheduledRef = useRef(false);
+  const iconSweepCancelRef = useRef<(() => void) | null>(null);
   useEffect(() => {
-    if (!iconsBootDeferredRef.current) {
-      iconsBootDeferredRef.current = true;
-      return scheduleAfterMobileBootWindow(discoverIconsForProjects);
+    if (mobileBootWindowElapsed()) {
+      discoverIconsForProjects();
+      return;
     }
-    discoverIconsForProjects();
+    if (iconSweepScheduledRef.current) return;
+    iconSweepScheduledRef.current = true;
+    iconSweepCancelRef.current = scheduleAfterMobileBootWindow(() => {
+      iconSweepCancelRef.current = null;
+      discoverIconsForProjects();
+    });
+    // Deliberately no per-run cleanup: cancelling on a dep change would
+    // drop the coalesced sweep. Unmount cleanup lives below.
   }, [discoverIconsForProjects, state.projects]);
+  useEffect(() => () => iconSweepCancelRef.current?.(), []);
 }

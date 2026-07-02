@@ -118,8 +118,10 @@ export class GatewayTransport {
    *  physical send is paced — `request()` semantics (fail fast when
    *  offline, timeout from call time) are unchanged. sub/unsub/hello
    *  frames bypass the queue; only invoke frames are rate-limited
-   *  server-side. */
-  private sendQueue: string[] = [];
+   *  server-side. Entries carry their id so a request that timed out
+   *  while queued is dropped at drain time instead of executing after
+   *  its caller already saw the failure. */
+  private sendQueue: Array<{ id: string; frame: string }> = [];
   /** Send timestamps inside the rolling rate window. */
   private sentAt: number[] = [];
   private drainTimer: ReturnType<typeof setTimeout> | null = null;
@@ -206,15 +208,15 @@ export class GatewayTransport {
         frame,
         attempts: 0,
       });
-      this.enqueueInvoke(frame);
+      this.enqueueInvoke(id, frame);
     });
   }
 
   /** Send an invoke frame through the client-side rate budget: send
    *  immediately when under budget (the common case — zero added
    *  latency), otherwise queue FIFO and drain when the window frees. */
-  private enqueueInvoke(frame: string): void {
-    this.sendQueue.push(frame);
+  private enqueueInvoke(id: string, frame: string): void {
+    this.sendQueue.push({ id, frame });
     this.drainSendQueue();
   }
 
@@ -228,10 +230,14 @@ export class GatewayTransport {
       this.sentAt.shift();
     }
     while (this.sendQueue.length > 0 && this.sentAt.length < CLIENT_RATE_MAX) {
-      const frame = this.sendQueue.shift();
-      if (frame === undefined) break;
+      const next = this.sendQueue.shift();
+      if (next === undefined) break;
+      // Timed out (or rejected at close) while queued — never send:
+      // a non-idempotent command must not execute after its caller
+      // already received the failure.
+      if (!this.pending.has(next.id)) continue;
       this.sentAt.push(now);
-      this.adapter.send(frame);
+      this.adapter.send(next.frame);
     }
     if (this.sendQueue.length > 0 && this.drainTimer === null) {
       const wait = Math.max(
@@ -368,7 +374,7 @@ export class GatewayTransport {
             entry.attempts += 1;
             const timer = setTimeout(() => {
               this.retryTimers.delete(timer);
-              if (this.pending.has(id)) this.enqueueInvoke(entry.frame);
+              if (this.pending.has(id)) this.enqueueInvoke(id, entry.frame);
             }, RATE_RETRY_BASE_MS * entry.attempts);
             this.retryTimers.add(timer);
             break;

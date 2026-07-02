@@ -42,3 +42,21 @@ describe("scheduleAfterMobileBootWindow", () => {
     expect(fn).not.toHaveBeenCalled();
   });
 });
+
+describe("mobileBootWindowElapsed", () => {
+  it("is always true on desktop", async () => {
+    const { mobileBootWindowElapsed } = await import("./mobileBootDefer");
+    expect(mobileBootWindowElapsed()).toBe(true);
+  });
+
+  it("flips false -> true across the window on mobile", async () => {
+    vi.stubEnv("VITE_AETHON_SURFACE", "mobile");
+    vi.useFakeTimers();
+    const { mobileBootWindowElapsed, resetMobileBootWindowForTest } =
+      await import("./mobileBootDefer");
+    resetMobileBootWindowForTest();
+    expect(mobileBootWindowElapsed()).toBe(false);
+    vi.advanceTimersByTime(MOBILE_BOOT_DEFER_MS + 1);
+    expect(mobileBootWindowElapsed()).toBe(true);
+  });
+});

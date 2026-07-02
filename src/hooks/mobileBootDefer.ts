@@ -16,6 +16,21 @@ export function isMobileSurface(): boolean {
   return import.meta.env.VITE_AETHON_SURFACE === "mobile";
 }
 
+let bootStartedAt = Date.now();
+
+/** True once the mobile boot window has passed (always true on the
+ *  desktop surface). Effects that re-fire during hydration use this so
+ *  a re-run can't sneak past a first-run-only deferral. */
+export function mobileBootWindowElapsed(): boolean {
+  if (!isMobileSurface()) return true;
+  return Date.now() - bootStartedAt > MOBILE_BOOT_DEFER_MS;
+}
+
+/** Test-only: restart the boot window. */
+export function resetMobileBootWindowForTest(): void {
+  bootStartedAt = Date.now();
+}
+
 /** Run `fn` immediately on desktop; on the mobile companion, delay it
  *  past the boot window. Returns a cancel function (no-op on desktop —
  *  `fn` already ran). */

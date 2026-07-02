@@ -393,4 +393,28 @@ describe("invoke rate pacing + rate-limited retry", () => {
     expect(t.getStatus()).toBe("connected");
     expect(sentInvokes(socket)).toHaveLength(32);
   });
+
+  it("drops a request that timed out while queued — never sends it late", async () => {
+    vi.useFakeTimers();
+    const socket = new FakeSocket();
+    const t = await connectTransport(socket);
+
+    // Fill the budget, then queue one more with a short timeout.
+    for (let i = 0; i < 32; i++) {
+      void t.request(`filler_${i}`).catch(() => {});
+    }
+    const late = t.request("send_message", {}, { timeoutMs: 200 });
+    const lateOutcome = expect(late).rejects.toThrow("timed out");
+    expect(sentInvokes(socket)).toHaveLength(32);
+
+    // The timeout fires while the frame is still queued...
+    await vi.advanceTimersByTimeAsync(250);
+    await lateOutcome;
+    // ...so the drain at window end must NOT deliver it: a
+    // non-idempotent command can't execute after its caller failed.
+    await vi.advanceTimersByTimeAsync(1_000);
+    const cmds = sentInvokes(socket).map((f) => f.cmd);
+    expect(cmds).toHaveLength(32);
+    expect(cmds).not.toContain("send_message");
+  });
 });

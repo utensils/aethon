@@ -319,7 +319,14 @@ pub(crate) async fn write_agent_payload(
     for _attempt in 0..2 {
         let child = {
             let mut guard = lock_recover(&state.children, "agent children (write)");
-            ensure_agent_spawned(&mut guard, &key, app, state.spawn_shared(), worker.as_ref())?;
+            ensure_agent_spawned(
+                &mut guard,
+                &key,
+                app,
+                state.spawn_shared(),
+                worker.as_ref(),
+                true,
+            )?;
             guard.get(&key).cloned().ok_or("agent not running")?
         };
 
@@ -375,6 +382,25 @@ pub(crate) fn ensure_global_agent(
     state: &State<'_, AgentProcesses>,
     app: &AppHandle,
 ) -> Result<(), String> {
+    ensure_global_agent_with_handshake(state, app, true)
+}
+
+/// Boot pre-spawn variant: no synthetic report. The frontend hasn't
+/// mounted its listener yet; its real mount-time `report` performs the
+/// handshake, keeping pre-handshake extension mutations on the
+/// retained-state path instead of the ack-timeout path.
+pub(crate) fn ensure_global_agent_prespawn(
+    state: &State<'_, AgentProcesses>,
+    app: &AppHandle,
+) -> Result<(), String> {
+    ensure_global_agent_with_handshake(state, app, false)
+}
+
+fn ensure_global_agent_with_handshake(
+    state: &State<'_, AgentProcesses>,
+    app: &AppHandle,
+    inject_handshake: bool,
+) -> Result<(), String> {
     let mut guard = lock_recover(&state.children, "agent children (ensure global)");
     ensure_agent_spawned(
         &mut guard,
@@ -382,6 +408,7 @@ pub(crate) fn ensure_global_agent(
         app,
         state.spawn_shared(),
         None,
+        inject_handshake,
     )
 }
 

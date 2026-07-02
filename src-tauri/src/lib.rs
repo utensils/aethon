@@ -496,7 +496,7 @@ pub fn run() {
                 tauri::async_runtime::spawn_blocking(move || {
                     let state = handle.state::<agent_process::AgentProcesses>();
                     let started = std::time::Instant::now();
-                    match agent_process::ensure_global_agent(&state, &handle) {
+                    match agent_process::ensure_global_agent_prespawn(&state, &handle) {
                         Ok(()) => tracing::info!(
                             target: "aethon::boot",
                             elapsed_ms = started.elapsed().as_millis() as u64,
