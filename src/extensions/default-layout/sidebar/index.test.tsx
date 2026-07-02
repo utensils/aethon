@@ -672,6 +672,91 @@ describe("Sidebar host groups", () => {
     );
   });
 
+  it("offers remote host pairing from the host context menu", () => {
+    const { onEvent } = renderWithHost({
+      hosts: [
+        { id: "local:abc", label: "halcyon", hint: "this mac", active: true },
+        {
+          id: "remote:bender",
+          label: "bender",
+          hint: "aethon-123.local",
+          active: false,
+          discovered: true,
+          paired: false,
+          hostname: "aethon-123.local",
+          fingerprint: "123456",
+          candidates: ["aethon-123.local:38123"],
+        },
+      ],
+    });
+
+    fireEvent.contextMenu(
+      screen.getByText("bender").closest(".ae-host-group-header")!,
+    );
+    fireEvent.click(screen.getByRole("menuitem", { name: /Pair host/ }));
+
+    expect(onEvent).toHaveBeenCalledWith(
+      "pair-remote-host",
+      {
+        sectionId: "hosts",
+        itemId: "remote:bender",
+        label: "bender",
+        hostname: "aethon-123.local",
+        fingerprint: "123456",
+        candidates: ["aethon-123.local:38123"],
+      },
+      "remote:bender",
+    );
+  });
+
+  it("offers maintenance actions for paired remote hosts", () => {
+    const { onEvent } = renderWithHost({
+      hosts: [
+        { id: "local:abc", label: "halcyon", hint: "this mac", active: true },
+        {
+          id: "remote:bender",
+          label: "bender",
+          hint: "connected",
+          active: false,
+          discovered: true,
+          paired: true,
+        },
+      ],
+    });
+
+    fireEvent.contextMenu(
+      screen.getByText("bender").closest(".ae-host-group-header")!,
+    );
+    expect(screen.getByRole("menuitem", { name: /Reconnect/ })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("menuitem", { name: /Rename host/ }));
+    fireEvent.change(screen.getByLabelText("Host name"), {
+      target: { value: "Bender Lab" },
+    });
+    fireEvent.submit(screen.getByLabelText("Host name").closest("form")!);
+
+    expect(onEvent).toHaveBeenCalledWith("rename-remote-host", {
+      sectionId: "hosts",
+      itemId: "remote:bender",
+      hostId: "remote:bender",
+      label: "Bender Lab",
+      previousLabel: "bender",
+    });
+
+    fireEvent.contextMenu(
+      screen.getByText("bender").closest(".ae-host-group-header")!,
+    );
+    fireEvent.click(screen.getByRole("menuitem", { name: /Forget host/ }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /Confirm forget/ }));
+
+    expect(onEvent).toHaveBeenCalledWith("forget-remote-host", {
+      sectionId: "hosts",
+      itemId: "remote:bender",
+      hostId: "remote:bender",
+      label: "bender",
+    });
+  });
+
   it("renders project rows as two-line cards with branch + ahead/behind meta", () => {
     renderWithHost({
       projectItem: {

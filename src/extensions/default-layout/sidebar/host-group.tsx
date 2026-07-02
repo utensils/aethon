@@ -14,6 +14,7 @@
  */
 
 import type { ReactNode } from "react";
+import type { MouseEvent } from "react";
 import { Chevron } from "./chevron";
 
 export interface HostGroupItem {
@@ -45,6 +46,10 @@ export interface HostGroupProps {
   onToggleExpand: () => void;
   onSelectHost: () => void;
   onPairHost?: () => void;
+  onHostContextMenu?: (
+    e: MouseEvent<HTMLElement>,
+    host: HostGroupItem,
+  ) => void;
   children?: ReactNode;
 }
 
@@ -78,6 +83,7 @@ export function HostGroup({
   onToggleExpand,
   onSelectHost,
   onPairHost,
+  onHostContextMenu,
   children,
 }: HostGroupProps) {
   const isLocal = (host.hint ?? "").toLowerCase() === "this mac";
@@ -103,6 +109,7 @@ export function HostGroup({
         title={host.tooltip ?? host.label}
         aria-current={selected ? "page" : undefined}
         onClick={onSelectHost}
+        onContextMenu={(e) => onHostContextMenu?.(e, host)}
       >
         {collapsible ? (
           <button

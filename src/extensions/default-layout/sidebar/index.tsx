@@ -261,6 +261,7 @@ export function Sidebar({
                       host.id,
                     )
                   }
+                  onHostContextMenu={menu.openHostContextMenu}
                 >
                   {showsProjects && projectsSection
                     ? renderSection(projectsSection)

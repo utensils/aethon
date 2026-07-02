@@ -8,6 +8,7 @@
 import type { ContextMenuItem } from "../../../components/primitives/context-menu";
 import type { SidebarItem } from "../../../types/a2ui";
 import { DEFAULT_WORKSPACE_BASE_BRANCH } from "../../../projects";
+import type { HostGroupItem } from "./host-group";
 import type { WorkspaceSidebarItem } from "./workspace-row";
 
 export interface SidebarContextMenuState {
@@ -24,6 +25,9 @@ export interface SidebarContextMenuState {
   kind:
     | "project"
     | "project-base"
+    | "host"
+    | "host-rename"
+    | "host-forget"
     | "workspace"
     | "mobile-device"
     | "mobile-device-rename"
@@ -39,6 +43,19 @@ export interface SidebarContextMenuState {
   /** For `workspace` kind: the full workspace shape so menu actions can
    *  surface path + branch + main-flag context without re-resolving. */
   workspace?: WorkspaceSidebarItem;
+  host?: HostGroupItem;
+}
+
+function isLocalHost(item: HostGroupItem | undefined): boolean {
+  return (item?.hint ?? "").toLowerCase() === "this mac";
+}
+
+function canPairHost(item: HostGroupItem | undefined): boolean {
+  return !isLocalHost(item) && item?.paired !== true && item?.discovered === true;
+}
+
+function canManageHost(item: HostGroupItem | undefined): boolean {
+  return !isLocalHost(item) && item?.paired === true;
 }
 
 export function canRenameWorkspace(
@@ -68,6 +85,14 @@ export interface SidebarMenuHandlers {
   copyContextProjectPath: () => void;
   renameContextProject: () => void;
   removeContextProject: () => void;
+  // Host actions — row click selects the host; menu handles auth and
+  // paired-host maintenance.
+  pairContextRemoteHost: () => void;
+  reconnectContextRemoteHost: () => void;
+  renameContextRemoteHost: () => void;
+  submitContextRemoteHostRename: (name: string) => void;
+  confirmContextRemoteHostForget: () => void;
+  forgetContextRemoteHost: () => void;
   // Workspace actions — same convention as projects: row click handles
   // activation/landing; menu omits a redundant "Switch to workspace".
   openContextWorkspaceInFinder: () => void;
@@ -179,6 +204,82 @@ export function buildSidebarMenuItems(
         {
           type: "note",
           label: "Blank or origin/main uses the default",
+        },
+      ];
+    case "host": {
+      const local = isLocalHost(state.host);
+      const pairable = canPairHost(state.host);
+      const manageable = canManageHost(state.host);
+      if (local) {
+        return [
+          { type: "header", label: state.label },
+          { type: "note", label: "This is the local host" },
+        ];
+      }
+      return [
+        {
+          id: "pair-remote-host",
+          label: "Pair host…",
+          disabled: !pairable,
+          onSelect: h.pairContextRemoteHost,
+        },
+        {
+          id: "reconnect-remote-host",
+          label: "Reconnect",
+          disabled: !manageable,
+          onSelect: h.reconnectContextRemoteHost,
+        },
+        {
+          id: "rename-remote-host",
+          label: "Rename host…",
+          disabled: !manageable,
+          keepOpenOnSelect: true,
+          onSelect: h.renameContextRemoteHost,
+        },
+        { type: "separator" },
+        {
+          id: "forget-remote-host",
+          label: "Forget host…",
+          danger: true,
+          disabled: !manageable,
+          keepOpenOnSelect: true,
+          onSelect: h.confirmContextRemoteHostForget,
+        },
+        pairable
+          ? { type: "note", label: "Uses the pairing code shown on that host" }
+          : { type: "note", label: "Pair before remote projects can load" },
+      ];
+    }
+    case "host-rename":
+      return [
+        { type: "header", label: "Rename host" },
+        {
+          type: "input",
+          id: "remote-host-name-input",
+          label: "Host name",
+          defaultValue: state.label,
+          placeholder: "bender",
+          submitLabel: "Rename",
+          onSubmit: h.submitContextRemoteHostRename,
+        },
+      ];
+    case "host-forget":
+      return [
+        { type: "header", label: "Forget host?" },
+        {
+          type: "note",
+          label: "Removes this host's saved token. Pair again to reconnect.",
+        },
+        {
+          id: "confirm-forget-remote-host",
+          label: "Confirm forget",
+          danger: true,
+          onSelect: h.forgetContextRemoteHost,
+        },
+        {
+          id: "cancel-forget-remote-host",
+          label: "Cancel",
+          onSelect: h.closeContextMenu,
         },
       ];
     case "workspace": {

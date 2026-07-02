@@ -13,6 +13,9 @@ import {
   handleSidebarSwitchWorkspace,
   handleSidebarToggleExtension,
   handleSidebarRenameMobileDevice,
+  handleSidebarRenameRemoteHost,
+  handleSidebarReconnectRemoteHost,
+  handleSidebarForgetRemoteHost,
   handleSidebarUnpairMobileDevice,
   handleSectionedSelect,
 } from "./sidebar";
@@ -76,6 +79,85 @@ describe("handleSectionedSelect remote host pairing", () => {
     });
     expect(mocks.pushNotification).toHaveBeenCalledWith(
       expect.objectContaining({ kind: "success", title: "Paired bender" }),
+    );
+  });
+});
+
+describe("remote host context menu routes", () => {
+  it("renames paired desktop hosts", async () => {
+    const { ctx, mocks } = buildRouteFixture();
+
+    const handled = await handleSidebarRenameRemoteHost(
+      {
+        component: { id: "sidebar", type: "sidebar" },
+        eventType: "rename-remote-host",
+        data: {
+          itemId: "remote:bender",
+          label: "Bender Lab",
+          previousLabel: "bender",
+        },
+      },
+      ctx,
+    );
+
+    expect(handled).toBe(true);
+    expect(mocks.invoke).toHaveBeenCalledWith("remote_host_rename", {
+      id: "remote:bender",
+      name: "Bender Lab",
+    });
+    await Promise.resolve();
+    expect(mocks.pushNotification).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: "success", title: "Host renamed" }),
+    );
+  });
+
+  it("reconnects paired desktop hosts", async () => {
+    const { ctx, mocks } = buildRouteFixture();
+
+    const handled = await handleSidebarReconnectRemoteHost(
+      {
+        component: { id: "sidebar", type: "sidebar" },
+        eventType: "reconnect-remote-host",
+        data: { itemId: "remote:bender", label: "bender" },
+      },
+      ctx,
+    );
+
+    expect(handled).toBe(true);
+    expect(mocks.invoke).toHaveBeenCalledWith("remote_host_reconnect", {
+      id: "remote:bender",
+    });
+    await Promise.resolve();
+    expect(mocks.pushNotification).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: "success",
+        title: "Reconnect requested for bender",
+      }),
+    );
+  });
+
+  it("forgets paired desktop hosts and leaves active remote host", async () => {
+    const { ctx, mocks } = buildRouteFixture({
+      state: { activeHostId: "remote:bender" },
+    });
+
+    const handled = await handleSidebarForgetRemoteHost(
+      {
+        component: { id: "sidebar", type: "sidebar" },
+        eventType: "forget-remote-host",
+        data: { itemId: "remote:bender", label: "bender" },
+      },
+      ctx,
+    );
+
+    expect(handled).toBe(true);
+    expect(mocks.invoke).toHaveBeenCalledWith("remote_host_forget", {
+      id: "remote:bender",
+    });
+    await Promise.resolve();
+    expect(ctx.setActiveHost).toHaveBeenCalledWith(null);
+    expect(mocks.pushNotification).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: "success", title: "Host forgotten" }),
     );
   });
 });

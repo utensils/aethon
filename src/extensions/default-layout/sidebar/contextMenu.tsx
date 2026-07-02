@@ -22,6 +22,7 @@ import {
   type SidebarContextMenuState,
   type SidebarMenuHandlers,
 } from "./menuItems";
+import type { HostGroupItem } from "./host-group";
 
 export interface SidebarContextMenuController {
   contextMenu: SidebarContextMenuState | null;
@@ -31,6 +32,10 @@ export interface SidebarContextMenuController {
     e: React.MouseEvent<HTMLElement>,
     item: WorkspaceSidebarItem,
     sectionId: string,
+  ) => void;
+  openHostContextMenu: (
+    e: React.MouseEvent<HTMLElement>,
+    host: HostGroupItem,
   ) => void;
   handlers: SidebarMenuHandlers;
 }
@@ -103,6 +108,23 @@ export function useSidebarContextMenu(
     });
   };
 
+  const openHostContextMenu = (
+    e: React.MouseEvent<HTMLElement>,
+    host: HostGroupItem,
+  ) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setContextMenu({
+      x: e.clientX,
+      y: e.clientY,
+      sectionId: "hosts",
+      itemId: host.id,
+      label: host.label,
+      kind: "host",
+      host,
+    });
+  };
+
   const removeContextProject = () => {
     if (!contextMenu) return;
     onEvent("remove-project", {
@@ -110,6 +132,67 @@ export function useSidebarContextMenu(
       itemId: contextMenu.itemId,
       projectId: contextMenu.itemId,
       label: contextMenu.label,
+    });
+    close();
+  };
+  const pairContextRemoteHost = () => {
+    if (!contextMenu?.host) return;
+    onEvent(
+      "pair-remote-host",
+      {
+        sectionId: "hosts",
+        itemId: contextMenu.host.id,
+        label: contextMenu.host.label,
+        hostname: contextMenu.host.hostname,
+        fingerprint: contextMenu.host.fingerprint,
+        candidates: contextMenu.host.candidates,
+      },
+      contextMenu.host.id,
+    );
+    close();
+  };
+  const reconnectContextRemoteHost = () => {
+    if (!contextMenu?.host) return;
+    onEvent("reconnect-remote-host", {
+      sectionId: "hosts",
+      itemId: contextMenu.host.id,
+      hostId: contextMenu.host.id,
+      label: contextMenu.host.label,
+    });
+    close();
+  };
+  const renameContextRemoteHost = () => {
+    if (!contextMenu?.host) return;
+    setContextMenu({
+      ...contextMenu,
+      kind: "host-rename",
+    });
+  };
+  const submitContextRemoteHostRename = (name: string) => {
+    if (!contextMenu?.host) return;
+    onEvent("rename-remote-host", {
+      sectionId: "hosts",
+      itemId: contextMenu.host.id,
+      hostId: contextMenu.host.id,
+      label: name,
+      previousLabel: contextMenu.host.label,
+    });
+    close();
+  };
+  const confirmContextRemoteHostForget = () => {
+    if (!contextMenu?.host) return;
+    setContextMenu({
+      ...contextMenu,
+      kind: "host-forget",
+    });
+  };
+  const forgetContextRemoteHost = () => {
+    if (!contextMenu?.host) return;
+    onEvent("forget-remote-host", {
+      sectionId: "hosts",
+      itemId: contextMenu.host.id,
+      hostId: contextMenu.host.id,
+      label: contextMenu.host.label,
     });
     close();
   };
@@ -317,6 +400,7 @@ export function useSidebarContextMenu(
     close,
     openItemContextMenu,
     openWorkspaceContextMenu,
+    openHostContextMenu,
     handlers: {
       closeContextMenu: close,
       createWorkspaceForContextProject,
@@ -327,6 +411,12 @@ export function useSidebarContextMenu(
       copyContextProjectPath,
       renameContextProject,
       removeContextProject,
+      pairContextRemoteHost,
+      reconnectContextRemoteHost,
+      renameContextRemoteHost,
+      submitContextRemoteHostRename,
+      confirmContextRemoteHostForget,
+      forgetContextRemoteHost,
       openContextWorkspaceInFinder,
       copyContextWorkspacePath,
       renameContextWorkspace,
