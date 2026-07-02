@@ -129,13 +129,17 @@ fn migrated_db_paths_lock() -> MutexGuard<'static, HashSet<PathBuf>> {
 }
 
 fn ensure_connection_schema(path: &Path, conn: &Connection) -> Result<(), String> {
-    let mut paths = migrated_db_paths_lock();
-    if paths.contains(path) {
+    let cached = {
+        let paths = migrated_db_paths_lock();
+        paths.contains(path)
+    };
+    if cached && schema_is_current(conn)? {
         return Ok(());
     }
     conn.pragma_update(None, "journal_mode", "WAL")
         .map_err(|e| format!("sqlite journal_mode: {e}"))?;
     migrate_connection(conn)?;
+    let mut paths = migrated_db_paths_lock();
     paths.insert(path.to_path_buf());
     Ok(())
 }
@@ -277,6 +281,30 @@ fn migrate_connection(conn: &Connection) -> Result<(), String> {
     )
     .map_err(|e| format!("sqlite record migration: {e}"))?;
     Ok(())
+}
+
+fn schema_is_current(conn: &Connection) -> Result<bool, String> {
+    let has_migrations_table: Option<i64> = conn
+        .query_row(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'schema_migrations'",
+            [],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|e| format!("sqlite schema_migrations check: {e}"))?;
+    if has_migrations_table.is_none() {
+        return Ok(false);
+    }
+
+    let current: Option<i64> = conn
+        .query_row(
+            "SELECT version FROM schema_migrations WHERE version = ?1",
+            params![CURRENT_SCHEMA],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|e| format!("sqlite schema version check: {e}"))?;
+    Ok(current == Some(CURRENT_SCHEMA))
 }
 
 pub(crate) fn read_kv(
@@ -596,6 +624,32 @@ mod tests {
 
         assert_eq!(count, 1);
         conn.execute("ROLLBACK", []).unwrap();
+    }
+
+    #[test]
+    fn cached_path_is_remigrated_when_database_is_recreated() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("state").join("aethon.sqlite3");
+        {
+            let conn = connect_path(&path).unwrap();
+            write_kv_conn(&conn, "state", "theme", "dark").unwrap();
+        }
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_file(path.with_extension("sqlite3-wal"));
+        let _ = std::fs::remove_file(path.with_extension("sqlite3-shm"));
+
+        let conn = connect_path(&path).unwrap();
+        let schema_count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM schema_migrations", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        let kv_count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM kv_store", [], |row| row.get(0))
+            .unwrap();
+
+        assert_eq!(schema_count, 1);
+        assert_eq!(kv_count, 0);
     }
 
     #[test]

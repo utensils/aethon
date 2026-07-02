@@ -7,6 +7,7 @@ import {
   activeHostIdForNewTab,
   activeProjectIdForNewTab,
   cwdForNewTab,
+  projectCwdForNewTab,
 } from "./helpers";
 import { isRemoteHostId } from "../../remoteInvoke";
 import { remoteHostInvoke } from "../../services/remote";
@@ -56,16 +57,18 @@ export function useNewShellTab(deps: NewShellTabDeps) {
     cwd?: string;
   }): void {
     const id = crypto.randomUUID();
-    const inheritedCwd =
-      options?.cwd ??
-      cwdForNewTab(projectsRef.current, stateRef.current) ??
-      undefined;
     const projectId = activeProjectIdForNewTab(
       projectsRef.current,
       stateRef.current,
     );
     const hostId = activeHostIdForNewTab(projectsRef.current, stateRef.current);
     const isRemote = isRemoteHostId(hostId);
+    const inheritedCwd =
+      options?.cwd ??
+      (isRemote
+        ? projectCwdForNewTab(projectsRef.current, stateRef.current)
+        : cwdForNewTab(projectsRef.current, stateRef.current)) ??
+      undefined;
     const seedShareMode = defaultShareModeRef.current;
     const resolvedCommand =
       options?.command ?? shellDefaultCommandRef.current ?? undefined;
@@ -75,7 +78,7 @@ export function useNewShellTab(deps: NewShellTabDeps) {
         ? shellDefaultArgsRef.current
         : undefined);
     const inheritEnv = shellInheritEnvRef.current;
-    const initialTerminalBuffer = inheritedCwd
+    const initialTerminalBuffer = inheritedCwd && !isRemote
       ? initialDevshellTerminalBuffer(stateRef.current, inheritedCwd)
       : "";
     setState((prev) => {

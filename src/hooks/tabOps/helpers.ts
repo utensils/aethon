@@ -151,11 +151,7 @@ export function mirrorOverviewSurfaceSelection(
   return overviewModel;
 }
 
-/** Resolve the cwd a freshly-opened tab should inherit. Active project
- *  wins; when no project is selected, the host workspace is rooted in
- *  Aethon's user dir. The dev-only `projectRoot` is only a last-resort
- *  fallback when the user dir is unavailable. */
-export function cwdForNewTab(
+export function projectCwdForNewTab(
   projects: ProjectsState,
   appState: Record<string, unknown>,
 ): string | null {
@@ -166,6 +162,19 @@ export function cwdForNewTab(
   if (typeof activeProjectPath === "string" && activeProjectPath.length > 0) {
     return activeProjectPath;
   }
+  return null;
+}
+
+/** Resolve the cwd a freshly-opened local tab should inherit. Active project
+ *  wins; when no project is selected, the host workspace is rooted in
+ *  Aethon's user dir. The dev-only `projectRoot` is only a last-resort
+ *  fallback when the user dir is unavailable. */
+export function cwdForNewTab(
+  projects: ProjectsState,
+  appState: Record<string, unknown>,
+): string | null {
+  const projectCwd = projectCwdForNewTab(projects, appState);
+  if (projectCwd) return projectCwd;
   const aethonRoot = appState.aethonRoot;
   if (typeof aethonRoot === "string" && aethonRoot.length > 0) {
     return aethonRoot;

@@ -89,6 +89,64 @@ describe("handleShellQuery", () => {
     );
   });
 
+  it("does not send local fallback cwd or devshell seed for remote overview shells", async () => {
+    const { ctx, mocks } = buildHandlerFixture({
+      state: {
+        tabs: [],
+        terminal: { open: false },
+        terminalPanel: {},
+        aethonRoot: "/Users/example/.aethon",
+        projectRoot: "/Users/example/Projects/aethon",
+      },
+    });
+    ctx.sourceHostId = "remote:abc";
+    harness.invoke.mockResolvedValueOnce(undefined);
+
+    handleShellQuery(
+      {
+        type: "shell_query",
+        op: "create",
+        mutationId: "m-remote-create",
+        args: {
+          tabId: "remote-shell",
+          activate: false,
+        },
+      },
+      ctx,
+    );
+
+    await vi.waitFor(() =>
+      expect(mocks.ackMutation).toHaveBeenCalledWith(
+        "m-remote-create",
+        true,
+        undefined,
+        expect.objectContaining({
+          tabId: "remote-shell",
+          cwd: "",
+          hostId: "remote:abc",
+        }),
+      ),
+    );
+    expect(harness.invoke).toHaveBeenCalledWith("remote_host_invoke", {
+      id: "remote:abc",
+      cmd: "shell_open",
+      args: { args: { tabId: "remote-shell" } },
+    });
+    expect(ctx.stateRef.current).toMatchObject({
+      tabs: [
+        expect.objectContaining({
+          id: "remote-shell",
+          hostId: "remote:abc",
+          terminalBuffer: "",
+          shell: expect.objectContaining({
+            cwd: "",
+            shellState: "running",
+          }),
+        }),
+      ],
+    });
+  });
+
   it("resets active sub-tab when activated shell creation fails", async () => {
     const { ctx, mocks } = buildHandlerFixture({
       state: { tabs: [], terminalPanel: {}, terminal: { open: false } },

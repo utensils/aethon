@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   activeHostIdForNewTab,
   activeProjectIdForNewTab,
+  cwdForNewTab,
   modelForNewProjectTab,
+  projectCwdForNewTab,
 } from "./helpers";
 import { isRemoteHostId } from "../../remoteInvoke";
 import { emptyProjectsState, type ProjectsState } from "../../projects";
@@ -89,5 +91,18 @@ describe("remote tab inheritance", () => {
     expect(activeHostIdForNewTab(projects, {})).toBe("local:bender");
     expect(isRemoteHostId("remote:abc")).toBe(true);
     expect(isRemoteHostId("local:bender")).toBe(false);
+  });
+
+  it("does not use local host fallback paths for remote host overview shells", () => {
+    const projects = emptyProjectsState("local:bender");
+    const state = {
+      activeHostId: "remote:fp",
+      aethonRoot: "/Users/example/.aethon",
+      projectRoot: "/Users/example/Projects/aethon",
+    };
+
+    expect(activeHostIdForNewTab(projects, state)).toBe("remote:fp");
+    expect(projectCwdForNewTab(projects, state)).toBeNull();
+    expect(cwdForNewTab(projects, state)).toBe("/Users/example/.aethon");
   });
 });

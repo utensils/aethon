@@ -1,8 +1,8 @@
 import { makeEmptyTab, type ShellMeta, type Tab } from "../../types/tab";
-import { invokeForHost } from "../../remoteInvoke";
+import { invokeForHost, isRemoteHostId } from "../../remoteInvoke";
 import type { ShareMode } from "../../utils/shareMode";
 import { initialDevshellTerminalBuffer } from "../tabOps/devshellTerminal";
-import { cwdForNewTab } from "../tabOps/helpers";
+import { cwdForNewTab, projectCwdForNewTab } from "../tabOps/helpers";
 import type { BridgeMessageContext, BridgeMessageHandler } from "./types";
 
 /** Bridge proxy for `aethon.shells.{list, read, write}`. Mode changes go
@@ -58,17 +58,20 @@ export function reserveShellTab(
   if (shellTabExists(ctx, tabId)) {
     throw new Error(`shell tab already exists: ${tabId}`);
   }
+  const hostId = ctx.sourceHostId;
+  const isRemote = isRemoteHostId(hostId);
   const cwd =
     optionalString(args.cwd) ??
-    cwdForNewTab(ctx.projectsRef.current, ctx.stateRef.current) ??
+    (isRemote
+      ? projectCwdForNewTab(ctx.projectsRef.current, ctx.stateRef.current)
+      : cwdForNewTab(ctx.projectsRef.current, ctx.stateRef.current)) ??
     "";
   const command = optionalString(args.command) ?? "";
   const commandArgs = optionalStringArray(args.args) ?? [];
   const shareMode: ShareMode = "private";
   const activate = args.activate === true;
   const inheritEnv = args.inheritEnv !== false;
-  const hostId = ctx.sourceHostId;
-  const initialTerminalBuffer = cwd
+  const initialTerminalBuffer = cwd && !isRemote
     ? initialDevshellTerminalBuffer(ctx.stateRef.current, cwd)
     : "";
 
