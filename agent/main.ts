@@ -99,12 +99,17 @@ import { renderMemoryPromptSection } from "./memory/renderer";
 import { captureProjectExtensionBaseline, runDispatcher } from "./dispatcher";
 import { withWorkerOrigin } from "./origin-gate";
 import { buildAethonMcpExtension } from "./mcp";
+import { createBootTrace, formatBootSummary } from "./boot-trace";
 
 function rawSend(obj: Record<string, unknown>): void {
   process.stdout.write(JSON.stringify(obj) + "\n");
 }
 
 async function main(): Promise<void> {
+  // Boot-phase spans; summarized in the boot log + a `boot_timings` frame
+  // once the bridge reaches ready. See boot-trace.ts.
+  const bootTrace = createBootTrace();
+
   // -- Configuration -------------------------------------------------------
   const userDir = process.env.AETHON_USER_DIR ?? join(homedir(), ".aethon");
   const stateFile =
@@ -152,24 +157,29 @@ async function main(): Promise<void> {
   });
 
   // -- Pi service singletons ----------------------------------------------
+  const endServicesInit = bootTrace.span("services-init");
   state.authStorage = AuthStorage.create();
   state.modelRegistry = ModelRegistry.create(state.authStorage);
   state.settingsManager = SettingsManager.create(process.cwd());
   applyProviderTimeoutOverride(state);
   state.authProfiles = loadAuthProfiles(state.userDir);
+  endServicesInit();
 
   // -- User's persisted "disabled extensions" list -----------------------
   // Read before any extension load so the loader honors it on first pass.
   // Hydrate both the name set (used by the loader to skip imports) and
   // the per-entry meta map (used by the frontend to scope project-
   // directory disabled rows to the active project).
-  const disabledSnapshot = await loadDisabledExtensionsSnapshot(state.userDir);
+  const disabledSnapshot = await bootTrace.measure("disabled-snapshot", () =>
+    loadDisabledExtensionsSnapshot(state.userDir),
+  );
   for (const name of disabledSnapshot.names) state.disabledExtensions.add(name);
   for (const [name, meta] of disabledSnapshot.meta) {
     state.disabledExtensionMeta.set(name, meta);
   }
 
   // -- Bundled boot resources read synchronously --------------------------
+  const endBootFiles = bootTrace.span("boot-files");
   if (bootLayoutFile) {
     try {
       state.bootLayout = JSON.parse(readFileSync(bootLayoutFile, "utf8"));
@@ -196,6 +206,8 @@ async function main(): Promise<void> {
       }
     }
   }
+
+  endBootFiles();
 
   // -- Side-effect deps shared across modules -----------------------------
   const scheduleStateFileWrite = () => scheduleStateFileWriteImpl(state);
@@ -301,7 +313,9 @@ async function main(): Promise<void> {
       ...resolveAethonSystemPrompt(getRuntimeSnapshot(state)),
     ],
   });
-  await state.resourceLoader.reload();
+  await bootTrace.measure("resource-reload-1", () =>
+    state.resourceLoader.reload(),
+  );
 
   // -- Extension loaders --------------------------------------------------
   const loadHooks = {
@@ -326,30 +340,38 @@ async function main(): Promise<void> {
       scheduleStateFileWrite();
     },
   };
-  await loadAethonExtensions(
-    state,
-    extDeps,
-    extensionApi,
-    state.loadedExtensions,
-    loadHooks,
+  await bootTrace.measure("user-extensions", () =>
+    loadAethonExtensions(
+      state,
+      extDeps,
+      extensionApi,
+      state.loadedExtensions,
+      loadHooks,
+    ),
   );
-  await loadAethonExtensionPackages(
-    state,
-    extDeps,
-    extensionApi,
-    state.loadedExtensions,
-    {
-      onFrontendEntry: ({ name, entryPath, code }) => {
-        state.extensionFrontendModules.set(name, { name, entryPath, code });
+  await bootTrace.measure("extension-packages", () =>
+    loadAethonExtensionPackages(
+      state,
+      extDeps,
+      extensionApi,
+      state.loadedExtensions,
+      {
+        onFrontendEntry: ({ name, entryPath, code }) => {
+          state.extensionFrontendModules.set(name, { name, entryPath, code });
+        },
+        onLoaded: loadHooks.onLoaded,
+        onFailure: loadHooks.onFailure,
       },
-      onLoaded: loadHooks.onLoaded,
-      onFailure: loadHooks.onFailure,
-    },
+    ),
   );
-  await loadAethonThemeDirectory(state, {
-    registerTheme: (theme) => aethonApi.registerTheme(theme),
-  });
-  await discoverPiAethonExtensions(state.loadedExtensions);
+  await bootTrace.measure("themes", () =>
+    loadAethonThemeDirectory(state, {
+      registerTheme: (theme) => aethonApi.registerTheme(theme),
+    }),
+  );
+  await bootTrace.measure("pi-discovery", () =>
+    discoverPiAethonExtensions(state.loadedExtensions),
+  );
 
   // -- Project-extension baseline ----------------------------------------
   // Snapshot the post-non-project-load state. Anything project-directory
@@ -357,7 +379,11 @@ async function main(): Promise<void> {
   // restores the registries from this snapshot.
   captureProjectExtensionBaseline(state);
 
-  const activeProjectCwd = workerCwd ?? (await readActiveProjectCwd(userDir));
+  const activeProjectCwd =
+    workerCwd ??
+    (await bootTrace.measure("active-project-cwd", () =>
+      readActiveProjectCwd(userDir),
+    ));
   const startupCwd = resolveStartupCwd(
     activeProjectCwd,
     projectRoot,
@@ -365,20 +391,24 @@ async function main(): Promise<void> {
     process.cwd(),
   );
 
-  await loadProjectAethonExtensions(
-    state,
-    extDeps,
-    startupCwd,
-    extensionApi,
-    state.loadedExtensions,
-    state.loadedProjectExtensionFiles,
-    state.failedProjectExtensionFiles,
-    loadHooks,
+  await bootTrace.measure("project-extensions", () =>
+    loadProjectAethonExtensions(
+      state,
+      extDeps,
+      startupCwd,
+      extensionApi,
+      state.loadedExtensions,
+      state.loadedProjectExtensionFiles,
+      state.failedProjectExtensionFiles,
+      loadHooks,
+    ),
   );
   state.currentProjectCwd = startupCwd;
 
   // Reload so the appendSystemPromptOverride sees the populated extensions.
-  await state.resourceLoader.reload();
+  await bootTrace.measure("resource-reload-2", () =>
+    state.resourceLoader.reload(),
+  );
 
   const tabDeps = { send };
   if (!workerMode) {
@@ -389,13 +419,23 @@ async function main(): Promise<void> {
     // leaks into whatever the user opens next (sessions/default/ is
     // shared across project buckets).
     state.tabProjectCwds.set("default", startupCwd);
-    await ensureTab(state, tabDeps, "default");
+    await bootTrace.measure("ensure-default-tab", () =>
+      ensureTab(state, tabDeps, "default", { trace: bootTrace }),
+    );
 
     // -- Discover persisted sessions for the "Recent sessions" empty-state -
-    state.discoveredTabs = await discoverPersistedTabs(state);
+    state.discoveredTabs = await bootTrace.measure("discover-tabs", () =>
+      discoverPersistedTabs(state),
+    );
 
     scheduleStateFileWrite();
     emitReady(state, tabDeps);
+    logger.scope("boot").info(formatBootSummary(bootTrace));
+    send({
+      type: "boot_timings",
+      total: bootTrace.totalMs(),
+      spans: bootTrace.summary(),
+    });
 
     // Replay the default tab's persisted pi session history so all tabs use
     // the same session_history IPC path. Scope the read by the SAME cwd
@@ -424,6 +464,13 @@ async function main(): Promise<void> {
     markFrontendReady(state);
     scheduleStateFileWrite();
     send({ type: "worker_ready", tabId: workerTabId, cwd: startupCwd });
+    logger.scope("boot").info(formatBootSummary(bootTrace));
+    send({
+      type: "boot_timings",
+      tabId: workerTabId,
+      total: bootTrace.totalMs(),
+      spans: bootTrace.summary(),
+    });
   }
 
   // -- Run the dispatcher ------------------------------------------------

@@ -10,11 +10,13 @@ import { createRoot } from "react-dom/client";
 
 import { applyBootTheme } from "../themeBootstrap";
 import { MobileGate } from "./MobileGate";
+import { perfMark } from "./perfMarks";
 import "../styles/tokens.css";
 import "../styles/themes.css";
 import "../styles/chrome.css";
 import "../styles/mobile.css";
 
+perfMark("script-start");
 applyBootTheme();
 
 createRoot(document.getElementById("root")!).render(

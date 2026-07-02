@@ -2,6 +2,7 @@
 // the schema; Vite's own defineConfig narrows it away.
 import { defineConfig } from "vitest/config";
 import react from "@vitejs/plugin-react";
+import { visualizer } from "rollup-plugin-visualizer";
 
 // Tauri requires a fixed dev port (devUrl in tauri.conf.json). For
 // auto-increment, the `dev` wrapper (scripts/dev.sh) finds a free port
@@ -12,7 +13,14 @@ import react from "@vitejs/plugin-react";
 const port = Number(process.env.VITE_PORT ?? 1420);
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [
+    react(),
+    // Bundle-composition report for perf work: `ANALYZE=1 bun run build`
+    // writes dist/stats.html. Never active in normal builds.
+    ...(process.env.ANALYZE
+      ? [visualizer({ filename: "dist/stats.html", gzipSize: true })]
+      : []),
+  ],
   clearScreen: false,
   optimizeDeps: {
     // The dep scanner treats every root-level .html as an entry, which

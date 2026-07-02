@@ -40,6 +40,7 @@ import {
 } from "../devshell";
 import { wrapWithSourceGuard } from "../source-guard";
 import { logger } from "../logger";
+import type { BootTrace } from "../boot-trace";
 import { authProfileServicesForTab } from "../auth-profiles";
 import { emitGlobalReady } from "../dispatcherTypes";
 import type { AethonAgentState, TabRecord } from "../state";
@@ -56,6 +57,8 @@ export interface EnsureTabOptions {
   initialModel?: Model<Api>;
   thinkingLevel?: ThinkingLevel;
   cwdOverride?: string;
+  /** Boot-phase trace (main.ts startup only) — records tab sub-spans. */
+  trace?: BootTrace;
 }
 
 const lifecycleLog = logger.scope("tab-lifecycle");
@@ -188,6 +191,7 @@ export async function ensureTab(
     state.tabProjectCwds.set(tabId, resolvedCwd);
   }
 
+  const endSessionManagerSpan = options.trace?.span("tab:session-manager");
   let sessionManager;
   try {
     // Aethon session state is SQLite-backed; pi receives its own normal
@@ -207,6 +211,7 @@ export async function ensureTab(
       );
     sessionManager = SessionManager.inMemory();
   }
+  endSessionManagerSpan?.();
 
   // Frontend tab creation normally prepares the devshell before `tab_open`.
   // Tab workers are spawned by Rust only after that prepare step has run and
@@ -223,6 +228,7 @@ export async function ensureTab(
     // host env beats no session. ensurePrepared also self-skips before the
     // frontend handshake (startup default tab), where the query can't be
     // answered and would otherwise wedge the bridge until a fatal timeout.
+    const endDevshellSpan = options.trace?.span("tab:devshell-prepare");
     await ensureDevshellPrepared(state, deps, resolvedCwd).catch(
       (err: unknown) => {
         lifecycleLog.warn(
@@ -230,6 +236,7 @@ export async function ensureTab(
         );
       },
     );
+    endDevshellSpan?.();
   }
 
   // Shadow pi's built-in `bash` tool with our own that mounts the
@@ -248,6 +255,7 @@ export async function ensureTab(
     options.initialModel,
   );
 
+  const endCreateSessionSpan = options.trace?.span("tab:create-agent-session");
   const { session } = await createAgentSession({
     authStorage: authServices.authStorage,
     modelRegistry: authServices.modelRegistry,
@@ -272,6 +280,7 @@ export async function ensureTab(
     ...(options.initialModel ? { model: options.initialModel } : {}),
     ...(options.thinkingLevel ? { thinkingLevel: options.thinkingLevel } : {}),
   });
+  endCreateSessionSpan?.();
   lifecycleLog.info(`session ready tabId=${tabId} cwd=${resolvedCwd}`);
   installAethonRetryClassifier(session);
   installCodexFastModePayloadHook(state, session);
@@ -321,6 +330,7 @@ export async function ensureTab(
     contextUsage: contextUsageSnapshot(state, tabId, rec),
   });
   emitContextUsage(state, deps, tabId, rec);
+  const endBindSpan = options.trace?.span("tab:bind-extensions");
   await session.bindExtensions({
     uiContext: extensionUiContextForTab(),
     onError: (error) => {
@@ -329,6 +339,7 @@ export async function ensureTab(
       );
     },
   });
+  endBindSpan?.();
   const previousSlashCommands = JSON.stringify(state.piSlashCommands);
   refreshPiSlashCommands(state, session);
   if (JSON.stringify(state.piSlashCommands) !== previousSlashCommands) {

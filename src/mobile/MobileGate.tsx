@@ -20,6 +20,7 @@ import {
   saveConnection,
   type MobileConnection,
 } from "./mobileConnection";
+import { perfEnabled, perfMark } from "./perfMarks";
 
 type Phase = "connecting" | "connected" | "need-config";
 
@@ -48,7 +49,9 @@ export function MobileGate() {
         : undefined;
     gateway.configure({ url, token: target.token, appVersion: "companion", adapter });
     try {
+      perfMark("connect-start");
       await gateway.connect();
+      perfMark("hello-ok");
       if (persist) {
         saveConnection(target);
         setRemembered(loadRememberedConnections());
@@ -67,6 +70,26 @@ export function MobileGate() {
     if (connection) queueMicrotask(() => void connect(connection, false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Startup perf marks (no-ops unless perf capture is enabled): first
+  // gate paint, App mount commit, and the first agent event after
+  // connect — the last is the "hydration is flowing" proxy.
+  useEffect(() => {
+    const raf = requestAnimationFrame(() => perfMark("gate-first-paint"));
+    return () => cancelAnimationFrame(raf);
+  }, []);
+  useEffect(() => {
+    if (phase === "connected") perfMark("app-mounted");
+  }, [phase]);
+  useEffect(() => {
+    if (phase !== "connected" || !perfEnabled()) return;
+    let seen = false;
+    return gateway.subscribe("agent-response", () => {
+      if (seen) return;
+      seen = true;
+      perfMark("first-agent-event");
+    });
+  }, [phase]);
 
   // Reconnect immediately when the app returns to the foreground — iOS
   // suspends the socket on lock, so this is the common path.

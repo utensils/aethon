@@ -1,5 +1,6 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { bootMark, reportBootTimeline } from "./utils/bootTrace";
 import { ExtensionRegistry } from "./extensions/ExtensionRegistry";
 import { persistStatusesDebounced } from "./gitStatusCache";
 import { defaultLayoutExtension } from "./extensions/default-layout";
@@ -802,7 +803,10 @@ export default function App() {
     routeShellWrite,
     startTaskInProject,
     sendChat,
-    markStartupChromeReady: () => setStartupChromeReady(true),
+    markStartupChromeReady: () => {
+      bootMark("agent-ready");
+      setStartupChromeReady(true);
+    },
   });
 
   // Keyboard shortcuts + A2UI event routing.
@@ -976,6 +980,18 @@ export default function App() {
     scheduledTasksOpen,
   } = useDerivedRenderState({ state, buildSidebarHistory, hostInfo });
   const chromeReady = bootConfigReady && startupChromeReady;
+
+  // Boot timeline: mark the chrome-ready flip, then log the summary once
+  // the first real-chrome frame commits. See src/utils/bootTrace.ts.
+  useEffect(() => {
+    if (!chromeReady) return;
+    bootMark("chrome-ready");
+    const raf = requestAnimationFrame(() => {
+      bootMark("chrome-ready-commit");
+      reportBootTimeline();
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [chromeReady]);
 
   return (
     <AppRoot
