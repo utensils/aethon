@@ -17,6 +17,9 @@
 
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+// Side-effect import: monaco worker/loader/language bootstrap must run
+// before any monaco API call in this chunk (see canvas.tsx).
+import "../../../monaco/setup";
 import * as monaco from "monaco-editor";
 
 import type { BuiltinComponentProps } from "../../../components/A2UIRenderer";

@@ -14,7 +14,11 @@
  * the Monaco model.
  */
 
-import * as monaco from "monaco-editor";
+// Types only — this module is imported by always-loaded tab-lifecycle
+// hooks (closeTab, project ops), so a runtime monaco import here would
+// drag the whole editor chunk into the boot bundle. The canvas owns the
+// runtime import and hands models in via `registerEditorBuffer`.
+import type * as monaco from "monaco-editor";
 
 /** An editor tab's in-memory state. The Monaco model is the source of
  *  truth for buffer content + undo stack; viewState carries scroll +
@@ -54,13 +58,13 @@ export function getEditorBuffer(tabId: string): EditorBuffer | undefined {
   return EDITOR_BUFFERS.get(tabId);
 }
 
-/** Create + cache a new buffer with an empty model for `tabId`. */
-export function createEditorBuffer(
+/** Cache a new buffer around a caller-created model for `tabId`. The
+ *  canvas creates the model (it already owns the monaco import). */
+export function registerEditorBuffer(
   tabId: string,
+  model: monaco.editor.ITextModel,
   filePath: string,
-  language: string,
 ): EditorBuffer {
-  const model = monaco.editor.createModel("", language);
   const buf: EditorBuffer = {
     model,
     viewState: null,

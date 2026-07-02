@@ -31,6 +31,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
+// Side-effect import: worker factories + loader binding + language
+// registration. Must evaluate before the first `<Editor>` mount or
+// `createModel` call — living at the top of this chunk (rather than
+// mainApp.tsx) keeps monaco out of the boot bundle while preserving
+// that ordering, since models are only created inside this chunk.
+import "../../../monaco/setup";
 import * as monaco from "monaco-editor";
 
 import type { StringValue } from "../../../types/a2ui";
@@ -43,8 +49,8 @@ import {
 import { applyMonacoTheme } from "../../../monaco/theme";
 import { ensureShikiMonacoReady } from "../../../monaco/shiki";
 import {
-  createEditorBuffer,
   getEditorBuffer,
+  registerEditorBuffer,
 } from "../../../monaco/editor-buffers";
 import { pickFileViewer } from "./file-viewers";
 import { compressPath } from "./path";
@@ -395,7 +401,11 @@ export function EditorCanvas({
     const language = editorMeta.language || "plaintext";
     let buf = getEditorBuffer(tabId);
     if (!buf) {
-      buf = createEditorBuffer(tabId, editorMeta.filePath, language);
+      buf = registerEditorBuffer(
+        tabId,
+        monaco.editor.createModel("", language),
+        editorMeta.filePath,
+      );
     } else if (buf.filePath !== editorMeta.filePath) {
       // Tab was renamed (file-tree rename or folder-rename prefix
       // rewrite). Sync the cache so the next Cmd+S writes to the new

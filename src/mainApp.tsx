@@ -4,11 +4,10 @@ import { invoke } from "@tauri-apps/api/core";
 import App from "./App.tsx";
 import NativeCanvasWindowApp from "./NativeCanvasWindowApp";
 import { prewarmHighlighter } from "./utils/highlight";
-// Side-effect import: registers Monaco's web-worker factories and binds
-// the @monaco-editor/react loader to the bundled monaco package so the
-// editor mounts work offline / under Tauri's CSP. Must run before any
-// component imports a Monaco-backed surface.
-import "./monaco/setup";
+// NOTE: monaco's bootstrap (worker factories + loader binding) moved to
+// the top of editor/canvas.tsx + diff-canvas.tsx — the chunks that
+// actually create models — so the multi-MB monaco graph stays out of
+// the boot bundle.
 // Style entry. Order matters: shape tokens first (theme-agnostic), then
 // theme color tokens, then chrome rules (consumes everything). Import
 // each file directly here instead of chaining through `@import` in a
@@ -33,10 +32,16 @@ if (import.meta.env.DEV) {
   ).__AETHON_INVOKE__ = invoke;
 }
 
-// Spawn the Shiki highlight worker eagerly so the first user-visible code
-// block doesn't pay the cold-start cost (Oniguruma WASM + theme parse).
-// Idempotent; safe to call here.
-prewarmHighlighter();
+// Spawn the Shiki highlight worker once the main thread goes idle — warm
+// before the first realistic user message without competing with first
+// paint for CPU (the worker boot parses Oniguruma WASM + themes).
+// Idempotent; HighlightedCode renders plain text until it resolves.
+// WebKit has no requestIdleCallback — feature-detect and fall back.
+const scheduleIdle: (cb: () => void) => void =
+  typeof requestIdleCallback === "function"
+    ? (cb) => requestIdleCallback(cb, { timeout: 3_000 })
+    : (cb) => setTimeout(cb, 1_500);
+scheduleIdle(() => prewarmHighlighter());
 
 const params = new URLSearchParams(window.location.search);
 const surface = params.get("surface");

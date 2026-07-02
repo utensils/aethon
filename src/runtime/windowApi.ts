@@ -20,10 +20,13 @@ import {
   type ProjectsState,
 } from "../projects";
 import { registerGrammar as registerHighlightGrammar } from "../utils/highlight";
+// theme-registry, NOT theme: registering a Monaco theme from the boot
+// path must not pull the monaco-editor chunk. The registry replays
+// registrations when the editor chunk loads.
 import {
   registerMonacoTheme as registerMonacoThemeImpl,
-  applyMonacoTheme,
-} from "../monaco/theme";
+  applyMonacoThemeIfLoaded,
+} from "../monaco/theme-registry";
 import { registerFileViewer as registerFileViewerImpl } from "../extensions/default-layout/editor";
 import type * as monaco from "monaco-editor";
 import { askUserWithChat, type AskUserInput } from "../questions";
@@ -201,7 +204,7 @@ export function useWindowApi(ctx: UseWindowApiContext): void {
           document.documentElement.dataset.theme ??
           "";
         if (active === id.trim()) {
-          applyMonacoTheme(active);
+          applyMonacoThemeIfLoaded(active);
         }
         return true;
       },
