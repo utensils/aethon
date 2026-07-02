@@ -4,7 +4,10 @@ import { bootMark, reportBootTimeline } from "./utils/bootTrace";
 import { flushDeferredTabOpen } from "./hooks/bridgeMessageHandlers/readyEffects";
 import { ExtensionRegistry } from "./extensions/ExtensionRegistry";
 import { persistStatusesDebounced } from "./gitStatusCache";
-import { defaultLayoutExtension } from "./extensions/default-layout";
+import {
+  defaultLayoutExtension,
+  preloadDefaultLayoutSurfaces,
+} from "./extensions/default-layout";
 import { mobileLayoutExtension } from "./mobile/mobileLayoutExtension";
 import { AppRoot } from "./app/AppRoot";
 import { BOOT_LAYOUT, hangWarnNotifId } from "./app/bootConstants";
@@ -994,6 +997,8 @@ export default function App() {
 
   // Boot timeline: mark the chrome-ready flip, then log the summary once
   // the first real-chrome frame commits. See src/utils/bootTrace.ts.
+  // Then warm the lazy surface chunks (editor, terminal, settings,
+  // palette, …) on the first idle so their first open pays ~nothing.
   useEffect(() => {
     if (!chromeReady) return;
     bootMark("chrome-ready");
@@ -1001,6 +1006,11 @@ export default function App() {
       bootMark("chrome-ready-commit");
       reportBootTimeline();
     });
+    const scheduleIdle: (cb: () => void) => void =
+      typeof requestIdleCallback === "function"
+        ? (cb) => requestIdleCallback(cb, { timeout: 5_000 })
+        : (cb) => setTimeout(cb, 2_000);
+    scheduleIdle(() => preloadDefaultLayoutSurfaces());
     return () => cancelAnimationFrame(raf);
   }, [chromeReady]);
 

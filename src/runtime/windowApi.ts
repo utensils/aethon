@@ -27,7 +27,9 @@ import {
   registerMonacoTheme as registerMonacoThemeImpl,
   applyMonacoThemeIfLoaded,
 } from "../monaco/theme-registry";
-import { registerFileViewer as registerFileViewerImpl } from "../extensions/default-layout/editor";
+// file-viewers directly, NOT the ./editor barrel — the barrel's canvas
+// re-exports carry the monaco bootstrap side effect.
+import { registerFileViewer as registerFileViewerImpl } from "../extensions/default-layout/editor/file-viewers";
 import type * as monaco from "monaco-editor";
 import { askUserWithChat, type AskUserInput } from "../questions";
 
