@@ -4,6 +4,30 @@ All notable changes to Aethon. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 [SemVer](https://semver.org/).
 
+## [0.12.0](https://github.com/utensils/aethon/compare/v0.11.2...v0.12.0) (2026-07-02)
+
+
+### Features
+
+* **mobile:** iOS companion scaffold + IPC shim (Phase 2) ([#455](https://github.com/utensils/aethon/issues/455)) ([ab08721](https://github.com/utensils/aethon/commit/ab087217ef3c5cbcec34971a8103037e2953d585))
+* **mobile:** parity tail + iOS build — keep-alive, settings, file viewer, rate limit (Phase 5) ([#458](https://github.com/utensils/aethon/issues/458)) ([9b9a12f](https://github.com/utensils/aethon/commit/9b9a12f28e9c0a8cbdefafe89e32cd35f023fecf))
+* **mobile:** QR + mDNS pairing UX and signed iPhone deploys ([#460](https://github.com/utensils/aethon/issues/460)) ([214d5be](https://github.com/utensils/aethon/commit/214d5be9bd26dfe30346791c153eef08a72ace0a))
+* **mobile:** terminal, files, git — both sides (Phase 4) ([#457](https://github.com/utensils/aethon/issues/457)) ([ac67f44](https://github.com/utensils/aethon/commit/ac67f44bcf62792b46661882f9a582d334374b52))
+* **mobile:** touch-first chat + sessions layout (Phase 3) ([#456](https://github.com/utensils/aethon/issues/456)) ([59c7ded](https://github.com/utensils/aethon/commit/59c7ded039fb78df46b472cfe6229c0def0d3f4f))
+* **remote:** iOS companion gateway (Phase 1 — desktop remote gateway) ([#454](https://github.com/utensils/aethon/issues/454)) ([44c8539](https://github.com/utensils/aethon/commit/44c8539aaf35466294068b139b025ba19636883b))
+* **state:** persist app state in sqlite ([#444](https://github.com/utensils/aethon/issues/444)) ([3b66d3c](https://github.com/utensils/aethon/commit/3b66d3c6d884c115763cdd89c2c8c71a0a4abc1d))
+* **tray:** show active sessions in status menu ([#447](https://github.com/utensils/aethon/issues/447)) ([abca548](https://github.com/utensils/aethon/commit/abca548e01ac83f917c2821901bb86527456f755))
+* **voice:** cascade conversational voice agent ([#459](https://github.com/utensils/aethon/issues/459)) ([f800d89](https://github.com/utensils/aethon/commit/f800d898e4d461c70f90e410852b4cb809ba829e))
+
+
+### Bug Fixes
+
+* **ci:** tolerate nightly asset propagation ([5a110b3](https://github.com/utensils/aethon/commit/5a110b3c5c21135fc348f96147dbb0d6c27b444d))
+* **projects:** sync active VCS branch labels ([f9b18ab](https://github.com/utensils/aethon/commit/f9b18aba134efe05bd390b04a9a0d7ffb2d6c496))
+* **sessions:** stop auto-opening discovered history ([#448](https://github.com/utensils/aethon/issues/448)) ([8697221](https://github.com/utensils/aethon/commit/8697221e605131ec9fd51bd6c0ff0a1d24a19dcf))
+* **state:** ignore legacy Aethon session roots ([#446](https://github.com/utensils/aethon/issues/446)) ([1b517d4](https://github.com/utensils/aethon/commit/1b517d4261591112fcb5e96959862e3990624177))
+* **transcript:** suppress hidden live activity flashes ([48e80c4](https://github.com/utensils/aethon/commit/48e80c47eca4a3781d231443e34ab6f604fab501))
+
 ## [0.11.2](https://github.com/utensils/aethon/compare/v0.11.1...v0.11.2) (2026-06-28)
 
 
