@@ -186,10 +186,13 @@ impl SttStream for DeepgramFluxStt {
     }
 
     async fn keepalive(&mut self) {
-        let _ = self
-            .sink
-            .send(Message::Text(r#"{"type":"KeepAlive"}"#.to_string()))
-            .await;
+        // Flux's v2 socket accepts only `CloseStream`/`Configure` text
+        // messages — the v1-era `KeepAlive` control message makes the server
+        // reply with a deserialize error and the connection dies. Flux stays
+        // alive on continuous audio instead, so feed it silence while the mic
+        // is gated: zeros carry no speech, so no turn events fire.
+        let silence = vec![0u8; (TARGET_SAMPLE_RATE as usize / 5) * 2]; // 200 ms of i16 zeros
+        let _ = self.sink.send(Message::Binary(silence)).await;
     }
 
     async fn close(&mut self) {
