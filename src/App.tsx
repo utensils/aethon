@@ -66,6 +66,10 @@ import { useUpdaterConfigBridge } from "./hooks/useUpdaterConfigBridge";
 import { closeAllWorkspaceSessions } from "./hooks/tabOps/closeWorkspaceSessions";
 import type { NativeCanvasWindowRecord } from "./nativeWindows";
 import { writeState } from "./persist";
+import {
+  clearChromeBootSnapshot,
+  shouldPaintChromeOptimistically,
+} from "./state/chromeBootSnapshot";
 import { useAppState } from "./state/appStore";
 import { activeWorkspaceCwd } from "./utils/activeWorkspaceRoot";
 import pkg from "../package.json" with { type: "json" };
@@ -128,7 +132,24 @@ export default function App() {
   // by calling window.aethon.setLayout(payload), or register a new extension via
   // window.aethon.registerExtension(extension) and switch to its layout.
   const [layout, setLayout] = useState<A2UIPayload>(BOOT_LAYOUT);
-  const [startupChromeReady, setStartupChromeReady] = useState(false);
+  // Optimistic chrome (perf/c4): when the previous run used only built-in
+  // chrome (recorded in a localStorage boot snapshot), seed this true so the
+  // workstation paints immediately instead of holding the StartupCurtain
+  // until the agent bridge's `ready` arrives. `markStartupChromeReady`
+  // (wired into useAppBridgeMessages) stays the reconciliation step — it
+  // idempotently confirms readiness once the bridge boots. Sessions that used
+  // an extension layout/frontend-module/theme record that fact and keep the
+  // curtain, so there is provably no layout/theme flash for extension users.
+  // Painting pre-`ready` exposes the composer early, but a send before ready
+  // is safe: /status seeds "starting…" (not "ready"), and Rust `send_message`
+  // → `write_agent_payload` lazily spawns the bridge and awaits worker-ready
+  // before writing to its stdin, so the message is delivered, not dropped.
+  const [startupChromeReady, setStartupChromeReady] = useState(() =>
+    shouldPaintChromeOptimistically(),
+  );
+  // True once the bridge's real `ready` confirmed the chrome — after
+  // that, the kill-switch revoke below must never hide working chrome.
+  const bridgeConfirmedChromeRef = useRef(false);
   const {
     stateRef,
     projectsRef,
@@ -175,7 +196,22 @@ export default function App() {
     shellInheritEnvRef,
     shellPromptBeforeCloseRef,
     reapplyConfig,
-  } = useBootConfig({ setState, piDefaultModelRef });
+  } = useBootConfig({
+    setState,
+    piDefaultModelRef,
+    // Kill-switch reconciliation: a stale built-ins-only snapshot can
+    // seed the optimistic paint before the config is readable. This
+    // callback runs in the same batch that flips bootConfigReady (the
+    // other half of the chromeReady AND), so revoking here means the
+    // disabled launch never paints optimistically — no flash. Skipped
+    // once the bridge's real ready confirmed the chrome.
+    onBootConfig: (config) => {
+      if (config.boot?.optimisticChrome === false) {
+        clearChromeBootSnapshot();
+        if (!bridgeConfirmedChromeRef.current) setStartupChromeReady(false);
+      }
+    },
+  });
 
   // ---------------------------------------------------------------------
   // UI zoom + theme switching are owned by useZoomAndTheme. The hook
@@ -810,6 +846,7 @@ export default function App() {
     sendChat,
     markStartupChromeReady: () => {
       bootMark("agent-ready");
+      bridgeConfirmedChromeRef.current = true;
       setStartupChromeReady(true);
     },
   });

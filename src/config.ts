@@ -166,6 +166,15 @@ export interface AethonConfig {
      *  the active tab's project root. Default false. Per-tab overridable. */
     hardEnforceProjectRoot: boolean;
   };
+  /** `[boot]` section. Optional so config fixtures that predate it still
+   *  satisfy the type; `getConfig()` always populates it. */
+  boot?: {
+    /** Kill-switch for optimistic chrome. When true (default), a built-ins-
+     *  only session caches a boot snapshot so the next cold boot paints the
+     *  workstation before the bridge is ready. `false` disables that — the
+     *  StartupCurtain always shows until the bridge's `ready` arrives. */
+    optimisticChrome: boolean;
+  };
 }
 
 export const DEFAULT_AGENT_TIMEOUT_SECONDS = 300;
@@ -238,6 +247,9 @@ const DEFAULTS: AethonConfig = {
     softPromptAnchor: null,
     hardEnforceProjectRoot: false,
   },
+  boot: {
+    optimisticChrome: true,
+  },
 };
 
 function hasTauri(): boolean {
@@ -250,6 +262,19 @@ function hasTauri(): boolean {
 
 let inflight: Promise<AethonConfig> | null = null;
 
+/** Last successfully-resolved config, for synchronous reads by callers that
+ *  can't await (e.g. the bridge `ready` handler deciding whether to persist
+ *  the optimistic-chrome boot snapshot). `getConfig()` resolves well before
+ *  `ready` fires, so this is populated by then; `null` (never resolved) is
+ *  treated as "defaults" by consumers. */
+let lastResolved: AethonConfig | null = null;
+
+/** Synchronously read the last-resolved config, or `null` if `getConfig()`
+ *  hasn't resolved yet. Does not trigger a read. */
+export function getResolvedConfig(): AethonConfig | null {
+  return lastResolved;
+}
+
 /** Drop the in-memory config cache so the next `getConfig()` call
  *  re-reads from disk. Call after writing the config (Settings panel
  *  Save) so subsequent reads see fresh values without a page reload. */
@@ -260,6 +285,7 @@ export function clearConfigCache(): void {
 export function getConfig(): Promise<AethonConfig> {
   if (inflight) return inflight;
   if (!hasTauri()) {
+    lastResolved = DEFAULTS;
     inflight = Promise.resolve(DEFAULTS);
     return inflight;
   }
@@ -267,7 +293,7 @@ export function getConfig(): Promise<AethonConfig> {
     try {
       const raw = await invoke<unknown>("read_config");
       const obj = raw as Partial<AethonConfig>;
-      return {
+      const resolved: AethonConfig = {
         ui: {
           theme: normalizeTheme(obj?.ui?.theme),
           fontSize:
@@ -366,17 +392,16 @@ export function getConfig(): Promise<AethonConfig> {
               ? obj.voice.brainModel.trim()
               : null,
           sttProvider:
-            typeof obj?.voice?.sttProvider === "string" &&
-            obj.voice.sttProvider
+            typeof obj?.voice?.sttProvider === "string" && obj.voice.sttProvider
               ? obj.voice.sttProvider
               : DEFAULTS.voice.sttProvider,
           ttsProvider:
-            typeof obj?.voice?.ttsProvider === "string" &&
-            obj.voice.ttsProvider
+            typeof obj?.voice?.ttsProvider === "string" && obj.voice.ttsProvider
               ? obj.voice.ttsProvider
               : DEFAULTS.voice.ttsProvider,
           ttsVoice:
-            typeof obj?.voice?.ttsVoice === "string" && obj.voice.ttsVoice.trim()
+            typeof obj?.voice?.ttsVoice === "string" &&
+            obj.voice.ttsVoice.trim()
               ? obj.voice.ttsVoice.trim()
               : null,
           deepgramApiKeySet: obj?.voice?.deepgramApiKeySet === true,
@@ -416,9 +441,16 @@ export function getConfig(): Promise<AethonConfig> {
           hardEnforceProjectRoot:
             obj?.guardrails?.hardEnforceProjectRoot === true,
         },
+        boot: {
+          // Default true — only an explicit `false` disables optimistic chrome.
+          optimisticChrome: obj?.boot?.optimisticChrome !== false,
+        },
       };
+      lastResolved = resolved;
+      return resolved;
     } catch (err) {
       console.warn("read_config failed:", err);
+      lastResolved = DEFAULTS;
       return DEFAULTS;
     }
   })();

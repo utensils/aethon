@@ -19,6 +19,12 @@ import {
 export interface UseBootConfigContext {
   setState: Dispatch<SetStateAction<Record<string, unknown>>>;
   piDefaultModelRef: MutableRefObject<string>;
+  /** Runs with the freshly-read config in the same async continuation
+   *  that flips `bootConfigReady`, so any state it sets batches with
+   *  the ready flip (React auto-batching) and renders atomically with
+   *  it. App uses this to revoke an optimistic-chrome seed when
+   *  `[boot] optimistic_chrome = false` outlives a stale snapshot. */
+  onBootConfig?: (config: AethonConfig) => void;
 }
 
 export interface UseBootConfigActions {
@@ -283,6 +289,7 @@ export function useBootConfig(ctx: UseBootConfigContext): UseBootConfigActions {
         if (Number.isFinite(z) && z >= 0.7 && z <= 1.6) {
           applyUiScale(z);
         }
+        ctx.onBootConfig?.(config);
       } finally {
         if (!cancelled) setBootConfigReady(true);
       }
