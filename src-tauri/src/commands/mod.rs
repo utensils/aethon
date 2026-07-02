@@ -29,6 +29,7 @@ pub mod git;
 pub mod host;
 pub mod mcp;
 pub mod native_windows;
+pub mod remote;
 pub mod scheduler;
 pub mod server;
 pub mod session;

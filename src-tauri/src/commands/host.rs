@@ -5,9 +5,10 @@
 //! survive hostname rename and reinstall, falling back to a hash of the
 //! hostname if neither uuid source is available.
 //!
-//! The fingerprint is a placeholder until the pairing PR lands — same
-//! shape as Claudette's mdns TXT record so the wire format is forward
-//! compatible.
+//! The fingerprint is the SHA-256 of the remote gateway's TLS
+//! certificate (see `server::tls`) — the value paired clients pin.
+//! When the identity can't be created (unwritable user dir) it degrades
+//! to the legacy deterministic placeholder so `host_info` never fails.
 
 use serde::Serialize;
 use sha1::{Digest, Sha1};
@@ -94,9 +95,9 @@ fn stable_id(hostname: &str) -> String {
 }
 
 fn fingerprint_placeholder(id: &str) -> String {
-    // Deterministic per-host placeholder so two boots of the same Aethon
-    // advertise the same TXT value. Real cert fingerprints replace this
-    // when pairing lands.
+    // Deterministic per-host fallback so two boots of the same Aethon
+    // advertise the same TXT value even when the TLS identity can't be
+    // created. Pairing refuses hosts without a real cert fingerprint.
     let mut h = Sha1::new();
     h.update(b"aethon-fingerprint-v0\n");
     h.update(id.as_bytes());
@@ -104,11 +105,22 @@ fn fingerprint_placeholder(id: &str) -> String {
     digest.iter().take(8).map(|b| format!("{b:02x}")).collect()
 }
 
+/// Real cert fingerprint when available, placeholder otherwise. Unit
+/// tests always take the placeholder branch — resolving the process-wide
+/// identity would write cert material into the developer's `~/.aethon`.
+fn host_fingerprint(id: &str) -> String {
+    #[cfg(not(test))]
+    if let Some(identity) = crate::server::tls::identity() {
+        return identity.fingerprint.clone();
+    }
+    fingerprint_placeholder(id)
+}
+
 pub fn local_host_info() -> HostInfo {
     let hostname = hostname_string();
     let display_name = pretty_display(&hostname);
     let id = stable_id(&hostname);
-    let fingerprint = fingerprint_placeholder(&id);
+    let fingerprint = host_fingerprint(&id);
     HostInfo {
         id,
         hostname,
@@ -132,7 +144,10 @@ mod tests {
         assert!(info.id.starts_with("local:"));
         assert!(!info.hostname.is_empty());
         assert!(!info.display_name.is_empty());
+        // Test builds always resolve the placeholder (16 hex); release
+        // builds carry the 64-hex TLS cert fingerprint.
         assert_eq!(info.fingerprint.len(), 16);
+        assert!(info.fingerprint.chars().all(|c| c.is_ascii_hexdigit()));
     }
 
     #[test]

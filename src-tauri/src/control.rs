@@ -114,7 +114,14 @@ struct ControlCompletion {
 pub(crate) fn control_update_state(
     snapshot: Value,
     state: State<'_, Arc<ControlState>>,
+    remote: State<'_, Arc<crate::server::remote::RemoteState>>,
 ) -> Result<(), String> {
+    // Mirror the snapshot to remote clients as the `frontend-state`
+    // topic — the convergence signal that keeps every paired device's
+    // view of tabs/models/accounts in step regardless of who mutated.
+    if let Ok(json) = serde_json::to_string(&snapshot) {
+        remote.hub.publish("frontend-state", json);
+    }
     *state.frontend_state.lock().map_err(|e| e.to_string())? = snapshot;
     Ok(())
 }
@@ -254,35 +261,50 @@ async fn forward_to_frontend(
     state: &Arc<ControlState>,
     req: ControlRequest,
 ) -> ControlResponse {
+    match forward_ui_method(app, state, &req.method, req.params).await {
+        Ok(value) => ok_response(value),
+        Err(err) => err_response(err),
+    }
+}
+
+/// Round one UI-owned mutation through the desktop webview: emit a
+/// `control-request`, await the matching `control_request_complete`.
+/// Shared by the local control socket and the remote gateway's `ui.*`
+/// forwards, so both serialize on the same pending map + timeouts.
+pub(crate) async fn forward_ui_method(
+    app: &AppHandle,
+    state: &Arc<ControlState>,
+    method: &str,
+    params: Value,
+) -> Result<Value, String> {
     let request_id = uuid::Uuid::new_v4().to_string();
-    let timeout = request_timeout(&req.params);
+    let timeout = request_timeout(&params);
     let (tx, rx) = oneshot::channel();
     {
-        let mut pending = match state.pending.lock() {
-            Ok(guard) => guard,
-            Err(err) => return err_response(format!("pending lock: {err}")),
-        };
+        let mut pending = state
+            .pending
+            .lock()
+            .map_err(|err| format!("pending lock: {err}"))?;
         pending.insert(request_id.clone(), tx);
     }
     let payload = FrontendControlRequest {
         request_id: request_id.clone(),
-        method: req.method,
-        params: req.params,
+        method: method.to_string(),
+        params,
     };
     if let Err(err) = app.emit("control-request", payload) {
         let _ = state.pending.lock().map(|mut p| p.remove(&request_id));
-        return err_response(format!("emit control-request: {err}"));
+        return Err(format!("emit control-request: {err}"));
     }
     match tokio::time::timeout(timeout, rx).await {
-        Ok(Ok(done)) if done.success => ok_response(done.data.unwrap_or(Value::Null)),
-        Ok(Ok(done)) => err_response(
-            done.error
-                .unwrap_or_else(|| "control request failed".to_string()),
-        ),
-        Ok(Err(_)) => err_response("control request was cancelled".to_string()),
+        Ok(Ok(done)) if done.success => Ok(done.data.unwrap_or(Value::Null)),
+        Ok(Ok(done)) => Err(done
+            .error
+            .unwrap_or_else(|| "control request failed".to_string())),
+        Ok(Err(_)) => Err("control request was cancelled".to_string()),
         Err(_) => {
             let _ = state.pending.lock().map(|mut p| p.remove(&request_id));
-            err_response("control request timed out".to_string())
+            Err("control request timed out".to_string())
         }
     }
 }
@@ -318,35 +340,18 @@ fn aethon_control_dir(app: &AppHandle) -> Result<PathBuf, String> {
 #[cfg(unix)]
 mod unix {
     use super::*;
-    use std::io::Write;
-    use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
-    use std::path::Path;
+    use std::os::unix::fs::PermissionsExt;
     use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
     use tokio::net::{UnixListener, UnixStream};
 
-    /// Create + write a file owner-only (0o600) atomically: the `mode` is
-    /// applied at `open` time, so the file never exists with broader
-    /// permissions (no chmod-after-write TOCTOU window). `0o600 & ~umask` can
-    /// only be more restrictive, never looser.
-    fn write_owner_only(path: &Path, contents: &[u8]) -> Result<(), String> {
-        let mut file = std::fs::OpenOptions::new()
-            .write(true)
-            .create(true)
-            .truncate(true)
-            .mode(0o600)
-            .open(path)
-            .map_err(|e| format!("open {}: {e}", path.display()))?;
-        file.write_all(contents)
-            .map_err(|e| format!("write {}: {e}", path.display()))
-    }
+    use crate::helpers::secure_files::{set_dir_owner_only, write_owner_only};
 
     pub(super) async fn run(app: AppHandle, state: Arc<ControlState>) -> Result<(), String> {
         let dir = aethon_control_dir(&app)?;
         // Lock the control dir to the owner before writing anything into it.
         // With the dir at 0o700, no other local user can even reach the token,
         // control.json, or socket regardless of the individual file modes.
-        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700))
-            .map_err(|e| format!("chmod {}: {e}", dir.display()))?;
+        set_dir_owner_only(&dir)?;
         let socket_path = dir.join("control.sock");
         let token_path = dir.join("token");
         let info_path = dir.join("control.json");
@@ -418,32 +423,8 @@ mod unix {
         writer.shutdown().await.map_err(|e| e.to_string())
     }
 
-    #[cfg(test)]
-    mod tests {
-        use super::*;
-
-        #[test]
-        fn write_owner_only_grants_no_group_or_other_access() {
-            let dir = std::env::temp_dir().join(format!(
-                "aethon-control-test-{}-{}",
-                std::process::id(),
-                "token"
-            ));
-            let path = dir.join("token");
-            std::fs::create_dir_all(&dir).unwrap();
-            let _ = std::fs::remove_file(&path);
-
-            write_owner_only(&path, b"secret-token").unwrap();
-
-            let mode = std::fs::metadata(&path).unwrap().permissions().mode();
-            // The security property: no group/other bits, regardless of umask.
-            assert_eq!(mode & 0o077, 0, "mode was {:o}", mode & 0o777);
-            assert_eq!(std::fs::read_to_string(&path).unwrap(), "secret-token");
-
-            let _ = std::fs::remove_file(&path);
-            let _ = std::fs::remove_dir(&dir);
-        }
-    }
+    // write_owner_only's permission property is covered by the shared
+    // helper's tests in `helpers::secure_files`.
 }
 
 #[cfg(test)]

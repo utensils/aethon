@@ -26,6 +26,7 @@ import {
   useScrollToSection,
 } from "./hooks";
 import { NotificationsSection } from "./notifications-section";
+import { RemoteDevicesSection } from "./remote-section";
 import { SaveState, Section } from "./sections";
 import { readSettingsState } from "./state";
 import { ShellSection } from "./shell-section";
@@ -92,6 +93,7 @@ export function SettingsPanel({ state, onEvent }: BuiltinComponentProps) {
             <BehaviorSection config={eff} update={update} />
             <VoiceSection config={eff} update={update} />
             <UpdaterSection config={eff} update={update} />
+            <RemoteDevicesSection open={settings.open} />
             <DevshellSection config={eff} state={state} update={update} />
             <Section id="extensions" title="Extensions">
               <ExtensionsList state={state} onEvent={onEvent} />
