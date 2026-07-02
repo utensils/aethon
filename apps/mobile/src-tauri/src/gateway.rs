@@ -69,22 +69,37 @@ impl rustls::client::danger::ServerCertVerifier for PinnedCert {
         }
     }
 
+    // Delegate handshake-signature verification to ring. Pinning the DER
+    // alone is NOT sufficient: the cert is public (sent in the clear
+    // during the handshake), so without validating the CertificateVerify
+    // signature an attacker who observed it could replay it without the
+    // private key. These prove the peer holds the pinned cert's key.
     fn verify_tls12_signature(
         &self,
-        _m: &[u8],
-        _c: &rustls::pki_types::CertificateDer<'_>,
-        _d: &rustls::DigitallySignedStruct,
+        message: &[u8],
+        cert: &rustls::pki_types::CertificateDer<'_>,
+        dss: &rustls::DigitallySignedStruct,
     ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
-        Ok(rustls::client::danger::HandshakeSignatureValid::assertion())
+        rustls::crypto::verify_tls12_signature(
+            message,
+            cert,
+            dss,
+            &rustls::crypto::ring::default_provider().signature_verification_algorithms,
+        )
     }
 
     fn verify_tls13_signature(
         &self,
-        _m: &[u8],
-        _c: &rustls::pki_types::CertificateDer<'_>,
-        _d: &rustls::DigitallySignedStruct,
+        message: &[u8],
+        cert: &rustls::pki_types::CertificateDer<'_>,
+        dss: &rustls::DigitallySignedStruct,
     ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
-        Ok(rustls::client::danger::HandshakeSignatureValid::assertion())
+        rustls::crypto::verify_tls13_signature(
+            message,
+            cert,
+            dss,
+            &rustls::crypto::ring::default_provider().signature_verification_algorithms,
+        )
     }
 
     fn supported_verify_schemes(&self) -> Vec<rustls::SignatureScheme> {

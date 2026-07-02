@@ -11,26 +11,28 @@
 //   invoke("gateway_close") -> ()
 //   event "gateway-frame" { kind: "open" | "message" | "close", text? }
 //
-// The adapter calls the *real* Tauri runtime (not the aliased invoke),
-// so this file must import from @tauri-apps/api directly — the mobile
-// Vite alias does not rewrite these because they are only ever used from
-// the shell's own commands, and the adapter is selected before the shim
-// is active.
+// Uses the *real* Tauri runtime: `@tauri-real/event` (a dedicated
+// tsconfig path + mobile Vite alias) resolves to the genuine event
+// module rather than the gateway-routing shim, and invoke goes straight
+// to `window.__TAURI_INTERNALS__` so it never loops through the shim.
+
+import { listen } from "@tauri-real/event";
 
 import type { SocketAdapter } from "./transport";
 
 interface TauriInternals {
   invoke: (cmd: string, args?: unknown) => Promise<unknown>;
 }
-interface TauriEventApi {
-  listen: (
-    event: string,
-    handler: (e: { payload: unknown }) => void,
-  ) => Promise<() => void>;
-}
 
 function internals(): TauriInternals | undefined {
   return (globalThis as { __TAURI_INTERNALS__?: TauriInternals }).__TAURI_INTERNALS__;
+}
+
+/** True when a Tauri runtime is present (mobile shell); false in a
+ *  plain browser (dev loop), where the direct WebSocket adapter is used
+ *  instead. */
+export function isTauriRuntime(): boolean {
+  return internals() !== undefined;
 }
 
 interface GatewayFrame {
@@ -44,11 +46,9 @@ export class RustBridgeAdapter implements SocketAdapter {
   private closeHandler: () => void = () => {};
   private unlisten: (() => void) | null = null;
   private readonly fingerprint: string;
-  private readonly eventApi: TauriEventApi;
 
-  constructor(fingerprint: string, eventApi: TauriEventApi) {
+  constructor(fingerprint: string) {
     this.fingerprint = fingerprint;
-    this.eventApi = eventApi;
   }
 
   open(url: string): void {
@@ -57,13 +57,12 @@ export class RustBridgeAdapter implements SocketAdapter {
       this.closeHandler();
       return;
     }
-    void this.eventApi
-      .listen("gateway-frame", (e) => {
-        const frame = e.payload as GatewayFrame;
-        if (frame.kind === "open") this.openHandler();
-        else if (frame.kind === "message" && frame.text) this.messageHandler(frame.text);
-        else if (frame.kind === "close") this.closeHandler();
-      })
+    void listen<GatewayFrame>("gateway-frame", (e) => {
+      const frame = e.payload;
+      if (frame.kind === "open") this.openHandler();
+      else if (frame.kind === "message" && frame.text) this.messageHandler(frame.text);
+      else if (frame.kind === "close") this.closeHandler();
+    })
       .then((fn) => {
         this.unlisten = fn;
         return runtime.invoke("gateway_connect", { url, fingerprint: this.fingerprint });

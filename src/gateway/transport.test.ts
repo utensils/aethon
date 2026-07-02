@@ -195,6 +195,17 @@ describe("gateway transport", () => {
     expect(subFrame?.topics).toContain("agent-response");
   });
 
+  it("rejects an in-flight connect() on disconnect()", async () => {
+    const socket = new FakeSocket();
+    const t = makeTransport(socket);
+    const connected = t.connect();
+    const assertion = expect(connected).rejects.toThrow("disconnected");
+    // Never send hello_ok; disconnect while the handshake is pending.
+    t.disconnect();
+    await assertion;
+    expect(t.getStatus()).toBe("idle");
+  });
+
   it("does not reconnect after an auth-failed bye", async () => {
     vi.useFakeTimers();
     const socket = new FakeSocket();

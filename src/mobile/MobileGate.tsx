@@ -7,7 +7,8 @@
 import { lazy, Suspense, useCallback, useEffect, useState } from "react";
 
 import { setAssetBase } from "../gateway/tauriCoreShim";
-import { gateway } from "../gateway/transport";
+import { RustBridgeAdapter, isTauriRuntime } from "../gateway/rustBridgeAdapter";
+import { gateway, type SocketAdapter } from "../gateway/transport";
 import { useGatewayStatus } from "../gateway/useGatewayStatus";
 import { ConnectScreen } from "./ConnectScreen";
 import {
@@ -35,7 +36,16 @@ export function MobileGate() {
     setPhase("connecting");
     const url = connectionUrl(target);
     setAssetBase(url, target.token);
-    gateway.configure({ url, token: target.token, appVersion: "companion" });
+    // A pinned fingerprint means wss:// with a self-signed cert, which
+    // WKWebView's browser WebSocket can't accept (no JS pinning hook).
+    // Route through the native Rust bridge, which opens the socket with
+    // the pinned verifier. The plaintext dev path (no fingerprint) uses
+    // the default browser WebSocket.
+    const adapter: SocketAdapter | undefined =
+      target.fingerprint && isTauriRuntime()
+        ? new RustBridgeAdapter(target.fingerprint)
+        : undefined;
+    gateway.configure({ url, token: target.token, appVersion: "companion", adapter });
     try {
       await gateway.connect();
       if (persist) saveConnection(target);

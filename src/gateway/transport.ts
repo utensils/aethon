@@ -128,6 +128,13 @@ export class GatewayTransport {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
     }
+    // Reject an in-flight connect() so its awaiter doesn't hang forever,
+    // and so a later reconnect can't resolve this abandoned attempt.
+    if (this.helloReject) {
+      this.helloReject(new Error("gateway disconnected"));
+      this.helloReject = null;
+      this.helloResolve = null;
+    }
     this.adapter?.close();
     this.setStatus("idle");
   }
