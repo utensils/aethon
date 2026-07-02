@@ -68,7 +68,7 @@ pub fn new_device_token() -> String {
 
 /// Non-loopback addresses a phone could dial, most-useful first:
 /// IPv4 (incl. Tailscale's 100.x), then the Bonjour-resolvable mDNS name.
-fn candidate_hosts() -> Vec<String> {
+pub(crate) fn candidate_hosts() -> Vec<String> {
     let mut hosts: Vec<String> = Vec::new();
     if let Ok(ifaces) = if_addrs::get_if_addrs() {
         for iface in ifaces {
@@ -140,6 +140,15 @@ pub struct PairRequest {
     pub device_name: String,
     #[serde(default)]
     pub platform: Option<String>,
+    /// Desktop-to-desktop pairing: the caller's host identity.
+    #[serde(default)]
+    pub host: Option<HostInfo>,
+    /// Token this server should use when calling the caller back.
+    #[serde(default)]
+    pub reciprocal_token: Option<String>,
+    /// `host:port` candidates for the caller, already pairing-ready.
+    #[serde(default)]
+    pub reciprocal_candidates: Option<Vec<String>>,
 }
 
 #[derive(Serialize)]
@@ -197,6 +206,20 @@ pub async fn pair_handler(
                 .devices
                 .add(device_name, platform, &token)
                 .map_err(|e| err_body(StatusCode::INTERNAL_SERVER_ERROR, &e))?;
+            if platform == "desktop"
+                && let (Some(host), Some(reciprocal_token)) =
+                    (req.host.clone(), req.reciprocal_token.clone())
+            {
+                let candidates = req.reciprocal_candidates.unwrap_or_default();
+                if let Err(e) = ctx.remote.hosts.upsert(host, reciprocal_token, candidates) {
+                    tracing::warn!(
+                        target: "aethon::server::remote",
+                        "desktop reciprocal host store failed: {e}"
+                    );
+                } else {
+                    (ctx.device_changed)(&device);
+                }
+            }
             tracing::info!(
                 target: "aethon::server::remote",
                 "paired device {} ({})", device.id, device.name
@@ -260,6 +283,9 @@ mod tests {
                 code: b.code.clone(),
                 device_name: "iPhone".into(),
                 platform: Some("ios".into()),
+                host: None,
+                reciprocal_token: None,
+                reciprocal_candidates: None,
             }),
         )
         .await
@@ -274,6 +300,9 @@ mod tests {
                 code: b.code,
                 device_name: "iPhone".into(),
                 platform: None,
+                host: None,
+                reciprocal_token: None,
+                reciprocal_candidates: None,
             }),
         )
         .await
@@ -293,6 +322,9 @@ mod tests {
                     code: "00000000".into(),
                     device_name: "x".into(),
                     platform: None,
+                    host: None,
+                    reciprocal_token: None,
+                    reciprocal_candidates: None,
                 }),
             )
             .await
@@ -311,6 +343,9 @@ mod tests {
                 code: b.code,
                 device_name: "x".into(),
                 platform: None,
+                host: None,
+                reciprocal_token: None,
+                reciprocal_candidates: None,
             }),
         )
         .await
@@ -337,6 +372,9 @@ mod tests {
                 code: b.code,
                 device_name: "x".into(),
                 platform: None,
+                host: None,
+                reciprocal_token: None,
+                reciprocal_candidates: None,
             }),
         )
         .await
@@ -355,6 +393,9 @@ mod tests {
                 code: "12345678".into(),
                 device_name: "x".into(),
                 platform: None,
+                host: None,
+                reciprocal_token: None,
+                reciprocal_candidates: None,
             }),
         )
         .await

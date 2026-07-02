@@ -10,12 +10,12 @@
 //! When the identity can't be created (unwritable user dir) it degrades
 //! to the legacy deterministic placeholder so `host_info` never fails.
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use sha1::{Digest, Sha1};
 
 use crate::env;
 
-#[derive(Debug, Serialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct HostInfo {
     pub id: String,
     pub hostname: String,

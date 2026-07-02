@@ -10,6 +10,7 @@ use std::sync::Arc;
 use tauri::{Emitter, State};
 
 use crate::server::ServerState;
+use crate::server::remote::hosts::PairedHostView;
 use crate::server::remote::pairing::{self, PairingBegin};
 use crate::server::remote::{RemoteState, devices::DeviceView};
 
@@ -101,4 +102,144 @@ pub fn remote_device_rename(
     remote.devices.rename(&id, &name)?;
     let _ = app.emit("remote-devices-changed", serde_json::json!({ "id": id }));
     Ok(())
+}
+
+#[tauri::command]
+pub fn remote_hosts_list(
+    remote: State<'_, Arc<RemoteState>>,
+) -> Result<Vec<PairedHostView>, String> {
+    Ok(remote.hosts.list())
+}
+
+fn candidate_with_port(host: &str, port: u16) -> String {
+    if host
+        .rsplit_once(':')
+        .is_some_and(|(_, p)| p.parse::<u16>().is_ok())
+    {
+        host.to_string()
+    } else {
+        format!("{host}:{port}")
+    }
+}
+
+#[tauri::command]
+pub async fn remote_host_pair(
+    host: String,
+    fingerprint: String,
+    code: String,
+    server: State<'_, Arc<ServerState>>,
+    remote: State<'_, Arc<RemoteState>>,
+    app: tauri::AppHandle,
+) -> Result<PairedHostView, String> {
+    let local_info = crate::commands::host::local_host_info();
+    let Some(port) = server.port().await else {
+        return Err("local server is not running — start it before pairing a desktop host".into());
+    };
+    let reciprocal_token = pairing::new_device_token();
+    let reciprocal_candidates = pairing::candidate_hosts()
+        .into_iter()
+        .map(|h| candidate_with_port(&h, port))
+        .collect::<Vec<_>>();
+    let local_name = local_info.display_name.clone();
+    let (token, remote_info) = crate::server::remote::client::pair_desktop(
+        &host,
+        &fingerprint,
+        &code,
+        &local_name,
+        &local_info,
+        &reciprocal_token,
+        reciprocal_candidates,
+    )
+    .await?;
+    let view = remote
+        .hosts
+        .upsert(remote_info.clone(), token, vec![host.clone()])?;
+    let _ = remote
+        .devices
+        .add(&remote_info.display_name, "desktop", &reciprocal_token);
+    let _ = app.emit("remote-hosts-changed", serde_json::json!({ "id": view.id }));
+    Ok(view)
+}
+
+#[tauri::command]
+pub fn remote_host_forget(
+    id: String,
+    remote: State<'_, Arc<RemoteState>>,
+    app: tauri::AppHandle,
+) -> Result<(), String> {
+    remote.hosts.forget(&id)?;
+    let _ = app.emit("remote-hosts-changed", serde_json::json!({ "id": id }));
+    Ok(())
+}
+
+#[tauri::command]
+pub fn remote_host_rename(
+    id: String,
+    name: String,
+    remote: State<'_, Arc<RemoteState>>,
+    app: tauri::AppHandle,
+) -> Result<(), String> {
+    remote.hosts.rename(&id, &name)?;
+    let _ = app.emit("remote-hosts-changed", serde_json::json!({ "id": id }));
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn remote_host_reconnect(
+    id: String,
+    remote: State<'_, Arc<RemoteState>>,
+    app: tauri::AppHandle,
+) -> Result<(), String> {
+    let host = remote
+        .hosts
+        .get(&id)
+        .ok_or_else(|| format!("unknown remote host {id}"))?;
+    crate::server::remote::client::invoke(&host, "host_info", serde_json::json!({})).await?;
+    let _ = app.emit("remote-hosts-changed", serde_json::json!({ "id": id }));
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn remote_host_invoke(
+    id: String,
+    cmd: String,
+    #[allow(non_snake_case)] args: serde_json::Value,
+    remote: State<'_, Arc<RemoteState>>,
+) -> Result<serde_json::Value, String> {
+    let host = remote
+        .hosts
+        .get(&id)
+        .ok_or_else(|| format!("unknown remote host {id}"))?;
+    crate::server::remote::client::invoke(&host, &cmd, args).await
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RemoteProjectSnapshot {
+    pub host_id: String,
+    pub projects: serde_json::Value,
+}
+
+#[tauri::command]
+pub async fn remote_host_project_snapshot(
+    id: String,
+    remote: State<'_, Arc<RemoteState>>,
+) -> Result<RemoteProjectSnapshot, String> {
+    let data = remote_host_invoke(
+        id.clone(),
+        "read_state".into(),
+        serde_json::json!({ "name": "projects.json" }),
+        remote,
+    )
+    .await?;
+    let raw = data.as_str().unwrap_or("");
+    let projects = if raw.trim().is_empty() {
+        serde_json::json!({})
+    } else {
+        serde_json::from_str(raw).map_err(|e| format!("remote projects.json: {e}"))?
+    };
+    Ok(RemoteProjectSnapshot {
+        host_id: id,
+        projects,
+    })
 }

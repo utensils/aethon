@@ -223,6 +223,13 @@ pub const COMMAND_POLICIES: &[(&str, RemotePolicy)] = &[
     ("remote_devices_list", Deny(GATEWAY_ADMIN)),
     ("remote_device_revoke", Deny(GATEWAY_ADMIN)),
     ("remote_device_rename", Deny(GATEWAY_ADMIN)),
+    ("remote_hosts_list", Deny(GATEWAY_ADMIN)),
+    ("remote_host_pair", Deny(GATEWAY_ADMIN)),
+    ("remote_host_forget", Deny(GATEWAY_ADMIN)),
+    ("remote_host_rename", Deny(GATEWAY_ADMIN)),
+    ("remote_host_reconnect", Deny(GATEWAY_ADMIN)),
+    ("remote_host_project_snapshot", Deny(GATEWAY_ADMIN)),
+    ("remote_host_invoke", Deny(GATEWAY_ADMIN)),
     // window/updater/boot
     ("updater_available", Deny(DESKTOP_ONLY)),
     ("toggle_fullscreen", Deny(DESKTOP_ONLY)),

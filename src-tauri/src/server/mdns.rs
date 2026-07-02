@@ -14,7 +14,7 @@ use std::time::Duration;
 
 use mdns_sd::{ServiceDaemon, ServiceEvent, ServiceInfo};
 use serde::Serialize;
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 
 const SERVICE_TYPE: &str = "_aethon._tcp.local.";
 const DEBOUNCE: Duration = Duration::from_millis(250);
@@ -28,6 +28,7 @@ pub struct DiscoveredHost {
     pub port: u16,
     #[serde(rename = "fingerprintPrefix")]
     pub fingerprint_prefix: String,
+    pub candidates: Vec<String>,
     #[serde(rename = "lastSeen")]
     pub last_seen: u64,
 }
@@ -47,12 +48,15 @@ pub fn advertise(
     let mdns = ServiceDaemon::new()?;
     let hostname = local_mdns_hostname().unwrap_or_else(|| "localhost.local".to_string());
     let host_label = hostname.trim_end_matches(".local");
-    let instance_name = format!("{display_name} ({host_label})");
+    let suffix = &fingerprint[..fingerprint.len().min(8)];
+    let instance_name = format!("{display_name} ({host_label}, {suffix})");
     let version = env!("CARGO_PKG_VERSION");
+    let local_info = crate::commands::host::local_host_info();
     let props = [
         ("version", version),
         ("name", display_name),
         ("fingerprint", fingerprint),
+        ("hostId", local_info.id.as_str()),
     ];
     let service = ServiceInfo::new(
         SERVICE_TYPE,
@@ -177,12 +181,19 @@ pub fn start_browser(app: AppHandle) -> Result<(), String> {
                     };
                     let host = DiscoveredHost {
                         id: id.clone(),
-                        hostname,
+                        hostname: hostname.clone(),
                         display_name: display,
                         port,
                         fingerprint_prefix: fingerprint,
+                        candidates: vec![format!("{hostname}:{port}")],
                         last_seen: now_ms(),
                     };
+                    if let Some(remote) =
+                        app.try_state::<std::sync::Arc<crate::server::remote::RemoteState>>()
+                    {
+                        let _ = remote.hosts.touch_candidates(&id, host.candidates.clone());
+                        let _ = app.emit("remote-hosts-changed", HostRemoved { id: id.clone() });
+                    }
                     fullname_to_id.insert(fullname, id.clone());
                     pending.insert(id, host);
                     next_flush = Some(tokio::time::Instant::now() + DEBOUNCE);

@@ -9,8 +9,10 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
+pub mod client;
 pub mod devices;
 pub mod events;
+pub mod hosts;
 pub mod pairing;
 pub mod policy;
 pub mod protocol;
@@ -22,6 +24,7 @@ mod integration_tests;
 
 use devices::DeviceStore;
 use events::EventHub;
+use hosts::PairedHostStore;
 use pairing::PairingSession;
 use tokio::sync::Notify;
 
@@ -29,6 +32,7 @@ use tokio::sync::Notify;
 /// axum router; owns everything the gateway needs across connections.
 pub struct RemoteState {
     pub devices: DeviceStore,
+    pub hosts: PairedHostStore,
     pub pairing: Mutex<Option<PairingSession>>,
     pub hub: Arc<EventHub>,
     /// Live-connection close signals keyed by device id, so revocation
@@ -47,8 +51,10 @@ impl RemoteState {
     }
 
     fn with_store(devices: DeviceStore) -> Self {
+        let remote_dir = crate::server::tls::default_remote_dir();
         Self {
             devices,
+            hosts: PairedHostStore::load(remote_dir),
             pairing: Mutex::new(None),
             hub: Arc::new(EventHub::new()),
             live: Mutex::new(HashMap::new()),
@@ -59,7 +65,14 @@ impl RemoteState {
     /// Ephemeral state for tests.
     #[cfg(test)]
     pub fn in_memory() -> Self {
-        Self::with_store(DeviceStore::load(None))
+        Self {
+            devices: DeviceStore::load(None),
+            hosts: PairedHostStore::load(None),
+            pairing: Mutex::new(None),
+            hub: Arc::new(EventHub::new()),
+            live: Mutex::new(HashMap::new()),
+            rate: Mutex::new(HashMap::new()),
+        }
     }
 
     /// Register a live connection; the returned handle fires when the
