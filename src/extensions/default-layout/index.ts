@@ -13,6 +13,7 @@ import {
   EditorCanvas,
   DiffCanvas,
   EmptyState,
+  MobileDeviceLanding,
   WorkspaceLanding,
   FileTreePanel,
   ImageViewer,
@@ -121,6 +122,7 @@ export const defaultLayoutExtension: A2UIExtension = {
     "tool-card": ToolCard,
     "subagent-result": SubagentResult,
     "empty-state": EmptyState,
+    "mobile-device-landing": MobileDeviceLanding,
     // Workspace landing page — shown when the user clicks a workspace in
     // the sidebar but hasn't yet started a session. Mirrors EmptyState
     // shape but scoped to a single workspace (cwd + branch + GitHub

@@ -5,7 +5,7 @@
 //   3. Manual host + token + fingerprint (collapsed) — the permanent
 //      fallback and the browser dev-loop path.
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 import { isTauriRuntime } from "../gateway/rustBridgeAdapter";
 import type { MobileConnection } from "./mobileConnection";
@@ -17,10 +17,12 @@ type Phase = "idle" | "scanning" | "pairing";
 
 export function ConnectScreen({
   initial,
+  remembered = [],
   error,
   onConnect,
 }: {
   initial: MobileConnection | null;
+  remembered?: MobileConnection[];
   error: string | null;
   onConnect: (connection: MobileConnection) => void;
 }) {
@@ -34,10 +36,27 @@ export function ConnectScreen({
 
   const native = isTauriRuntime();
   const nearby = useNearbyDesktops(native && phase === "idle");
+  // Synchronous re-entry guard: the 8th-digit auto-pair and the submit
+  // button can both fire within one render, before `phase` updates.
+  const pairingRef = useRef(false);
 
   const canConnect = host.trim().length > 0 && token.trim().length > 0;
+  const selectedDesktop = codeFor;
+  const canPairCode = selectedDesktop !== null && code.length === 8 && phase !== "pairing";
+
+  const pairDesktop = (desktop: DiscoveredDesktop, value: string) =>
+    finishPairing(() =>
+      pairWithHosts({
+        hosts: [desktop.host],
+        port: desktop.port,
+        fingerprint: desktop.fingerprint,
+        code: value,
+      }),
+    );
 
   const finishPairing = async (run: () => ReturnType<typeof pairWithHosts>) => {
+    if (pairingRef.current) return;
+    pairingRef.current = true;
     setPhase("pairing");
     setPairError(null);
     try {
@@ -48,6 +67,7 @@ export function ConnectScreen({
     } catch (err) {
       setPairError(pairErrorMessage(classifyPairError(err)));
     } finally {
+      pairingRef.current = false;
       setPhase("idle");
     }
   };
@@ -84,6 +104,31 @@ export function ConnectScreen({
         {error ? <p className="ae-mobile-connect-error">{error}</p> : null}
         {pairError ? <p className="ae-mobile-connect-error">{pairError}</p> : null}
 
+        {remembered.length > 0 ? (
+          <section className="ae-mobile-remembered" aria-label="Paired hosts">
+            <h2 className="ae-mobile-section-title">Paired hosts</h2>
+            <div className="ae-mobile-remembered-list">
+              {remembered.map((saved) => (
+                <button
+                  key={saved.fingerprint || saved.host}
+                  type="button"
+                  className="ae-mobile-remembered-row"
+                  disabled={phase === "pairing"}
+                  onClick={() => {
+                    setPairError(null);
+                    onConnect(saved);
+                  }}
+                >
+                  <span className="ae-mobile-remembered-name">
+                    {saved.name || saved.host}
+                  </span>
+                  <span className="ae-mobile-remembered-meta">{saved.host}</span>
+                </button>
+              ))}
+            </div>
+          </section>
+        ) : null}
+
         {native ? (
           <button
             type="button"
@@ -100,7 +145,7 @@ export function ConnectScreen({
 
         {native ? (
           <div className="ae-mobile-nearby" data-testid="nearby-desktops">
-            <h2 className="ae-mobile-nearby-title">
+            <h2 className="ae-mobile-section-title">
               Nearby desktops
               {nearby.scanning ? <span className="ae-mobile-nearby-spinner" aria-hidden /> : null}
             </h2>
@@ -130,34 +175,41 @@ export function ConnectScreen({
                       </span>
                     </button>
                     {codeFor?.id === desktop.id ? (
-                      <div className="ae-mobile-nearby-code">
+                      <form
+                        className="ae-mobile-nearby-code"
+                        onSubmit={(e) => {
+                          e.preventDefault();
+                          if (!canPairCode) return;
+                          void pairDesktop(selectedDesktop, code);
+                        }}
+                      >
                         <input
                           className="ae-mobile-input"
                           inputMode="numeric"
+                          enterKeyHint="done"
+                          pattern="[0-9]*"
                           autoComplete="one-time-code"
                           maxLength={8}
                           placeholder="8-digit code"
+                          aria-label={`Pairing code for ${desktop.name}`}
                           value={code}
-                          onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
+                          onChange={(e) => {
+                            const next = e.target.value.replace(/\D/g, "").slice(0, 8);
+                            setCode(next);
+                            if (next.length === 8 && phase !== "pairing") {
+                              e.currentTarget.blur();
+                              void pairDesktop(desktop, next);
+                            }
+                          }}
                         />
                         <button
-                          type="button"
+                          type="submit"
                           className="ae-mobile-connect-button"
-                          disabled={code.length !== 8 || phase === "pairing"}
-                          onClick={() =>
-                            void finishPairing(() =>
-                              pairWithHosts({
-                                hosts: [desktop.hostname],
-                                port: desktop.port,
-                                fingerprint: desktop.fingerprint,
-                                code,
-                              }),
-                            )
-                          }
+                          disabled={!canPairCode}
                         >
-                          {phase === "pairing" ? "Pairing…" : "Pair"}
+                          {phase === "pairing" ? "Pairing…" : "Pair device"}
                         </button>
-                      </div>
+                      </form>
                     ) : null}
                   </li>
                 ))}

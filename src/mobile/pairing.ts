@@ -139,6 +139,7 @@ export function pairWithHosts(opts: {
               host,
               token: outcome.deviceToken,
               fingerprint: opts.fingerprint || undefined,
+              name: outcome.hostDisplayName || undefined,
             },
             outcome,
           });

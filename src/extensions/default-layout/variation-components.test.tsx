@@ -22,7 +22,12 @@ vi.mock("../../auth-profiles", async (importOriginal) => {
   };
 });
 
-import { AccountSelector, ModelPicker, VcsStatus } from "./variation-components";
+import {
+  AccountSelector,
+  DropdownPickerCore,
+  ModelPicker,
+  VcsStatus,
+} from "./variation-components";
 
 beforeEach(() => {
   vi.stubGlobal("requestAnimationFrame", (cb: FrameRequestCallback) => {
@@ -39,6 +44,47 @@ afterEach(() => {
 });
 
 describe("ModelPicker", () => {
+  it("keeps the portal dropdown inside the viewport on narrow screens", () => {
+    vi.stubGlobal("innerWidth", 220);
+    vi.stubGlobal("innerHeight", 640);
+    const rectSpy = vi
+      .spyOn(HTMLElement.prototype, "getBoundingClientRect")
+      .mockReturnValue({
+        x: 168,
+        y: 20,
+        top: 20,
+        left: 168,
+        bottom: 54,
+        right: 216,
+        width: 48,
+        height: 34,
+        toJSON: () => ({}),
+      });
+
+    render(
+      <DropdownPickerCore
+        buttonLabel="GPT-5.5"
+        align="right"
+        sections={[
+          {
+            id: "models",
+            title: "models",
+            items: [{ id: "openai/gpt-5.5", label: "GPT-5.5" }],
+          },
+        ]}
+        onSelect={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /GPT-5.5/i }));
+
+    const panel = screen.getByRole("listbox");
+    expect(panel.style.left).toBe("8px");
+    expect(panel.style.width).toBe("204px");
+    expect(panel.style.right).toBe("");
+    rectSpy.mockRestore();
+  });
+
   it("emits the selected model id from the rendered dropdown", () => {
     const onEvent = vi.fn();
     render(

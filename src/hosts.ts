@@ -22,6 +22,8 @@ export interface Host {
   port?: number;
   paired?: boolean;
   lastSeen?: number;
+  createdAt?: number;
+  connected?: boolean;
 }
 
 const FILE = "hosts.json";

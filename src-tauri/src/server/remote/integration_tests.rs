@@ -31,9 +31,14 @@ async fn spawn_gateway() -> Harness {
         },
         remote: Arc::clone(&remote),
         relay: Arc::new(EchoRelay),
+        device_changed: Arc::new(|_| {}),
     };
-    let router =
-        crate::server::http::router(ctx.info.clone(), ctx.remote.clone(), ctx.relay.clone());
+    let router = crate::server::http::router(
+        ctx.info.clone(),
+        ctx.remote.clone(),
+        ctx.relay.clone(),
+        ctx.device_changed.clone(),
+    );
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
     tokio::spawn(async move {

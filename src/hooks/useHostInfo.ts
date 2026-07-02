@@ -9,9 +9,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { getLocalHost, type Host } from "../hosts";
+import { remoteDevicesList, type RemoteDevice } from "../services/remote";
 
 export interface UseHostInfo {
   hosts: Host[];
+  mobileDevices: Host[];
   activeHostId: string | null;
   /** Stable across renders — wire directly into event-route ctx without
    *  needing a ref bridge. */
@@ -22,11 +24,50 @@ export interface UseHostInfo {
 export function useHostInfo(): UseHostInfo {
   const [localHost, setLocalHost] = useState<Host | null>(null);
   const remotesRef = useRef<Map<string, Host>>(new Map());
+  const devicesRef = useRef<Map<string, Host>>(new Map());
   const [remotes, setRemotes] = useState<Host[]>([]);
+  const [devices, setDevices] = useState<Host[]>([]);
   const [activeHostId, setActiveHostState] = useState<string | null>(null);
 
   function emitRemotes(): void {
     setRemotes(Array.from(remotesRef.current.values()));
+  }
+
+  function emitDevices(): void {
+    setDevices(Array.from(devicesRef.current.values()));
+  }
+
+  function deviceHost(device: RemoteDevice): Host | null {
+    if (!device.id || device.revoked) return null;
+    const platform = device.platform || "mobile";
+    return {
+      id: `device:${device.id}`,
+      hostname: platform,
+      displayName: device.name || platform,
+      isLocal: false,
+      paired: true,
+      connected: device.connected === true,
+      createdAt: device.createdAt,
+      lastSeen: device.lastSeenAt,
+    };
+  }
+
+  function hostsEqual(a: Host[], b: Host[]): boolean {
+    if (a.length !== b.length) return false;
+    return a.every((host, index) => {
+      const other = b[index];
+      return (
+        other &&
+        host.id === other.id &&
+        host.hostname === other.hostname &&
+        host.displayName === other.displayName &&
+        host.isLocal === other.isLocal &&
+        host.paired === other.paired &&
+        host.connected === other.connected &&
+        host.createdAt === other.createdAt &&
+        host.lastSeen === other.lastSeen
+      );
+    });
   }
 
   useEffect(() => {
@@ -80,6 +121,48 @@ export function useHostInfo(): UseHostInfo {
     };
   }, [localHost?.id]);
 
+  useEffect(() => {
+    let cancelled = false;
+    async function refreshDevices(): Promise<void> {
+      try {
+        const list = await remoteDevicesList();
+        if (cancelled || !Array.isArray(list)) return;
+        const next = new Map<string, Host>();
+        for (const device of list) {
+          const host = deviceHost(device);
+          if (host) next.set(host.id, host);
+        }
+        const nextHosts = Array.from(next.values());
+        if (!hostsEqual(Array.from(devicesRef.current.values()), nextHosts)) {
+          devicesRef.current = next;
+          emitDevices();
+        }
+      } catch {
+        // Transient IPC failure (server restart, teardown) — keep the
+        // last-known list rather than blanking the sidebar section; the
+        // next event/poll tick reconciles.
+      }
+    }
+    void refreshDevices();
+    let off: UnlistenFn | null = null;
+    void listen("remote-devices-changed", () => {
+      void refreshDevices();
+    })
+      .then((fn) => {
+        if (cancelled) fn();
+        else off = fn;
+      })
+      .catch(() => {
+        // Running outside Tauri (tests, plain browser) — fallback poll below.
+      });
+    const timer = window.setInterval(refreshDevices, 30_000);
+    return () => {
+      cancelled = true;
+      off?.();
+      window.clearInterval(timer);
+    };
+  }, []);
+
   const hosts: Host[] = localHost ? [localHost, ...remotes] : remotes;
   const setActiveHost = useCallback((id: string | null) => {
     setActiveHostState(id);
@@ -87,6 +170,7 @@ export function useHostInfo(): UseHostInfo {
 
   return {
     hosts,
+    mobileDevices: devices,
     activeHostId,
     setActiveHost,
     localHostId: localHost?.id ?? null,

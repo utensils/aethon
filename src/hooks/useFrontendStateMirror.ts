@@ -103,6 +103,10 @@ export function useFrontendStateMirror(
         status: state.status ?? "",
         connection: state.connection ?? "disconnected",
         waiting: state.waiting === true,
+        theme:
+          typeof document !== "undefined"
+            ? document.documentElement.dataset.theme ?? ""
+            : "",
         model: state.model ?? "",
         activeTabId: state.activeTabId ?? null,
         authProfiles: state.authProfiles ?? { profiles: [] },

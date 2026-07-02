@@ -37,6 +37,8 @@ pub struct DeviceView {
     pub created_at: i64,
     pub last_seen_at: i64,
     pub revoked: bool,
+    #[serde(default)]
+    pub connected: bool,
 }
 
 impl From<&DeviceRecord> for DeviceView {
@@ -48,6 +50,7 @@ impl From<&DeviceRecord> for DeviceView {
             created_at: r.created_at,
             last_seen_at: r.last_seen_at,
             revoked: r.revoked,
+            connected: false,
         }
     }
 }

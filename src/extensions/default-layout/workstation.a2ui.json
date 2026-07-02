@@ -98,6 +98,12 @@
                     "actions": [
                       { "id": "open-project", "label": "Open project…" }
                     ]
+                  },
+                  {
+                    "id": "mobile-devices",
+                    "title": "mobile devices",
+                    "items": { "$ref": "/sidebar/mobileDevices" },
+                    "hideWhenEmpty": true
                   }
                 ],
                 "extraSections": { "$ref": "/sidebar/extraSections" }
@@ -174,6 +180,15 @@
             "activeWorkspaceId": { "$ref": "/activeWorkspaceId" },
             "recentSessions": { "$ref": "/projectDashboard/recentSessions" },
             "widgets": { "$ref": "/projectDashboard/widgets" }
+          }
+        },
+        {
+          "id": "mobile-device-landing",
+          "type": "mobile-device-landing",
+          "props": {
+            "area": "canvas",
+            "visible": { "$ref": "/mobileDeviceLandingVisible" },
+            "landing": { "$ref": "/landing" }
           }
         },
         {

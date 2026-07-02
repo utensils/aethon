@@ -1062,6 +1062,14 @@ body.ae-resizing-sidebar .a2ui-layout {
   background: var(--bg-active);
   border-radius: 4px;
 }
+.a2ui-sidebar-item-icon--phone {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-radius: 5px;
+}
 .a2ui-sidebar-item-stack {
   display: flex;
   flex-direction: column;

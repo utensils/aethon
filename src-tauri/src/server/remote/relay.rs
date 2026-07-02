@@ -135,6 +135,9 @@ pub const DISPATCHABLE: &[&str] = &[
     "git_show_head",
     "git_diff_stat",
     "git_worktrees",
+    "git_worktree_add",
+    "git_worktree_remove",
+    "git_worktree_remove_orphan",
     "git_branch_list",
     "gh_branch_status",
     "gh_checks",
@@ -142,6 +145,7 @@ pub const DISPATCHABLE: &[&str] = &[
     "gh_repo_avatar_url",
     "gh_issue_list",
     "gh_issue_view",
+    "read_issue_templates",
 ];
 
 fn arg<T: serde::de::DeserializeOwned>(args: &Value, key: &str) -> Result<T, String> {
@@ -478,6 +482,30 @@ impl TauriRelay {
             "git_worktrees" => to_value(
                 crate::commands::git::worktrees::git_worktrees(arg(&args, "projectPath")?).await?,
             ),
+            "git_worktree_add" => to_value(
+                crate::commands::git::worktrees::git_worktree_add(
+                    arg(&args, "projectPath")?,
+                    arg(&args, "targetPath")?,
+                    arg(&args, "branch")?,
+                    arg::<Option<String>>(&args, "base")?,
+                )
+                .await?,
+            ),
+            "git_worktree_remove" => to_value(
+                crate::commands::git::worktrees::git_worktree_remove(
+                    arg(&args, "projectPath")?,
+                    arg(&args, "worktreePath")?,
+                    arg::<Option<bool>>(&args, "force")?.unwrap_or(false),
+                )
+                .await?,
+            ),
+            "git_worktree_remove_orphan" => to_value(
+                crate::commands::git::worktrees::git_worktree_remove_orphan(
+                    arg(&args, "projectPath")?,
+                    arg(&args, "worktreePath")?,
+                )
+                .await?,
+            ),
             "git_branch_list" => to_value(
                 crate::commands::git::worktrees::git_branch_list(arg(&args, "projectPath")?)
                     .await?,
@@ -516,6 +544,9 @@ impl TauriRelay {
                 )
                 .await?,
             ),
+            "read_issue_templates" => to_value(crate::commands::config::read_issue_templates(
+                arg(&args, "projectPath")?,
+            )?),
             other => Err(format!(
                 "no dispatch arm for `{other}` — policy table and relay disagree"
             )),

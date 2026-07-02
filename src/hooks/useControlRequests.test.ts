@@ -127,6 +127,36 @@ describe("useControlRequests", () => {
     );
   });
 
+  it("applies remote theme requests through the desktop theme setter", async () => {
+    const setTheme = vi.fn();
+    renderHook(() =>
+      useControlRequests({
+        stateRef: { current: {} },
+        pendingTabOpens: { current: new Map() },
+        newTab: vi.fn(),
+        closeTabNow: vi.fn(),
+        setActiveTab: vi.fn(),
+        updateTab: vi.fn(),
+        setTheme,
+        sendChat: vi.fn(),
+        stopPrompt: vi.fn(),
+      }),
+    );
+
+    harness.fireEvent("control-request", {
+      requestId: "control-theme",
+      method: "theme.set",
+      params: { id: "brink" },
+    });
+
+    await waitFor(() => expect(setTheme).toHaveBeenCalledWith("brink"));
+    expect(harness.invoke).toHaveBeenCalledWith("control_request_complete", {
+      requestId: "control-theme",
+      success: true,
+      data: { id: "brink" },
+    });
+  });
+
   it("blocks chat.send --wait until the turn's terminal event resolves it", async () => {
     const stateRef = { current: { activeTabId: "t1", tabs: [tab()] } };
     const sendChat = vi.fn(() => Promise.resolve());

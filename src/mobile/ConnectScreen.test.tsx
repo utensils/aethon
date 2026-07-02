@@ -20,7 +20,7 @@ import { ConnectScreen } from "./ConnectScreen";
 const DESKTOP = {
   id: "remote:ff",
   name: "halcyon",
-  host: "halcyon.local:48213",
+  host: "192.168.1.142:48213",
   hostname: "halcyon.local",
   port: 48213,
   fingerprint: "ff".repeat(32),
@@ -81,17 +81,17 @@ describe("ConnectScreen", () => {
     fireEvent.change(screen.getByPlaceholderText("8-digit code"), {
       target: { value: "12345678" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Pair" }));
 
     await waitFor(() =>
       expect(onConnect).toHaveBeenCalledWith({
-        host: "halcyon.local:48213",
+        host: "192.168.1.142:48213",
         token: "tok-paired",
         fingerprint: DESKTOP.fingerprint,
+        name: "halcyon",
       }),
     );
     expect(invokeMock).toHaveBeenCalledWith("gateway_pair", {
-      host: "halcyon.local:48213",
+      host: "192.168.1.142:48213",
       fingerprint: DESKTOP.fingerprint,
       code: "12345678",
       deviceName: "iPhone",
@@ -114,9 +114,36 @@ describe("ConnectScreen", () => {
     fireEvent.change(screen.getByPlaceholderText("8-digit code"), {
       target: { value: "12345678" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Pair" }));
 
     await waitFor(() => expect(screen.getByText(/Pairing window expired/)).toBeDefined());
     expect(onConnect).not.toHaveBeenCalled();
+  });
+
+  it("offers remembered paired hosts for reconnect", () => {
+    const onConnect = vi.fn();
+    render(
+      <ConnectScreen
+        initial={null}
+        remembered={[
+          {
+            host: "halcyon.local:48213",
+            token: "tok-remembered",
+            fingerprint: DESKTOP.fingerprint,
+            name: "halcyon",
+          },
+        ]}
+        error={null}
+        onConnect={onConnect}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /halcyon/ }));
+
+    expect(onConnect).toHaveBeenCalledWith({
+      host: "halcyon.local:48213",
+      token: "tok-remembered",
+      fingerprint: DESKTOP.fingerprint,
+      name: "halcyon",
+    });
   });
 });

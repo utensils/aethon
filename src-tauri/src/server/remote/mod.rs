@@ -89,6 +89,16 @@ impl RemoteState {
         }
     }
 
+    pub fn is_device_live(&self, device_id: &str) -> bool {
+        self.live
+            .lock()
+            .map(|live| {
+                live.get(device_id)
+                    .is_some_and(|handles| !handles.is_empty())
+            })
+            .unwrap_or(false)
+    }
+
     /// Record an invoke against the device's shared rate budget;
     /// `false` when its current window is exhausted. Fails open on a
     /// poisoned lock — the limiter is flood protection, not auth, and
@@ -147,4 +157,5 @@ pub struct GatewayCtx {
     pub info: crate::commands::host::HostInfo,
     pub remote: Arc<RemoteState>,
     pub relay: Arc<dyn relay::RelayExec>,
+    pub device_changed: Arc<dyn Fn(&devices::DeviceView) + Send + Sync>,
 }

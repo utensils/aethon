@@ -18,6 +18,7 @@ export interface RemoteDevice {
   createdAt: number;
   lastSeenAt: number;
   revoked: boolean;
+  connected?: boolean;
 }
 
 /** What `remote_pairing_begin` returns: a one-time code + the QR the

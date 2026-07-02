@@ -19,20 +19,33 @@ sim_app="src-tauri/gen/apple/build/arm64-sim/Aethon.app"
 # devshell deliberately doesn't carry them.
 export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
 
+# Host-side Rust build scripts still compile for macOS while the app
+# itself cross-compiles for iOS. On nix-darwin, plain `cc` can resolve to
+# the Nix GCC wrapper, which cannot see Xcode's SDK libiconv.tbd. Pin the
+# host tools to Apple's clang so build scripts link against the active SDK.
+apple_cc="/usr/bin/cc"
+apple_cxx="/usr/bin/c++"
+export CC="${CC:-$apple_cc}"
+export CXX="${CXX:-$apple_cxx}"
+export CARGO_TARGET_AARCH64_APPLE_DARWIN_LINKER="${CARGO_TARGET_AARCH64_APPLE_DARWIN_LINKER:-$apple_cc}"
+export RUSTC_LINKER="${RUSTC_LINKER:-$apple_cc}"
+if [ -z "${SDKROOT:-}" ]; then
+  export SDKROOT="$(xcrun --sdk macosx --show-sdk-path 2>/dev/null || true)"
+fi
+
 # Cross-compiling C deps (ring's curve25519.c, etc.) for the iOS targets
 # must use Apple's unwrapped clang. The Nix cc-wrapper injects
 # `-mmacos-version-min=…`, which clang rejects alongside
 # `-mios-simulator-version-min=…` ("not allowed with"). Point cc-rs +
 # rustc's link step at /usr/bin/clang for the iOS triples only — the
 # desktop build's /usr/bin/cc pin (flake.nix) is untouched.
-apple_clang="/usr/bin/clang"
 for triple in aarch64_apple_ios aarch64_apple_ios_sim x86_64_apple_ios; do
-  export "CC_${triple}=${apple_clang}"
-  export "CXX_${triple}=${apple_clang}++"
+  export "CC_${triple}=/usr/bin/clang"
+  export "CXX_${triple}=/usr/bin/clang++"
 done
-export CARGO_TARGET_AARCH64_APPLE_IOS_LINKER="$apple_clang"
-export CARGO_TARGET_AARCH64_APPLE_IOS_SIM_LINKER="$apple_clang"
-export CARGO_TARGET_X86_64_APPLE_IOS_LINKER="$apple_clang"
+export CARGO_TARGET_AARCH64_APPLE_IOS_LINKER="/usr/bin/clang"
+export CARGO_TARGET_AARCH64_APPLE_IOS_SIM_LINKER="/usr/bin/clang"
+export CARGO_TARGET_X86_64_APPLE_IOS_LINKER="/usr/bin/clang"
 
 if ! command -v xcodebuild >/dev/null 2>&1; then
   echo "error: xcodebuild not found — install Xcode (xcode-select --install or the App Store)." >&2
@@ -65,6 +78,77 @@ pick_device() {
 device_udid() {
   xcrun simctl list devices available | grep -F "$1 (" |
     grep -oE '[0-9A-F-]{36}' | head -1
+}
+
+# CoreDevice identifiers are not the same shape as simulator UDIDs, and
+# `devicectl list devices` output changes just enough between Xcode releases
+# that grepping the pretty table is brittle. Parse the JSON and prefer a
+# connected, paired, physical iPhone. Echoes tab-separated:
+#   identifier  display-name  marketing-name  transport
+pick_physical_ios_device() {
+  if [ -n "${AETHON_IOS_UDID:-}" ]; then
+    printf '%s\t%s\t%s\t%s\n' "$AETHON_IOS_UDID" "override" "AETHON_IOS_UDID" "manual"
+    return 0
+  fi
+
+  if ! command -v python3 >/dev/null 2>&1; then
+    echo "error: python3 not found — needed to parse devicectl JSON." >&2
+    echo "       Install the Xcode Command Line Tools (xcode-select --install)," >&2
+    echo "       or set AETHON_IOS_UDID to skip device discovery." >&2
+    return 1
+  fi
+
+  local json_file
+  json_file="$(mktemp -t aethon-devicectl-devices.XXXXXX.json)"
+  if ! xcrun devicectl list devices --json-output "$json_file" >/dev/null; then
+    rm -f "$json_file"
+    return 1
+  fi
+
+  python3 - "$json_file" <<'PY'
+import json
+import sys
+
+path = sys.argv[1]
+with open(path, "r", encoding="utf-8") as fh:
+    data = json.load(fh)
+
+devices = data.get("result", {}).get("devices", [])
+
+def is_connected_iphone(device):
+    hardware = device.get("hardwareProperties") or {}
+    connection = device.get("connectionProperties") or {}
+    product = str(hardware.get("productType") or "")
+    return (
+        bool(device.get("identifier"))
+        and hardware.get("reality") == "physical"
+        and hardware.get("platform") == "iOS"
+        and (hardware.get("deviceType") == "iPhone" or product.startswith("iPhone"))
+        and connection.get("pairingState") == "paired"
+        and connection.get("tunnelState") == "connected"
+    )
+
+matches = [device for device in devices if is_connected_iphone(device)]
+if not matches:
+    sys.exit(1)
+
+matches.sort(
+    key=lambda device: (
+        (device.get("connectionProperties") or {}).get("lastConnectionDate") or ""
+    ),
+    reverse=True,
+)
+device = matches[0]
+hardware = device.get("hardwareProperties") or {}
+connection = device.get("connectionProperties") or {}
+name = (device.get("deviceProperties") or {}).get("name") or "iPhone"
+model = hardware.get("marketingName") or hardware.get("productType") or "iPhone"
+transport = connection.get("transportType") or "connected"
+print(f"{device['identifier']}\t{name}\t{model}\t{transport}")
+PY
+  local status=$?
+  rm -f "$json_file"
+  return "$status"
 }
 
 cd "$app_dir"
@@ -165,11 +249,15 @@ case "$mode" in
       echo "Build Rust Code phase with 'Connection refused'). Then retry ios-device." >&2
       exit 1
     fi
-    udid="${AETHON_IOS_UDID:-$(xcrun devicectl list devices 2>/dev/null | grep -i " connected " | grep -oE '[0-9A-Fa-f-]{36}' | head -1)}"
+    device_info="$(pick_physical_ios_device || true)"
+    IFS=$'\t' read -r udid device_name device_model device_transport <<<"$device_info"
     if [ -z "$udid" ]; then
-      echo "error: no connected iPhone (xcrun devicectl list devices; AETHON_IOS_UDID overrides)" >&2
+      echo "error: no connected physical iPhone found." >&2
+      echo "       xcrun devicectl list devices should show State=connected; AETHON_IOS_UDID overrides." >&2
+      xcrun devicectl list devices >&2 || true
       exit 1
     fi
+    echo "==> selected physical device: $device_name ($device_model, $device_transport) $udid"
     app_path=""
     for candidate in \
       src-tauri/gen/apple/build/arm64/Aethon.ipa \

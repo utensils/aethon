@@ -672,3 +672,153 @@ describe("Sidebar host groups", () => {
     expect(title?.hasAttribute("data-tauri-drag-region")).toBe(true);
   });
 });
+
+describe("Sidebar mobile devices", () => {
+  it("emits device metadata when a phone row is selected", () => {
+    const { onEvent } = renderSidebar({
+      props: {
+        sections: [
+          {
+            id: "mobile-devices",
+            title: "mobile devices",
+            items: [
+              {
+                id: "device:dev-iphone",
+                label: "iPhone",
+                icon: "phone",
+                hint: "connected",
+                platform: "ios",
+                paired: true,
+                connected: true,
+                createdAt: 1_000,
+                lastSeenAt: 2_000,
+              },
+            ],
+          },
+        ],
+      },
+    });
+
+    fireEvent.click(screen.getByText("iPhone").closest("li")!);
+
+    expect(onEvent).toHaveBeenCalledWith(
+      "select",
+      {
+        sectionId: "mobile-devices",
+        itemId: "device:dev-iphone",
+        label: "iPhone",
+        platform: "ios",
+        status: "connected",
+        paired: true,
+        connected: true,
+        createdAt: 1_000,
+        lastSeenAt: 2_000,
+      },
+      "device:dev-iphone",
+    );
+  });
+
+  it("routes phone context menu unpair actions", () => {
+    const { onEvent } = renderSidebar({
+      props: {
+        sections: [
+          {
+            id: "mobile-devices",
+            title: "mobile devices",
+            items: [
+              {
+                id: "device:dev-iphone",
+                label: "iPhone",
+                icon: "phone",
+                hint: "paired",
+              },
+            ],
+          },
+        ],
+      },
+    });
+
+    fireEvent.contextMenu(screen.getByText("iPhone").closest("li")!);
+    fireEvent.click(screen.getByRole("menuitem", { name: /Unpair device/ }));
+    expect(onEvent).not.toHaveBeenCalledWith(
+      "unpair-mobile-device",
+      expect.anything(),
+    );
+    expect(screen.getByText("Unpair device?")).toBeTruthy();
+    fireEvent.click(screen.getByRole("menuitem", { name: /Confirm unpair/ }));
+
+    expect(onEvent).toHaveBeenCalledWith("unpair-mobile-device", {
+      sectionId: "mobile-devices",
+      itemId: "device:dev-iphone",
+      deviceId: "device:dev-iphone",
+      label: "iPhone",
+    });
+  });
+
+  it("cancels phone context menu unpair confirmation", () => {
+    const { onEvent } = renderSidebar({
+      props: {
+        sections: [
+          {
+            id: "mobile-devices",
+            title: "mobile devices",
+            items: [
+              {
+                id: "device:dev-iphone",
+                label: "iPhone",
+                icon: "phone",
+                hint: "paired",
+              },
+            ],
+          },
+        ],
+      },
+    });
+
+    fireEvent.contextMenu(screen.getByText("iPhone").closest("li")!);
+    fireEvent.click(screen.getByRole("menuitem", { name: /Unpair device/ }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /Cancel/ }));
+
+    expect(onEvent).not.toHaveBeenCalledWith(
+      "unpair-mobile-device",
+      expect.anything(),
+    );
+    expect(screen.queryByRole("menu")).toBeNull();
+  });
+
+  it("renames phones from the context menu inline input", () => {
+    const { onEvent } = renderSidebar({
+      props: {
+        sections: [
+          {
+            id: "mobile-devices",
+            title: "mobile devices",
+            items: [
+              {
+                id: "device:dev-iphone",
+                label: "iPhone",
+                icon: "phone",
+                hint: "paired",
+              },
+            ],
+          },
+        ],
+      },
+    });
+
+    fireEvent.contextMenu(screen.getByText("iPhone").closest("li")!);
+    fireEvent.click(screen.getByRole("menuitem", { name: /Rename device/ }));
+    fireEvent.change(screen.getByLabelText("Device name"), {
+      target: { value: "Pocket Aethon" },
+    });
+    fireEvent.submit(screen.getByLabelText("Device name").closest("form")!);
+
+    expect(onEvent).toHaveBeenCalledWith("rename-mobile-device", {
+      sectionId: "mobile-devices",
+      itemId: "device:dev-iphone",
+      deviceId: "device:dev-iphone",
+      label: "Pocket Aethon",
+      previousLabel: "iPhone",
+    });
+  });
+});

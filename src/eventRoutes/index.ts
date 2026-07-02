@@ -49,6 +49,8 @@ import {
   handleSidebarDeleteSession,
   handleSidebarRenameSession,
   handleSidebarToggleExtension,
+  handleSidebarRenameMobileDevice,
+  handleSidebarUnpairMobileDevice,
   handleSectionedSelect,
   handleSidebarToggleProjectExpand,
   handleSidebarCreateWorkspace,
@@ -140,6 +142,8 @@ export const BUILTIN_ROUTE_TABLE: ReadonlyMap<string, readonly EventRouteHandler
       handleSidebarDeleteSession,
       handleSidebarRenameSession,
       handleSidebarToggleExtension,
+      handleSidebarRenameMobileDevice,
+      handleSidebarUnpairMobileDevice,
       handleSectionedSelect,
     ]],
     ["type:model-picker", [handleSectionedSelect]],
@@ -149,6 +153,8 @@ export const BUILTIN_ROUTE_TABLE: ReadonlyMap<string, readonly EventRouteHandler
     // Companion (mobile) navigation + sessions screen. Inert on desktop
     // (these component types never appear in the workstation layout).
     ["type:mobile-nav", [handleMobileNav]],
+    ["type:mobile-projects", [handleMobileNav]],
+    ["type:mobile-project-detail", [handleMobileNav]],
     ["type:mobile-sessions", [handleMobileNav]],
     ["type:mobile-file-list", [handleMobileNav]],
     ["type:mobile-file-viewer", [handleMobileNav]],

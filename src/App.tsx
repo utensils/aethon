@@ -599,6 +599,7 @@ export default function App() {
     closeTabNow,
     setActiveTab,
     updateTab: updateTabRouted,
+    setTheme,
     sendChat,
     stopPrompt,
   });

@@ -8,13 +8,31 @@
 // types never appear in the workstation layout.
 
 import type { EventRouteHandler } from "./types";
+import { handleProjectDashboard, launchStartTask } from "./dashboard";
 import { restoreSessionFromSelection } from "./sessionRestore";
+import {
+  handleSectionedSelect,
+  handleSidebarStartSession,
+  handleSidebarSwitchWorkspace,
+} from "./sidebar";
 
-type Screen = "sessions" | "chat" | "terminal" | "files" | "git" | "settings";
+type Screen =
+  | "projects"
+  | "project-detail"
+  | "sessions"
+  | "chat"
+  | "terminal"
+  | "files"
+  | "git"
+  | "settings";
 
 function screenFlags(active: Screen): Record<string, unknown> {
+  const navActive = active === "project-detail" ? "projects" : active;
   return {
-    active,
+    active: navActive,
+    detail: active,
+    isProjects: active === "projects",
+    isProjectDetail: active === "project-detail",
     isSessions: active === "sessions",
     isChat: active === "chat",
     isTerminal: active === "terminal",
@@ -42,6 +60,8 @@ function setScreen(
 }
 
 const SCREENS: readonly Screen[] = [
+  "projects",
+  "project-detail",
   "sessions",
   "chat",
   "terminal",
@@ -50,17 +70,170 @@ const SCREENS: readonly Screen[] = [
   "settings",
 ];
 
+const PROJECT_SCREENS = new Set<Screen>([
+  "project-detail",
+  "terminal",
+  "files",
+  "git",
+]);
+
 function asScreen(value: unknown): Screen | undefined {
   return SCREENS.find((s) => s === value);
 }
 
-export const handleMobileNav: EventRouteHandler = ({ component, eventType, data }, ctx) => {
+function hasProjectContext(state: Record<string, unknown>): boolean {
+  const project = state.project as
+    | { id?: unknown; path?: unknown }
+    | null
+    | undefined;
+  return (
+    typeof state.activeProjectId === "string" ||
+    typeof project?.id === "string" ||
+    typeof project?.path === "string"
+  );
+}
+
+/** Opening the Chat screen while a non-agent surface owns the active
+ *  tab (e.g. the overview pseudo-tab after a host tap) would render an
+ *  empty canvas — fall back to the most recent agent tab. */
+function ensureAgentTabActive(ctx: Parameters<EventRouteHandler>[1]): void {
+  const state = ctx.stateRef.current;
+  const tabs = (Array.isArray(state.tabs) ? state.tabs : []) as {
+    id?: string;
+    kind?: string;
+  }[];
+  const activeTabId =
+    typeof state.activeTabId === "string" ? state.activeTabId : undefined;
+  const isAgent = (tab: { kind?: string }) => (tab.kind ?? "agent") === "agent";
+  if (tabs.some((tab) => tab.id === activeTabId && isAgent(tab))) return;
+  const fallback = [...tabs]
+    .reverse()
+    .find((tab) => isAgent(tab) && typeof tab.id === "string");
+  if (fallback?.id) ctx.activateTabAnywhere(fallback.id);
+}
+
+export const handleMobileNav: EventRouteHandler = async (
+  { component, eventType, data },
+  ctx,
+) => {
   if (component.type === "mobile-nav") {
     if (eventType === "mobile-nav") {
       // Validate, don't cast: events can arrive over the gateway, and an
       // unknown screen would zero every visibility flag (blank canvas).
-      const screen = asScreen((data as { screen?: unknown } | undefined)?.screen);
-      if (screen) setScreen(ctx, screen);
+      const screen = asScreen(
+        (data as { screen?: unknown } | undefined)?.screen,
+      );
+      if (screen) {
+        if (
+          PROJECT_SCREENS.has(screen) &&
+          !hasProjectContext(ctx.stateRef.current)
+        ) {
+          setScreen(ctx, "projects");
+        } else {
+          if (screen === "chat") ensureAgentTabActive(ctx);
+          setScreen(ctx, screen);
+        }
+      }
+    }
+    return true;
+  }
+
+  if (component.type === "mobile-projects") {
+    if (eventType === "select") {
+      await handleSectionedSelect({ component, eventType, data }, ctx);
+      const selected = data as
+        | { sectionId?: unknown; itemId?: unknown }
+        | undefined;
+      if (
+        selected?.sectionId === "projects" &&
+        typeof selected.itemId === "string"
+      ) {
+        ctx.setState((prev) => ({
+          ...prev,
+          mobileProjectDetail: { projectId: selected.itemId },
+        }));
+        setScreen(ctx, "project-detail");
+      }
+      return true;
+    }
+    if (eventType === "switch-workspace") {
+      await handleSidebarSwitchWorkspace({ component, eventType, data }, ctx);
+      return true;
+    }
+    if (eventType === "start-session") {
+      await handleSidebarStartSession({ component, eventType, data }, ctx);
+      setScreen(ctx, "chat");
+      return true;
+    }
+    return true;
+  }
+
+  if (component.type === "mobile-project-detail") {
+    if (eventType === "back") {
+      setScreen(ctx, "projects");
+      return true;
+    }
+    if (eventType === "select") {
+      await handleSectionedSelect({ component, eventType, data }, ctx);
+      setScreen(ctx, "project-detail");
+      return true;
+    }
+    if (eventType === "open-screen") {
+      const screen = asScreen(
+        (data as { screen?: unknown } | undefined)?.screen,
+      );
+      if (screen) {
+        if (
+          PROJECT_SCREENS.has(screen) &&
+          !hasProjectContext(ctx.stateRef.current)
+        ) {
+          setScreen(ctx, "projects");
+        } else {
+          if (screen === "chat") ensureAgentTabActive(ctx);
+          setScreen(ctx, screen);
+        }
+      }
+      return true;
+    }
+    if (eventType === "start-session") {
+      await handleSidebarStartSession({ component, eventType, data }, ctx);
+      setScreen(ctx, "chat");
+      return true;
+    }
+    if (eventType === "switch-workspace") {
+      await handleSidebarSwitchWorkspace({ component, eventType, data }, ctx);
+      setScreen(ctx, "project-detail");
+      return true;
+    }
+    if (eventType === "start-task") {
+      // Await the launch so a failure (workspace create error, missing
+      // project) keeps the user on the detail screen with the failure
+      // notification instead of dumping them on an unchanged chat.
+      const launched = await launchStartTask(data, ctx);
+      if (launched) setScreen(ctx, "chat");
+      return true;
+    }
+    if (
+      eventType === "restore-session" ||
+      eventType === "delete-session" ||
+      eventType === "create-workspace" ||
+      eventType === "remove-workspace" ||
+      eventType === "open-issue-session" ||
+      eventType === "issues-refreshed" ||
+      eventType === "paste-image-failed" ||
+      eventType === "open-url"
+    ) {
+      const handled = await handleProjectDashboard(
+        { component, eventType, data },
+        ctx,
+      );
+      if (
+        eventType === "open-issue-session" ||
+        eventType === "restore-session"
+      ) {
+        setScreen(ctx, "chat");
+      }
+      return handled;
     }
     return true;
   }
@@ -80,7 +253,9 @@ export const handleMobileNav: EventRouteHandler = ({ component, eventType, data 
       case "restore-session": {
         restoreSessionFromSelection(
           ctx,
-          data as { sessionId?: string; cwd?: string; label?: string } | undefined,
+          data as
+            | { sessionId?: string; cwd?: string; label?: string }
+            | undefined,
         );
         setScreen(ctx, "chat");
         return true;

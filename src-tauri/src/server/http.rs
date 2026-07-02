@@ -22,6 +22,7 @@ use axum::routing::post;
 use axum::{Json, Router, routing::get};
 use axum_server::tls_rustls::RustlsConfig;
 use tauri::async_runtime::JoinHandle;
+use tauri::{AppHandle, Emitter};
 use tokio::net::TcpListener;
 
 use crate::commands::host::HostInfo;
@@ -29,12 +30,18 @@ use crate::server::remote::relay::RelayExec;
 use crate::server::remote::{GatewayCtx, RemoteState, pairing, ws};
 use crate::server::tls::TlsIdentity;
 
-pub fn router(info: HostInfo, remote: Arc<RemoteState>, relay: Arc<dyn RelayExec>) -> Router {
+pub fn router(
+    info: HostInfo,
+    remote: Arc<RemoteState>,
+    relay: Arc<dyn RelayExec>,
+    device_changed: Arc<dyn Fn(&crate::server::remote::devices::DeviceView) + Send + Sync>,
+) -> Router {
     let status_info = info.clone();
     let ctx = GatewayCtx {
         info,
         remote,
         relay,
+        device_changed,
     };
     Router::new()
         .route("/health", get(|| async { "aethon" }))
@@ -105,11 +112,22 @@ pub async fn serve(
     tls: Option<&TlsIdentity>,
     remote: Arc<RemoteState>,
     relay: Arc<dyn RelayExec>,
+    app: AppHandle,
 ) -> Result<(u16, JoinHandle<()>), String> {
     let addr: SocketAddr = format!("0.0.0.0:{port}")
         .parse()
         .map_err(|e| format!("addr: {e}"))?;
-    let app = router(info, remote, relay);
+    let app_for_devices = app.clone();
+    let device_changed = Arc::new(move |device: &crate::server::remote::devices::DeviceView| {
+        // Id-only payload, matching the revoke/rename emits: the
+        // DeviceView here predates the live-connection bookkeeping, so
+        // its `connected` field would lie. Listeners re-list on receipt.
+        let _ = app_for_devices.emit(
+            "remote-devices-changed",
+            serde_json::json!({ "id": device.id }),
+        );
+    });
+    let app = router(info, remote, relay, device_changed);
     match tls {
         Some(identity) => {
             crate::server::tls::install_crypto_provider();

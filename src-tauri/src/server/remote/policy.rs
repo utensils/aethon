@@ -38,7 +38,6 @@ const DESKTOP_ONLY: &str = "operates on desktop-local UI or OS surfaces";
 const LIFECYCLE: &str = "the desktop owns agent/server process lifecycle";
 const APPROVAL: &str = "execution boundary — approve at the desktop";
 const DEBUG_ONLY: &str = "debug transport only";
-const PHASE_TERMINAL: &str = "not yet exposed remotely (planned: terminal/files/git phase)";
 const PHASE_SETTINGS: &str = "not yet exposed remotely (planned: settings/dashboards phase)";
 const GATEWAY_ADMIN: &str = "remote gateway administration is desktop-only";
 
@@ -66,7 +65,10 @@ pub const COMMAND_POLICIES: &[(&str, RemotePolicy)] = &[
     ("write_state", Deny(DESKTOP_WRITER)),
     ("read_config", Direct),
     ("write_config", Deny(DESKTOP_WRITER)),
-    ("read_issue_templates", Deny(PHASE_TERMINAL)),
+    // Read-only project-file read (<root>/.aethon/issues.toml) — same
+    // risk class as the gh_* reads below; the companion's issue rows
+    // need it for template-aware dispatch.
+    ("read_issue_templates", DirectRootChecked),
     ("aethon_home_dir", Direct),
     // sessions
     ("search_sessions", Direct),
@@ -134,8 +136,10 @@ pub const COMMAND_POLICIES: &[(&str, RemotePolicy)] = &[
     ("fs_open_in_file_manager", Deny(DESKTOP_ONLY)),
     ("fs_open_in_default_app", Deny(DESKTOP_ONLY)),
     // git + gh — read surfaces scoped to a validated root. Worktree
-    // add/remove mutate the on-disk repo layout; keep those desktop-only
-    // for now (they're a project-management action, not a mobile flow).
+    // add/remove mutate the repo layout but are root-checked against a
+    // known project and are what the companion's issue-dispatch /
+    // new-workspace flows run; a paired device already holds shell
+    // access to these roots, so this is not an escalation.
     ("git_status", DirectRootChecked),
     ("git_working_context", DirectRootChecked),
     ("git_fetch_all", DirectRootChecked),
@@ -149,9 +153,9 @@ pub const COMMAND_POLICIES: &[(&str, RemotePolicy)] = &[
     ("git_show_head", DirectRootChecked),
     ("git_diff_stat", DirectRootChecked),
     ("git_worktrees", DirectRootChecked),
-    ("git_worktree_add", Deny(DESKTOP_ONLY)),
-    ("git_worktree_remove", Deny(DESKTOP_ONLY)),
-    ("git_worktree_remove_orphan", Deny(DESKTOP_ONLY)),
+    ("git_worktree_add", DirectRootChecked),
+    ("git_worktree_remove", DirectRootChecked),
+    ("git_worktree_remove_orphan", DirectRootChecked),
     ("git_branch_list", DirectRootChecked),
     ("gh_branch_status", DirectRootChecked),
     ("gh_repo_overview", DirectRootChecked),
@@ -240,6 +244,7 @@ pub const COMMAND_POLICIES: &[(&str, RemotePolicy)] = &[
     ("ui.chat.wait", ForwardToFrontend("chat.wait")),
     ("ui.accounts.use", ForwardToFrontend("accounts.use")),
     ("ui.agent.stop", ForwardToFrontend("agent.stop")),
+    ("ui.theme.set", ForwardToFrontend("theme.set")),
     // Companion Settings edits: the desktop webview applies + persists,
     // preserving the single-writer invariant on config.toml.
     ("ui.config.write", ForwardToFrontend("config.write")),
@@ -272,6 +277,9 @@ pub fn root_arg_value(cmd: &str, args: &serde_json::Value) -> Option<String> {
         "git_status" => "path",
         "git_working_context" => "cwd",
         "git_worktrees"
+        | "git_worktree_add"
+        | "git_worktree_remove"
+        | "git_worktree_remove_orphan"
         | "git_branch_list"
         | "git_fetch_all"
         | "gh_branch_status"
@@ -280,6 +288,7 @@ pub fn root_arg_value(cmd: &str, args: &serde_json::Value) -> Option<String> {
         | "gh_repo_avatar_url"
         | "gh_issue_list"
         | "gh_issue_view"
+        | "read_issue_templates"
         | "fs_discover_project_icon" => "projectPath",
         // fs_* + git diff/status/show family all name it `root`.
         _ => "root",
@@ -344,6 +353,7 @@ pub fn agent_command_remote_denial(payload: &serde_json::Value) -> Option<&'stat
         Some("frontend_state_patch") => {
             Some("frontend_state_patch is reserved for the desktop webview")
         }
+        Some("boot_layout") => Some("boot_layout is reserved for the desktop webview"),
         _ => None,
     }
 }
@@ -426,12 +436,15 @@ mod tests {
         assert_eq!(policy_for("send_message"), Direct);
         assert_eq!(policy_for("agent_command"), DirectFiltered);
         assert_eq!(policy_for("ui.chat.send"), ForwardToFrontend("chat.send"));
+        assert_eq!(policy_for("ui.theme.set"), ForwardToFrontend("theme.set"));
         assert!(matches!(policy_for("write_state"), Deny(_)));
         assert_eq!(policy_for("shell_write"), Direct);
         assert_eq!(policy_for("shell_open"), DirectRootChecked);
         assert_eq!(policy_for("fs_read_file"), DirectRootChecked);
         assert_eq!(policy_for("git_status"), DirectRootChecked);
-        assert!(matches!(policy_for("git_worktree_add"), Deny(_)));
+        assert_eq!(policy_for("git_worktree_add"), DirectRootChecked);
+        assert_eq!(policy_for("git_worktree_remove"), DirectRootChecked);
+        assert_eq!(policy_for("read_issue_templates"), DirectRootChecked);
         assert!(matches!(policy_for("not_a_command"), Deny(_)));
     }
 
@@ -443,6 +456,7 @@ mod tests {
                 .is_some()
         );
         assert!(agent_command_remote_denial(&json!({"type": "frontend_state_patch"})).is_some());
+        assert!(agent_command_remote_denial(&json!({"type": "boot_layout"})).is_some());
         assert!(agent_command_remote_denial(&json!({"type": "set_model"})).is_none());
         assert!(agent_command_remote_denial(&json!({"no": "type"})).is_none());
     }
@@ -464,6 +478,18 @@ mod tests {
         );
         assert_eq!(
             root_arg_value("gh_checks", &json!({"projectPath": "/p", "branch": "main"})).as_deref(),
+            Some("/p")
+        );
+        assert_eq!(
+            root_arg_value(
+                "git_worktree_add",
+                &json!({"projectPath": "/p", "targetPath": "/elsewhere", "branch": "b"})
+            )
+            .as_deref(),
+            Some("/p")
+        );
+        assert_eq!(
+            root_arg_value("read_issue_templates", &json!({"projectPath": "/p"})).as_deref(),
             Some("/p")
         );
         assert_eq!(

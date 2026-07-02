@@ -111,7 +111,10 @@ export function useDerivedRenderState({
     const landing =
       explicitLanding ??
       (overviewActive ? implicitWorkspaceLanding(state) : null);
-    const landingVisible = !!landing && landing.kind === "workspace";
+    const workspaceLandingVisible = !!landing && landing.kind === "workspace";
+    const mobileDeviceLandingVisible =
+      !!landing && landing.kind === "mobile-device";
+    const landingVisible = workspaceLandingVisible || mobileDeviceLandingVisible;
     const effectiveActiveTabId = landingVisible ? OVERVIEW_TAB_ID : activeTabId;
     const history = buildSidebarHistory(
       tabs,
@@ -184,10 +187,59 @@ export function useDerivedRenderState({
     const sidebarHosts = hostInfo.hosts.map((h) => ({
       id: h.id,
       label: h.displayName || h.hostname,
-      hint: h.isLocal ? "this mac" : h.hostname,
+      hint: h.isLocal
+        ? "this mac"
+        : h.connected === true
+          ? "connected"
+          : (h.paired ? "paired" : h.hostname),
       tooltip: h.hostname,
       active: h.id === activeHostId,
     }));
+    const activeMobileDeviceId =
+      landing?.kind === "mobile-device" &&
+      typeof (landing as { deviceId?: unknown }).deviceId === "string"
+        ? (landing as { deviceId: string }).deviceId
+        : null;
+    const sidebarMobileDevices = hostInfo.mobileDevices.map((device) => {
+      const connected = device.connected === true;
+      const platform = device.hostname || "mobile";
+      return {
+        id: device.id,
+        label: device.displayName || platform,
+        icon: "phone",
+        active: device.id === activeMobileDeviceId,
+        hint: connected ? "connected" : "paired",
+        platform,
+        connected,
+        paired: device.paired === true,
+        createdAt: device.createdAt,
+        lastSeenAt: device.lastSeen,
+        tooltip: `${device.displayName || platform} · ${platform} client`,
+      };
+    });
+    // The mobile-device landing is a snapshot taken at select time —
+    // overlay the live entry's connection facts so connect/disconnect
+    // updates while the page is open. Label/createdAt stay from the
+    // snapshot (rename already updates it optimistically), and a device
+    // missing from the list (mid-unpair) keeps the snapshot rather than
+    // blanking the page.
+    const liveLanding =
+      landing?.kind === "mobile-device" && activeMobileDeviceId
+        ? (() => {
+            const live = hostInfo.mobileDevices.find(
+              (device) => device.id === activeMobileDeviceId,
+            );
+            if (!live) return landing;
+            const connected = live.connected === true;
+            return {
+              ...landing,
+              status: connected ? "Connected" : "Paired",
+              connected,
+              paired: live.paired === true,
+              lastSeenAt: live.lastSeen,
+            };
+          })()
+        : landing;
     const activeHost =
       hostInfo.hosts.find((h) => h.id === activeHostId) ?? null;
 
@@ -254,7 +306,7 @@ export function useDerivedRenderState({
       hasSessionTabs,
       overviewActive: landingVisible ? true : overviewActive,
       overviewTabId: OVERVIEW_TAB_ID,
-      landing,
+      landing: liveLanding,
       empty,
       emptyAndProject,
       emptyAndNoProject,
@@ -262,15 +314,19 @@ export function useDerivedRenderState({
       shellTabActive: false,
       editorTabActive: activeKind === "editor" && !landingVisible,
       landingVisible,
+      workspaceLandingVisible,
+      mobileDeviceLandingVisible,
       sidebar: {
         ...sidebar,
         projects: sidebarProjectsWithAgent,
         history,
         hosts: sidebarHosts,
+        mobileDevices: sidebarMobileDevices,
       },
       projectDashboard,
       projectsDashboard,
       hosts: hostInfo.hosts,
+      mobileDevices: hostInfo.mobileDevices,
       activeHostId,
       host: activeHost,
     };
@@ -279,6 +335,7 @@ export function useDerivedRenderState({
     hostInfo.activeHostId,
     hostInfo.hosts,
     hostInfo.localHostId,
+    hostInfo.mobileDevices,
     state,
   ]);
 

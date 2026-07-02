@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
+  appendSqliteLocalChatMessage,
   listSqliteDiscoveredTabs,
   readSqliteSessionMetadata,
   readSqliteSessionTranscript,
@@ -220,6 +221,75 @@ describe("SQLite session metadata", () => {
     expect(
       readSqliteSessionTranscript("tab-1")?.map((message) => message.id),
     ).toEqual(["pi-1", "local-1", "pi-2", "local-2"]);
+  });
+});
+
+describe("appendSqliteLocalChatMessage", () => {
+  it("creates the parent session_tabs row before inserting the message", () => {
+    // The production DB is created Rust-side (storage.rs) with
+    // session_local_messages.tab_id → session_tabs(tab_id) and
+    // foreign_keys = ON. This fake enforces the same constraint so a
+    // message landing before any session hydration registered the tab
+    // (e.g. a task dispatched into a fresh tab) reproduces the
+    // "FOREIGN KEY constraint failed" toast storm without the fix.
+    const tabIds = new Set<string>();
+    const inserted: Array<{ tabId: string; messageId: string }> = [];
+    class FkEnforcingDatabase {
+      constructor(_path: string) {}
+      exec(_sql: string): void {}
+      close(): void {}
+      query(sql: string) {
+        const noop = {
+          get: () => null,
+          all: () => [],
+          run: () => undefined,
+        };
+        if (sql.includes("INSERT OR IGNORE INTO session_tabs")) {
+          return {
+            get: () => null,
+            all: () => [],
+            run: (...params: unknown[]) => {
+              tabIds.add(String(params[0]));
+            },
+          };
+        }
+        if (sql.includes("INSERT OR REPLACE INTO session_local_messages")) {
+          return {
+            get: () => null,
+            all: () => [],
+            run: (...params: unknown[]) => {
+              if (!tabIds.has(String(params[0]))) {
+                throw new Error("FOREIGN KEY constraint failed");
+              }
+              inserted.push({
+                tabId: String(params[0]),
+                messageId: String(params[1]),
+              });
+            },
+          };
+        }
+        if (
+          sql.includes("UPDATE session_tabs") ||
+          sql.includes("FROM session_local_messages") ||
+          sql.includes("session_search_fts")
+        ) {
+          return noop;
+        }
+        throw new Error(`unexpected SQL in FK fake: ${sql}`);
+      }
+    }
+    setSqliteDatabaseCtorForTests(FkEnforcingDatabase);
+
+    const ok = appendSqliteLocalChatMessage("tab-fresh", {
+      id: "m1",
+      role: "user",
+      text: "dispatched from the phone",
+      createdAt: 123,
+    });
+
+    expect(ok).toBe(true);
+    expect(tabIds.has("tab-fresh")).toBe(true);
+    expect(inserted).toEqual([{ tabId: "tab-fresh", messageId: "m1" }]);
   });
 });
 

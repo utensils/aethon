@@ -10,6 +10,7 @@ const hostInfo: UseHostInfo = {
   activeHostId: "local:one",
   localHostId: "local:one",
   setActiveHost: vi.fn(),
+  mobileDevices: [],
   hosts: [
     {
       id: "local:one",
@@ -211,6 +212,106 @@ describe("useDerivedRenderState", () => {
     );
     expect(result.current.renderState.sidebar).toMatchObject({
       history: [{ id: "agent-1", active: false }],
+    });
+  });
+
+  it("makes a selected mobile device own the overview canvas", () => {
+    const buildSidebarHistory = vi.fn(() => []);
+    const mobileHostInfo: UseHostInfo = {
+      ...hostInfo,
+      mobileDevices: [
+        {
+          id: "device:dev-iphone",
+          hostname: "ios",
+          displayName: "iPhone",
+          isLocal: false,
+          paired: true,
+          connected: true,
+          createdAt: 1,
+          lastSeen: 2,
+        },
+      ],
+    };
+    const { result } = renderHook(() =>
+      useDerivedRenderState({
+        state: {
+          tabs: [],
+          activeTabId: OVERVIEW_TAB_ID,
+          landing: { kind: "mobile-device", deviceId: "device:dev-iphone" },
+          sidebar: {},
+        },
+        buildSidebarHistory,
+        hostInfo: mobileHostInfo,
+      }),
+    );
+
+    expect(result.current.renderState.landingVisible).toBe(true);
+    expect(result.current.renderState.workspaceLandingVisible).toBe(false);
+    expect(result.current.renderState.mobileDeviceLandingVisible).toBe(true);
+    expect(result.current.renderState.emptyAndNoProject).toBe(false);
+    const sidebar = result.current.renderState.sidebar as {
+      mobileDevices?: unknown[];
+    };
+    expect(sidebar.mobileDevices).toMatchObject([
+      {
+        id: "device:dev-iphone",
+        label: "iPhone",
+        platform: "ios",
+        hint: "connected",
+        active: true,
+        connected: true,
+        paired: true,
+        createdAt: 1,
+        lastSeenAt: 2,
+      },
+    ]);
+  });
+
+  it("overlays live connection facts onto an open device landing", () => {
+    const buildSidebarHistory = vi.fn(() => []);
+    const mobileHostInfo: UseHostInfo = {
+      ...hostInfo,
+      mobileDevices: [
+        {
+          id: "device:dev-iphone",
+          hostname: "ios",
+          displayName: "iPhone",
+          isLocal: false,
+          paired: true,
+          connected: false,
+          createdAt: 1,
+          lastSeen: 99,
+        },
+      ],
+    };
+    const { result } = renderHook(() =>
+      useDerivedRenderState({
+        state: {
+          tabs: [],
+          activeTabId: OVERVIEW_TAB_ID,
+          // Snapshot captured while the phone was still connected.
+          landing: {
+            kind: "mobile-device",
+            deviceId: "device:dev-iphone",
+            label: "Pocket Aethon",
+            status: "Connected",
+            connected: true,
+            lastSeenAt: 2,
+          },
+          sidebar: {},
+        },
+        buildSidebarHistory,
+        hostInfo: mobileHostInfo,
+      }),
+    );
+
+    expect(result.current.renderState.landing).toMatchObject({
+      kind: "mobile-device",
+      // Snapshot label survives (rename updates it optimistically).
+      label: "Pocket Aethon",
+      status: "Paired",
+      connected: false,
+      lastSeenAt: 99,
     });
   });
 

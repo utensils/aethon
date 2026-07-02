@@ -276,6 +276,41 @@ export function useSidebarContextMenu(
     });
     close();
   };
+  const unpairContextMobileDevice = () => {
+    if (!contextMenu) return;
+    onEvent("unpair-mobile-device", {
+      sectionId: contextMenu.sectionId,
+      itemId: contextMenu.itemId,
+      deviceId: contextMenu.itemId,
+      label: contextMenu.label,
+    });
+    close();
+  };
+  const confirmContextMobileDeviceUnpair = () => {
+    if (!contextMenu) return;
+    setContextMenu({
+      ...contextMenu,
+      kind: "mobile-device-unpair",
+    });
+  };
+  const renameContextMobileDevice = () => {
+    if (!contextMenu) return;
+    setContextMenu({
+      ...contextMenu,
+      kind: "mobile-device-rename",
+    });
+  };
+  const submitContextMobileDeviceRename = (name: string) => {
+    if (!contextMenu) return;
+    onEvent("rename-mobile-device", {
+      sectionId: contextMenu.sectionId,
+      itemId: contextMenu.itemId,
+      deviceId: contextMenu.itemId,
+      label: name,
+      previousLabel: contextMenu.label,
+    });
+    close();
+  };
 
   return {
     contextMenu,
@@ -283,6 +318,7 @@ export function useSidebarContextMenu(
     openItemContextMenu,
     openWorkspaceContextMenu,
     handlers: {
+      closeContextMenu: close,
       createWorkspaceForContextProject,
       editContextProjectWorkspaceBase,
       submitContextProjectWorkspaceBase,
@@ -295,6 +331,10 @@ export function useSidebarContextMenu(
       copyContextWorkspacePath,
       renameContextWorkspace,
       removeContextWorkspace,
+      renameContextMobileDevice,
+      confirmContextMobileDeviceUnpair,
+      submitContextMobileDeviceRename,
+      unpairContextMobileDevice,
       renameContextSession,
       deleteContextSession,
       toggleContextExtension,
@@ -314,6 +354,9 @@ function classifyMenuKind(
   | null {
   if (sectionId === "projects") {
     return { kind: "project" };
+  }
+  if (sectionId === "mobile-devices") {
+    return { kind: "mobile-device" };
   }
   if (sectionId === "history" && canDeleteHistoryItem(item.id)) {
     return { kind: "session" };

@@ -45,8 +45,9 @@ pub fn advertise(
     fingerprint: &str,
 ) -> Result<ServiceDaemon, Box<dyn std::error::Error>> {
     let mdns = ServiceDaemon::new()?;
-    let hostname = gethostname::gethostname().to_string_lossy().to_string();
-    let instance_name = format!("{display_name} ({hostname})");
+    let hostname = local_mdns_hostname().unwrap_or_else(|| "localhost.local".to_string());
+    let host_label = hostname.trim_end_matches(".local");
+    let instance_name = format!("{display_name} ({host_label})");
     let version = env!("CARGO_PKG_VERSION");
     let props = [
         ("version", version),
@@ -56,7 +57,7 @@ pub fn advertise(
     let service = ServiceInfo::new(
         SERVICE_TYPE,
         &instance_name,
-        &format!("{hostname}.local."),
+        &format!("{hostname}."),
         // No static IP: enable_addr_auto attaches every non-loopback
         // interface address (and tracks changes). Without it the
         // service registers with NO A/AAAA records — mdns-sd accepts
@@ -69,6 +70,48 @@ pub fn advertise(
     .enable_addr_auto();
     mdns.register(service)?;
     Ok(mdns)
+}
+
+/// Local host name that Bonjour can resolve, without the trailing dot.
+pub(crate) fn local_mdns_hostname() -> Option<String> {
+    let fallback = gethostname::gethostname().to_string_lossy().into_owned();
+    local_mdns_hostname_from(system_local_hostname().as_deref(), &fallback)
+}
+
+fn local_mdns_hostname_from(preferred: Option<&str>, fallback: &str) -> Option<String> {
+    preferred
+        .and_then(normalize_mdns_hostname)
+        .or_else(|| normalize_mdns_hostname(fallback))
+}
+
+fn normalize_mdns_hostname(raw: &str) -> Option<String> {
+    let trimmed = raw.trim().trim_end_matches('.');
+    if trimmed.is_empty() {
+        return None;
+    }
+    if trimmed.to_ascii_lowercase().ends_with(".local") {
+        Some(trimmed.to_string())
+    } else {
+        Some(format!("{trimmed}.local"))
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn system_local_hostname() -> Option<String> {
+    let output = std::process::Command::new("/usr/sbin/scutil")
+        .args(["--get", "LocalHostName"])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let hostname = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    (!hostname.is_empty()).then_some(hostname)
+}
+
+#[cfg(not(target_os = "macos"))]
+fn system_local_hostname() -> Option<String> {
+    None
 }
 
 /// Start the LAN browser. Resolution events are debounced before they
@@ -169,4 +212,30 @@ fn now_ms() -> u64 {
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_millis() as u64)
         .unwrap_or(0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn local_mdns_hostname_prefers_bonjour_local_hostname() {
+        let hostname = local_mdns_hostname_from(Some("halcyon-3\n"), "halcyon").unwrap();
+
+        assert_eq!(hostname, "halcyon-3.local");
+    }
+
+    #[test]
+    fn local_mdns_hostname_does_not_duplicate_local_suffix() {
+        let hostname = local_mdns_hostname_from(Some("halcyon-3.local."), "halcyon").unwrap();
+
+        assert_eq!(hostname, "halcyon-3.local");
+    }
+
+    #[test]
+    fn local_mdns_hostname_falls_back_to_unix_hostname() {
+        let hostname = local_mdns_hostname_from(None, "halcyon").unwrap();
+
+        assert_eq!(hostname, "halcyon.local");
+    }
 }

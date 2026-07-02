@@ -8,6 +8,14 @@ import type { BridgeMessageHandler } from "./types";
  *  renderer on `components.map()`. Walk manually here so arrays stay
  *  arrays. */
 export const handleLayoutPatch: BridgeMessageHandler = (data, ctx) => {
+  if (import.meta.env.VITE_AETHON_SURFACE === "mobile") {
+    // The companion keeps its fixed mobile layout; ack so the sender
+    // doesn't retry, but leave a trace for extension authors debugging
+    // why their patch "succeeded" without effect on the phone.
+    console.debug("layout_patch ignored on the mobile surface");
+    ctx.ackMutation(data.mutationId, true);
+    return;
+  }
   const path = data.path as string | undefined;
   if (!path) {
     ctx.ackMutation(data.mutationId, false, "missing path");

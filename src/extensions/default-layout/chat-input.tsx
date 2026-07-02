@@ -268,6 +268,7 @@ export function ChatInput({
     setValue(submitText);
     commitDraft(submitText);
     onEvent("submit", submitPayload(submitText, "normal"));
+    setValue("");
   };
 
   const handleChange = (e: ChangeEvent<HTMLTextAreaElement>) => {
@@ -291,6 +292,7 @@ export function ChatInput({
       }
       commitDraft(v);
       onEvent("submit", submitPayload(v, mode));
+      setValue("");
     };
 
     if (e.key === "Enter" && !e.shiftKey && (e.metaKey || e.ctrlKey)) {
@@ -335,6 +337,7 @@ export function ChatInput({
         );
         if (exact && v.trim().length > 0) {
           onEvent("submit", submitPayload(v, "normal"));
+          setValue("");
           return;
         }
         const match = list[highlightIdx] ?? list[0];
@@ -356,6 +359,7 @@ export function ChatInput({
       }
       commitDraft(value);
       onEvent("submit", submitPayload(value, "normal"));
+      setValue("");
     }
   };
 

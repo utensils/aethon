@@ -14,7 +14,7 @@
  * dashboard (registered via aethon.registerComponent) routes through
  * the same handlers.
  */
-import type { EventRouteHandler } from "./types";
+import type { EventRouteContext, EventRouteHandler } from "./types";
 import type { GitHubIssueSource } from "../types/tab";
 import {
   handleSidebarDeleteSession,
@@ -203,6 +203,90 @@ export const handleProjectDashboard: EventRouteHandler = (
   );
 };
 
+/**
+ * Launch a start-task selection: host-target chat, an already-open issue
+ * session, or a project task via `startTaskInProject`. Resolves `true`
+ * when a session surface actually opened (tab activated or task
+ * launched) so touch-first callers can gate navigation on the outcome.
+ * The desktop task-launcher calls this fire-and-forget — failures
+ * surface as notifications either way.
+ */
+export async function launchStartTask(
+  data: unknown,
+  ctx: EventRouteContext,
+): Promise<boolean> {
+  const sel = data as
+    | {
+        projectId?: string;
+        prompt?: string;
+        attachments?: unknown;
+        newWorkspace?: boolean;
+        branch?: string;
+        baseBranch?: string;
+        workspaceId?: string;
+        model?: string;
+        target?: string;
+        source?: string;
+        issueNumber?: unknown;
+        issueUrl?: unknown;
+        issueTitle?: unknown;
+        issueTemplateId?: string;
+        issueTemplateLabel?: string;
+      }
+    | undefined;
+  const attachments = Array.isArray(sel?.attachments)
+    ? sel.attachments
+    : undefined;
+  const prompt = typeof sel?.prompt === "string" ? sel.prompt : "";
+  const hasPayload = prompt.length > 0 || (attachments?.length ?? 0) > 0;
+  if (sel?.target === "host" && hasPayload) {
+    const tabId = crypto.randomUUID();
+    ctx.newTab(
+      tabId,
+      undefined,
+      typeof sel.model === "string" && sel.model.length > 0
+        ? { model: sel.model }
+        : undefined,
+    );
+    void ctx.sendChat(prompt, {
+      tabId,
+      attachments,
+    });
+    return true;
+  }
+  if (!sel?.projectId || !hasPayload) return false;
+  const sourceIssue = issueSourceFromStartTask(sel);
+  if (sourceIssue) {
+    const existing = firstIssueSessionTab(
+      ctx.stateRef.current,
+      sourceIssue.projectId,
+      sourceIssue.number,
+    );
+    if (existing) {
+      ctx.activateTabAnywhere(existing.id);
+      return true;
+    }
+  }
+  const launched = await ctx.startTaskInProject({
+    projectId: sel.projectId,
+    prompt,
+    newWorkspace: sel.newWorkspace === true,
+    attachments,
+    branch: sel.branch,
+    baseBranch:
+      sel.newWorkspace === true
+        ? (sel.baseBranch?.trim() ||
+          projectBaseBranchFromState(ctx.stateRef.current, sel.projectId))
+        : sel.baseBranch,
+    workspaceId: sel.workspaceId,
+    ...(typeof sel.model === "string" && sel.model.length > 0
+      ? { model: sel.model }
+      : {}),
+    ...(sourceIssue ? { sourceIssue } : {}),
+  });
+  return launched != null;
+}
+
 /** task-launcher submit — the heart of the per-project composer. */
 export const handleTaskLauncher: EventRouteHandler = (
   { eventType, data },
@@ -252,75 +336,7 @@ export const handleTaskLauncher: EventRouteHandler = (
     return true;
   }
   if (eventType === "start-task") {
-    const sel = data as
-      | {
-          projectId?: string;
-          prompt?: string;
-          attachments?: unknown;
-          newWorkspace?: boolean;
-          branch?: string;
-          baseBranch?: string;
-          workspaceId?: string;
-          model?: string;
-          target?: string;
-          source?: string;
-          issueNumber?: unknown;
-          issueUrl?: unknown;
-          issueTitle?: unknown;
-          issueTemplateId?: string;
-          issueTemplateLabel?: string;
-        }
-      | undefined;
-    const attachments = Array.isArray(sel?.attachments)
-      ? sel.attachments
-      : undefined;
-    const prompt = typeof sel?.prompt === "string" ? sel.prompt : "";
-    const hasPayload = prompt.length > 0 || (attachments?.length ?? 0) > 0;
-    if (sel?.target === "host" && hasPayload) {
-      const tabId = crypto.randomUUID();
-      ctx.newTab(
-        tabId,
-        undefined,
-        typeof sel.model === "string" && sel.model.length > 0
-          ? { model: sel.model }
-          : undefined,
-      );
-      void ctx.sendChat(prompt, {
-        tabId,
-        attachments,
-      });
-      return true;
-    }
-    if (!sel?.projectId || !hasPayload) return true;
-    const sourceIssue = issueSourceFromStartTask(sel);
-    if (sourceIssue) {
-      const existing = firstIssueSessionTab(
-        ctx.stateRef.current,
-        sourceIssue.projectId,
-        sourceIssue.number,
-      );
-      if (existing) {
-        ctx.activateTabAnywhere(existing.id);
-        return true;
-      }
-    }
-    void ctx.startTaskInProject({
-      projectId: sel.projectId,
-      prompt,
-      newWorkspace: sel.newWorkspace === true,
-      attachments,
-      branch: sel.branch,
-      baseBranch:
-        sel.newWorkspace === true
-          ? (sel.baseBranch?.trim() ||
-            projectBaseBranchFromState(ctx.stateRef.current, sel.projectId))
-          : sel.baseBranch,
-      workspaceId: sel.workspaceId,
-      ...(typeof sel.model === "string" && sel.model.length > 0
-        ? { model: sel.model }
-        : {}),
-      ...(sourceIssue ? { sourceIssue } : {}),
-    });
+    void launchStartTask(data, ctx);
     return true;
   }
   // The launcher also emits select-project-card when the project chip

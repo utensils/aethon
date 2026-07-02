@@ -42,6 +42,7 @@ export interface UseControlRequestsContext {
   closeTabNow: (tabId: string) => void;
   setActiveTab: (tabId: string) => void;
   updateTab: (tabId: string, updater: (tab: Tab) => Tab) => void;
+  setTheme?: (id: string) => void;
   sendChat: (
     text: string,
     options?: { tabId?: string; bridgeText?: string; controlRequestId?: string },
@@ -133,6 +134,8 @@ async function handleControlRequest(
       return stopAgent(ctx, params);
     case "config.write":
       return writeConfigForRemote(params);
+    case "theme.set":
+      return setThemeForRemote(ctx, params);
     default:
       throw new Error(`unsupported control request: ${request.method}`);
   }
@@ -150,6 +153,18 @@ async function writeConfigForRemote(
   }
   await invoke("write_config", { config });
   return { ok: true };
+}
+
+function setThemeForRemote(
+  ctx: UseControlRequestsContext,
+  params: Record<string, unknown>,
+): unknown {
+  const id = requiredString(params, "id", "theme.set requires id");
+  if (!ctx.setTheme) {
+    throw new Error("theme.set is unavailable");
+  }
+  ctx.setTheme(id);
+  return { id };
 }
 
 async function openTab(

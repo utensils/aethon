@@ -110,7 +110,8 @@ function openDb(): Database | undefined {
       current_leaf_entry_id TEXT,
       payload_json TEXT NOT NULL DEFAULT '{}',
       created_at INTEGER NOT NULL DEFAULT (unixepoch() * 1000),
-      updated_at INTEGER NOT NULL DEFAULT (unixepoch() * 1000)
+      updated_at INTEGER NOT NULL DEFAULT (unixepoch() * 1000),
+      FOREIGN KEY (tab_id) REFERENCES session_tabs(tab_id) ON DELETE CASCADE
     );
     CREATE TABLE IF NOT EXISTS session_entries (
       session_id TEXT NOT NULL,
@@ -122,7 +123,8 @@ function openDb(): Database | undefined {
       timestamp INTEGER,
       payload_json TEXT NOT NULL,
       ordinal INTEGER NOT NULL,
-      PRIMARY KEY (session_id, entry_id)
+      PRIMARY KEY (session_id, entry_id),
+      FOREIGN KEY (session_id) REFERENCES sessions(session_id) ON DELETE CASCADE
     );
     CREATE TABLE IF NOT EXISTS session_local_messages (
       tab_id TEXT NOT NULL,
@@ -133,7 +135,8 @@ function openDb(): Database | undefined {
       created_at INTEGER,
       cwd TEXT,
       payload_json TEXT NOT NULL,
-      PRIMARY KEY (tab_id, message_id)
+      PRIMARY KEY (tab_id, message_id),
+      FOREIGN KEY (tab_id) REFERENCES session_tabs(tab_id) ON DELETE CASCADE
     );
     CREATE VIRTUAL TABLE IF NOT EXISTS session_search_fts USING fts5(
       tab_id UNINDEXED,
@@ -958,6 +961,15 @@ function persistLocalChatMessage(
     ...(a2ui ? { a2ui } : {}),
     createdAt,
   };
+  // Parent row first: session_local_messages.tab_id references
+  // session_tabs(tab_id) with foreign_keys = ON, and a local chat
+  // message can land before any session hydration registers the tab
+  // (e.g. a task dispatched into a fresh tab). Without this, every
+  // append fails with "FOREIGN KEY constraint failed".
+  db.query(
+    `INSERT OR IGNORE INTO session_tabs(tab_id, cwd, metadata_json)
+     VALUES (?, ?, '{}')`,
+  ).run(tabId, message.cwd ?? null);
   db.query(
     `INSERT OR REPLACE INTO session_local_messages(
        tab_id, message_id, role, text, thinking, created_at, cwd, payload_json
