@@ -12,6 +12,7 @@ import {
   handleSidebarStopWorkspaceAgent,
   handleSidebarSwitchWorkspace,
   handleSidebarToggleExtension,
+  handleSidebarUnpairMobileDevice,
   handleSectionedSelect,
 } from "./sidebar";
 import { OVERVIEW_TAB_ID } from "../types/tab";
@@ -668,6 +669,78 @@ describe("handleSectionedSelect", () => {
       ctx,
     );
     expect(ctx.setActiveHost).toHaveBeenCalledWith("remote:bender");
+  });
+
+  it("mobile devices section selects the device detail view", async () => {
+    const { ctx, applySetState } = buildRouteFixture({
+      state: { activeTabId: "tab-7", landing: null },
+    });
+    await handleSectionedSelect(
+      {
+        component: { id: "sidebar" },
+        eventType: "select",
+        data: {
+          sectionId: "mobile-devices",
+          itemId: "device:dev-iphone",
+          label: "James's iPhone",
+          platform: "ios",
+          status: "connected",
+          paired: true,
+          connected: true,
+          createdAt: 1_000,
+          lastSeenAt: 2_000,
+        },
+      },
+      ctx,
+    );
+
+    expect(applySetState().activeTabId).toBe(OVERVIEW_TAB_ID);
+    expect(applySetState().landing).toMatchObject({
+      kind: "mobile-device",
+      deviceId: "device:dev-iphone",
+      label: "James's iPhone",
+      platform: "ios",
+      status: "Connected",
+      paired: true,
+      connected: true,
+      createdAt: 1_000,
+      lastSeenAt: 2_000,
+    });
+  });
+
+  it("unpair-mobile-device revokes the raw device id and clears its landing", async () => {
+    const { ctx, mocks, applySetState } = buildRouteFixture({
+      state: {
+        landing: { kind: "mobile-device", deviceId: "device:dev-iphone" },
+      },
+    });
+    const handled = await handleSidebarUnpairMobileDevice(
+      {
+        component: { id: "sidebar" },
+        eventType: "unpair-mobile-device",
+        data: {
+          sectionId: "mobile-devices",
+          itemId: "device:dev-iphone",
+          label: "James's iPhone",
+        },
+      },
+      ctx,
+    );
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(handled).toBe(true);
+    expect(mocks.invoke).toHaveBeenCalledWith("remote_device_revoke", {
+      id: "dev-iphone",
+    });
+    expect(applySetState().landing).toBeNull();
+    expect(mocks.pushNotification).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: "Device unpaired",
+        message: "James's iPhone",
+        kind: "success",
+      }),
+    );
   });
 
   it("projects open-project triggers the picker", async () => {

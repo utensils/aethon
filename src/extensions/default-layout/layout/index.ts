@@ -14,3 +14,4 @@ export { Layout } from "./grid";
 export { StatusBar } from "./status-bar";
 export { EmptyState } from "./empty-state";
 export { WorkspaceLanding } from "./workspace-landing";
+export { MobileDeviceLanding } from "./mobile-device-landing";

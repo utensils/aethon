@@ -215,6 +215,58 @@ describe("useDerivedRenderState", () => {
     });
   });
 
+  it("makes a selected mobile device own the overview canvas", () => {
+    const buildSidebarHistory = vi.fn(() => []);
+    const mobileHostInfo: UseHostInfo = {
+      ...hostInfo,
+      mobileDevices: [
+        {
+          id: "device:dev-iphone",
+          hostname: "ios",
+          displayName: "iPhone",
+          isLocal: false,
+          paired: true,
+          connected: true,
+          createdAt: 1,
+          lastSeen: 2,
+        },
+      ],
+    };
+    const { result } = renderHook(() =>
+      useDerivedRenderState({
+        state: {
+          tabs: [],
+          activeTabId: OVERVIEW_TAB_ID,
+          landing: { kind: "mobile-device", deviceId: "device:dev-iphone" },
+          sidebar: {},
+        },
+        buildSidebarHistory,
+        hostInfo: mobileHostInfo,
+      }),
+    );
+
+    expect(result.current.renderState.landingVisible).toBe(true);
+    expect(result.current.renderState.workspaceLandingVisible).toBe(false);
+    expect(result.current.renderState.mobileDeviceLandingVisible).toBe(true);
+    expect(result.current.renderState.emptyAndNoProject).toBe(false);
+    const sidebar = result.current.renderState.sidebar as {
+      mobileDevices?: unknown[];
+    };
+    expect(sidebar.mobileDevices).toMatchObject([
+      {
+        id: "device:dev-iphone",
+        label: "iPhone",
+        platform: "ios",
+        hint: "connected",
+        active: true,
+        connected: true,
+        paired: true,
+        createdAt: 1,
+        lastSeenAt: 2,
+      },
+    ]);
+  });
+
   it("synthesizes workspace landing when active workspace state loses its landing object", () => {
     const buildSidebarHistory = vi.fn(() => []);
     const { result } = renderHook(() =>

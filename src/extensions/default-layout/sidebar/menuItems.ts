@@ -25,6 +25,7 @@ export interface SidebarContextMenuState {
     | "project"
     | "project-base"
     | "workspace"
+    | "mobile-device"
     | "session"
     | "extension-enabled"
     | "extension-disabled";
@@ -72,6 +73,7 @@ export interface SidebarMenuHandlers {
   renameContextWorkspace: () => void;
   removeContextWorkspace: () => void;
   // Session + extension (unchanged)
+  unpairContextMobileDevice: () => void;
   renameContextSession: () => void;
   deleteContextSession: () => void;
   toggleContextExtension: (disabled: boolean) => void;
@@ -206,6 +208,16 @@ export function buildSidebarMenuItems(
           : { type: "note", label: "git worktree remove" },
       ];
     }
+    case "mobile-device":
+      return [
+        {
+          id: "unpair-mobile-device",
+          label: "Unpair device",
+          danger: true,
+          onSelect: h.unpairContextMobileDevice,
+        },
+        { type: "note", label: "Revokes this client's token" },
+      ];
     case "session":
       return [
         { id: "rename-session", label: "Rename session…", onSelect: h.renameContextSession },

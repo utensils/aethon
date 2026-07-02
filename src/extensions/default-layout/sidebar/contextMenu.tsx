@@ -276,6 +276,16 @@ export function useSidebarContextMenu(
     });
     close();
   };
+  const unpairContextMobileDevice = () => {
+    if (!contextMenu) return;
+    onEvent("unpair-mobile-device", {
+      sectionId: contextMenu.sectionId,
+      itemId: contextMenu.itemId,
+      deviceId: contextMenu.itemId,
+      label: contextMenu.label,
+    });
+    close();
+  };
 
   return {
     contextMenu,
@@ -295,6 +305,7 @@ export function useSidebarContextMenu(
       copyContextWorkspacePath,
       renameContextWorkspace,
       removeContextWorkspace,
+      unpairContextMobileDevice,
       renameContextSession,
       deleteContextSession,
       toggleContextExtension,
@@ -314,6 +325,9 @@ function classifyMenuKind(
   | null {
   if (sectionId === "projects") {
     return { kind: "project" };
+  }
+  if (sectionId === "mobile-devices") {
+    return { kind: "mobile-device" };
   }
   if (sectionId === "history" && canDeleteHistoryItem(item.id)) {
     return { kind: "session" };

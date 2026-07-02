@@ -25,6 +25,7 @@ export { MARKDOWN_COMPONENTS, HighlightedFence, isHighlightedFenceChild } from "
 export {
   AeMarkInline,
   EmptyState,
+  MobileDeviceLanding,
   WorkspaceLanding,
   Layout,
   StatusBar,

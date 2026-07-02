@@ -21,7 +21,7 @@ export function ConnectionBadge() {
       aria-label={`Gateway ${LABELS[status] ?? status}`}
     >
       <span className="ae-mobile-conn-dot" aria-hidden />
-      {LABELS[status] ?? status}
+      <span className="ae-mobile-conn-label">{LABELS[status] ?? status}</span>
     </span>
   );
 }

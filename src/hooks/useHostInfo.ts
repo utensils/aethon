@@ -46,6 +46,8 @@ export function useHostInfo(): UseHostInfo {
       displayName: device.name || platform,
       isLocal: false,
       paired: true,
+      connected: device.connected === true,
+      createdAt: device.createdAt,
       lastSeen: device.lastSeenAt,
       fingerprintPrefix: device.connected ? "connected" : undefined,
     };
@@ -63,6 +65,8 @@ export function useHostInfo(): UseHostInfo {
         host.isLocal === other.isLocal &&
         host.fingerprintPrefix === other.fingerprintPrefix &&
         host.paired === other.paired &&
+        host.connected === other.connected &&
+        host.createdAt === other.createdAt &&
         host.lastSeen === other.lastSeen
       );
     });

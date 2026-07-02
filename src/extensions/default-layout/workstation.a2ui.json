@@ -183,6 +183,15 @@
           }
         },
         {
+          "id": "mobile-device-landing",
+          "type": "mobile-device-landing",
+          "props": {
+            "area": "canvas",
+            "visible": { "$ref": "/mobileDeviceLandingVisible" },
+            "landing": { "$ref": "/landing" }
+          }
+        },
+        {
           "id": "workspace-landing",
           "type": "workspace-landing",
           "props": {

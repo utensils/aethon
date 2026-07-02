@@ -118,6 +118,9 @@ describe("useHostInfo", () => {
         hostname: "ios",
         fingerprintPrefix: "connected",
         paired: true,
+        connected: true,
+        createdAt: 1,
+        lastSeen: 2,
       });
     });
   });

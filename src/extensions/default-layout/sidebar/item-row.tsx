@@ -42,6 +42,21 @@ export interface ItemRowProps {
   trailingControl?: ReactNode;
 }
 
+function selectPayload(sectionId: string, item: SidebarItem): Record<string, unknown> {
+  const base = { sectionId, itemId: item.id };
+  if (sectionId !== "mobile-devices") return base;
+  return {
+    ...base,
+    label: item.label,
+    platform: item.platform,
+    status: item.hint,
+    paired: item.paired,
+    connected: item.connected,
+    createdAt: item.createdAt,
+    lastSeenAt: item.lastSeenAt,
+  };
+}
+
 export function ItemRow({
   item,
   monoItems,
@@ -67,7 +82,7 @@ export function ItemRow({
       <li
         className="a2ui-sidebar-item a2ui-sidebar-item-custom"
         onClick={() =>
-          onEvent("select", { sectionId, itemId: item.id }, item.id)
+          onEvent("select", selectPayload(sectionId, item), item.id)
         }
         onContextMenu={(e) => onItemContextMenu?.(e, item, sectionId)}
       >
@@ -239,7 +254,7 @@ export function ItemRow({
         className={rowClass}
         title={tooltip}
         onClick={() =>
-          onEvent("select", { sectionId, itemId: item.id }, item.id)
+          onEvent("select", selectPayload(sectionId, item), item.id)
         }
         onContextMenu={(e) => onItemContextMenu?.(e, item, sectionId)}
       >
@@ -290,7 +305,7 @@ export function ItemRow({
     <li
       className={rowClass}
       title={tooltip}
-      onClick={() => onEvent("select", { sectionId, itemId: item.id }, item.id)}
+      onClick={() => onEvent("select", selectPayload(sectionId, item), item.id)}
       onContextMenu={(e) => onItemContextMenu?.(e, item, sectionId)}
     >
       {chevronEl}

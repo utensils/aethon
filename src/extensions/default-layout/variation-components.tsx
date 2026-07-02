@@ -106,7 +106,6 @@ export function DropdownPickerCore({
   const [coords, setCoords] = useState<{
     top: number;
     left: number;
-    right: number;
     width: number;
   } | null>(null);
   const rootRef = useRef<HTMLDivElement | null>(null);
@@ -133,17 +132,25 @@ export function DropdownPickerCore({
       const viewportWidth = window.innerWidth / scale;
       const viewportHeight = window.innerHeight / scale;
       const triggerWidth = r.width / scale;
-      const panelWidth = Math.min(
-        Math.max(triggerWidth, 240),
-        Math.max(240, viewportWidth - 16),
+      const viewportGutter = 8;
+      const availableWidth = Math.max(0, viewportWidth - viewportGutter * 2);
+      const minimumPanelWidth = Math.min(120, availableWidth);
+      const panelWidth = Math.max(
+        minimumPanelWidth,
+        Math.min(Math.max(triggerWidth, 240), availableWidth),
+      );
+      const desiredLeft =
+        align === "right" ? r.right / scale - panelWidth : r.left / scale;
+      const maxLeft = Math.max(
+        viewportGutter,
+        viewportWidth - panelWidth - viewportGutter,
       );
       setCoords({
-        top: Math.min(r.bottom / scale + 6, Math.max(8, viewportHeight - 8)),
-        left: Math.max(
-          8,
-          Math.min(r.left / scale, Math.max(8, viewportWidth - 8)),
+        top: Math.min(
+          r.bottom / scale + 6,
+          Math.max(viewportGutter, viewportHeight - viewportGutter),
         ),
-        right: Math.max(8, viewportWidth - r.right / scale),
+        left: Math.max(viewportGutter, Math.min(desiredLeft, maxLeft)),
         width: panelWidth,
       });
     }
@@ -188,10 +195,8 @@ export function DropdownPickerCore({
         role="listbox"
         style={{
           top: coords.top,
+          left: coords.left,
           width: coords.width,
-          ...(align === "right"
-            ? { right: coords.right }
-            : { left: coords.left }),
         }}
       >
         {sections.map((section, sIdx) => {

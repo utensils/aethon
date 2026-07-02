@@ -1,12 +1,25 @@
 import type { EventRouteHandler } from "../types";
 import { activateOverview } from "../tabStrip";
 import { restoreSessionFromSelection } from "../sessionRestore";
+import { OVERVIEW_TAB_ID } from "../../types/tab";
 
 interface RecentSessionItem {
   id: string;
   label: string;
   lastModified?: string;
   cwd?: string;
+}
+
+interface MobileDeviceItem {
+  id: string;
+  itemId?: string;
+  label?: string;
+  platform?: string;
+  status?: string;
+  paired?: boolean;
+  connected?: boolean;
+  createdAt?: number;
+  lastSeenAt?: number;
 }
 
 /** Sidebar select + dropdown chrome pickers (model-picker /
@@ -106,12 +119,31 @@ export const handleSectionedSelect: EventRouteHandler = async (
     const wasAlreadyActiveHost =
       ctx.stateRef.current.activeHostId === selected.itemId;
     ctx.setActiveHost(selected.itemId);
+    ctx.setState((prev) => ({ ...prev, landing: null }));
     if (wasAlreadyActiveHost) {
       activateOverview(ctx);
     }
     return true;
   }
   if (selected?.sectionId === "mobile-devices" && selected.itemId) {
+    const device = selected as MobileDeviceItem;
+    const platform = device.platform || "mobile";
+    const connected = device.connected === true || device.status === "connected";
+    ctx.setState((prev) => ({
+      ...prev,
+      activeTabId: OVERVIEW_TAB_ID,
+      landing: {
+        kind: "mobile-device",
+        deviceId: selected.itemId,
+        label: device.label || platform,
+        platform,
+        status: connected ? "Connected" : "Paired",
+        paired: device.paired === true,
+        connected,
+        createdAt: device.createdAt,
+        lastSeenAt: device.lastSeenAt,
+      },
+    }));
     return true;
   }
   if (selected?.sectionId === "history" && selected.itemId) {

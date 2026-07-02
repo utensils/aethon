@@ -50,4 +50,5 @@ export {
   handleSidebarCopyWorkspacePath,
 } from "./workspace";
 export { handleSidebarToggleExtension } from "./extension";
+export { handleSidebarUnpairMobileDevice } from "./mobileDevice";
 export { handleSectionedSelect } from "./chrome";

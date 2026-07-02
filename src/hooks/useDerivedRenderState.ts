@@ -111,7 +111,10 @@ export function useDerivedRenderState({
     const landing =
       explicitLanding ??
       (overviewActive ? implicitWorkspaceLanding(state) : null);
-    const landingVisible = !!landing && landing.kind === "workspace";
+    const workspaceLandingVisible = !!landing && landing.kind === "workspace";
+    const mobileDeviceLandingVisible =
+      !!landing && landing.kind === "mobile-device";
+    const landingVisible = workspaceLandingVisible || mobileDeviceLandingVisible;
     const effectiveActiveTabId = landingVisible ? OVERVIEW_TAB_ID : activeTabId;
     const history = buildSidebarHistory(
       tabs,
@@ -192,14 +195,26 @@ export function useDerivedRenderState({
       tooltip: h.hostname,
       active: h.id === activeHostId,
     }));
+    const activeMobileDeviceId =
+      landing?.kind === "mobile-device" &&
+      typeof (landing as { deviceId?: unknown }).deviceId === "string"
+        ? (landing as { deviceId: string }).deviceId
+        : null;
     const sidebarMobileDevices = hostInfo.mobileDevices.map((device) => {
-      const connected = device.fingerprintPrefix === "connected";
+      const connected =
+        device.connected === true || device.fingerprintPrefix === "connected";
       const platform = device.hostname || "mobile";
       return {
         id: device.id,
         label: device.displayName || platform,
         icon: "phone",
+        active: device.id === activeMobileDeviceId,
         hint: connected ? "connected" : "paired",
+        platform,
+        connected,
+        paired: device.paired === true,
+        createdAt: device.createdAt,
+        lastSeenAt: device.lastSeen,
         tooltip: `${device.displayName || platform} · ${platform} client`,
       };
     });
@@ -277,6 +292,8 @@ export function useDerivedRenderState({
       shellTabActive: false,
       editorTabActive: activeKind === "editor" && !landingVisible,
       landingVisible,
+      workspaceLandingVisible,
+      mobileDeviceLandingVisible,
       sidebar: {
         ...sidebar,
         projects: sidebarProjectsWithAgent,

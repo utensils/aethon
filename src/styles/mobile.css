@@ -299,20 +299,23 @@ body:has(.ae-mobile-nav) .ae-mobile-header .a2ui-model-picker {
   min-width: 0;
   max-width: 100%;
 }
-body:has(.ae-mobile-nav) .ae-mobile-header .a2ui-model-picker .a2ui-dropdown-trigger {
-  max-width: clamp(4.8rem, 28vw, 7rem);
-  min-height: 30px;
-  padding: 0 8px;
+body:has(.ae-mobile-nav)
+  .ae-mobile-header
+  .a2ui-model-picker
+  .a2ui-dropdown-trigger {
+  max-width: clamp(4.7rem, 26vw, 6.6rem);
+  min-height: 34px;
+  padding: 0 9px;
   font-size: 0.78rem;
 }
 body:has(.ae-mobile-nav) .ae-mobile-header .a2ui-model-picker-reasoning {
-  width: clamp(2rem, 13vw, 2.5rem);
-  height: 30px;
-  padding: 0 4px;
-  font-size: 0.72rem;
+  width: clamp(2.9rem, 15vw, 3.35rem);
+  height: 34px;
+  padding: 0 8px;
+  font-size: 0.78rem;
 }
 body:has(.ae-mobile-nav) .ae-mobile-header .a2ui-model-picker-fast {
-  height: 30px;
+  height: 34px;
   padding: 0 6px;
   font-size: 0.72rem;
 }
@@ -326,6 +329,7 @@ body:has(.ae-mobile-nav) .ae-mobile-header .ae-header-spacer {
   display: inline-flex;
   align-items: center;
   gap: 5px;
+  flex: 0 0 auto;
   font-size: 0.78rem;
   color: var(--text-dim);
   white-space: nowrap;
@@ -346,6 +350,19 @@ body:has(.ae-mobile-nav) .ae-mobile-header .ae-header-spacer {
 }
 .ae-mobile-conn--disconnected .ae-mobile-conn-dot {
   background: var(--danger, #e5484d);
+}
+body:has(.ae-mobile-nav) .ae-mobile-header .ae-mobile-conn {
+  width: 10px;
+  gap: 0;
+  overflow: hidden;
+}
+body:has(.ae-mobile-nav) .ae-mobile-header .ae-mobile-conn-label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
 }
 
 /* Bottom nav */
