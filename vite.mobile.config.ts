@@ -37,15 +37,15 @@ const DESKTOP_ONLY_REDIRECTS: Array<{ target: string; stub: string }> = [
     target: shim("./src/extensions/default-layout/editor/diff-canvas.tsx"),
     stub: shim("./src/mobile/composites/desktop-only-canvas.tsx"),
   },
-  {
-    target: shim("./src/monaco/theme.ts"),
-    stub: shim("./src/mobile/monacoThemeStub.ts"),
-  },
-  {
-    target: shim("./src/monaco/editor-buffers.ts"),
-    stub: shim("./src/mobile/editorBufferStub.ts"),
-  },
 ];
+
+// Basenames (extension-less) of the redirect targets — the resolveId
+// guard below skips filesystem probes for every other specifier.
+const REDIRECT_BASENAMES = new Set(
+  DESKTOP_ONLY_REDIRECTS.map((r) =>
+    (r.target.split("/").pop() ?? "").replace(/\.(tsx|ts)$/, ""),
+  ),
+);
 
 // Resolve a relative specifier against its importer's directory, trying
 // the extensions Vite would try, so it can be compared against the
@@ -127,18 +127,14 @@ export default defineConfig({
     // of monaco-editor plus its default language contributions — whose
     // ts/css/html/json/editor worker chunks (~7 MB+ unminified) Vite
     // auto-splits into separate async chunks that still ship dead in the
-    // IPA. Two other modules reach the same monaco-editor import from
-    // paths that have nothing to do with the canvas: `windowApi.ts`
-    // (universal `window.aethon` wiring) imports `monaco/theme.ts`,
-    // which unconditionally imports `monaco/setup.ts`'s five explicit
-    // `?worker` imports; and the generic tab-lifecycle hooks
-    // (useProjectOps, closeTab, tabCleanup, orphanTabSweep,
-    // useEditorExternalChange) import `monaco/editor-buffers.ts`, whose
-    // bare `import * as monaco from "monaco-editor"` alone is enough to
-    // pull in monaco's default language contributions. All four targets
-    // are safe to redirect on mobile: editor-canvas/diff-canvas never
-    // mount there, so nothing ever actually creates a Monaco model or
-    // theme to apply.
+    // IPA. Post-#467 these two canvases are the ONLY modules whose
+    // import graphs reach monaco-editor: their own `monaco/setup`
+    // side-effect import (worker factories + loader binding) is what
+    // pulls the editor core + five worker chunks. Everything the boot
+    // path touches is monaco-free by construction (`windowApi` imports
+    // `monaco/theme-registry`; `editor-buffers` imports monaco as types
+    // only), so no other redirects are needed — verified by asserting
+    // zero editor.api/worker chunks in dist-mobile after a build.
     //
     // A declarative `resolve.alias` entry can't express this redirect:
     // Vite's alias plugin matches the literal specifier text as written
@@ -157,6 +153,11 @@ export default defineConfig({
       enforce: "pre",
       resolveId(source, importer) {
         if (!importer) return null;
+        // Cheap guard before any fs probe: only a redirect target's
+        // basename can ever match, so skip the resolver hot path for
+        // every other relative import.
+        const bare = (source.split("/").pop() ?? "").replace(/\.(tsx|ts)$/, "");
+        if (!REDIRECT_BASENAMES.has(bare)) return null;
         const resolved = resolveRelative(source, importer);
         if (!resolved) return null;
         const hit = DESKTOP_ONLY_REDIRECTS.find((r) => r.target === resolved);
