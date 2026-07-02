@@ -9,7 +9,7 @@
 // codemod could never reach).
 
 import { existsSync, renameSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join, resolve as resolvePath } from "node:path";
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
@@ -21,6 +21,45 @@ const shim = (p: string) => fileURLToPath(new URL(p, import.meta.url));
 // physical device can reach the Vite server; unset for the simulator /
 // browser loop (localhost).
 const host = process.env.TAURI_DEV_HOST;
+
+// D6: desktop-only modules redirected to lightweight stubs for the
+// mobile build (dev server + `build:mobile`) only — see the resolveId
+// hook below for why. Keyed by the RESOLVED absolute source path so the
+// redirect fires no matter which relative specifier (`"./canvas"`,
+// `"../monaco/theme"`, `"../../../monaco/editor-buffers"`, …) a given
+// importer happens to use.
+const DESKTOP_ONLY_REDIRECTS: Array<{ target: string; stub: string }> = [
+  {
+    target: shim("./src/extensions/default-layout/editor/canvas.tsx"),
+    stub: shim("./src/mobile/composites/desktop-only-canvas.tsx"),
+  },
+  {
+    target: shim("./src/extensions/default-layout/editor/diff-canvas.tsx"),
+    stub: shim("./src/mobile/composites/desktop-only-canvas.tsx"),
+  },
+  {
+    target: shim("./src/monaco/theme.ts"),
+    stub: shim("./src/mobile/monacoThemeStub.ts"),
+  },
+  {
+    target: shim("./src/monaco/editor-buffers.ts"),
+    stub: shim("./src/mobile/editorBufferStub.ts"),
+  },
+];
+
+// Resolve a relative specifier against its importer's directory, trying
+// the extensions Vite would try, so it can be compared against the
+// absolute `target` paths above regardless of which extension-less form
+// the importer used.
+function resolveRelative(source: string, importer: string): string | null {
+  if (!source.startsWith(".")) return null;
+  const base = resolvePath(dirname(importer), source);
+  for (const ext of ["", ".tsx", ".ts"]) {
+    const candidate = base + ext;
+    if (existsSync(candidate)) return candidate;
+  }
+  return null;
+}
 
 export default defineConfig({
   plugins: [
@@ -78,6 +117,50 @@ export default defineConfig({
           }
           next();
         });
+      },
+    },
+    // D6: the mobile layout (mobile.a2ui.json) never places editor-canvas
+    // or diff-canvas, but src/extensions/default-layout/components.tsx
+    // statically imports both (they're assigned into the registry object,
+    // so plain tree-shaking can't drop them even though nothing on mobile
+    // ever renders that A2UI type). Their real implementations reach all
+    // of monaco-editor plus its default language contributions — whose
+    // ts/css/html/json/editor worker chunks (~7 MB+ unminified) Vite
+    // auto-splits into separate async chunks that still ship dead in the
+    // IPA. Two other modules reach the same monaco-editor import from
+    // paths that have nothing to do with the canvas: `windowApi.ts`
+    // (universal `window.aethon` wiring) imports `monaco/theme.ts`,
+    // which unconditionally imports `monaco/setup.ts`'s five explicit
+    // `?worker` imports; and the generic tab-lifecycle hooks
+    // (useProjectOps, closeTab, tabCleanup, orphanTabSweep,
+    // useEditorExternalChange) import `monaco/editor-buffers.ts`, whose
+    // bare `import * as monaco from "monaco-editor"` alone is enough to
+    // pull in monaco's default language contributions. All four targets
+    // are safe to redirect on mobile: editor-canvas/diff-canvas never
+    // mount there, so nothing ever actually creates a Monaco model or
+    // theme to apply.
+    //
+    // A declarative `resolve.alias` entry can't express this redirect:
+    // Vite's alias plugin matches the literal specifier text as written
+    // in the importing file (e.g. "./canvas"), not the resolved absolute
+    // path — and "./canvas" is also the specifier `shell/index.ts` uses
+    // for the unrelated `ShellCanvas`, so a text-based alias would either
+    // never fire (matching against an absolute-path regex) or wrongly
+    // redirect the shell canvas too (matching bare "./canvas"). Instead
+    // this resolveId hook manually resolves each relative specifier
+    // against its importer and compares the RESULT against the resolved
+    // absolute target paths in DESKTOP_ONLY_REDIRECTS — precise
+    // regardless of how many `../` a given importer needs, and immune to
+    // specifier-text collisions with unrelated same-named files.
+    {
+      name: "aethon-mobile-desktop-only",
+      enforce: "pre",
+      resolveId(source, importer) {
+        if (!importer) return null;
+        const resolved = resolveRelative(source, importer);
+        if (!resolved) return null;
+        const hit = DESKTOP_ONLY_REDIRECTS.find((r) => r.target === resolved);
+        return hit ? hit.stub : null;
       },
     },
     // `ANALYZE=1 bun run build:mobile` writes dist-mobile/stats.html.
