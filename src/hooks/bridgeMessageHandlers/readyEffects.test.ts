@@ -230,8 +230,23 @@ describe("runReadyEffects", () => {
       ...input,
       bridgeTabIds: new Set(["tab-1", "tab-2"]),
     });
-    expect(ctx.pendingTabOpens.current.has("tab-1")).toBe(true);
-    expect(ctx.pendingTabOpens.current.has("tab-2")).toBe(true);
+    const firstOpens = new Map(ctx.pendingTabOpens.current);
+    expect(firstOpens.has("tab-1")).toBe(true);
+    expect(firstOpens.has("tab-2")).toBe(true);
+
+    // A ready that re-fires while those opens are still in flight (the
+    // bridge snapshot can't reflect them yet) must not double-send.
+    runReadyEffects(ctx, {
+      ...input,
+      bridgeTabIds: new Set<string>(),
+    });
+    expect(ctx.pendingTabOpens.current.get("tab-1")).toBe(
+      firstOpens.get("tab-1"),
+    );
+    expect(ctx.pendingTabOpens.current.get("tab-2")).toBe(
+      firstOpens.get("tab-2"),
+    );
+
     // Let the .finally() cleanup that clears pendingTabOpens flush.
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(ctx.pendingTabOpens.current.size).toBe(0);

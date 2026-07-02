@@ -39,6 +39,10 @@ function replayRestoredAgentTabs(
   for (const t of localTabs) {
     if ((t.kind ?? "agent") !== "agent") continue;
     if (t.id === "default") continue;
+    // A replay we already sent may not be reflected in the bridge
+    // snapshot yet (ready can re-fire while the open is in flight) —
+    // the pending gate covers that window.
+    if (ctx.pendingTabOpens.current.has(t.id)) continue;
     if (replayedTabIds.has(t.id) && bridgeTabIds.has(t.id)) continue;
     replayedTabIds.add(t.id);
     const tabProject = t.projectId
