@@ -140,20 +140,37 @@ export async function handleSetExtensionDisabled(
   if (hot.ok && extensionApi) {
     const outcome = await hotReloadExtensions(state, deps, extensionApi);
     if (outcome === "applied") {
-      deps.send({
-        type: "extension_lifecycle",
-        name,
-        source: lifecycleSource,
-        status: disabled ? "disabled" : "enabled",
-        hotApplied: true,
-      });
-      void notify(state, notifDeps, {
-        id: `aethon:extension-toggle:${name}`,
-        title: disabled ? `Disabled \`${name}\`` : `Enabled \`${name}\``,
-        message: "Applied without a bridge restart.",
-        kind: "info",
-        durationMs: 4000,
-      });
+      // An ENABLE whose import/register failed during the reload pass
+      // must not report success: the reload itself left consistent
+      // registries (and emitted the `failed` lifecycle event), but the
+      // user's intent didn't take.
+      const enableFailed = !disabled && state.loadFailures.has(name);
+      if (enableFailed) {
+        const failure = state.loadFailures.get(name);
+        void notify(state, notifDeps, {
+          id: `aethon:extension-toggle:${name}`,
+          title: `Enabled \`${name}\`, but it failed to load`,
+          message: failure?.error ?? "See the sidebar's Failures group.",
+          kind: "error",
+          durationMs: 6000,
+        });
+      } else {
+        deps.send({
+          type: "extension_lifecycle",
+          name,
+          source: lifecycleSource,
+          status: disabled ? "disabled" : "enabled",
+          hotApplied: true,
+        });
+        void notify(state, notifDeps, {
+          id: `aethon:extension-toggle:${name}`,
+          title: disabled ? `Disabled \`${name}\`` : `Enabled \`${name}\``,
+          message: "Applied without a bridge restart.",
+          kind: "info",
+          durationMs: 4000,
+        });
+      }
+      // Workers converge on the new disabled list either way.
       deps.send({
         type: "worker_refresh_required",
         reason: `extension-toggle:${name}`,

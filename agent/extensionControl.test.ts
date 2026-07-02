@@ -96,6 +96,44 @@ describe("handleSetExtensionDisabled hot path", () => {
     expect(f.state.disabledExtensions.has("my-ext")).toBe(true);
   });
 
+  it("does not report success when a hot ENABLE's load failed", async () => {
+    f.state.disabledExtensions.add("my-ext");
+    f.state.disabledExtensionMeta.set("my-ext", { source: "directory" });
+    vi.mocked(hotReloadExtensions).mockImplementation((state) => {
+      state.loadFailures.set("my-ext", {
+        source: "directory",
+        status: "failed",
+        error: "register() exploded",
+      });
+      return Promise.resolve("applied" as const);
+    });
+
+    await handleSetExtensionDisabled(
+      f.state,
+      f.deps,
+      { send: f.deps.send },
+      { type: "set_extension_disabled", name: "my-ext", disabled: false },
+      f.api,
+    );
+
+    // No hotApplied success lifecycle, an error toast instead, and the
+    // workers still converge on the new disabled list.
+    expect(f.sent).not.toContainEqual(
+      expect.objectContaining({ hotApplied: true }),
+    );
+    expect(f.sent).toContainEqual(
+      expect.objectContaining({
+        type: "notification",
+        notification: expect.objectContaining({
+          title: expect.stringContaining("failed to load"),
+          kind: "error",
+        }),
+      }),
+    );
+    expect(f.types()).toContain("worker_refresh_required");
+    expect(f.types()).not.toContain("reload_required");
+  });
+
   it("falls back to the respawn when the hot reload fails", async () => {
     f.state.loadedExtensions.set("my-ext", "directory");
     vi.mocked(hotReloadExtensions).mockResolvedValue("fallback");
