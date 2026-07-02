@@ -151,6 +151,7 @@ export function ProjectsDashboard({
     return byProject;
   }, [state.sidebar]);
   const showHostStartupPolicy = host?.isLocal === true;
+  const showOpenProject = host?.isLocal !== false;
 
   useEffect(() => {
     if (!showHostStartupPolicy) {
@@ -217,13 +218,15 @@ export function ProjectsDashboard({
             "Pick a project to keep working, or start something new."}
         </p>
         <div className="a2ui-projects-dashboard-actions">
-          <button
-            type="button"
-            className="a2ui-projects-dashboard-primary"
-            onClick={() => onEvent("open-project")}
-          >
-            Open Project…
-          </button>
+          {showOpenProject && (
+            <button
+              type="button"
+              className="a2ui-projects-dashboard-primary"
+              onClick={() => onEvent("open-project")}
+            >
+              Open Project…
+            </button>
+          )}
           <button
             type="button"
             className="a2ui-projects-dashboard-secondary"

@@ -28,6 +28,7 @@ import type { GitStatus } from "../../../hooks/useProjects";
 
 interface ProjectCardData {
   id: string;
+  remoteId?: string;
   label: string;
   path: string;
   hostId?: string;
@@ -167,7 +168,13 @@ export function ProjectCard({
       onClick={() =>
         onEvent(
           "select-project-card",
-          { projectId: project.id, path: project.path },
+          {
+            projectId: project.id,
+            remoteId: project.remoteId,
+            hostId: project.hostId,
+            label: project.label,
+            path: project.path,
+          },
           project.id,
         )
       }

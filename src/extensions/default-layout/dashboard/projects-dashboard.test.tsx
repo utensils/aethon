@@ -132,6 +132,49 @@ describe("ProjectsDashboard", () => {
     );
   });
 
+  it("hides the local open-project action on remote host overview", () => {
+    const registry = new ExtensionRegistry();
+    registry.register({
+      name: "test-dashboard-components",
+      components: {
+        "task-launcher": TaskLauncher,
+        "project-card": () => <div />,
+        "subagents-config": () => <div />,
+      },
+    });
+
+    render(
+      <ExtensionRegistryProvider registry={registry}>
+        <ProjectsDashboard
+          component={dashboard({
+            host: {
+              id: "remote:fp",
+              hostname: "bender.local",
+              displayName: "bender",
+              isLocal: false,
+            },
+            projects: [
+              {
+                id: "remote:fp::project::aethon",
+                label: "aethon",
+                path: "/remote/aethon",
+              },
+            ],
+            recentSessions: [],
+            extraCards: [],
+          })}
+          state={{}}
+          onEvent={() => {}}
+        />
+      </ExtensionRegistryProvider>,
+    );
+
+    expect(
+      screen.queryByRole("button", { name: "Open Project…" }),
+    ).toBeNull();
+    expect(screen.getByRole("button", { name: "New Tab" })).toBeTruthy();
+  });
+
   it("writes host-level startup auto-approve to global config", async () => {
     const registry = new ExtensionRegistry();
     registry.register({

@@ -104,12 +104,12 @@ pub const COMMAND_POLICIES: &[(&str, RemotePolicy)] = &[
     ("aethon_setup_write_startup_command", Deny(APPROVAL)),
     ("mcp_config_status", Deny(PHASE_SETTINGS)),
     ("mcp_config_approve", Deny(APPROVAL)),
-    ("workspace_startup_status", Deny(PHASE_SETTINGS)),
+    ("workspace_startup_status", DirectRootChecked),
     ("workspace_startup_approve", Deny(APPROVAL)),
     ("workspace_startup_continue", Deny(APPROVAL)),
     ("workspace_startup_retry", Deny(APPROVAL)),
     ("workspace_startup_prepare_for_path", Deny(APPROVAL)),
-    ("workspace_startup_set_auto_approve", Deny(APPROVAL)),
+    ("workspace_startup_set_auto_approve", DirectRootChecked),
     // extensions
     ("set_extension_menu_items", Deny(DESKTOP_ONLY)),
     ("set_tray_sessions", Deny(DESKTOP_ONLY)),
@@ -296,6 +296,13 @@ pub fn root_arg_value(cmd: &str, args: &serde_json::Value) -> Option<String> {
             .and_then(|v| v.as_str())
             .map(str::to_string);
     }
+    if matches!(cmd, "workspace_startup_status" | "workspace_startup_set_auto_approve") {
+        return args
+            .get("args")
+            .and_then(|a| a.get("root"))
+            .and_then(|v| v.as_str())
+            .map(str::to_string);
+    }
     let key = match cmd {
         "git_status" => "path",
         "git_working_context" => "cwd",
@@ -468,6 +475,7 @@ mod tests {
         assert_eq!(policy_for("git_worktree_remove"), DirectRootChecked);
         assert_eq!(policy_for("read_issue_templates"), DirectRootChecked);
         assert_eq!(policy_for("devshell_env_for_path"), DirectRootChecked);
+        assert_eq!(policy_for("workspace_startup_status"), DirectRootChecked);
         assert!(matches!(policy_for("not_a_command"), Deny(_)));
     }
 
@@ -501,6 +509,14 @@ mod tests {
         );
         assert_eq!(
             root_arg_value("devshell_status", &json!({"args": {"root": "/repo"}})).as_deref(),
+            Some("/repo")
+        );
+        assert_eq!(
+            root_arg_value(
+                "workspace_startup_set_auto_approve",
+                &json!({"args": {"root": "/repo", "enabled": true}})
+            )
+            .as_deref(),
             Some("/repo")
         );
         assert_eq!(

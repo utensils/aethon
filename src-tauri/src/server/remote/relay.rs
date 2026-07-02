@@ -106,6 +106,8 @@ pub const DISPATCHABLE: &[&str] = &[
     "devshell_prepare_for_path",
     "devshell_env_for_path",
     "devshell_refresh",
+    "workspace_startup_status",
+    "workspace_startup_set_auto_approve",
     // terminal / files / git phase
     "shell_open",
     "shell_input",
@@ -344,6 +346,26 @@ impl TauriRelay {
                     crate::commands::devshell::devshell_refresh(
                         app.clone(),
                         cache.clone(),
+                        arg(&args, "args")?,
+                    )
+                    .await?,
+                )
+            }
+            "workspace_startup_status" => {
+                let startup = app.state::<crate::commands::startup::WorkspaceStartupState>();
+                to_value(crate::commands::startup::workspace_startup_status(
+                    app.clone(),
+                    startup.clone(),
+                    arg(&args, "args")?,
+                )
+                .await?)
+            }
+            "workspace_startup_set_auto_approve" => {
+                let startup = app.state::<crate::commands::startup::WorkspaceStartupState>();
+                to_value(
+                    crate::commands::startup::workspace_startup_set_auto_approve(
+                        app.clone(),
+                        startup.clone(),
                         arg(&args, "args")?,
                     )
                     .await?,

@@ -45,6 +45,7 @@ import {
 
 interface ProjectLite {
   id: string;
+  remoteId?: string;
   label: string;
   path: string;
   hostId?: string;
@@ -362,7 +363,16 @@ export function TaskLauncher({
     onEvent("start-task", {
       ...(hostSelected
         ? { target: "host" }
-        : { projectId: selectedProject?.id }),
+        : {
+            projectId: selectedProject?.id,
+            remoteId: selectedProject?.remoteId,
+            hostId: selectedProject?.hostId,
+            projectLabel: selectedProject?.label,
+            path:
+              workspaceChoice.kind === "existing"
+                ? workspaceChoice.path
+                : selectedProject?.path,
+          }),
       prompt: text,
       attachments,
       newWorkspace: !hostSelected && workspaceChoice.kind === "new",

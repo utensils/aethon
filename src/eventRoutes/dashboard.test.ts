@@ -279,6 +279,44 @@ describe("handleProjectDashboard", () => {
     });
   });
 
+  it("selects remote project cards without using the local project store", async () => {
+    const { ctx, applySetState } = buildRouteFixture({
+      state: { activeHostId: "local:one", activeTabId: "tab-7" },
+    });
+    const handled = await handleProjectsDashboard(
+      {
+        component: { id: "projects-dashboard", type: "projects-dashboard" },
+        eventType: "select-project-card",
+        data: {
+          projectId: "remote:fp::project::aethon",
+          remoteId: "aethon",
+          hostId: "remote:fp",
+          label: "aethon",
+          path: "/remote/aethon",
+        },
+      },
+      ctx,
+    );
+
+    expect(handled).toBe(true);
+    expect(ctx.setActiveProjectById).not.toHaveBeenCalled();
+    expect(ctx.setActiveHost).toHaveBeenCalledWith("remote:fp");
+    expect(ctx.activateWorkspace).toHaveBeenCalledWith(null);
+    expect(ctx.clearActiveProject).toHaveBeenCalled();
+    expect(applySetState()).toMatchObject({
+      project: {
+        id: "remote:fp::project::aethon",
+        remoteId: "aethon",
+        hostId: "remote:fp",
+        label: "aethon",
+        path: "/remote/aethon",
+      },
+      activeProjectId: "remote:fp::project::aethon",
+      activeWorkspaceId: null,
+      landing: null,
+    });
+  });
+
   it("forwards issue-section start-task events emitted through the project dashboard", async () => {
     const { ctx } = buildRouteFixture();
     const handled = await handleProjectDashboard(
@@ -430,6 +468,50 @@ describe("handleTaskLauncher", () => {
       attachments: undefined,
     });
     expect(ctx.startTaskInProject).not.toHaveBeenCalled();
+  });
+
+  it("remote project start-task opens a remote tab without local project lookup", async () => {
+    const { ctx, mocks, applySetState } = buildRouteFixture();
+    const handled = await handleTaskLauncher(
+      {
+        component: { id: "x", type: "task-launcher" },
+        eventType: "start-task",
+        data: {
+          projectId: "remote:fp::project::aethon",
+          remoteId: "aethon",
+          hostId: "remote:fp",
+          projectLabel: "aethon",
+          path: "/remote/aethon",
+          prompt: "fix remote thing",
+          model: "openai/gpt-5.5",
+        },
+      },
+      ctx,
+    );
+
+    expect(handled).toBe(true);
+    expect(ctx.startTaskInProject).not.toHaveBeenCalled();
+    expect(mocks.newTab).toHaveBeenCalledOnce();
+    const tabId = mocks.newTab.mock.calls[0]?.[0];
+    expect(mocks.newTab).toHaveBeenCalledWith(tabId, undefined, {
+      cwd: "/remote/aethon",
+      hostId: "remote:fp",
+      model: "openai/gpt-5.5",
+    });
+    expect(mocks.sendChat).toHaveBeenCalledWith("fix remote thing", {
+      tabId,
+      attachments: undefined,
+    });
+    expect(applySetState()).toMatchObject({
+      project: {
+        id: "remote:fp::project::aethon",
+        remoteId: "aethon",
+        hostId: "remote:fp",
+        label: "aethon",
+        path: "/remote/aethon",
+      },
+      activeProjectId: "remote:fp::project::aethon",
+    });
   });
 
   it("start-task calls ctx.startTaskInProject with the full payload", async () => {

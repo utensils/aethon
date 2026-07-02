@@ -52,6 +52,7 @@ export function useNewTab(deps: NewTabDeps) {
     options?: {
       restoredSession?: boolean;
       cwd?: string;
+      hostId?: string;
       scrollToMatch?: string;
       /** Per-launch model override (task-launcher model chip). Wins over
        *  the global default + per-project memory in modelForNewProjectTab. */
@@ -97,11 +98,13 @@ export function useNewTab(deps: NewTabDeps) {
       projectsRef.current,
       stateRef.current,
     );
-    const hostId = activeHostIdForNewTab(projectsRef.current, stateRef.current);
+    const hostId =
+      options?.hostId ??
+      activeHostIdForNewTab(projectsRef.current, stateRef.current);
     const isRemote = isRemoteHostId(hostId);
     const inheritedCwd =
       options?.cwd ??
-      cwdForNewTab(projectsRef.current, stateRef.current) ??
+      (isRemote ? null : cwdForNewTab(projectsRef.current, stateRef.current)) ??
       undefined;
     const inheritedModel = modelForNewProjectTab(
       stateRef.current,
@@ -113,10 +116,10 @@ export function useNewTab(deps: NewTabDeps) {
       typeof stateRef.current.defaultThinkingLevel === "string"
         ? stateRef.current.defaultThinkingLevel
         : undefined;
-    const initialTerminalBuffer = inheritedCwd
+    const initialTerminalBuffer = inheritedCwd && !isRemote
       ? initialDevshellTerminalBuffer(stateRef.current, inheritedCwd)
       : "";
-    const preparingDevshell = inheritedCwd
+    const preparingDevshell = inheritedCwd && !isRemote
       ? devshellNeedsPreparation(stateRef.current, inheritedCwd)
       : false;
     const existingSessionLabel = restoreId

@@ -24,6 +24,7 @@ import {
 import { restoreSessionFromSelection } from "./sessionRestore";
 import { firstIssueSessionTab } from "../extensions/default-layout/dashboard/issue-sessions";
 import { DEFAULT_WORKSPACE_BASE_BRANCH } from "../projects";
+import { isRemoteHostId } from "../remoteInvoke";
 
 function issueSourceFromStartTask(data: {
   projectId?: string;
@@ -83,6 +84,35 @@ function projectBaseBranchFromState(
   return DEFAULT_WORKSPACE_BASE_BRANCH;
 }
 
+function activateRemoteProject(
+  ctx: EventRouteContext,
+  project: {
+    projectId: string;
+    hostId: string;
+    remoteId?: string;
+    label?: string;
+    path?: string;
+    workspaceId?: string | null;
+  },
+): void {
+  ctx.activateWorkspace(project.workspaceId ?? null);
+  ctx.clearActiveProject();
+  ctx.setActiveHost(project.hostId);
+  ctx.setState((prev) => ({
+    ...prev,
+    project: {
+      id: project.projectId,
+      remoteId: project.remoteId ?? project.projectId,
+      hostId: project.hostId,
+      label: project.label ?? project.projectId,
+      path: project.path ?? "",
+    },
+    activeProjectId: project.projectId,
+    activeWorkspaceId: project.workspaceId ?? null,
+    landing: null,
+  }));
+}
+
 /** New-tab / Open Project… / restore-session / select-project-card
  *  for the global projects-dashboard surface. */
 export const handleProjectsDashboard: EventRouteHandler = (
@@ -94,15 +124,44 @@ export const handleProjectsDashboard: EventRouteHandler = (
     return true;
   }
   if (eventType === "open-project") {
+    const activeHostId =
+      (ctx.stateRef.current.activeHostId as string | null | undefined) ?? null;
+    if (isRemoteHostId(activeHostId)) {
+      ctx.pushNotification({
+        title: "Open projects on the remote host",
+        message: "Pair the host, then use the projects it publishes here.",
+        kind: "info",
+        durationMs: 5000,
+      });
+      return true;
+    }
     void ctx.openProjectFromPicker();
     return true;
   }
   if (eventType === "select-project-card") {
-    const sel = data as { projectId?: string } | undefined;
+    const sel = data as
+      | {
+          projectId?: string;
+          hostId?: string;
+          remoteId?: string;
+          label?: string;
+          path?: string;
+        }
+      | undefined;
     if (sel?.projectId) {
-      ctx.activateWorkspace(null);
-      ctx.setActiveProjectById(sel.projectId);
-      ctx.setState((prev) => ({ ...prev, landing: null }));
+      if (sel.hostId && isRemoteHostId(sel.hostId)) {
+        activateRemoteProject(ctx, {
+          projectId: sel.projectId,
+          hostId: sel.hostId,
+          remoteId: sel.remoteId,
+          label: sel.label,
+          path: sel.path,
+        });
+      } else {
+        ctx.activateWorkspace(null);
+        ctx.setActiveProjectById(sel.projectId);
+        ctx.setState((prev) => ({ ...prev, landing: null }));
+      }
     }
     return true;
   }
@@ -218,6 +277,10 @@ export async function launchStartTask(
   const sel = data as
     | {
         projectId?: string;
+        hostId?: string;
+        remoteId?: string;
+        projectLabel?: string;
+        path?: string;
         prompt?: string;
         attachments?: unknown;
         newWorkspace?: boolean;
@@ -255,6 +318,37 @@ export async function launchStartTask(
     return true;
   }
   if (!sel?.projectId || !hasPayload) return false;
+  if (sel.hostId && isRemoteHostId(sel.hostId)) {
+    if (!sel.path) {
+      ctx.pushNotification({
+        title: "Could not start task",
+        message: "Remote project path is missing.",
+        kind: "warning",
+      });
+      return false;
+    }
+    activateRemoteProject(ctx, {
+      projectId: sel.projectId,
+      hostId: sel.hostId,
+      remoteId: sel.remoteId,
+      label: sel.projectLabel,
+      path: sel.path,
+      workspaceId: sel.workspaceId ?? null,
+    });
+    const tabId = crypto.randomUUID();
+    ctx.newTab(tabId, undefined, {
+      cwd: sel.path,
+      hostId: sel.hostId,
+      ...(typeof sel.model === "string" && sel.model.length > 0
+        ? { model: sel.model }
+        : {}),
+    });
+    void ctx.sendChat(prompt, {
+      tabId,
+      attachments,
+    });
+    return true;
+  }
   const sourceIssue = issueSourceFromStartTask(sel);
   if (sourceIssue) {
     const existing = firstIssueSessionTab(
