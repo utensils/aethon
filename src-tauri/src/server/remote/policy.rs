@@ -409,7 +409,11 @@ mod tests {
         assert_eq!(policy_for("agent_command"), DirectFiltered);
         assert_eq!(policy_for("ui.chat.send"), ForwardToFrontend("chat.send"));
         assert!(matches!(policy_for("write_state"), Deny(_)));
-        assert!(matches!(policy_for("shell_write"), Deny(_)));
+        assert_eq!(policy_for("shell_write"), Direct);
+        assert_eq!(policy_for("shell_open"), DirectRootChecked);
+        assert_eq!(policy_for("fs_read_file"), DirectRootChecked);
+        assert_eq!(policy_for("git_status"), DirectRootChecked);
+        assert!(matches!(policy_for("git_worktree_add"), Deny(_)));
         assert!(matches!(policy_for("not_a_command"), Deny(_)));
     }
 
