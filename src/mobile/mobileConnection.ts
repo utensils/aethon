@@ -18,14 +18,17 @@ export interface MobileConnection {
 const STORAGE_KEY = "aethon-mobile-connection";
 
 export function loadConnection(): MobileConnection | null {
-  // Dev / e2e override: ?gateway=ws://host:port&token=…
+  // Dev / e2e override: ?gateway=ws://host:port&token=…[&fp=<sha256>].
+  // `fp` pins the cert and flips the transport to wss, so the dev loop
+  // can drive a real TLS gateway (e.g. the simulator against a running
+  // desktop) — without it the override stays the plaintext dev path.
   try {
     const params = new URLSearchParams(window.location.search);
     const gatewayUrl = params.get("gateway");
     const token = params.get("token");
     if (gatewayUrl && token) {
       const host = gatewayUrl.replace(/^wss?:\/\//, "").replace(/\/ws$/, "");
-      return { host, token };
+      return { host, token, fingerprint: params.get("fp") ?? undefined };
     }
   } catch {
     // No URLSearchParams (non-browser) — fall through to storage.

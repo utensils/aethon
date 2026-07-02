@@ -57,10 +57,16 @@ pub fn advertise(
         SERVICE_TYPE,
         &instance_name,
         &format!("{hostname}.local."),
+        // No static IP: enable_addr_auto attaches every non-loopback
+        // interface address (and tracks changes). Without it the
+        // service registers with NO A/AAAA records — mdns-sd accepts
+        // that silently, but browsers can never resolve it, so the
+        // announcement is invisible on the wire.
         "",
         port,
         &props[..],
-    )?;
+    )?
+    .enable_addr_auto();
     mdns.register(service)?;
     Ok(mdns)
 }
