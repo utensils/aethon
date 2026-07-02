@@ -55,16 +55,20 @@ describe("classifyPairError", () => {
 });
 
 describe("pairWithHosts", () => {
-  it("falls through net failures and returns the first success", async () => {
-    const invokeFn = vi
-      .fn()
-      .mockRejectedValueOnce("net:timed out connecting to 100.1.2.3:48213")
-      .mockResolvedValueOnce({
+  it("races all candidates concurrently and resolves with the first success", async () => {
+    // The dead host hangs well past the winner — serial iteration
+    // would have waited it out; the race must not.
+    const invokeFn = vi.fn((_cmd: string, args: Record<string, unknown>) => {
+      if (args.host === "192.168.1.10:48213") {
+        return new Promise(() => undefined); // never settles
+      }
+      return Promise.resolve({
         deviceId: "dev-1",
         deviceToken: "tok-1",
         hostDisplayName: "halcyon",
         hostFingerprint: PAYLOAD.fp,
       });
+    });
     const { connection, outcome } = await pairWithHosts({
       hosts: PAYLOAD.hosts,
       port: PAYLOAD.port,
@@ -72,13 +76,8 @@ describe("pairWithHosts", () => {
       code: PAYLOAD.code,
       invokeFn,
     });
+    // Both candidates were attempted in parallel.
     expect(invokeFn).toHaveBeenCalledTimes(2);
-    expect(invokeFn).toHaveBeenLastCalledWith("gateway_pair", {
-      host: "halcyon.local:48213",
-      fingerprint: PAYLOAD.fp,
-      code: PAYLOAD.code,
-      deviceName: "iPhone",
-    });
     expect(connection).toEqual({
       host: "halcyon.local:48213",
       token: "tok-1",
@@ -87,8 +86,12 @@ describe("pairWithHosts", () => {
     expect(outcome.deviceId).toBe("dev-1");
   });
 
-  it("stops immediately on a server verdict — no attempt-budget burn", async () => {
-    const invokeFn = vi.fn().mockRejectedValue("pair:403:wrong code");
+  it("prefers a server verdict over transport noise when every host fails", async () => {
+    const invokeFn = vi.fn((_cmd: string, args: Record<string, unknown>) =>
+      args.host === "192.168.1.10:48213"
+        ? Promise.reject(new Error("net:timed out"))
+        : Promise.reject(new Error("pair:403:wrong code")),
+    );
     const err = await pairWithHosts({
       hosts: PAYLOAD.hosts,
       port: PAYLOAD.port,
@@ -101,7 +104,6 @@ describe("pairWithHosts", () => {
     );
     expect(err?.kind).toBe("pair");
     expect(err?.status).toBe(403);
-    expect(invokeFn).toHaveBeenCalledTimes(1);
   });
 
   it("omits the fingerprint field for the plaintext dev path", async () => {

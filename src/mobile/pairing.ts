@@ -93,7 +93,18 @@ export function pairErrorMessage(error: PairFailure): string {
   return `Could not reach the desktop: ${error.message}`;
 }
 
-export async function pairWithHosts(opts: {
+/** Redeem the code against every candidate host CONCURRENTLY and take
+ *  the first success. The QR's hosts[] can contain unreachable
+ *  interfaces (a Tailscale IP when the phone isn't on the tailnet, VPN
+ *  utuns, …) — tried serially each one burns its full 5s timeout before
+ *  the LAN address gets a turn. Racing is safe for the scanned-QR flow:
+ *  the code is known-correct and single-use, so at most one request
+ *  redeems it; stragglers get a harmless "pairing not active".
+ *
+ *  Callers with a HAND-TYPED code should pass a single host (the nearby
+ *  flow does): a wrong code fanned out to N hosts would burn N of the
+ *  window's 5 attempts at once. */
+export function pairWithHosts(opts: {
   hosts: string[];
   port: number;
   fingerprint: string;
@@ -104,30 +115,48 @@ export async function pairWithHosts(opts: {
 }): Promise<{ connection: MobileConnection; outcome: PairOutcome }> {
   const invokeFn = opts.invokeFn ?? invoke;
   const deviceName = opts.deviceName ?? DEFAULT_DEVICE_NAME;
-  let lastError = new PairFailure("net", "no candidate hosts");
-  for (const candidate of opts.hosts) {
-    const host = candidate.includes(":") ? candidate : `${candidate}:${opts.port}`;
-    try {
-      const outcome = (await invokeFn("gateway_pair", {
+  const hosts = opts.hosts.map((c) => (c.includes(":") ? c : `${c}:${opts.port}`));
+  if (hosts.length === 0) {
+    return Promise.reject(new PairFailure("net", "no candidate hosts"));
+  }
+  return new Promise((resolve, reject) => {
+    let pending = hosts.length;
+    let settled = false;
+    let best: PairFailure | null = null;
+    for (const host of hosts) {
+      invokeFn("gateway_pair", {
         host,
         fingerprint: opts.fingerprint,
         code: opts.code,
         deviceName,
-      })) as PairOutcome;
-      return {
-        connection: {
-          host,
-          token: outcome.deviceToken,
-          fingerprint: opts.fingerprint || undefined,
+      }).then(
+        (raw) => {
+          if (settled) return;
+          settled = true;
+          const outcome = raw as PairOutcome;
+          resolve({
+            connection: {
+              host,
+              token: outcome.deviceToken,
+              fingerprint: opts.fingerprint || undefined,
+            },
+            outcome,
+          });
         },
-        outcome,
-      };
-    } catch (err) {
-      lastError = classifyPairError(err);
-      // A server verdict is terminal; only transport failures fall
-      // through to the next candidate.
-      if (lastError.kind === "pair") throw lastError;
+        (err: unknown) => {
+          const failure = classifyPairError(err);
+          // When everything fails, a server verdict (wrong code,
+          // expired window) explains more than transport noise.
+          if (!best || (failure.kind === "pair" && best.kind === "net")) {
+            best = failure;
+          }
+          pending -= 1;
+          if (pending === 0 && !settled) {
+            settled = true;
+            reject(best);
+          }
+        },
+      );
     }
-  }
-  throw lastError;
+  });
 }
