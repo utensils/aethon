@@ -210,9 +210,15 @@ export class GatewayTransport {
     // — every event frame was then delivered once per zombie socket
     // (the mobile text-duplication bug), and the zombie's eventual
     // close event tore down the healthy connection.
+    //
+    // A reused adapter instance (RustBridgeAdapter) is NOT closed here:
+    // its open() already replaces the frame listener, and the native
+    // gateway_connect supersedes the old socket. Racing an async
+    // gateway_close against the follow-up gateway_connect could tear
+    // down the fresh connection instead of the stale one.
     const gen = ++this.generation;
-    this.adapter?.close();
     const adapter = this.config.adapter ?? defaultAdapter();
+    if (this.adapter && this.adapter !== adapter) this.adapter.close();
     this.adapter = adapter;
     this.setStatus(this.lastHello ? "reconnecting" : "connecting");
 

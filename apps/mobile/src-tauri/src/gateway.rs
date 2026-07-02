@@ -210,9 +210,10 @@ pub async fn gateway_send(state: State<'_, Arc<GatewayState>>, text: String) -> 
 
 #[tauri::command]
 pub async fn gateway_close(state: State<'_, Arc<GatewayState>>) -> Result<(), String> {
-    // Invalidate the live reader so it exits without emitting a close
-    // for a connection the JS side already abandoned.
-    state.generation.fetch_add(1, Ordering::SeqCst);
+    // No generation bump here: the JS adapter unlistens synchronously
+    // before invoking this, so stray frames from the dying socket are
+    // already undeliverable — and bumping would let a close that lands
+    // after a racing gateway_connect orphan the FRESH connection.
     // Dropping the sender ends the writer task, which closes the socket.
     *state.tx.lock().await = None;
     Ok(())
