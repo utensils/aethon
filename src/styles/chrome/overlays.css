@@ -395,6 +395,17 @@
   border-radius: 8px;
   background: color-mix(in oklab, var(--accent) 5%, transparent);
 }
+.ae-remote-qr {
+  display: flex;
+  justify-content: center;
+}
+.ae-remote-qr svg {
+  /* Always a white card — phones can't reliably scan light-on-dark
+     codes, and the padding doubles as the QR quiet zone. */
+  background: #fff;
+  padding: 10px;
+  border-radius: 10px;
+}
 .ae-remote-pairing-code {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 2rem;
