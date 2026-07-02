@@ -136,7 +136,12 @@ export function useDerivedRenderState({
       ((state.sidebar as { projects?: unknown } | undefined)?.projects as
         | { id: string; workspaces?: unknown }[]
         | undefined) ?? [];
-    const activeProjectSidebarEntry = sidebarProjects.find(
+    const activeHostId = hostInfo.activeHostId ?? hostInfo.localHostId;
+    const hostScopedProjects =
+      activeHostId && activeHostId !== hostInfo.localHostId
+        ? (hostInfo.remoteProjectsByHost[activeHostId] ?? [])
+        : sidebarProjects;
+    const activeProjectSidebarEntry = hostScopedProjects.find(
       (p) => p.id === activeProjectId,
     );
     const projectDashboardWorkspaces =
@@ -183,7 +188,6 @@ export function useDerivedRenderState({
       ...existingProjectsDashboard,
       extraCards: existingProjectsDashboard.extraCards ?? [],
     };
-    const activeHostId = hostInfo.activeHostId ?? hostInfo.localHostId;
     const sidebarHosts = hostInfo.hosts.map((h) => ({
       id: h.id,
       label: h.displayName || h.hostname,
@@ -287,9 +291,9 @@ export function useDerivedRenderState({
       if (t.kind !== "agent") continue;
       if (isAgentTabInFlight(t)) runningIds.add(t.id);
     }
-    const sidebarProjectsWithAgent = Array.isArray(sidebar.projects)
+    const sidebarProjectsWithAgent = Array.isArray(hostScopedProjects)
       ? attachAgentActivity(
-          sidebar.projects as Array<{
+          hostScopedProjects as Array<{
             id: string;
             workspaces?: { path?: string; isMain?: boolean }[];
           }>,
@@ -297,7 +301,7 @@ export function useDerivedRenderState({
           runningIds,
           attentionIds,
         )
-      : sidebar.projects;
+      : hostScopedProjects;
 
     return {
       ...state,
@@ -336,6 +340,7 @@ export function useDerivedRenderState({
     hostInfo.hosts,
     hostInfo.localHostId,
     hostInfo.mobileDevices,
+    hostInfo.remoteProjectsByHost,
     state,
   ]);
 

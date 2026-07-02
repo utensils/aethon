@@ -11,6 +11,7 @@ const hostInfo: UseHostInfo = {
   localHostId: "local:one",
   setActiveHost: vi.fn(),
   mobileDevices: [],
+  remoteProjectsByHost: {},
   hosts: [
     {
       id: "local:one",

@@ -22,6 +22,15 @@ interface MobileDeviceItem {
   lastSeenAt?: number;
 }
 
+interface ProjectSelectItem {
+  sectionId?: string;
+  itemId?: string;
+  label?: string;
+  path?: string;
+  hostId?: string;
+  remoteId?: string;
+}
+
 /** Sidebar select + dropdown chrome pickers (model-picker /
  *  appearance-menu) all use the same `{sectionId, itemId}` event
  *  shape. Registered under three route-table type keys
@@ -93,6 +102,35 @@ export const handleSectionedSelect: EventRouteHandler = async (
     // a project id.
     if (selected.itemId === "open-project") {
       ctx.openProjectFromPicker();
+      return true;
+    }
+    const projectItem = selected as ProjectSelectItem;
+    if (projectItem.hostId && projectItem.remoteId) {
+      const project = ctx.stateRef.current.project as
+        | { id?: string }
+        | null
+        | undefined;
+      const wasAlreadyActiveProjectRoot =
+        project?.id === selected.itemId &&
+        ctx.stateRef.current.activeWorkspaceId == null;
+      ctx.activateWorkspace(null);
+      ctx.clearActiveProject();
+      ctx.setState((prev) => ({
+        ...prev,
+        project: {
+          id: selected.itemId,
+          remoteId: projectItem.remoteId,
+          hostId: projectItem.hostId,
+          label: projectItem.label ?? selected.itemId,
+          path: projectItem.path ?? "",
+        },
+        activeProjectId: selected.itemId,
+        activeWorkspaceId: null,
+        landing: null,
+      }));
+      if (wasAlreadyActiveProjectRoot) {
+        activateOverview(ctx);
+      }
       return true;
     }
     const project = ctx.stateRef.current.project as

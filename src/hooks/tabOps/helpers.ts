@@ -135,6 +135,11 @@ export function cwdForNewTab(
 ): string | null {
   const projectCwd = activeCwd(projects);
   if (projectCwd) return projectCwd;
+  const activeProjectPath =
+    (appState.project as { path?: unknown } | null | undefined)?.path ?? null;
+  if (typeof activeProjectPath === "string" && activeProjectPath.length > 0) {
+    return activeProjectPath;
+  }
   const aethonRoot = appState.aethonRoot;
   if (typeof aethonRoot === "string" && aethonRoot.length > 0) {
     return aethonRoot;

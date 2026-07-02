@@ -44,6 +44,15 @@ export interface ItemRowProps {
 
 function selectPayload(sectionId: string, item: SidebarItem): Record<string, unknown> {
   const base = { sectionId, itemId: item.id };
+  if (sectionId === "projects") {
+    return {
+      ...base,
+      label: item.label,
+      path: item.tooltip,
+      hostId: item.hostId,
+      remoteId: item.remoteId,
+    };
+  }
   if (sectionId !== "mobile-devices") return base;
   return {
     ...base,
