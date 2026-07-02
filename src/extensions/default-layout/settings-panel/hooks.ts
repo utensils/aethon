@@ -53,6 +53,70 @@ export function useEffectiveConfig(
 }
 
 /**
+ * Track which section currently owns the top of the settings scroll
+ * viewport, for the nav rail's active highlight. IntersectionObserver
+ * with a top-biased band (the section crossing the upper quarter wins)
+ * so the highlight flips as a section's title reaches the reading line,
+ * not when its last row leaves the screen.
+ */
+export function useActiveSection(
+  open: boolean,
+  ready: boolean,
+  initial: string,
+): [string, (id: string) => void] {
+  const [active, setActive] = useState(initial);
+  useEffect(() => {
+    if (!open || !ready) return;
+    // jsdom (tests) has no IntersectionObserver; the rail then only
+    // highlights on click, which is fine.
+    if (typeof IntersectionObserver === "undefined") return;
+    const sections = [
+      ...document.querySelectorAll<HTMLElement>("[data-settings-section]"),
+    ];
+    if (sections.length === 0) return;
+    const root = document.querySelector<HTMLElement>(".ae-settings-body");
+    const lastId = sections[sections.length - 1]?.dataset.settingsSection;
+    const visible = new Map<string, number>();
+    const pickActive = () => {
+      // The last sections can never reach the top band; scrolled to the
+      // end, the final section is the honest highlight. Checked here (not
+      // in a separate scroll handler) so a late observer callback can't
+      // overwrite it.
+      if (root && lastId && root.scrollTop + root.clientHeight >= root.scrollHeight - 4) {
+        setActive(lastId);
+        return;
+      }
+      if (visible.size === 0) return;
+      // Topmost visible section wins.
+      const top = [...visible.entries()].sort((a, b) => a[1] - b[1])[0];
+      if (top) setActive(top[0]);
+    };
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          const id = (entry.target as HTMLElement).dataset.settingsSection;
+          if (!id) continue;
+          if (entry.isIntersecting) visible.set(id, entry.boundingClientRect.top);
+          else visible.delete(id);
+        }
+        pickActive();
+      },
+      {
+        root,
+        rootMargin: "0px 0px -60% 0px",
+      },
+    );
+    sections.forEach((section) => observer.observe(section));
+    root?.addEventListener("scroll", pickActive, { passive: true });
+    return () => {
+      observer.disconnect();
+      root?.removeEventListener("scroll", pickActive);
+    };
+  }, [open, ready]);
+  return [active, setActive];
+}
+
+/**
  * Smooth-scroll the named section into view when the panel opens with
  * a focus target. Uses `requestAnimationFrame` so the section element
  * has been laid out before we measure it, and cancels on unmount /

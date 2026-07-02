@@ -13,19 +13,84 @@
   align-items: center;
   justify-content: center;
   z-index: var(--z-modal, 1200);
+  animation: ae-settings-scrim-in 150ms var(--ease-out, ease-out);
 }
 .ae-settings-panel {
   background: var(--modal-bg, var(--bg-elev));
   border: 1px solid var(--modal-border, var(--border));
   border-radius: var(--radius-lg, 12px);
-  width: min(860px, 94vw);
-  max-height: 85vh;
+  width: min(1180px, 94vw);
+  height: min(820px, 88vh);
   display: flex;
   flex-direction: column;
   box-shadow:
     var(--modal-shadow, 0 24px 64px rgba(0, 0, 0, 0.45)),
     var(--inner-highlight, none);
   font-family: ui-sans-serif, system-ui, sans-serif;
+  animation: ae-settings-panel-in 180ms var(--ease-out, ease-out);
+}
+@keyframes ae-settings-scrim-in {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes ae-settings-panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.985);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ae-settings-overlay,
+  .ae-settings-panel {
+    animation: none;
+  }
+}
+/* Nav rail + content pane. The rail sits on the base surface (one layer
+   below the panel) so the content pane reads as the lit working area. */
+.ae-settings-layout {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.ae-settings-nav {
+  flex: 0 0 190px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 14px 10px;
+  border-right: 1px solid var(--border);
+  background: var(--bg, transparent);
+  border-radius: 0 0 0 var(--radius-lg, 12px);
+  overflow-y: auto;
+}
+.ae-settings-nav-item {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  padding: 6px 10px;
+  text-align: left;
+  font: inherit;
+  font-size: 0.9rem;
+  color: var(--text-dim);
+  cursor: pointer;
+  transition:
+    background var(--motion-fast, 120ms) var(--ease-out, ease-out),
+    color var(--motion-fast, 120ms) var(--ease-out, ease-out);
+}
+.ae-settings-nav-item:hover {
+  color: var(--text);
+  background: var(--bg-input, rgba(127, 127, 127, 0.12));
+}
+.ae-settings-nav-item:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+.ae-settings-nav-item--active {
+  color: var(--text);
+  font-weight: 600;
+  background: var(--bg-input, rgba(127, 127, 127, 0.14));
 }
 .ae-settings-header {
   display: flex;
@@ -67,16 +132,20 @@
   color: var(--text);
 }
 .ae-settings-body {
-  padding: 16px 20px;
+  padding: 20px 28px 28px;
   overflow-y: auto;
   overscroll-behavior: none;
   flex: 1 1 auto;
 }
 .ae-settings-section {
-  margin-bottom: 22px;
+  margin-bottom: 30px;
+  /* Anchor scrolling (nav rail + focusSection) lands with breathing room. */
+  scroll-margin-top: 12px;
 }
 .ae-settings-section-title {
-  margin: 0 0 8px 0;
+  margin: 0 0 10px 0;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border);
   font-size: 0.85rem;
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -90,6 +159,18 @@
   display: flex;
   flex-direction: column;
   gap: 10px;
+}
+/* One shared control column so field rows read as a grid: text-like
+   controls all end on the same right edge; numbers stay compact. */
+.ae-settings-field-control select.ae-settings-input,
+.ae-settings-field-control input.ae-settings-input[type="text"],
+.ae-settings-field-control input.ae-settings-input[type="password"] {
+  width: 320px;
+  box-sizing: border-box;
+}
+.ae-settings-field-control input.ae-settings-input[type="number"] {
+  width: 110px;
+  min-width: 0;
 }
 
 /* Extensions list — one row per extension with name + provenance + a
@@ -180,6 +261,38 @@
   color: var(--text-dim);
   font-size: 0.88rem;
   margin: 0 0 8px 0;
+}
+/* Settings → Voice → Conversation subsection. Key rows keep input +
+   buttons on one line ending at the shared control column's right edge. */
+.ae-voice-conversation-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 10px; /* same rhythm as .ae-settings-section-body */
+}
+.ae-voice-conversation-settings .ae-settings-subhead {
+  margin: 12px 0 0;
+  font-size: 0.95rem;
+  color: var(--text);
+}
+.ae-voice-conversation-settings .ae-settings-note {
+  margin: 0;
+}
+.ae-voice-key-row {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+}
+.ae-voice-conversation-settings
+  .ae-voice-key-row
+  input.ae-settings-input[type="password"],
+.ae-voice-conversation-settings
+  .ae-voice-key-row
+  input.ae-settings-input[type="text"] {
+  width: 200px;
+  min-width: 0;
+}
+.ae-voice-key-row .ae-settings-secondary {
+  white-space: nowrap;
 }
 /* Settings model picker — flex row carrying either the dropdown or the
    free-text override input plus a small toggle to swap modes. */
@@ -563,9 +676,16 @@
   }
 }
 
+@media (max-width: 900px) {
+  .ae-settings-nav {
+    display: none;
+  }
+}
 @media (max-width: 720px) {
   .ae-settings-panel {
     width: min(96vw, 860px);
+    height: auto;
+    max-height: 88vh;
   }
   .ae-settings-field {
     align-items: stretch;
@@ -575,7 +695,10 @@
   .ae-settings-field-control,
   .ae-settings-input,
   .ae-settings-model-picker,
-  .ae-settings-model-picker .ae-settings-input {
+  .ae-settings-model-picker .ae-settings-input,
+  .ae-settings-field-control select.ae-settings-input,
+  .ae-settings-field-control input.ae-settings-input[type="text"],
+  .ae-settings-field-control input.ae-settings-input[type="password"] {
     width: 100%;
     min-width: 0;
   }
