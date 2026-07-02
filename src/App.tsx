@@ -66,7 +66,10 @@ import { useUpdaterConfigBridge } from "./hooks/useUpdaterConfigBridge";
 import { closeAllWorkspaceSessions } from "./hooks/tabOps/closeWorkspaceSessions";
 import type { NativeCanvasWindowRecord } from "./nativeWindows";
 import { writeState } from "./persist";
-import { shouldPaintChromeOptimistically } from "./state/chromeBootSnapshot";
+import {
+  clearChromeBootSnapshot,
+  shouldPaintChromeOptimistically,
+} from "./state/chromeBootSnapshot";
 import { useAppState } from "./state/appStore";
 import { activeWorkspaceCwd } from "./utils/activeWorkspaceRoot";
 import pkg from "../package.json" with { type: "json" };
@@ -144,6 +147,9 @@ export default function App() {
   const [startupChromeReady, setStartupChromeReady] = useState(() =>
     shouldPaintChromeOptimistically(),
   );
+  // True once the bridge's real `ready` confirmed the chrome — after
+  // that, the kill-switch revoke below must never hide working chrome.
+  const bridgeConfirmedChromeRef = useRef(false);
   const {
     stateRef,
     projectsRef,
@@ -190,7 +196,22 @@ export default function App() {
     shellInheritEnvRef,
     shellPromptBeforeCloseRef,
     reapplyConfig,
-  } = useBootConfig({ setState, piDefaultModelRef });
+  } = useBootConfig({
+    setState,
+    piDefaultModelRef,
+    // Kill-switch reconciliation: a stale built-ins-only snapshot can
+    // seed the optimistic paint before the config is readable. This
+    // callback runs in the same batch that flips bootConfigReady (the
+    // other half of the chromeReady AND), so revoking here means the
+    // disabled launch never paints optimistically — no flash. Skipped
+    // once the bridge's real ready confirmed the chrome.
+    onBootConfig: (config) => {
+      if (config.boot?.optimisticChrome === false) {
+        clearChromeBootSnapshot();
+        if (!bridgeConfirmedChromeRef.current) setStartupChromeReady(false);
+      }
+    },
+  });
 
   // ---------------------------------------------------------------------
   // UI zoom + theme switching are owned by useZoomAndTheme. The hook
@@ -825,6 +846,7 @@ export default function App() {
     sendChat,
     markStartupChromeReady: () => {
       bootMark("agent-ready");
+      bridgeConfirmedChromeRef.current = true;
       setStartupChromeReady(true);
     },
   });
