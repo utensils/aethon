@@ -65,7 +65,9 @@ function saveToken(host: string, token: string): void {
     // First token — the file doesn't exist yet.
   }
   saved[host] = token;
-  mkdirSync(dirname(TOKEN_FILE), { recursive: true });
+  // 0o700 so other local users can't even list the token filenames,
+  // matching the Rust-side set_dir_owner_only intent.
+  mkdirSync(dirname(TOKEN_FILE), { recursive: true, mode: 0o700 });
   writeFileSync(TOKEN_FILE, JSON.stringify(saved, null, 2), { mode: 0o600 });
 }
 

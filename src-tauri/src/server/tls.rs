@@ -56,9 +56,23 @@ pub fn install_crypto_provider() {
 }
 
 /// `~/.aethon/remote/` — shared home of the TLS identity and the
-/// paired-device store.
+/// paired-device store. Resolves the home directory via `HOME` /
+/// `USERPROFILE` (matching `lib.rs::home_dir_for_logging`) so it works
+/// off the Tauri thread and dodges `std::env::home_dir` portability
+/// caveats.
 pub(crate) fn default_remote_dir() -> Option<PathBuf> {
-    crate::helpers::aethon_dir(std::env::home_dir()).map(|d| d.join("remote"))
+    crate::helpers::aethon_dir(home_dir()).map(|d| d.join("remote"))
+}
+
+fn home_dir() -> Option<PathBuf> {
+    #[cfg(windows)]
+    {
+        std::env::var_os("USERPROFILE").map(PathBuf::from)
+    }
+    #[cfg(not(windows))]
+    {
+        std::env::var_os("HOME").map(PathBuf::from)
+    }
 }
 
 /// Load the persisted identity or generate + persist a fresh one.

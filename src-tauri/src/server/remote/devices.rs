@@ -135,14 +135,20 @@ impl DeviceStore {
     }
 
     /// Resolve a presented token to its non-revoked device. Scans every
-    /// record (no early exit on the hash compare itself); N is tiny.
+    /// record without early exit — `find` would leak, via wall-clock,
+    /// which record matched, undoing the constant-time compare. N is
+    /// tiny, so the full scan is free.
     pub fn verify_token(&self, token: &str) -> Option<DeviceView> {
         let hash = sha256_hex(token.as_bytes());
         let records = self.records.lock().ok()?;
-        records
-            .iter()
-            .find(|r| !r.revoked && constant_time_eq(&r.token_sha256, &hash))
-            .map(DeviceView::from)
+        let mut matched: Option<&DeviceRecord> = None;
+        for record in records.iter() {
+            let hit = !record.revoked && constant_time_eq(&record.token_sha256, &hash);
+            if hit {
+                matched = Some(record);
+            }
+        }
+        matched.map(DeviceView::from)
     }
 
     /// Record activity from a device (connect / reconnect).

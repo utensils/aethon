@@ -45,11 +45,13 @@ pub fn router(info: HostInfo, remote: Arc<RemoteState>, relay: Arc<dyn RelayExec
                 async move { Json(info) }
             }),
         )
-        // Harmless on the plain-HTTP fallback listener: pairing sessions
-        // can only be armed while the TLS identity exists
-        // (remote_pairing_begin refuses otherwise), so without TLS this
-        // route is a guaranteed 404. /ws still authenticates per-token
-        // on its first frame either way.
+        // /pair is armed only during an active pairing window and
+        // 404s otherwise. In production the listener is always TLS
+        // (remote_pairing_begin refuses without a cert identity); the
+        // one path where pairing runs over plaintext is the dev-only
+        // `allow_insecure_ws` mode (debug builds), where the operator
+        // has explicitly opted into a trusted LAN. /ws authenticates
+        // per-token on its first frame regardless.
         .route("/pair", post(pairing::pair_handler))
         .route("/ws", get(ws::ws_handler))
         .route("/asset", get(asset_handler))

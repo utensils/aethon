@@ -174,14 +174,23 @@ pub async fn start(app: &AppHandle, state: &ServerState, advertise: bool) -> Res
         );
     }
     if allow_insecure_ws_from_config_text(&raw_config) {
-        // Dev-only escape hatch for the browser dev loop (a desktop
-        // browser can't pin a self-signed cert). Phones will refuse the
-        // missing TLS — this is not a production mode.
-        tracing::warn!(
-            target: "aethon::server",
-            "[server] allow_insecure_ws = true — serving WITHOUT TLS (dev only)"
-        );
-        identity = None;
+        if cfg!(debug_assertions) {
+            // Dev-only escape hatch for the browser dev loop (a desktop
+            // browser can't pin a self-signed cert). Phones refuse the
+            // missing TLS — this is never a production mode, so release
+            // builds ignore the flag entirely rather than serving plain-
+            // text pairing/tokens over the LAN.
+            tracing::warn!(
+                target: "aethon::server",
+                "[server] allow_insecure_ws = true — serving WITHOUT TLS (dev build only)"
+            );
+            identity = None;
+        } else {
+            tracing::warn!(
+                target: "aethon::server",
+                "[server] allow_insecure_ws is ignored in release builds — keeping TLS"
+            );
+        }
     }
     let remote = Arc::clone(app.state::<Arc<remote::RemoteState>>().inner());
     let relay: Arc<dyn remote::relay::RelayExec> =
