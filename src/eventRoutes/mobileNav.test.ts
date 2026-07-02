@@ -57,6 +57,41 @@ describe("handleMobileNav", () => {
     expect((applySetState({}).mobileNav as { active?: string }).active).toBe("chat");
   });
 
+  it("restore-session reopens the session by id and jumps to chat", () => {
+    const { ctx, mocks, applySetState } = buildRouteFixture();
+    const handled = handleMobileNav(
+      {
+        component: { id: "sessions", type: "mobile-sessions" },
+        eventType: "restore-session",
+        data: { sessionId: "s42", cwd: "/repo", label: "My session" },
+      },
+      ctx,
+    );
+    expect(handled).toBe(true);
+    expect(mocks.newTab).toHaveBeenCalledWith(
+      "s42",
+      "My session",
+      expect.objectContaining({ restoredSession: true }),
+    );
+    expect((applySetState({}).mobileNav as { isChat?: boolean }).isChat).toBe(true);
+  });
+
+  it("rejects unknown screen values instead of blanking every flag", () => {
+    const { ctx, applySetState } = buildRouteFixture({
+      state: { mobileNav: { active: "chat", isChat: true } },
+    });
+    handleMobileNav(
+      {
+        component: { id: "nav", type: "mobile-nav" },
+        eventType: "mobile-nav",
+        data: { screen: "not-a-screen" },
+      },
+      ctx,
+    );
+    const state = applySetState({ mobileNav: { active: "chat", isChat: true } });
+    expect((state.mobileNav as { active?: string }).active).toBe("chat");
+  });
+
   it("ignores unrelated component types", () => {
     const { ctx } = buildRouteFixture();
     const handled = handleMobileNav(

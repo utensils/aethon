@@ -38,10 +38,18 @@ function setScreen(
   });
 }
 
+const SCREENS: readonly Screen[] = ["sessions", "chat", "settings"];
+
+function asScreen(value: unknown): Screen | undefined {
+  return SCREENS.find((s) => s === value);
+}
+
 export const handleMobileNav: EventRouteHandler = ({ component, eventType, data }, ctx) => {
   if (component.type === "mobile-nav") {
     if (eventType === "mobile-nav") {
-      const screen = (data as { screen?: Screen } | undefined)?.screen;
+      // Validate, don't cast: events can arrive over the gateway, and an
+      // unknown screen would zero every visibility flag (blank canvas).
+      const screen = asScreen((data as { screen?: unknown } | undefined)?.screen);
       if (screen) setScreen(ctx, screen);
     }
     return true;

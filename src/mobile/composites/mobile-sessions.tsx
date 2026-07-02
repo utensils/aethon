@@ -20,7 +20,8 @@ interface RecentLike {
 
 function baseName(cwd?: string): string | undefined {
   if (!cwd) return undefined;
-  const parts = cwd.replace(/\/+$/, "").split("/");
+  // Both separators: the paired desktop may be a Windows host.
+  const parts = cwd.replace(/[/\\]+$/, "").split(/[/\\]/);
   return parts[parts.length - 1] || cwd;
 }
 
