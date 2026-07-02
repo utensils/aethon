@@ -6,6 +6,19 @@ describe("mobile command policy", () => {
   it("routes native plugin commands locally", () => {
     expect(routeFor("plugin:notification|notify")).toBe("local");
     expect(routeFor("plugin:opener|open_url")).toBe("local");
+    expect(routeFor("plugin:barcode-scanner|scan")).toBe("local");
+  });
+
+  it("routes the mobile shell's own commands locally, never to the desktop", () => {
+    for (const cmd of [
+      "gateway_connect",
+      "gateway_send",
+      "gateway_close",
+      "gateway_pair",
+      "discovery_scan",
+    ]) {
+      expect(routeFor(cmd)).toBe("local");
+    }
   });
 
   it("stubs desktop-only command families", () => {
