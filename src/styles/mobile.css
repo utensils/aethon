@@ -1,0 +1,120 @@
+/* Companion (iOS) surface styles. Phase 2 covers the connect / gate
+   chrome; the touch-first layout composites arrive with the mobile
+   layout in a later phase. Safe-area insets + >=16px inputs (to defeat
+   iOS auto-zoom) are established here. */
+
+:root {
+  --ae-safe-top: env(safe-area-inset-top, 0px);
+  --ae-safe-bottom: env(safe-area-inset-bottom, 0px);
+  --ae-safe-left: env(safe-area-inset-left, 0px);
+  --ae-safe-right: env(safe-area-inset-right, 0px);
+}
+
+.ae-mobile-connect,
+.ae-mobile-connecting {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  min-height: 100dvh;
+  padding: calc(var(--ae-safe-top) + 24px) 20px calc(var(--ae-safe-bottom) + 24px);
+  background: var(--bg);
+  color: var(--text);
+  text-align: center;
+}
+
+.ae-mobile-connect-card {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  width: 100%;
+  max-width: 420px;
+  text-align: left;
+}
+
+.ae-mobile-connect-title {
+  margin: 0;
+  font-size: 1.5rem;
+}
+.ae-mobile-connect-hint {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: 0.92rem;
+}
+.ae-mobile-connect-error {
+  margin: 0;
+  color: var(--danger, #e5484d);
+  font-size: 0.9rem;
+}
+
+.ae-mobile-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 0.85rem;
+  color: var(--text-dim);
+}
+
+.ae-mobile-input {
+  /* >=16px keeps iOS Safari from auto-zooming on focus. */
+  font-size: 16px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--bg-input);
+  color: var(--text);
+}
+.ae-mobile-input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: var(--focus-ring);
+}
+
+.ae-mobile-connect-button,
+.ae-mobile-text-button {
+  min-height: 44px; /* touch target */
+  border-radius: 10px;
+  font-size: 1rem;
+  cursor: pointer;
+}
+.ae-mobile-connect-button {
+  background: var(--accent);
+  color: var(--bg);
+  border: none;
+}
+.ae-mobile-connect-button:disabled {
+  opacity: 0.5;
+}
+.ae-mobile-text-button {
+  background: transparent;
+  border: none;
+  color: var(--accent);
+}
+
+.ae-mobile-spinner {
+  width: 28px;
+  height: 28px;
+  border: 3px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: ae-mobile-spin 0.8s linear infinite;
+}
+@keyframes ae-mobile-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.ae-mobile-reconnect-banner {
+  position: fixed;
+  top: var(--ae-safe-top);
+  left: 0;
+  right: 0;
+  z-index: 1000;
+  padding: 6px 12px;
+  text-align: center;
+  font-size: 0.85rem;
+  background: var(--accent);
+  color: var(--bg);
+}

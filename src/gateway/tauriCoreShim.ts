@@ -1,22 +1,30 @@
 // Aliased in place of `@tauri-apps/api/core` for the mobile build (see
-// vite.mobile.config.ts). Exposes the same `invoke` / `convertFileSrc`
-// signatures the reused frontend imports, but routes each call per
-// `commandPolicy`: native plugins to the real Tauri runtime, desktop-only
-// commands to local stubs, everything else to the gateway transport.
+// vite.mobile.config.ts). Re-exports the real module wholesale — plugins
+// like @tauri-apps/plugin-notification import `addPluginListener`,
+// `Channel`, etc. — but overrides `invoke` and `convertFileSrc` so those
+// two route per `commandPolicy`: native plugins to the real Tauri
+// runtime, desktop-only commands to local stubs, everything else to the
+// gateway transport.
+//
+// The `@tauri-real/core` specifier (a dedicated tsconfig path + Vite
+// alias) resolves to the genuine module, so this re-export doesn't loop
+// back onto the shim.
+
+export * from "@tauri-real/core";
 
 import { routeFor, stubResult } from "./commandPolicy";
 import { gateway } from "./transport";
 
 interface TauriInternals {
   invoke: (cmd: string, args?: unknown, options?: unknown) => Promise<unknown>;
-  convertFileSrc?: (path: string, protocol?: string) => string;
 }
 
 function internals(): TauriInternals | undefined {
   return (globalThis as { __TAURI_INTERNALS__?: TauriInternals }).__TAURI_INTERNALS__;
 }
 
-/** Same shape as `@tauri-apps/api/core`'s `invoke`, but transport-aware. */
+/** Same shape as `@tauri-apps/api/core`'s `invoke`, but transport-aware.
+ *  Shadows the re-exported `invoke` above. */
 export function invoke<T = unknown>(
   cmd: string,
   args: Record<string, unknown> = {},
@@ -45,31 +53,10 @@ export function setAssetBase(wsUrl: string, token: string): void {
 
 /** Mobile replacement for Tauri's `convertFileSrc`: a desktop-local path
  *  becomes an authenticated HTTP URL served by the gateway's /asset
- *  endpoint (the desktop reads it through the same jailed path). */
+ *  endpoint (the desktop reads it through the same jailed path). Shadows
+ *  the re-exported `convertFileSrc`. */
 export function convertFileSrc(filePath: string, _protocol = "asset"): string {
   if (!assetBase) return filePath;
   const params = new URLSearchParams({ path: filePath, token: assetBase.token });
   return `${assetBase.httpBase}/asset?${params.toString()}`;
-}
-
-/** `@tauri-apps/api/core` also exports `Channel` and `isTauri`; a handful
- *  of modules import them. Re-provide minimal compatible shapes. */
-export class Channel<T = unknown> {
-  onmessage: ((message: T) => void) | null = null;
-  private nextId = 0;
-  id = 0;
-  toJSON(): string {
-    return `__CHANNEL__:${this.id}`;
-  }
-  set onmessageHandler(handler: (message: T) => void) {
-    this.onmessage = handler;
-  }
-  send(message: T): void {
-    this.onmessage?.(message);
-    this.nextId += 1;
-  }
-}
-
-export function isTauri(): boolean {
-  return internals() !== undefined;
 }

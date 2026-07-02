@@ -1,28 +1,25 @@
 // Aliased in place of `@tauri-apps/api/event` for the mobile build.
-// Bridges Tauri's `listen` onto the gateway's topic subscription: an
-// event name maps to a gateway topic, and each frame's verbatim payload
-// is delivered as the Tauri `Event.payload` the frontend already expects.
+// Re-exports the real module for anything that needs `TauriEvent` or the
+// event types, but overrides `listen`/`once`/`emit`/`emitTo` to bridge
+// Tauri events onto the gateway's topic subscription: an event name maps
+// to a gateway topic, and each frame's verbatim payload is delivered as
+// the Tauri `Event.payload` the frontend already expects.
 //
-// Events the desktop never mirrors over the gateway (e.g. `menu`,
-// window drag) simply never fire — identical to the app's behaviour in
-// a plain browser today.
+// Events the desktop never mirrors over the gateway (e.g. `menu`, window
+// drag) simply never fire — identical to the app's behaviour in a plain
+// browser today.
+
+export * from "@tauri-real/event";
+import type { EventCallback, Options, UnlistenFn } from "@tauri-real/event";
 
 import { gateway } from "./transport";
-
-export type UnlistenFn = () => void;
-
-export interface Event<T> {
-  event: string;
-  id: number;
-  payload: T;
-}
-export type EventCallback<T> = (event: Event<T>) => void;
 
 let eventSeq = 0;
 
 export function listen<T = unknown>(
   event: string,
   handler: EventCallback<T>,
+  _options?: Options,
 ): Promise<UnlistenFn> {
   const unsub = gateway.subscribe(event, (payload) => {
     handler({ event, id: eventSeq++, payload: payload as T });
@@ -33,6 +30,7 @@ export function listen<T = unknown>(
 export function once<T = unknown>(
   event: string,
   handler: EventCallback<T>,
+  _options?: Options,
 ): Promise<UnlistenFn> {
   let unsub: UnlistenFn = () => {};
   unsub = gateway.subscribe(event, (payload) => {
