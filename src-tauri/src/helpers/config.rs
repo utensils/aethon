@@ -144,6 +144,11 @@ pub struct ServerConfig {
     /// cert) can drive the mobile UI against a local dev instance.
     /// Default `false`; never enable on a network you don't trust.
     pub allow_insecure_ws: Option<bool>,
+    /// Keep the app (and therefore the gateway + agent) running when the
+    /// last window closes, so paired companions stay connected to a
+    /// "headless" Mac. Only honored while at least one non-revoked device
+    /// is paired; reopen the window from the Dock. Default `false`.
+    pub keep_alive: Option<bool>,
 }
 
 #[derive(Default, Deserialize)]
@@ -523,6 +528,7 @@ pub fn parse_config_toml(input: &str) -> serde_json::Value {
             "enabled": cfg.server.enabled.unwrap_or(true),
             "port": cfg.server.port,
             "allowInsecureWs": cfg.server.allow_insecure_ws.unwrap_or(false),
+            "keepAlive": cfg.server.keep_alive.unwrap_or(false),
         },
         "startup": {
             "autoApprove": cfg.startup.auto_approve.unwrap_or(false),

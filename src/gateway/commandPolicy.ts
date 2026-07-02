@@ -22,17 +22,17 @@ function isLocalPlugin(cmd: string): boolean {
 }
 
 /** Desktop-only commands stubbed with a canned value. Prefix match for
- *  the families; exact match otherwise. */
+ *  the families; exact match otherwise. Terminal/files/git flows are
+ *  NOT stubbed — the gateway serves them (Phase 4), so they reach the
+ *  desktop like any other forwarded command. */
 const STUB_PREFIXES = [
   "voice_",
   "native_window_",
   "devshell_",
-  "shell_",
-  "git_",
-  "gh_",
+  // fs watchers are desktop-local (the phone doesn't drive OS watchers);
+  // fs reads/writes forward to the gateway.
   "fs_watch",
   "fs_unwatch",
-  "server_",
 ];
 
 const STUB_EXACT = new Set<string>([
@@ -42,14 +42,28 @@ const STUB_EXACT = new Set<string>([
   "toggle_fullscreen",
   "toggle_devtools",
   "pick_project_directory",
+  // Persisted-state writes stay off the phone; config.write is the one
+  // exception, translated to the gated ui.config.write forward below.
   "write_state",
-  "write_config",
   "boot_stage",
   "boot_ok",
   "set_tray_sessions",
   "set_extension_menu_items",
+  // Desktop-local fs surface openers.
+  "fs_reveal_in_file_manager",
+  "fs_open_in_file_manager",
+  "fs_open_in_default_app",
+  // Worktree mutation + git watchers are desktop-only.
+  "git_worktree_add",
+  "git_worktree_remove",
+  "git_worktree_remove_orphan",
+  "git_watch_root",
+  "git_unwatch_root",
   // Gateway-admin + control-plane: never driven from the phone.
   "server_status",
+  "server_start",
+  "server_stop",
+  "remote_status",
   "remote_pairing_begin",
   "remote_pairing_cancel",
   "remote_devices_list",
@@ -63,14 +77,28 @@ const STUB_EXACT = new Set<string>([
 const STUB_RESULTS: Record<string, unknown> = {
   updater_available: false,
   write_state: null,
-  write_config: null,
+};
+
+/** Commands renamed on the wire: the gateway exposes some flows as
+ *  `ui.*` forwards executed by the desktop webview rather than the raw
+ *  command. `write_config` → the gated config.write forward so companion
+ *  Settings edits persist without breaking the single-writer invariant. */
+export const GATEWAY_TRANSLATIONS: Record<string, string> = {
+  write_config: "ui.config.write",
 };
 
 export function routeFor(cmd: string): CommandRoute {
   if (isLocalPlugin(cmd)) return "local";
+  if (cmd in GATEWAY_TRANSLATIONS) return "gateway";
   if (STUB_EXACT.has(cmd)) return "stub";
   if (STUB_PREFIXES.some((p) => cmd.startsWith(p))) return "stub";
   return "gateway";
+}
+
+/** The wire command name for a gateway-routed call (applies `ui.*`
+ *  translations; identity otherwise). */
+export function gatewayCommand(cmd: string): string {
+  return GATEWAY_TRANSLATIONS[cmd] ?? cmd;
 }
 
 export function stubResult(cmd: string): unknown {

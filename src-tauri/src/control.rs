@@ -277,6 +277,14 @@ pub(crate) async fn forward_ui_method(
     method: &str,
     params: Value,
 ) -> Result<Value, String> {
+    // UI-owned mutations need the desktop webview to execute them. With
+    // `[server] keep_alive` the app can be running window-less — fail
+    // fast instead of emitting into the void and timing out.
+    if app.get_webview_window("main").is_none() {
+        return Err(
+            "desktop UI unavailable — reopen the Aethon window to run this action".to_string(),
+        );
+    }
     let request_id = uuid::Uuid::new_v4().to_string();
     let timeout = request_timeout(&params);
     let (tx, rx) = oneshot::channel();

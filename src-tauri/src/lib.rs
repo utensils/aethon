@@ -450,9 +450,34 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building tauri application");
     app.run(|app_handle, event| {
-        if matches!(event, tauri::RunEvent::Exit) {
-            let state = app_handle.state::<agent_process::AgentProcesses>();
-            agent_process::shutdown_all_agents(&state, "app exit");
+        match event {
+            tauri::RunEvent::ExitRequested { api, code, .. } => {
+                // `[server] keep_alive`: with paired companion devices,
+                // closing the last window leaves the app (gateway +
+                // agent) running so phones stay connected. Explicit
+                // quits (app.exit / Cmd+Q sets a code) still exit.
+                if code.is_none() && server::remote::keep_alive_active(app_handle) {
+                    tracing::info!(
+                        target: "aethon::server::remote",
+                        "last window closed — staying alive for paired devices ([server] keep_alive)"
+                    );
+                    api.prevent_exit();
+                }
+            }
+            #[cfg(target_os = "macos")]
+            tauri::RunEvent::Reopen { .. } => {
+                // Dock-icon click while running window-less (keep_alive):
+                // bring the workspace back.
+                if let Some(window) = app_handle.get_webview_window("main") {
+                    let _ = window.show();
+                    let _ = window.set_focus();
+                }
+            }
+            tauri::RunEvent::Exit => {
+                let state = app_handle.state::<agent_process::AgentProcesses>();
+                agent_process::shutdown_all_agents(&state, "app exit");
+            }
+            _ => {}
         }
     });
 }

@@ -230,6 +230,9 @@ pub const COMMAND_POLICIES: &[(&str, RemotePolicy)] = &[
     ("ui.chat.wait", ForwardToFrontend("chat.wait")),
     ("ui.accounts.use", ForwardToFrontend("accounts.use")),
     ("ui.agent.stop", ForwardToFrontend("agent.stop")),
+    // Companion Settings edits: the desktop webview applies + persists,
+    // preserving the single-writer invariant on config.toml.
+    ("ui.config.write", ForwardToFrontend("config.write")),
 ];
 
 pub fn policy_for(cmd: &str) -> RemotePolicy {

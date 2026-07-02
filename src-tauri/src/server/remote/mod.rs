@@ -105,6 +105,21 @@ impl Default for RemoteState {
     }
 }
 
+/// Whether closing the last window should keep the app alive:
+/// `[server] keep_alive = true` AND at least one non-revoked paired
+/// device. Without a device the flag is inert, so a fresh install never
+/// turns into an invisible background process.
+pub fn keep_alive_active(app: &tauri::AppHandle) -> bool {
+    use tauri::Manager;
+    if !crate::server::keep_alive_enabled(app) {
+        return false;
+    }
+    let Some(remote) = app.try_state::<Arc<RemoteState>>() else {
+        return false;
+    };
+    remote.devices.list().iter().any(|d| !d.revoked)
+}
+
 /// Axum router state for the gateway routes.
 #[derive(Clone)]
 pub struct GatewayCtx {
