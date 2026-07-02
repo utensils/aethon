@@ -13,6 +13,7 @@ import {
   registerControlWait,
   type ControlWaitResult,
 } from "./controlWaitRegistry";
+import { flushDeferredTabOpen } from "./bridgeMessageHandlers/readyEffects";
 
 /** Default ceiling for `chat.send --wait` / `chat.wait` when the caller does
  *  not pass `timeoutMs`. Generous because real agent turns routinely run for
@@ -176,6 +177,12 @@ async function openTab(
   const cwd = stringParam(params, "cwd");
   const model = stringParam(params, "model");
   const account = stringParam(params, "account");
+  // If the id names a restored tab whose replay is deferred, open it
+  // first so the bridge state matches the pre-lazy-replay behavior.
+  const deferred = flushDeferredTabOpen(tabId);
+  if (deferred) {
+    await deferred.catch(() => {});
+  }
   ctx.newTab(tabId, label, { cwd, model });
   await ctx.pendingTabOpens.current.get(tabId);
   if (account) {

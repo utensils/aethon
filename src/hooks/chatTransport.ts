@@ -4,6 +4,7 @@ import type { ChatAttachment, ChatMessage } from "../types/a2ui";
 import type { QueuedMessage, Tab } from "../types/tab";
 import { parseSlashCommand } from "../slashCommands";
 import { isAgentTabInFlight } from "../utils/agentBusy";
+import { flushDeferredTabOpen } from "./bridgeMessageHandlers/readyEffects";
 import { queueOf, withQueue } from "./chatQueue";
 import type { UseChatContext } from "./useChat";
 
@@ -274,11 +275,13 @@ export function createChatTransportController(
         : prev,
     );
 
-    // Wait for any pending tab_open on this tab to land first so the
-    // bridge has the right initial model before the chat creates the
-    // session lazily. swallow any open errors — sendChat surfaces its
-    // own error path below.
-    const pending = pendingTabOpens.current.get(tabId);
+    // A deferred restored tab opens on this first interaction (lazy
+    // replay — see readyEffects.ts); otherwise wait for any pending
+    // tab_open so the bridge has the right initial model before the
+    // chat creates the session lazily. Swallow any open errors —
+    // sendChat surfaces its own error path below.
+    const pending =
+      flushDeferredTabOpen(tabId) ?? pendingTabOpens.current.get(tabId);
     if (pending) {
       try {
         await pending;

@@ -11,6 +11,10 @@ import {
   loadSessionUiSnapshot,
   saveSessionUiSnapshot,
 } from "../state/sessionUiSnapshot";
+import {
+  resetReplayedTabsForTest,
+  seedDeferredTabOpenForTest,
+} from "./bridgeMessageHandlers/readyEffects";
 
 const invoke = vi.fn<(...args: unknown[]) => Promise<unknown>>(() =>
   Promise.resolve(undefined),
@@ -236,6 +240,28 @@ describe("useChat setModel", () => {
       text: "hello",
       delivery: "sent",
     });
+  });
+
+  it("opens a deferred restored tab before sending", async () => {
+    const { ctx } = buildContext();
+    let sendSeenAtOpen: boolean | null = null;
+    seedDeferredTabOpenForTest("tab-1", () => {
+      sendSeenAtOpen = invoke.mock.calls.some(([cmd]) => cmd === "send_message");
+      return Promise.resolve(undefined);
+    });
+    try {
+      const { result } = renderHook(() => useChat(ctx));
+
+      await act(async () => {
+        await result.current.sendChat("hello");
+      });
+
+      // The deferred open ran (non-null) and strictly before send_message.
+      expect(sendSeenAtOpen).toBe(false);
+      expect(invoke).toHaveBeenCalledWith("send_message", expect.anything());
+    } finally {
+      resetReplayedTabsForTest();
+    }
   });
 
   it("lets the bridge emit the user session event when local mirroring fails", async () => {
