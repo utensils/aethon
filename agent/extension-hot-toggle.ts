@@ -119,6 +119,9 @@ function resetExtensionSurface(state: AethonAgentState): void {
   state.extensionLayout = undefined;
   state.pendingLayoutPatches = [];
   state.extPathOwners.clear();
+  // Notified-runtime-error suppression must reset with the surface: a
+  // re-registered extension whose error recurs should re-notify.
+  state.notifiedExtRuntimeErrors.clear();
   state.projectBaseline = null;
 }
 
