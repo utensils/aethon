@@ -54,6 +54,22 @@ case "$mode" in
     exec cargo tauri ios dev "$@"
     ;;
   build)
+    # The Tauri CLI renames the freshly-archived .app inside the
+    # xcarchive; a stale archive from a previous run makes that rename
+    # fail with ENOTEMPTY (os error 66). gen/apple/build holds final
+    # products only — incremental state lives in DerivedData and
+    # target/ — so clearing it is cheap and makes rebuilds reliable.
+    rm -rf src-tauri/gen/apple/build
+    # A bare device build (the Tauri CLI default) needs code signing,
+    # and bundle.iOS.developmentTeam is unset — xcodebuild fails with
+    # "requires a development team". Default to the unsigned simulator
+    # build instead so zero-arg ios-build works out of the box.
+    if [ $# -eq 0 ]; then
+      echo "==> no args: defaulting to the unsigned simulator build"
+      echo "    (device build: ios-build --target aarch64 — needs a development"
+      echo "     team in apps/mobile/src-tauri/tauri.conf.json bundle.iOS)"
+      set -- --debug --target aarch64-sim
+    fi
     echo "==> cargo tauri ios build $*"
     exec cargo tauri ios build "$@"
     ;;

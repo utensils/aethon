@@ -433,7 +433,7 @@
               {
                 category = "build";
                 name = "ios-build";
-                help = "Build the iOS companion app (cargo tauri ios build; needs Xcode + CocoaPods). Pass --debug --target aarch64-sim for an unsigned simulator build.";
+                help = "Build the iOS companion app (cargo tauri ios build; needs Xcode + CocoaPods). No args = unsigned simulator build; --target aarch64 = device (needs a development team).";
                 command = "exec ./scripts/ios.sh build \"$@\"";
               }
               {

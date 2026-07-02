@@ -58,9 +58,11 @@ or use `cli/aethonRemote.ts pair <code>`.
 on first run, and hands off to the Tauri CLI):
 
 ```sh
-ios-dev                                    # run in the Simulator
-ios-build --debug --target aarch64-sim     # unsigned simulator .app
-ios-dev --host                             # physical device over LAN
+ios-dev                     # run in the Simulator
+ios-build                   # unsigned simulator .app (the no-arg default)
+ios-dev --host              # physical device over LAN
+ios-build --target aarch64  # signed device build — needs a development
+                            # team in tauri.conf.json bundle.iOS first
 ```
 
 The raw path (`cd apps/mobile && bun run ios:dev`) still works but doesn't
