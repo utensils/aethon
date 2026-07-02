@@ -69,7 +69,14 @@ pub struct EventHub {
 /// Bounded so a wedged consumer can't hold unbounded memory; a receiver
 /// that observes `Lagged` is disconnected by its connection task and the
 /// client rehydrates on reconnect.
-const HUB_CAPACITY: usize = 1024;
+///
+/// Sized for the worst realistic burst, not the steady state: a project
+/// switch replays the full extension surface and an agent turn streams
+/// per-token deltas plus PTY chunks. At 1024 a phone on Wi-Fi lagged the
+/// ring during those bursts and was kicked (`bye slow-consumer`),
+/// reconnected into the same burst, and looped. Slots hold `Arc`s, so
+/// the cost of the larger ring is bounded by live frames, not capacity.
+const HUB_CAPACITY: usize = 8192;
 
 impl EventHub {
     pub fn new() -> Self {

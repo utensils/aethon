@@ -63,6 +63,12 @@ type StatusListener = (status: GatewayStatus) => void;
 const DEFAULT_TIMEOUT_MS = 30_000;
 const BACKOFF_MIN_MS = 500;
 const BACKOFF_MAX_MS = 30_000;
+/** How long a connection must survive before the reconnect backoff
+ *  resets. Resetting on hello_ok alone let a server-side slow-consumer
+ *  kick loop reconnect at the minimum delay forever (connect → kicked
+ *  seconds later → connect …), hammering a host that is already
+ *  overloaded. */
+const BACKOFF_STABLE_MS = 15_000;
 
 export class GatewayOfflineError extends Error {
   constructor(cmd: string) {
@@ -85,7 +91,13 @@ export class GatewayTransport {
   private lastHello: HelloOk | null = null;
   private backoffMs = BACKOFF_MIN_MS;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private stableTimer: ReturnType<typeof setTimeout> | null = null;
   private wantConnected = false;
+  /** Socket generation. Each openSocket() supersedes every previous
+   *  socket: callbacks captured by older generations are ignored, so a
+   *  half-open or half-dead socket can't double-deliver events or kill
+   *  a fresh connection with its own close. */
+  private generation = 0;
 
   configure(config: GatewayConfig): void {
     this.config = config;
@@ -127,6 +139,10 @@ export class GatewayTransport {
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
+    }
+    if (this.stableTimer) {
+      clearTimeout(this.stableTimer);
+      this.stableTimer = null;
     }
     // Reject an in-flight connect() so its awaiter doesn't hang forever,
     // and so a later reconnect can't resolve this abandoned attempt.
@@ -189,11 +205,19 @@ export class GatewayTransport {
 
   private openSocket(): void {
     if (!this.config) return;
+    // Supersede any previous socket BEFORE wiring the new one. Without
+    // this, a stacked reconnect left the old socket's handlers attached
+    // — every event frame was then delivered once per zombie socket
+    // (the mobile text-duplication bug), and the zombie's eventual
+    // close event tore down the healthy connection.
+    const gen = ++this.generation;
+    this.adapter?.close();
     const adapter = this.config.adapter ?? defaultAdapter();
     this.adapter = adapter;
     this.setStatus(this.lastHello ? "reconnecting" : "connecting");
 
     adapter.onOpen(() => {
+      if (gen !== this.generation) return;
       adapter.send(
         JSON.stringify({
           t: "hello",
@@ -204,8 +228,14 @@ export class GatewayTransport {
         }),
       );
     });
-    adapter.onMessage((text) => this.handleFrame(text));
-    adapter.onClose(() => this.handleClose());
+    adapter.onMessage((text) => {
+      if (gen !== this.generation) return;
+      this.handleFrame(text);
+    });
+    adapter.onClose(() => {
+      if (gen !== this.generation) return;
+      this.handleClose();
+    });
     adapter.open(this.config.url);
   }
 
@@ -220,7 +250,13 @@ export class GatewayTransport {
       case "hello_ok": {
         const hello = frame as unknown as HelloOk;
         this.lastHello = hello;
-        this.backoffMs = BACKOFF_MIN_MS;
+        // Backoff resets only once the link proves stable — see
+        // BACKOFF_STABLE_MS.
+        if (this.stableTimer) clearTimeout(this.stableTimer);
+        this.stableTimer = setTimeout(() => {
+          this.stableTimer = null;
+          this.backoffMs = BACKOFF_MIN_MS;
+        }, BACKOFF_STABLE_MS);
         this.setStatus("connected");
         this.resubscribeAll();
         this.helloResolve?.(hello);
@@ -261,6 +297,10 @@ export class GatewayTransport {
   }
 
   private handleClose(): void {
+    if (this.stableTimer) {
+      clearTimeout(this.stableTimer);
+      this.stableTimer = null;
+    }
     for (const entry of this.pending.values()) {
       clearTimeout(entry.timer);
       entry.reject(new Error("gateway connection closed"));

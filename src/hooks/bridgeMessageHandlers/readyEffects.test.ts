@@ -1,13 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { buildHandlerFixture } from "./testFixtures";
 import { clearTauriMocks, installTauriMocks } from "../../test/tauriMocks";
-import { runReadyEffects } from "./readyEffects";
+import { resetReplayedTabsForTest, runReadyEffects } from "./readyEffects";
 
 describe("runReadyEffects", () => {
   let harness: ReturnType<typeof installTauriMocks>;
 
   beforeEach(() => {
     harness = installTauriMocks();
+    resetReplayedTabsForTest();
   });
 
   afterEach(() => {
@@ -38,6 +39,7 @@ describe("runReadyEffects", () => {
       currentProjectCwd: null,
       priorActiveTabCwd: null,
       priorActiveTabId: "default",
+      bridgeTabIds: new Set<string>(),
     });
 
     expect(prepareWorkspaceStartup).toHaveBeenCalledWith("/repo/a");
@@ -68,6 +70,7 @@ describe("runReadyEffects", () => {
       currentProjectCwd: null,
       priorActiveTabCwd: null,
       priorActiveTabId: "default",
+      bridgeTabIds: new Set<string>(),
     });
 
     await ctx.pendingTabOpens.current.get("tab-1");
@@ -105,6 +108,7 @@ describe("runReadyEffects", () => {
       currentProjectCwd: null,
       priorActiveTabCwd: null,
       priorActiveTabId: "default",
+      bridgeTabIds: new Set<string>(),
     });
 
     // The exact `~/.aethon` root is the bridge's fallback cwd for tabs with
@@ -139,6 +143,7 @@ describe("runReadyEffects", () => {
       currentProjectCwd: "/wrong",
       priorActiveTabCwd: null,
       priorActiveTabId: "default",
+      bridgeTabIds: new Set<string>(),
     });
 
     expect(mocks.announceProjectToBridge).toHaveBeenCalledWith(
@@ -153,6 +158,7 @@ describe("runReadyEffects", () => {
       currentProjectCwd: "/repo/p1",
       priorActiveTabCwd: null,
       priorActiveTabId: "default",
+      bridgeTabIds: new Set<string>(),
     });
     expect(mocks.announceProjectToBridge).not.toHaveBeenCalled();
     expect(mocks.markStartupChromeReady).toHaveBeenCalledTimes(1);
@@ -174,6 +180,7 @@ describe("runReadyEffects", () => {
       currentProjectCwd: "/wrong",
       priorActiveTabCwd: "/Users/jamesbrink/.aethon",
       priorActiveTabId: "state-root",
+      bridgeTabIds: new Set<string>(),
     });
     expect(mocks.announceProjectToBridge).toHaveBeenCalledWith(
       "state-root",
@@ -189,6 +196,7 @@ describe("runReadyEffects", () => {
       currentProjectCwd: "/wrong",
       priorActiveTabCwd: "/Users/jamesbrink/.aethon/aethon/fix-old-worktree",
       priorActiveTabId: "legacy-tab",
+      bridgeTabIds: new Set<string>(),
     });
     expect(mocks.announceProjectToBridge).toHaveBeenCalledWith(
       "legacy-tab",
@@ -199,5 +207,88 @@ describe("runReadyEffects", () => {
       "/Users/jamesbrink/.aethon/aethon/fix-old-worktree",
     );
     expect(mocks.markStartupChromeReady).toHaveBeenCalledTimes(1);
+  });
+
+  it("replays each tab once per webview lifetime unless the bridge loses it", async () => {
+    const { ctx } = buildHandlerFixture({
+      state: {
+        tabs: [
+          { id: "tab-1", label: "One", model: "claude", cwd: "/repo/a" },
+          { id: "tab-2", label: "Two", model: "claude", cwd: "/repo/b" },
+        ],
+      },
+    });
+    ctx.prepareWorkspaceStartup = vi.fn().mockResolvedValue(true);
+    const input = {
+      currentProjectCwd: null,
+      priorActiveTabCwd: null,
+      priorActiveTabId: "default",
+    };
+
+    // First ready after webview load: both tabs replay.
+    runReadyEffects(ctx, {
+      ...input,
+      bridgeTabIds: new Set(["tab-1", "tab-2"]),
+    });
+    expect(ctx.pendingTabOpens.current.has("tab-1")).toBe(true);
+    expect(ctx.pendingTabOpens.current.has("tab-2")).toBe(true);
+    // Let the .finally() cleanup that clears pendingTabOpens flush.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(ctx.pendingTabOpens.current.size).toBe(0);
+
+    // ready re-fires constantly (project switches, reports from other
+    // clients). Re-replaying live tabs re-emitted session_history
+    // mid-stream and flipped the global project per ready — skip.
+    runReadyEffects(ctx, {
+      ...input,
+      bridgeTabIds: new Set(["tab-1", "tab-2"]),
+    });
+    expect(ctx.pendingTabOpens.current.size).toBe(0);
+
+    // Bridge respawned and lost tab-2: only that tab replays again.
+    runReadyEffects(ctx, {
+      ...input,
+      bridgeTabIds: new Set(["tab-1"]),
+    });
+    expect(ctx.pendingTabOpens.current.has("tab-1")).toBe(false);
+    expect(ctx.pendingTabOpens.current.has("tab-2")).toBe(true);
+    await ctx.pendingTabOpens.current.get("tab-2");
+  });
+
+  it("on the mobile surface, neither replays tabs nor announces a project", () => {
+    vi.stubEnv("VITE_AETHON_SURFACE", "mobile");
+    try {
+      const { ctx, mocks } = buildHandlerFixture({
+        state: {
+          tabs: [
+            { id: "tab-1", label: "Tab 1", model: "claude", cwd: "/repo/a" },
+          ],
+        },
+      });
+      ctx.prepareWorkspaceStartup = vi.fn().mockResolvedValue(true);
+      ctx.projectsRef.current = {
+        activeId: "p1",
+        activeWorkspaceId: null,
+        activeHostId: null,
+        projects: [{ id: "p1", label: "p1", path: "/repo/p1", lastUsed: 1 }],
+        workspacesByProject: {},
+      };
+
+      runReadyEffects(ctx, {
+        currentProjectCwd: "/wrong",
+        priorActiveTabCwd: null,
+        priorActiveTabId: "default",
+        bridgeTabIds: new Set<string>(),
+      });
+
+      // The companion is a passive reader: announcing its own local view
+      // back at the bridge is what livelocked set_project when desktop
+      // and mobile disagreed on the active project.
+      expect(mocks.announceProjectToBridge).not.toHaveBeenCalled();
+      expect(ctx.pendingTabOpens.current.size).toBe(0);
+      expect(mocks.markStartupChromeReady).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 });

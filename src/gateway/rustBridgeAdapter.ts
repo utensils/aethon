@@ -46,6 +46,11 @@ export class RustBridgeAdapter implements SocketAdapter {
   private closeHandler: () => void = () => {};
   private unlisten: (() => void) | null = null;
   private readonly fingerprint: string;
+  /** Bumped on every open()/close(). Guards both the async listen
+   *  registration and frame delivery so a superseded open can't leak a
+   *  live `gateway-frame` listener — one leaked listener per reconnect
+   *  meant every frame was delivered N times (#462). */
+  private openSeq = 0;
 
   constructor(fingerprint: string) {
     this.fingerprint = fingerprint;
@@ -57,17 +62,30 @@ export class RustBridgeAdapter implements SocketAdapter {
       this.closeHandler();
       return;
     }
+    // Reopening replaces the previous registration, never adds to it.
+    this.unlisten?.();
+    this.unlisten = null;
+    const seq = ++this.openSeq;
     void listen<GatewayFrame>("gateway-frame", (e) => {
+      if (seq !== this.openSeq) return;
       const frame = e.payload;
       if (frame.kind === "open") this.openHandler();
       else if (frame.kind === "message" && frame.text) this.messageHandler(frame.text);
       else if (frame.kind === "close") this.closeHandler();
     })
       .then((fn) => {
+        if (seq !== this.openSeq) {
+          // close() or a newer open() won the race while listen() was
+          // registering — drop this registration immediately.
+          fn();
+          return;
+        }
         this.unlisten = fn;
         return runtime.invoke("gateway_connect", { url, fingerprint: this.fingerprint });
       })
-      .catch(() => this.closeHandler());
+      .catch(() => {
+        if (seq === this.openSeq) this.closeHandler();
+      });
   }
 
   send(text: string): void {
@@ -75,6 +93,7 @@ export class RustBridgeAdapter implements SocketAdapter {
   }
 
   close(): void {
+    this.openSeq += 1;
     this.unlisten?.();
     this.unlisten = null;
     void internals()?.invoke("gateway_close");

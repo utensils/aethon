@@ -14,6 +14,7 @@
 //! logic here — protocol semantics stay in the shared JS transport.
 
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use futures_util::{SinkExt, StreamExt};
 use serde::Serialize;
@@ -24,9 +25,17 @@ use tokio_tungstenite::tungstenite::Message;
 
 /// One outbound socket + its writer channel. Replacing it (reconnect)
 /// drops the previous task, closing the old socket.
+///
+/// `generation` stamps each connect; reader tasks from superseded
+/// connections check it before emitting. Without the stamp, the old
+/// socket's teardown emitted a `close` frame onto the shared
+/// `gateway-frame` stream and the JS transport read it as the NEW
+/// connection dying — every reconnect killed its successor, looping
+/// forever.
 #[derive(Default)]
 pub struct GatewayState {
     tx: Mutex<Option<mpsc::UnboundedSender<Message>>>,
+    generation: AtomicU64,
 }
 
 #[derive(Clone, Serialize)]
@@ -134,6 +143,8 @@ pub async fn gateway_connect(
     fingerprint: String,
 ) -> Result<(), String> {
     let _ = rustls::crypto::ring::default_provider().install_default();
+    let state = Arc::clone(state.inner());
+    let generation = state.generation.fetch_add(1, Ordering::SeqCst) + 1;
     let (tx, mut rx) = mpsc::unbounded_channel::<Message>();
     // Swapping the sender drops any prior writer; the old task then sees
     // its receiver close and exits, tearing down the previous socket.
@@ -147,19 +158,34 @@ pub async fn gateway_connect(
     let (ws, _) = tokio_tungstenite::connect_async_tls_with_config(&url, None, false, connector)
         .await
         .map_err(|e| format!("connect {url}: {e}"))?;
+    // The lock isn't held across the handshake await — a newer connect
+    // (or an explicit close) may have superseded this one. Dropping the
+    // ws here closes the socket without emitting anything.
+    if state.generation.load(Ordering::SeqCst) != generation {
+        return Ok(());
+    }
     let (mut sink, mut stream) = ws.split();
     emit(&app, GatewayFrame::Open);
 
     let app_reader = app.clone();
+    let reader_state = Arc::clone(&state);
     tauri::async_runtime::spawn(async move {
         while let Some(msg) = stream.next().await {
+            if reader_state.generation.load(Ordering::SeqCst) != generation {
+                // Superseded mid-stream: stop silently. Emitting (or
+                // falling through to the close emit) would interleave
+                // stale frames into the successor connection.
+                return;
+            }
             match msg {
                 Ok(Message::Text(text)) => emit(&app_reader, GatewayFrame::Message { text }),
                 Ok(Message::Close(_)) | Err(_) => break,
                 _ => {}
             }
         }
-        emit(&app_reader, GatewayFrame::Close);
+        if reader_state.generation.load(Ordering::SeqCst) == generation {
+            emit(&app_reader, GatewayFrame::Close);
+        }
     });
 
     tauri::async_runtime::spawn(async move {
@@ -184,6 +210,9 @@ pub async fn gateway_send(state: State<'_, Arc<GatewayState>>, text: String) -> 
 
 #[tauri::command]
 pub async fn gateway_close(state: State<'_, Arc<GatewayState>>) -> Result<(), String> {
+    // Invalidate the live reader so it exits without emitting a close
+    // for a connection the JS side already abandoned.
+    state.generation.fetch_add(1, Ordering::SeqCst);
     // Dropping the sender ends the writer task, which closes the socket.
     *state.tx.lock().await = None;
     Ok(())

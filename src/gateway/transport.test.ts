@@ -206,6 +206,53 @@ describe("gateway transport", () => {
     expect(t.getStatus()).toBe("idle");
   });
 
+  it("keeps escalating backoff when connections die young (slow-consumer kick loop)", async () => {
+    vi.useFakeTimers();
+    const socket = new FakeSocket();
+    const t = makeTransport(socket);
+    const connected = t.connect();
+    await vi.advanceTimersByTimeAsync(0);
+    socket.helloOk();
+    await connected;
+
+    // Kicked right after connecting — inside the stability window, so
+    // hello_ok must NOT have reset the backoff. Pre-fix this looped a
+    // kicked client back into an overloaded host every ~500ms forever.
+    socket.drop();
+    await vi.advanceTimersByTimeAsync(500); // first retry: 500ms base
+    expect(socket.opened).toBe(2);
+    await vi.advanceTimersByTimeAsync(0);
+    socket.helloOk();
+    socket.drop(); // kicked again, still young
+    await vi.advanceTimersByTimeAsync(600);
+    expect(socket.opened).toBe(2); // escalated to 1000ms — not due yet
+    await vi.advanceTimersByTimeAsync(500);
+    expect(socket.opened).toBe(3);
+  });
+
+  it("resets backoff once a connection survives the stability window", async () => {
+    vi.useFakeTimers();
+    const socket = new FakeSocket();
+    const t = makeTransport(socket);
+    const connected = t.connect();
+    await vi.advanceTimersByTimeAsync(0);
+    socket.helloOk();
+    await connected;
+
+    // Escalate the backoff with one young death…
+    socket.drop();
+    await vi.advanceTimersByTimeAsync(500);
+    expect(socket.opened).toBe(2);
+    await vi.advanceTimersByTimeAsync(0);
+    socket.helloOk();
+    // …then stay connected through the stability window.
+    await vi.advanceTimersByTimeAsync(15_000);
+    socket.drop();
+    // Backoff is back at the 500ms minimum, not the escalated 1000ms.
+    await vi.advanceTimersByTimeAsync(500);
+    expect(socket.opened).toBe(3);
+  });
+
   it("does not reconnect after an auth-failed bye", async () => {
     vi.useFakeTimers();
     const socket = new FakeSocket();
