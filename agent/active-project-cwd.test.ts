@@ -88,3 +88,37 @@ describe("resolveStartupCwd", () => {
     expect(resolveStartupCwd(undefined, undefined, "", "/")).toBe("/");
   });
 });
+
+describe("readActiveProjectCwd", () => {
+  it("degrades to the on-disk projects.json when the state db is unopenable", async () => {
+    // SQLITE_CANTOPEN from readSqliteStateValue used to escape and fatal
+    // the whole bridge boot before the dispatcher started.
+    const { mkdtempSync, mkdirSync, writeFileSync, rmSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const { readActiveProjectCwd } = await import("./active-project-cwd");
+
+    const userDir = mkdtempSync(join(tmpdir(), "aethon-cwd-"));
+    try {
+      // Point the sqlite reader at an unopenable path: AETHON_DB_FILE's
+      // parent directory does not exist.
+      const priorDb = process.env.AETHON_DB_FILE;
+      process.env.AETHON_DB_FILE = join(userDir, "missing-dir", "aethon.sqlite3");
+      mkdirSync(userDir, { recursive: true });
+      writeFileSync(
+        join(userDir, "projects.json"),
+        JSON.stringify({
+          activeId: "p1",
+          projects: [{ id: "p1", path: "/repo/fallback" }],
+        }),
+      );
+      await expect(readActiveProjectCwd(userDir)).resolves.toBe(
+        "/repo/fallback",
+      );
+      if (priorDb === undefined) delete process.env.AETHON_DB_FILE;
+      else process.env.AETHON_DB_FILE = priorDb;
+    } finally {
+      rmSync(userDir, { recursive: true, force: true });
+    }
+  });
+});
