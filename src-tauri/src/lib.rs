@@ -315,6 +315,8 @@ pub fn run() {
             commands::voice_convo::voice_convo_speak_end,
             commands::voice_convo::voice_convo_cancel_speech,
             commands::voice_convo::voice_convo_force_end_turn,
+            commands::voice_convo::voice_convo_test_providers,
+            commands::voice_convo::voice_convo_list_voices,
             commands::boot::boot_stage,
             commands::boot::boot_ok,
             commands::devshell::devshell_status,

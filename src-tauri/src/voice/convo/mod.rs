@@ -24,7 +24,9 @@ mod tts;
 
 pub(crate) use keys::resolve_cascade_keys;
 pub(crate) use stt::{DeepgramFluxConnector, SttConnector, SttEvent, SttStream};
-pub(crate) use tts::{CartesiaConnector, TtsConnector, TtsStream};
+pub(crate) use tts::{
+    CartesiaConnector, CartesiaVoiceInfo, TtsConnector, TtsStream, list_cartesia_voices,
+};
 
 use std::collections::VecDeque;
 use std::ops::ControlFlow;
@@ -57,6 +59,14 @@ const KEEPALIVE_SECS: u64 = 5;
 const LEVEL_EMIT_MS: u64 = 33;
 /// Poll cadence for "has the sealed playback clip finished draining".
 const DRAIN_POLL_MS: u64 = 50;
+/// Backoff schedule for reviving a dropped STT socket mid-conversation. Mic
+/// frames keep queueing while a reconnect is in flight, so speech across a
+/// brief network blip still reaches the recognizer (late but complete). The
+/// budget resets on every completed turn.
+#[cfg(not(test))]
+const STT_RECONNECT_BACKOFF_MS: [u64; 3] = [250, 1_000, 3_000];
+#[cfg(test)]
+const STT_RECONNECT_BACKOFF_MS: [u64; 3] = [10, 10, 10];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "kebab-case")]
@@ -123,6 +133,14 @@ enum EngineCommand {
 pub(crate) struct MicInput {
     pub(crate) frames_rx: mpsc::UnboundedReceiver<Vec<f32>>,
     pub(crate) handle: Option<mic::MicHandle>,
+}
+
+/// STT side of `start_with_io`: a pre-connected stream (so start fails fast
+/// on bad keys) plus the connector for mid-session reconnects.
+pub(crate) struct SttInput {
+    pub(crate) connector: Arc<dyn SttConnector>,
+    pub(crate) stream: Box<dyn SttStream>,
+    pub(crate) events: mpsc::UnboundedReceiver<SttEvent>,
 }
 
 /// Observable engine state shared with status queries and tests.
@@ -225,8 +243,11 @@ impl ConversationEngine {
         let (mic_handle, frames_rx) = mic::start_streaming_mic()?;
         self.start_with_io(
             app,
-            stt_stream,
-            stt_rx,
+            SttInput {
+                connector: stt,
+                stream: stt_stream,
+                events: stt_rx,
+            },
             tts,
             playback,
             MicInput {
@@ -240,8 +261,7 @@ impl ConversationEngine {
     pub(crate) fn start_with_io(
         &self,
         app: Option<AppHandle>,
-        stt_stream: Box<dyn SttStream>,
-        stt_rx: mpsc::UnboundedReceiver<SttEvent>,
+        stt: SttInput,
         tts: Arc<dyn TtsConnector>,
         playback: Arc<dyn PlaybackSink>,
         mic: MicInput,
@@ -256,7 +276,9 @@ impl ConversationEngine {
         let ctx = DriverCtx {
             app: app.clone(),
             shared: Arc::clone(&shared),
-            stt: stt_stream,
+            stt: stt.stream,
+            stt_connector: stt.connector,
+            reconnects_used: 0,
             tts_connector: tts,
             playback,
             tts_stream: None,
@@ -270,7 +292,7 @@ impl ConversationEngine {
             speak_requested_at: None,
             tts_first_audio_seen: false,
         };
-        let driver = tokio::spawn(run_driver(ctx, mic.frames_rx, stt_rx, cmd_rx));
+        let driver = tokio::spawn(run_driver(ctx, mic.frames_rx, stt.events, cmd_rx));
         let abort = driver.abort_handle();
 
         // Reap the slot when the driver ends on its own (STT error, mic
@@ -380,6 +402,9 @@ struct DriverCtx {
     app: Option<AppHandle>,
     shared: Arc<ConvoShared>,
     stt: Box<dyn SttStream>,
+    stt_connector: Arc<dyn SttConnector>,
+    /// Consecutive STT reconnects since the last completed turn.
+    reconnects_used: usize,
     tts_connector: Arc<dyn TtsConnector>,
     playback: Arc<dyn PlaybackSink>,
     tts_stream: Option<Box<dyn TtsStream>>,
@@ -394,7 +419,48 @@ struct DriverCtx {
     tts_first_audio_seen: bool,
 }
 
+/// Outcome of one driver step. `Reconnect` means the STT transport dropped
+/// but the conversation can survive if a fresh socket comes up.
+enum Step {
+    Continue,
+    Reconnect(String),
+}
+
 impl DriverCtx {
+    /// Revive the STT socket after a drop. Consumes one backoff slot per
+    /// attempt; the budget refills when a turn completes, so a flaky network
+    /// gets three tries per utterance rather than three for the whole
+    /// conversation.
+    async fn try_reconnect(&mut self, cause: &str) -> Option<mpsc::UnboundedReceiver<SttEvent>> {
+        while self.reconnects_used < STT_RECONNECT_BACKOFF_MS.len() {
+            let delay = STT_RECONNECT_BACKOFF_MS[self.reconnects_used];
+            self.reconnects_used += 1;
+            tracing::warn!(
+                target: "aethon::voice::convo",
+                cause,
+                attempt = self.reconnects_used,
+                delay_ms = delay,
+                "reconnecting speech socket"
+            );
+            tokio::time::sleep(Duration::from_millis(delay)).await;
+            match self.stt_connector.connect().await {
+                Ok((stream, rx)) => {
+                    let mut old = std::mem::replace(&mut self.stt, stream);
+                    old.close().await;
+                    return Some(rx);
+                }
+                Err(err) => {
+                    tracing::warn!(
+                        target: "aethon::voice::convo",
+                        error = %err,
+                        "speech reconnect attempt failed"
+                    );
+                }
+            }
+        }
+        None
+    }
+
     fn set_state(&mut self, state: ConvoState, reason: Option<&'static str>) {
         if self.state == state {
             return;
@@ -448,7 +514,7 @@ impl DriverCtx {
         &mut self,
         frame: Vec<f32>,
         tts_audio_rx: &mut Option<mpsc::UnboundedReceiver<Vec<f32>>>,
-    ) -> ControlFlow<()> {
+    ) -> Step {
         self.emit_level(&frame);
         self.push_pre_roll(&frame);
 
@@ -456,8 +522,7 @@ impl DriverCtx {
             ConvoState::Listening | ConvoState::UserSpeaking | ConvoState::AwaitingBrain => {
                 self.outbound.extend_from_slice(&frame);
                 if let Err(err) = self.forward_outbound().await {
-                    self.fail(format!("Speech streaming failed: {err}"));
-                    return ControlFlow::Break(());
+                    return Step::Reconnect(format!("audio send failed: {err}"));
                 }
             }
             ConvoState::Speaking => {
@@ -471,14 +536,13 @@ impl DriverCtx {
                 if self.barge_sustain_samples >= sustain_target {
                     self.barge_sustain_samples = 0;
                     if let Err(err) = self.barge_in(tts_audio_rx).await {
-                        self.fail(format!("Speech streaming failed: {err}"));
-                        return ControlFlow::Break(());
+                        return Step::Reconnect(format!("barge-in replay failed: {err}"));
                     }
                 }
             }
             ConvoState::Idle => {}
         }
-        ControlFlow::Continue(())
+        Step::Continue
     }
 
     /// The user interrupted playback: cut the audio, kill the in-flight TTS
@@ -502,7 +566,7 @@ impl DriverCtx {
         Ok(())
     }
 
-    fn handle_stt_event(&mut self, event: SttEvent) -> ControlFlow<()> {
+    fn handle_stt_event(&mut self, event: SttEvent) -> Step {
         match event {
             SttEvent::StartOfTurn { transcript } => {
                 self.current_transcript = transcript.clone();
@@ -529,15 +593,13 @@ impl DriverCtx {
                 }
             }
             SttEvent::Error(message) => {
-                self.fail(format!("Speech recognition error: {message}"));
-                return ControlFlow::Break(());
+                return Step::Reconnect(format!("speech recognition error: {message}"));
             }
             SttEvent::Closed => {
-                self.fail("The speech service closed the connection".to_string());
-                return ControlFlow::Break(());
+                return Step::Reconnect("the speech service closed the connection".to_string());
             }
         }
-        ControlFlow::Continue(())
+        Step::Continue
     }
 
     fn emit_interim(&self, text: String) {
@@ -554,6 +616,9 @@ impl DriverCtx {
             return;
         }
         *self.shared.last_turn.lock() = Some(transcript.clone());
+        // A completed turn proves the transport healthy — refill the
+        // reconnect budget.
+        self.reconnects_used = 0;
         self.set_state(ConvoState::AwaitingBrain, None);
         if let Some(app) = &self.app {
             let _ = app.emit("voice://convo/turn", ConvoTurnEvent { transcript });
@@ -697,23 +762,20 @@ async fn run_driver(
     let mut drain_poll = tokio::time::interval(Duration::from_millis(DRAIN_POLL_MS));
 
     loop {
-        tokio::select! {
+        let step = tokio::select! {
             maybe_frame = frames_rx.recv() => {
-                let Some(frame) = maybe_frame else {
-                    ctx.fail("The microphone stream ended unexpectedly".to_string());
-                    break;
-                };
-                if ctx.handle_frame(frame, &mut tts_audio_rx).await.is_break() {
-                    break;
+                match maybe_frame {
+                    None => {
+                        ctx.fail("The microphone stream ended unexpectedly".to_string());
+                        break;
+                    }
+                    Some(frame) => ctx.handle_frame(frame, &mut tts_audio_rx).await,
                 }
             }
             maybe_event = stt_rx.recv() => {
-                let Some(event) = maybe_event else {
-                    ctx.fail("The speech service disconnected".to_string());
-                    break;
-                };
-                if ctx.handle_stt_event(event).is_break() {
-                    break;
+                match maybe_event {
+                    None => Step::Reconnect("the speech event stream ended".to_string()),
+                    Some(event) => ctx.handle_stt_event(event),
                 }
             }
             maybe_command = cmd_rx.recv() => {
@@ -722,6 +784,7 @@ async fn run_driver(
                 if ctx.handle_command(command, &mut tts_audio_rx).await.is_break() {
                     break;
                 }
+                Step::Continue
             }
             chunk = recv_or_pending(&mut tts_audio_rx), if tts_audio_rx.is_some() => {
                 match chunk {
@@ -731,9 +794,11 @@ async fn run_driver(
                         ctx.handle_tts_done();
                     }
                 }
+                Step::Continue
             }
             _ = keepalive.tick(), if ctx.state == ConvoState::Speaking => {
                 ctx.stt.keepalive().await;
+                Step::Continue
             }
             _ = drain_poll.tick(), if ctx.state == ConvoState::Speaking
                 && tts_audio_rx.is_none()
@@ -742,7 +807,21 @@ async fn run_driver(
                 if ctx.playback_handle.as_ref().is_none_or(|h| h.is_drained()) {
                     ctx.finish_speaking();
                 }
+                Step::Continue
             }
+        };
+
+        match step {
+            Step::Continue => {}
+            Step::Reconnect(cause) => match ctx.try_reconnect(&cause).await {
+                Some(new_rx) => {
+                    stt_rx = new_rx;
+                }
+                None => {
+                    ctx.fail(format!("Speech service unavailable: {cause}"));
+                    break;
+                }
+            },
         }
     }
 

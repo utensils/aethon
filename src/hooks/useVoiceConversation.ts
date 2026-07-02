@@ -46,6 +46,10 @@ export interface UseVoiceConversationOptions {
   /** Runtime context stamped on cascade voice turns (active tab, project,
    *  models). Required for the cascade engine to dispatch tasks. */
   getConvoContext?: () => VoiceConvoContext;
+  /** When true (engine came from "auto"), a cascade session that dies —
+   *  failed start or exhausted reconnects — hands the conversation to the
+   *  local LFM2 loop instead of stranding the user with an error. */
+  allowFallback?: boolean;
 }
 
 export interface VoiceConversationController {
@@ -54,6 +58,9 @@ export interface VoiceConversationController {
   error: string | null;
   /** Live partial transcript while listening (cascade engine only). */
   interimText: string | null;
+  /** Last measured time-to-first-audio for a spoken reply, in ms (cascade
+   *  engine, debug builds emit the metric). */
+  latencyMs: number | null;
   enter: () => void;
   exit: () => void;
   /** Context-aware tap: start speaking / finish speaking / interrupt. */
@@ -79,7 +86,40 @@ export function useVoiceConversation(
   const cascade = useCascadeConversation({
     getContext: options.getConvoContext ?? (() => ({})),
   });
-  return options.engine === "cascade" ? cascade : lfm2;
+  const [fellBack, setFellBack] = useState(false);
+  const usingCascade = options.engine === "cascade" && !fellBack;
+
+  // A dead cascade session (error while idle-but-active: failed start or
+  // exhausted mid-session reconnects) hands off to the local loop when the
+  // engine choice was automatic. The switch is spoken through the local TTS
+  // so a hands-free user isn't left talking to a dead mic.
+  const shouldFallBack =
+    options.allowFallback === true &&
+    usingCascade &&
+    cascade.active &&
+    cascade.phase === "idle" &&
+    cascade.error !== null;
+  const cascadeExit = cascade.exit;
+  const lfm2Enter = lfm2.enter;
+  useEffect(() => {
+    if (!shouldFallBack) return;
+    cascadeExit();
+    setFellBack(true);
+    lfm2Enter();
+    void speakVoice(
+      "Cloud voice is unavailable, switching to the local engine.",
+    ).catch(() => {});
+  }, [shouldFallBack, cascadeExit, lfm2Enter]);
+
+  const controller = usingCascade ? cascade : lfm2;
+  return {
+    ...controller,
+    exit: () => {
+      controller.exit();
+      // The next session gets a fresh shot at the cascade.
+      setFellBack(false);
+    },
+  };
 }
 
 // Voice-activity detection thresholds (over the recorder's ~30 Hz
@@ -392,6 +432,7 @@ function useLfm2Conversation(
     phase,
     error,
     interimText: null,
+    latencyMs: null,
     enter,
     exit,
     primaryAction,

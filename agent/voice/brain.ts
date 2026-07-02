@@ -54,6 +54,11 @@ export interface VoiceBrainDeps {
     activate: boolean;
     label?: string;
   }) => Promise<{ ok: boolean; error?: string; data?: unknown }>;
+  /** Steer an existing task tab (`aethon.tasks.sendFollowup`). */
+  sendFollowup: (input: {
+    tabId: string;
+    prompt: string;
+  }) => Promise<{ ok: boolean; error?: string; data?: unknown }>;
 }
 
 /** Structural slice of pi's AgentSession the brain needs — keeps tests to a
@@ -231,6 +236,7 @@ export class VoiceBrain {
       cwd: this.context.projectPath ?? process.cwd(),
       customTools: buildVoiceBrainTools({
         startTask: (input) => this.deps.startTask(input),
+        sendFollowup: (input) => this.deps.sendFollowup(input),
         getContext: () => this.context,
         onDispatched: (task) => {
           this.dispatched.set(task.tabId, task);

@@ -161,6 +161,7 @@ export function ChatInput({
     maxSpokenChars: voiceConfig.speakMaxChars ?? 600,
     onNeedsSetup: (providerId) => onEvent("voice:setup", { providerId }),
     engine: conversationEngine,
+    allowFallback: (voiceConfig.conversationEngine ?? "auto") === "auto",
     getConvoContext: () => {
       const current = stateRef.current;
       const voice = current.voice as { brainModel?: string | null } | undefined;
@@ -383,6 +384,7 @@ export function ChatInput({
           phase={conversation.phase}
           error={conversation.error}
           interim={conversation.interimText}
+          latencyMs={conversation.latencyMs}
           autoListen={voiceConfig.conversationContinuous ?? false}
           onPrimary={conversation.primaryAction}
           onToggleAutoListen={() =>

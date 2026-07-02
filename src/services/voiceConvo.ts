@@ -44,6 +44,27 @@ export function forceConvoEndTurn(): Promise<void> {
   return invoke("voice_convo_force_end_turn");
 }
 
+export interface VoiceConvoProviderTest {
+  deepgramOk: boolean;
+  deepgramError: string | null;
+  cartesiaOk: boolean;
+  cartesiaError: string | null;
+}
+
+/** Prove each cascade provider key opens a real session (connect + close). */
+export function testConvoProviders(): Promise<VoiceConvoProviderTest> {
+  return invoke("voice_convo_test_providers");
+}
+
+export interface CartesiaVoice {
+  id: string;
+  name: string;
+}
+
+export function listConvoVoices(): Promise<CartesiaVoice[]> {
+  return invoke("voice_convo_list_voices");
+}
+
 /** Fire-and-forget a voice-brain message to the global bridge (same
  *  `agent_command` path useDevshell uses for devshell_event). Voice types are
  *  not tab-scoped in the Rust router, so these always reach the global

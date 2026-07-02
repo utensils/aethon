@@ -109,6 +109,7 @@ export function buildHandlerFixture(
   const announceProjectToBridge = vi.fn();
   const routeShellWrite = vi.fn(() => Promise.resolve({ ok: true as const }));
   const startTaskInProject = vi.fn(() => Promise.resolve());
+  const sendChat = vi.fn(() => Promise.resolve());
   const ackMutation = vi.fn();
   const knownTabIds = vi.fn(() => new Set<string>(["default"]));
   const scopedDiscoveredSessions = vi.fn((d: DiscoveredSession[]) => d);
@@ -166,6 +167,7 @@ export function buildHandlerFixture(
 
     routeShellWrite,
     startTaskInProject,
+    sendChat,
     markStartupChromeReady,
 
     ackMutation,

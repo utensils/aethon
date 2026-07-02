@@ -1,5 +1,10 @@
 import { useState } from "react";
 import type { AethonConfig } from "../../../config";
+import {
+  listConvoVoices,
+  testConvoProviders,
+  type CartesiaVoice,
+} from "../../../services/voiceConvo";
 import { formatVoiceDownloadProgress } from "../../../utils/voice";
 import { Field, Section, type SettingsUpdate } from "./sections";
 import { useVoiceProviders } from "./useVoiceProviders";
@@ -106,6 +111,41 @@ function ConversationSettings({
   config: AethonConfig;
   update: SettingsUpdate;
 }) {
+  const [testResult, setTestResult] = useState<string | null>(null);
+  const [testing, setTesting] = useState(false);
+  const [voices, setVoices] = useState<CartesiaVoice[] | null>(null);
+  const [voicesError, setVoicesError] = useState<string | null>(null);
+
+  const runProviderTest = async () => {
+    setTesting(true);
+    setTestResult(null);
+    try {
+      const result = await testConvoProviders();
+      const parts = [
+        result.deepgramOk
+          ? "Deepgram: ok"
+          : `Deepgram: ${result.deepgramError ?? "failed"}`,
+        result.cartesiaOk
+          ? "Cartesia: ok"
+          : `Cartesia: ${result.cartesiaError ?? "failed"}`,
+      ];
+      setTestResult(parts.join(" · "));
+    } catch (err) {
+      setTestResult(err instanceof Error ? err.message : String(err));
+    } finally {
+      setTesting(false);
+    }
+  };
+
+  const loadVoices = async () => {
+    setVoicesError(null);
+    try {
+      setVoices(await listConvoVoices());
+    } catch (err) {
+      setVoicesError(err instanceof Error ? err.message : String(err));
+    }
+  };
+
   return (
     <div className="ae-voice-conversation-settings">
       <h4 className="ae-settings-subhead">Conversation</h4>
@@ -149,19 +189,43 @@ function ConversationSettings({
         />
       </Field>
       <Field label="Cartesia voice id (empty = default voice)">
-        <input
-          type="text"
-          className="ae-settings-input"
-          value={config.voice.ttsVoice ?? ""}
-          onChange={(e) =>
-            update({
-              voice: {
-                ...config.voice,
-                ttsVoice: e.target.value.trim() || null,
-              },
-            })
-          }
-        />
+        <div className="ae-voice-key-row">
+          <input
+            type="text"
+            className="ae-settings-input"
+            value={config.voice.ttsVoice ?? ""}
+            list="ae-cartesia-voices"
+            onChange={(e) =>
+              update({
+                voice: {
+                  ...config.voice,
+                  ttsVoice: e.target.value.trim() || null,
+                },
+              })
+            }
+          />
+          <button
+            type="button"
+            className="ae-settings-secondary"
+            onClick={() => void loadVoices()}
+          >
+            Load voices
+          </button>
+        </div>
+        <datalist id="ae-cartesia-voices">
+          {(voices ?? []).map((voice) => (
+            <option key={voice.id} value={voice.id}>
+              {voice.name}
+            </option>
+          ))}
+        </datalist>
+        {voicesError ? (
+          <p className="ae-settings-note ae-voice-error">{voicesError}</p>
+        ) : voices ? (
+          <p className="ae-settings-note">
+            {voices.length} voices loaded — the id field now autocompletes.
+          </p>
+        ) : null}
       </Field>
       <ApiKeyField
         label="Deepgram API key"
@@ -179,6 +243,21 @@ function ConversationSettings({
           update({ voice: { ...config.voice, cartesiaApiKey: value } })
         }
       />
+      <Field label="Connection check">
+        <div className="ae-voice-key-row">
+          <button
+            type="button"
+            className="ae-settings-secondary"
+            disabled={testing}
+            onClick={() => void runProviderTest()}
+          >
+            {testing ? "Testing…" : "Test providers"}
+          </button>
+          {testResult ? (
+            <span className="ae-settings-note">{testResult}</span>
+          ) : null}
+        </div>
+      </Field>
     </div>
   );
 }

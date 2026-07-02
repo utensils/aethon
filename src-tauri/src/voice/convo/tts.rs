@@ -233,3 +233,47 @@ impl Drop for CartesiaTts {
         }
     }
 }
+
+#[derive(serde::Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct CartesiaVoiceInfo {
+    pub(crate) id: String,
+    pub(crate) name: String,
+}
+
+/// Fetch the account's voice catalogue (Settings → Voice → Conversation).
+/// Tolerates both response shapes Cartesia has used (bare array and
+/// `{"data": [...]}`).
+pub(crate) async fn list_cartesia_voices(api_key: &str) -> Result<Vec<CartesiaVoiceInfo>, String> {
+    let client = reqwest::Client::new();
+    let response = client
+        .get("https://api.cartesia.ai/voices")
+        .header("X-API-Key", api_key)
+        .header("Cartesia-Version", CARTESIA_VERSION)
+        .timeout(std::time::Duration::from_secs(10))
+        .send()
+        .await
+        .map_err(|e| format!("voice list request failed: {e}"))?;
+    if !response.status().is_success() {
+        return Err(format!("voice list failed (HTTP {})", response.status()));
+    }
+    let value: serde_json::Value = response
+        .json()
+        .await
+        .map_err(|e| format!("voice list parse failed: {e}"))?;
+    let items = value
+        .as_array()
+        .cloned()
+        .or_else(|| value["data"].as_array().cloned())
+        .unwrap_or_default();
+    Ok(items
+        .iter()
+        .filter_map(|voice| {
+            Some(CartesiaVoiceInfo {
+                id: voice["id"].as_str()?.to_string(),
+                name: voice["name"].as_str().unwrap_or("(unnamed)").to_string(),
+            })
+        })
+        .take(200)
+        .collect())
+}

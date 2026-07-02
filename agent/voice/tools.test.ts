@@ -19,6 +19,7 @@ function harness(options?: {
   startResult?: { ok: boolean; error?: string; data?: unknown };
 }) {
   const startCalls: StartCall[] = [];
+  const followupCalls: { tabId: string; prompt: string }[] = [];
   const dispatched: DispatchedTask[] = [];
   const tools = buildVoiceBrainTools({
     startTask: (input) => {
@@ -27,17 +28,25 @@ function harness(options?: {
         options?.startResult ?? { ok: true, data: { tabId: "tab-42" } },
       );
     },
+    sendFollowup: (input) => {
+      followupCalls.push(input);
+      return Promise.resolve({ ok: true });
+    },
     getContext: () =>
       options?.context ?? {
         projectPath: "/repo/aethon",
         defaultModel: "anthropic/claude-x",
       },
-    onDispatched: (task) => dispatched.push(task),
+    onDispatched: (task) => {
+      const existing = dispatched.find((t) => t.tabId === task.tabId);
+      if (existing) existing.status = task.status;
+      else dispatched.push(task);
+    },
     listTasks: () => [...dispatched],
     countRunningTabs: () => 2,
   });
   const byName = new Map(tools.map((tool) => [tool.name, tool]));
-  return { byName, startCalls, dispatched };
+  return { byName, startCalls, followupCalls, dispatched };
 }
 
 async function run(
@@ -101,6 +110,35 @@ describe("dispatch_task", () => {
     const text = await run(h.byName.get("dispatch_task"), { prompt: "x" });
     expect(text).toContain("unknown project path");
     expect(h.dispatched).toHaveLength(0);
+  });
+});
+
+describe("send_followup", () => {
+  it("steers a dispatched task by label and re-arms tracking", async () => {
+    const h = harness();
+    await run(h.byName.get("dispatch_task"), {
+      prompt: "fix the flaky test",
+      label: "fix flaky test",
+    });
+    const text = await run(h.byName.get("send_followup"), {
+      task: "fix flaky test",
+      prompt: "Also update the changelog",
+    });
+    expect(h.followupCalls).toEqual([
+      { tabId: "tab-42", prompt: "Also update the changelog" },
+    ]);
+    expect(text).toContain("Follow-up sent");
+    expect(h.dispatched[0]?.status).toBe("running");
+  });
+
+  it("rejects unknown or ambiguous task references", async () => {
+    const h = harness();
+    const text = await run(h.byName.get("send_followup"), {
+      task: "nothing",
+      prompt: "x",
+    });
+    expect(text).toContain("No dispatched task matches");
+    expect(h.followupCalls).toHaveLength(0);
   });
 });
 

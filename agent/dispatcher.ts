@@ -50,6 +50,8 @@ function voiceBrainFor(
   return ensureVoiceBrain(state, {
     send: deps.send,
     startTask: (input) => buildTasksApi(state, { send: deps.send }).start(input),
+    sendFollowup: (input) =>
+      buildTasksApi(state, { send: deps.send }).sendFollowup(input),
   });
 }
 

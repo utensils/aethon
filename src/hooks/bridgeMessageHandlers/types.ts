@@ -201,6 +201,13 @@ export interface BridgeMessageContext {
     label?: string;
     sourceIssue?: GitHubIssueSource;
   }) => Promise<StartTaskResult | void>;
+  /** Send a chat message to a tab through the normal composer pipeline
+   *  (queues as a follow-up when a prompt is in flight). Used by the
+   *  voice brain's `send_followup` tool to steer dispatched tasks. */
+  sendChat: (
+    text: string,
+    options?: { mode?: "normal" | "steer"; tabId?: string },
+  ) => Promise<void>;
 
   // ─── Hook-owned ────────────────────────────────────────────────────
   /** Startup/reload paint gate. The first bridge ready can still represent

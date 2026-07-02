@@ -17,8 +17,9 @@ use tauri::{AppHandle, State};
 use crate::helpers::config::{AethonConfig, VoiceConfig};
 #[cfg(feature = "voice")]
 use crate::voice::{
-    AudioPlayer, CartesiaConnector, ConversationEngine, ConvoState, DeepgramFluxConnector,
-    VoiceProviderRegistry, resolve_cascade_keys,
+    AudioPlayer, CartesiaConnector, CartesiaVoiceInfo, ConversationEngine, ConvoState,
+    DeepgramFluxConnector, SttConnector, TtsConnector, VoiceProviderRegistry, list_cartesia_voices,
+    resolve_cascade_keys,
 };
 
 #[cfg(feature = "voice")]
@@ -145,9 +146,83 @@ pub async fn voice_convo_force_end_turn(
     convo.force_end_turn()
 }
 
+#[cfg(feature = "voice")]
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VoiceConvoProviderTest {
+    pub deepgram_ok: bool,
+    pub deepgram_error: Option<String>,
+    pub cartesia_ok: bool,
+    pub cartesia_error: Option<String>,
+}
+
+/// Settings "Test" button: prove each cascade provider key actually opens a
+/// session (connect + immediate close), without starting a conversation.
+#[cfg(feature = "voice")]
+#[tauri::command]
+pub async fn voice_convo_test_providers(app: AppHandle) -> Result<VoiceConvoProviderTest, String> {
+    let config = load_voice_config(&app);
+    let keys = resolve_cascade_keys(&config);
+
+    let (deepgram_ok, deepgram_error) = match keys.deepgram {
+        None => (false, Some("no API key configured".to_string())),
+        Some(key) => match DeepgramFluxConnector::new(key).connect().await {
+            Ok((mut stream, _events)) => {
+                stream.close().await;
+                (true, None)
+            }
+            Err(err) => (false, Some(err)),
+        },
+    };
+    let (cartesia_ok, cartesia_error) = match keys.cartesia {
+        None => (false, Some("no API key configured".to_string())),
+        Some(key) => {
+            match CartesiaConnector::new(key, config.tts_voice.clone())
+                .connect()
+                .await
+            {
+                Ok(mut session) => {
+                    session.stream.stop().await;
+                    (true, None)
+                }
+                Err(err) => (false, Some(err)),
+            }
+        }
+    };
+    Ok(VoiceConvoProviderTest {
+        deepgram_ok,
+        deepgram_error,
+        cartesia_ok,
+        cartesia_error,
+    })
+}
+
+#[cfg(feature = "voice")]
+#[tauri::command]
+pub async fn voice_convo_list_voices(app: AppHandle) -> Result<Vec<CartesiaVoiceInfo>, String> {
+    let config = load_voice_config(&app);
+    let keys = resolve_cascade_keys(&config);
+    let key = keys
+        .cartesia
+        .ok_or_else(|| "Cartesia API key missing".to_string())?;
+    list_cartesia_voices(&key).await
+}
+
 // Shim implementations (compiled when the `voice` feature is disabled).
 #[cfg(not(feature = "voice"))]
 const VOICE_NOT_BUILT: &str = "voice support not built into this binary";
+
+#[cfg(not(feature = "voice"))]
+#[tauri::command]
+pub async fn voice_convo_test_providers() -> Result<serde_json::Value, String> {
+    Err(VOICE_NOT_BUILT.into())
+}
+
+#[cfg(not(feature = "voice"))]
+#[tauri::command]
+pub async fn voice_convo_list_voices() -> Result<Vec<serde_json::Value>, String> {
+    Err(VOICE_NOT_BUILT.into())
+}
 
 #[cfg(not(feature = "voice"))]
 #[tauri::command]

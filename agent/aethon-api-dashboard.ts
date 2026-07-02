@@ -26,6 +26,7 @@ async function dashboardQuery(
   deps: DashboardApiDeps,
   op:
     | "start_task"
+    | "send_followup"
     | "get_repo_overview"
     | "refresh"
     | "list_issues"
@@ -95,6 +96,21 @@ export function buildTasksApi(
         // large repo. 30s is the same ceiling as the shell-write ack
         // pattern, which is the closest existing precedent.
         30_000,
+      );
+    },
+    sendFollowup: (input) => {
+      if (!input || typeof input.tabId !== "string" || !input.tabId) {
+        return Promise.resolve({ ok: false, error: "tabId required" });
+      }
+      if (typeof input.prompt !== "string" || !input.prompt.trim()) {
+        return Promise.resolve({ ok: false, error: "prompt required" });
+      }
+      return dashboardQuery(
+        state,
+        deps,
+        "send_followup",
+        { tabId: input.tabId, prompt: input.prompt },
+        15_000,
       );
     },
   };

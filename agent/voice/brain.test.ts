@@ -79,6 +79,7 @@ function makeBrain(session: FakeSession) {
         startCalls.push(input);
         return Promise.resolve({ ok: true, data: { tabId: "tab-7" } });
       },
+      sendFollowup: () => Promise.resolve({ ok: true }),
     },
     (options) => {
       capturedTools = options.customTools;

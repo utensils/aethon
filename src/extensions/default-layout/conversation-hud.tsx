@@ -21,6 +21,8 @@ export interface ConversationHudProps {
   error: string | null;
   /** Live partial transcript while listening (cascade engine only). */
   interim?: string | null;
+  /** Last time-to-first-audio measurement in ms (cascade, debug builds). */
+  latencyMs?: number | null;
   /** Hands-free auto-reopen of the mic after the agent speaks. */
   autoListen: boolean;
   onPrimary: () => void;
@@ -35,6 +37,7 @@ export function ConversationHud({
   phase,
   error,
   interim,
+  latencyMs,
   autoListen,
   onPrimary,
   onToggleAutoListen,
@@ -56,6 +59,14 @@ export function ConversationHud({
       <span className="a2ui-conversation-hud-status" aria-live="polite">
         {status}
       </span>
+      {typeof latencyMs === "number" && (
+        <span
+          className="a2ui-conversation-hud-latency"
+          title="Time from reply start to first audio"
+        >
+          {(latencyMs / 1000).toFixed(1)}s
+        </span>
+      )}
       <button
         type="button"
         className={`a2ui-conversation-hud-auto${

@@ -134,6 +134,9 @@ export interface TasksApi {
     /** Optional label for the launched tab. */
     label?: string;
   }): Promise<MutationResult>;
+  /** Send a follow-up message to an existing agent tab through the normal
+   *  chat pipeline (queues behind an in-flight prompt). */
+  sendFollowup(input: { tabId: string; prompt: string }): Promise<MutationResult>;
 }
 
 /** Agent-side counterpart to the repo overview / refresh affordances on

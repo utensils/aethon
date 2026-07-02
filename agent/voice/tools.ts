@@ -34,6 +34,11 @@ export interface VoiceToolDeps {
     activate: boolean;
     label?: string;
   }) => Promise<StartTaskResult>;
+  /** `aethon.tasks.sendFollowup`-shaped steer for an existing task tab. */
+  sendFollowup: (input: {
+    tabId: string;
+    prompt: string;
+  }) => Promise<StartTaskResult>;
   getContext: () => VoiceTurnContext;
   onDispatched: (task: DispatchedTask) => void;
   listTasks: () => DispatchedTask[];
@@ -108,6 +113,41 @@ export function buildVoiceBrainTools(deps: VoiceToolDeps): ToolDefinition[] {
     },
   }) as ToolDefinition;
 
+  const sendFollowup = defineTool({
+    name: "send_followup",
+    label: "Steer a dispatched task",
+    description:
+      "Send a follow-up instruction to a task you already dispatched (identified by its label or tab id). Queues politely if the work agent is mid-turn.",
+    parameters: FollowupParams,
+    async execute(_callId: string, params: { task: string; prompt: string }) {
+      const target = resolveTask(deps.listTasks(), params.task);
+      if (!target) {
+        return textResult(
+          `No dispatched task matches "${params.task}". Use check_status to see what's running.`,
+        );
+      }
+      const result = await deps.sendFollowup({
+        tabId: target.tabId,
+        prompt: params.prompt,
+      });
+      if (!result.ok) {
+        return textResult(
+          `Follow-up failed: ${result.error ?? "unknown error"}.`,
+        );
+      }
+      // Re-arm completion tracking: the next finished turn on that tab is
+      // this follow-up's result and should be announced.
+      deps.onDispatched({
+        tabId: target.tabId,
+        label: target.label,
+        status: "running",
+      });
+      return textResult(
+        `Follow-up sent to "${target.label}" (tab ${target.tabId}). You'll be notified when it finishes.`,
+      );
+    },
+  }) as ToolDefinition;
+
   const checkStatus = defineTool({
     name: "check_status",
     label: "Check task status",
@@ -130,7 +170,36 @@ export function buildVoiceBrainTools(deps: VoiceToolDeps): ToolDefinition[] {
     },
   }) as ToolDefinition;
 
-  return [dispatchTask, checkStatus];
+  return [dispatchTask, sendFollowup, checkStatus];
+}
+
+const FollowupParams = Type.Object({
+  task: Type.String({
+    description: "Label or tab id of a task you previously dispatched.",
+  }),
+  prompt: Type.String({
+    description: "Complete follow-up instruction for that work agent.",
+  }),
+});
+
+/** Match by exact tab id, then exact label (case-insensitive), then a unique
+ *  substring of the label. Ambiguity returns nothing — the model should ask. */
+export function resolveTask(
+  tasks: DispatchedTask[],
+  query: string,
+): DispatchedTask | undefined {
+  const needle = query.trim().toLowerCase();
+  if (!needle) return undefined;
+  const byId = tasks.find((task) => task.tabId.toLowerCase() === needle);
+  if (byId) return byId;
+  const byLabel = tasks.filter(
+    (task) => task.label.toLowerCase() === needle,
+  );
+  if (byLabel.length === 1) return byLabel[0];
+  const contains = tasks.filter((task) =>
+    task.label.toLowerCase().includes(needle),
+  );
+  return contains.length === 1 ? contains[0] : undefined;
 }
 
 /** First few words of the prompt as a fallback tab label. */

@@ -75,6 +75,7 @@ export function useCascadeConversation(
   const [phase, setPhaseState] = useState<ConversationPhase>("idle");
   const [error, setError] = useState<string | null>(null);
   const [interimText, setInterimText] = useState<string | null>(null);
+  const [latencyMs, setLatencyMs] = useState<number | null>(null);
 
   const activeRef = useRef(false);
   const phaseRef = useRef<ConversationPhase>("idle");
@@ -215,6 +216,12 @@ export function useCascadeConversation(
     subscribe<{ message: string }>("voice://convo/error", (payload) => {
       setError(payload.message);
     });
+    subscribe<{ stage: string; ms: number }>(
+      "voice://convo/metrics",
+      (payload) => {
+        if (payload.stage === "tts-first-audio") setLatencyMs(payload.ms);
+      },
+    );
 
     return () => {
       cancelled = true;
@@ -291,6 +298,7 @@ export function useCascadeConversation(
     phase,
     error,
     interimText,
+    latencyMs,
     enter,
     exit,
     primaryAction,

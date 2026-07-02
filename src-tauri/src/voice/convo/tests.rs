@@ -36,6 +36,49 @@ impl SttStream for FakeSttStream {
     async fn close(&mut self) {}
 }
 
+/// Reconnectable fake: each successful connect() hands its event sender to
+/// the test through `event_txs` and shares the same sample counter.
+struct FakeSttConnector {
+    sent_samples: Arc<AtomicUsize>,
+    event_txs: Arc<Mutex<Vec<mpsc::UnboundedSender<SttEvent>>>>,
+    connects: Arc<AtomicUsize>,
+    /// Connect attempts that should fail before succeeding again.
+    fail_next: Arc<AtomicUsize>,
+}
+
+impl FakeSttConnector {
+    fn new(sent_samples: Arc<AtomicUsize>) -> Self {
+        Self {
+            sent_samples,
+            event_txs: Arc::new(Mutex::new(Vec::new())),
+            connects: Arc::new(AtomicUsize::new(0)),
+            fail_next: Arc::new(AtomicUsize::new(0)),
+        }
+    }
+}
+
+#[async_trait]
+impl SttConnector for FakeSttConnector {
+    async fn connect(
+        &self,
+    ) -> Result<(Box<dyn SttStream>, mpsc::UnboundedReceiver<SttEvent>), String> {
+        self.connects.fetch_add(1, Ordering::SeqCst);
+        if self.fail_next.load(Ordering::SeqCst) > 0 {
+            self.fail_next.fetch_sub(1, Ordering::SeqCst);
+            return Err("connect refused".to_string());
+        }
+        let (tx, rx) = mpsc::unbounded_channel();
+        self.event_txs.lock().push(tx);
+        Ok((
+            Box::new(FakeSttStream {
+                sent_samples: Arc::clone(&self.sent_samples),
+                keepalives: Arc::new(AtomicUsize::new(0)),
+            }),
+            rx,
+        ))
+    }
+}
+
 struct FakeTts {
     feeds: Arc<Mutex<Vec<String>>>,
     flushed: Arc<AtomicBool>,
@@ -167,6 +210,7 @@ struct Harness {
     frames_tx: mpsc::UnboundedSender<Vec<f32>>,
     stt_tx: mpsc::UnboundedSender<SttEvent>,
     sent_samples: Arc<AtomicUsize>,
+    stt_connector: Arc<FakeSttConnector>,
     tts: FakeTtsConnector,
     playback: FakePlayback,
 }
@@ -180,13 +224,17 @@ fn start_harness(flush_samples: usize) -> Harness {
         sent_samples: Arc::clone(&sent_samples),
         keepalives: Arc::new(AtomicUsize::new(0)),
     });
+    let stt_connector = Arc::new(FakeSttConnector::new(Arc::clone(&sent_samples)));
     let tts = FakeTtsConnector::new(flush_samples);
     let playback = FakePlayback::new();
     engine
         .start_with_io(
             None,
-            stt_stream,
-            stt_rx,
+            SttInput {
+                connector: Arc::clone(&stt_connector) as Arc<dyn SttConnector>,
+                stream: stt_stream,
+                events: stt_rx,
+            },
             Arc::new(tts.clone()),
             Arc::new(playback.clone()),
             MicInput {
@@ -200,6 +248,7 @@ fn start_harness(flush_samples: usize) -> Harness {
         frames_tx,
         stt_tx,
         sent_samples,
+        stt_connector,
         tts,
         playback,
     }
@@ -418,8 +467,32 @@ async fn force_end_turn_uses_running_transcript_and_ignores_late_eot() {
 }
 
 #[tokio::test]
-async fn stt_error_tears_down_and_frees_the_slot() {
+async fn stt_error_reconnects_and_the_conversation_survives() {
     let h = start_harness(0);
+    let shared = shared(&h.engine);
+    h.stt_tx.send(SttEvent::Error("blip".into())).unwrap();
+    wait_for(
+        || !h.stt_connector.event_txs.lock().is_empty(),
+        "replacement event channel",
+    )
+    .await;
+    // Drive a turn through the REPLACEMENT socket.
+    let new_tx = h.stt_connector.event_txs.lock()[0].clone();
+    new_tx
+        .send(SttEvent::EndOfTurn {
+            transcript: "still here".into(),
+        })
+        .unwrap();
+    wait_for_state(&h.engine, ConvoState::AwaitingBrain).await;
+    assert_eq!(shared.last_turn().as_deref(), Some("still here"));
+    assert!(h.engine.is_active());
+}
+
+#[tokio::test]
+async fn exhausted_reconnects_tear_down_and_free_the_slot() {
+    let h = start_harness(0);
+    // Every backoff slot fails → fatal.
+    h.stt_connector.fail_next.store(16, Ordering::SeqCst);
     h.stt_tx.send(SttEvent::Error("boom".into())).unwrap();
     wait_for(|| !h.engine.is_active(), "engine slot reaped").await;
     assert_eq!(h.engine.state(), ConvoState::Idle);
@@ -446,15 +519,19 @@ async fn second_start_is_rejected_while_active() {
     let h = start_harness(0);
     let (_tx, frames_rx) = mpsc::unbounded_channel();
     let (_stt_tx, stt_rx) = mpsc::unbounded_channel::<SttEvent>();
+    let counter = Arc::new(AtomicUsize::new(0));
     let err = h
         .engine
         .start_with_io(
             None,
-            Box::new(FakeSttStream {
-                sent_samples: Arc::new(AtomicUsize::new(0)),
-                keepalives: Arc::new(AtomicUsize::new(0)),
-            }),
-            stt_rx,
+            SttInput {
+                connector: Arc::new(FakeSttConnector::new(Arc::clone(&counter))),
+                stream: Box::new(FakeSttStream {
+                    sent_samples: counter,
+                    keepalives: Arc::new(AtomicUsize::new(0)),
+                }),
+                events: stt_rx,
+            },
             Arc::new(FakeTtsConnector::new(0)),
             Arc::new(FakePlayback::new()),
             MicInput {
