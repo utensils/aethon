@@ -35,9 +35,25 @@ export interface VoiceConvoContext {
   brainModel?: string;
 }
 
+/** Live activity of a dispatched task tab, for spoken progress updates. */
+export interface VoiceTaskActivity {
+  /** Still mid-turn (waiting/queued)? Completion is announced separately. */
+  running: boolean;
+  /** Most recent agent prose from the tab, already speech-safe or close to
+   *  it — the hook strips code fences and caps length before sending. */
+  recentText: string;
+}
+
 export interface UseCascadeConversationOptions {
   getContext: () => VoiceConvoContext;
+  /** Resolve a dispatched tab's live activity; null/undefined = unknown. */
+  getTaskActivity?: (tabId: string) => VoiceTaskActivity | null;
 }
+
+/** How often a still-running dispatched task is summarized aloud. */
+export const TASK_PROGRESS_INTERVAL_MS = 30_000;
+/** Cap on the activity digest forwarded to the brain per progress tick. */
+const TASK_PROGRESS_TEXT_CAP = 700;
 
 /** Rust ConversationEngine state (voice://convo/state payloads). */
 type EngineState =
@@ -83,6 +99,8 @@ export function useCascadeConversation(
   /** Task tabs the brain dispatched, awaiting a completion announcement
    *  (announced once, then dropped). */
   const dispatchedRef = useRef(new Map<string, string>());
+  /** Last progress digest sent per dispatched tab (dedupe between ticks). */
+  const lastProgressRef = useRef(new Map<string, string>());
   useEffect(() => {
     optionsRef.current = options;
   });
@@ -126,6 +144,7 @@ export function useCascadeConversation(
     setConversationActive(false);
     chunkerRef.current.reset();
     dispatchedRef.current.clear();
+    lastProgressRef.current.clear();
     setInterimText(null);
     setPhase("idle");
     setError(null);
@@ -272,6 +291,7 @@ export function useCascadeConversation(
       if (label === undefined) return;
       // Announce once per dispatch; later turns on that tab are the user's.
       dispatchedRef.current.delete(tabId);
+      lastProgressRef.current.delete(tabId);
       sendVoiceBridgeMessage({
         type: "voice_task_event",
         taskTabId: tabId,
@@ -280,6 +300,37 @@ export function useCascadeConversation(
         finalText: stripForSpeechSource(text),
       });
     });
+  }, []);
+
+  // ── Running tasks → periodic spoken progress updates ───────────────────
+  // While a dispatched task is still working, forward a digest of its recent
+  // activity so the brain can speak a one-sentence update. Skipped while the
+  // user is mid-exchange (speaking/being answered) so updates never talk over
+  // the conversation, and deduped per tab so an idle task stays silent.
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      if (!activeRef.current) return;
+      if (phaseRef.current !== "listening") return;
+      const getActivity = optionsRef.current.getTaskActivity;
+      if (!getActivity) return;
+      for (const [tabId, label] of dispatchedRef.current) {
+        const activity = getActivity(tabId);
+        if (!activity?.running) continue;
+        const digest = stripForSpeechSource(activity.recentText)
+          .trim()
+          .slice(-TASK_PROGRESS_TEXT_CAP);
+        if (!digest || lastProgressRef.current.get(tabId) === digest) continue;
+        lastProgressRef.current.set(tabId, digest);
+        sendVoiceBridgeMessage({
+          type: "voice_task_event",
+          taskTabId: tabId,
+          label,
+          status: "progress",
+          finalText: digest,
+        });
+      }
+    }, TASK_PROGRESS_INTERVAL_MS);
+    return () => window.clearInterval(timer);
   }, []);
 
   // Tear down the engine if we unmount mid-conversation.

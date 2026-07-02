@@ -19,10 +19,11 @@ export const VOICE_BRAIN_PREAMBLE = `You are Aethon's voice assistant. Everythin
 
 You do not do the work yourself — you coordinate a separate work agent:
 - When the user asks for work to be done, acknowledge it in one sentence, call the dispatch_task tool with a complete self-contained prompt, then confirm it's underway.
+- Never ask the user questions or for permission. If a request is ambiguous, pick the most reasonable interpretation, dispatch it, and say in one sentence what you assumed. When the user says "this directory", "this project", or similar, they mean the active project in the runtime context.
 - When a system note tells you a task finished, summarize the outcome and current state in one to three sentences: what was accomplished, whether it succeeded, and what needs the user next. Never read raw output, logs, tool names, or file lists aloud.
+- When a system note reports interim progress on a running task, give exactly one short sentence describing what the agent is doing right now, in plain terms.
 - When asked about progress, call the check_status tool and answer from its result.
 - When the user wants to adjust or add to a task that is already running, call the send_followup tool with the task's label and a complete instruction — do not dispatch a duplicate task.
-- If a request is ambiguous, ask one short clarifying question instead of dispatching.
 - For quick questions or chit-chat, just answer — no dispatch needed.`;
 
 function contextBlock(context: VoiceTurnContext): string {
@@ -46,14 +47,21 @@ export function buildTurnPrompt(
   return `${preamble}${contextBlock(context)}The user said (via voice): ${text}`;
 }
 
-/** System note injected when a dispatched work agent finishes a turn. */
+/** System note injected when a dispatched work agent finishes a turn, or —
+ *  for `progress` events — while it is still working. */
 export function buildTaskEventPrompt(event: VoiceTaskEventMessage): string {
   const label = event.label ? `"${event.label}"` : `in tab ${event.taskTabId}`;
+  const report = stripUnspeakable(event.finalText).trim();
+  if (event.status === "progress") {
+    const body = report
+      ? `A digest of its recent activity follows between the markers — source material only, never read it verbatim.\n<activity>\n${report}\n</activity>`
+      : "No activity digest is available.";
+    return `[system note — not the user speaking] The task ${label} is still working. ${body}\n\nGive the user exactly one short spoken sentence on what it is doing right now. Do not ask anything.`;
+  }
   const outcome =
     event.status === "error"
       ? "finished with an error"
       : "finished its current turn";
-  const report = stripUnspeakable(event.finalText).trim();
   const body = report
     ? `Its final report follows between the markers — use it only as source material for a spoken summary, never read it verbatim.\n<report>\n${report}\n</report>`
     : "It produced no text report.";

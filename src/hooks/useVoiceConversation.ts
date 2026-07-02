@@ -14,6 +14,7 @@ import { LFM2_VOICE_PROVIDER_ID, capSpokenText } from "../utils/voice";
 import {
   useCascadeConversation,
   type VoiceConvoContext,
+  type VoiceTaskActivity,
 } from "./useCascadeConversation";
 
 /** A full turn of the LFM2-Audio conversation loop:
@@ -47,6 +48,9 @@ export interface UseVoiceConversationOptions {
   /** Runtime context stamped on cascade voice turns (active tab, project,
    *  models). Required for the cascade engine to dispatch tasks. */
   getConvoContext?: () => VoiceConvoContext;
+  /** Live activity of a dispatched task tab, polled for spoken progress
+   *  updates while the work agent runs (cascade engine). */
+  getTaskActivity?: (tabId: string) => VoiceTaskActivity | null;
   /** When true (engine came from "auto"), a cascade session that dies —
    *  failed start or exhausted reconnects — hands the conversation to the
    *  local LFM2 loop instead of stranding the user with an error. */
@@ -86,6 +90,9 @@ export function useVoiceConversation(
   const lfm2 = useLfm2Conversation(options);
   const cascade = useCascadeConversation({
     getContext: options.getConvoContext ?? (() => ({})),
+    ...(options.getTaskActivity
+      ? { getTaskActivity: options.getTaskActivity }
+      : {}),
   });
   const [fellBack, setFellBack] = useState(false);
   // Which pipeline the CURRENT (or most recent) session runs on. "auto"

@@ -33,7 +33,9 @@ export interface VoiceTaskEventMessage {
   type: "voice_task_event";
   taskTabId: string;
   label?: string;
-  status: "completed" | "error";
+  /** `progress` = the task is still running; `finalText` carries a digest of
+   *  recent activity rather than a final report. */
+  status: "completed" | "error" | "progress";
   /** Work agent's final prose (frontend strips code fences + caps length;
    *  the cap here is a defensive re-check). */
   finalText: string;
@@ -77,7 +79,12 @@ export function parseVoiceTaskEvent(msg: unknown): VoiceTaskEventMessage | null 
   const rec = asRecord(msg);
   if (!rec || rec.type !== "voice_task_event") return null;
   if (typeof rec.taskTabId !== "string" || !rec.taskTabId) return null;
-  const status = rec.status === "error" ? "error" : "completed";
+  const status =
+    rec.status === "error"
+      ? "error"
+      : rec.status === "progress"
+        ? "progress"
+        : "completed";
   const finalText =
     typeof rec.finalText === "string"
       ? rec.finalText.slice(0, VOICE_TASK_EVENT_TEXT_CAP)

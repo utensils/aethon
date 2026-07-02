@@ -289,5 +289,23 @@ describe("VoiceBrain task events", () => {
     expect(summaryPrompt).toContain("fix flaky test");
     expect(summaryPrompt).toContain("All 42 tests pass.");
     expect(h.brain.isDispatchedTab("tab-7")).toBe(true);
+
+    session.respond = (_prompt, s) => {
+      s.emitText("Still checking the test harness.");
+      s.emitEnd();
+    };
+    h.brain.handleTaskEvent({
+      type: "voice_task_event",
+      taskTabId: "tab-7",
+      status: "progress",
+      finalText: "Running vitest against the suite.",
+    });
+    await until(
+      () => ofType(h.sent, "voice_brain_end").length === 3,
+      "progress",
+    );
+    const progressPrompt = session.promptCalls[2] ?? "";
+    expect(progressPrompt).toContain("still working");
+    expect(progressPrompt).toContain("Running vitest against the suite.");
   });
 });

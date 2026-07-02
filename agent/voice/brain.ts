@@ -117,10 +117,11 @@ export class VoiceBrain {
     );
   }
 
-  /** A dispatched work agent finished a turn. */
+  /** A dispatched work agent finished a turn — or, for `progress` events,
+   *  is still mid-task (those must not flip the tracked status). */
   handleTaskEvent(msg: VoiceTaskEventMessage): void {
     const known = this.dispatched.get(msg.taskTabId);
-    if (known) {
+    if (known && msg.status !== "progress") {
       known.status = msg.status === "error" ? "error" : "completed";
     }
     void this.runPrompt(

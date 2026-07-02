@@ -122,13 +122,17 @@ export function isLegacyAethonStateCwd(cwd: string): boolean {
     );
   if (!match) return false;
   const after = normalized.slice(match[1].length);
+  // Only legacy project MIRRORS under the state dir are junk
+  // (`~/.aethon/<old-mirror>/...`). The exact `~/.aethon` root is the
+  // bridge's fallback cwd for tabs opened with no active project — those
+  // are live, current sessions; dropping them made every webview reload
+  // close any project-less tab the user was working in.
   return (
-    after === "" ||
-    (after.startsWith("/") &&
-      after !== "/projects" &&
-      !after.startsWith("/projects/") &&
-      after !== "/worktrees" &&
-      !after.startsWith("/worktrees/"))
+    after.startsWith("/") &&
+    after !== "/projects" &&
+    !after.startsWith("/projects/") &&
+    after !== "/worktrees" &&
+    !after.startsWith("/worktrees/")
   );
 }
 

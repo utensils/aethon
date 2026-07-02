@@ -264,6 +264,7 @@ describe("sessionUiSnapshot", () => {
     );
 
     expect(parsed?.tabs.map((tab) => tab.id)).toEqual([
+      "state-root",
       "managed",
       "managed-root",
       "managed-worktree",
@@ -272,8 +273,28 @@ describe("sessionUiSnapshot", () => {
     expect(parsed?.activeTabId).toBe("managed");
   });
 
+  it("keeps live sessions rooted at the exact .aethon state dir", () => {
+    // `~/.aethon` (exactly) is the bridge's fallback cwd for tabs opened
+    // with no active project. Excluding it made every webview reload close
+    // those sessions — only legacy project MIRRORS under it are junk.
+    saveSessionUiSnapshot({
+      tabs: [
+        {
+          ...makeEmptyTab("no-project", "No Project"),
+          cwd: "/Users/jamesbrink/.aethon",
+          messages: [{ role: "user", text: "hello" }],
+        },
+      ],
+      activeTabId: "no-project",
+    });
+
+    const loaded = loadSessionUiSnapshot();
+    expect(loaded?.tabs.map((tab) => tab.id)).toEqual(["no-project"]);
+    expect(loaded?.activeTabId).toBe("no-project");
+  });
+
   it("does not treat project-local .aethon folders as legacy app state", () => {
-    expect(isLegacyAethonStateCwd("/Users/jamesbrink/.aethon")).toBe(true);
+    expect(isLegacyAethonStateCwd("/Users/jamesbrink/.aethon")).toBe(false);
     expect(isLegacyAethonStateCwd("/home/james/.aethon/aethon/old")).toBe(true);
     expect(isLegacyAethonStateCwd("/Users/jamesbrink/.aethon/projects")).toBe(
       false,

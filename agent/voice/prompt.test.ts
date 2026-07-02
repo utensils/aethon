@@ -67,6 +67,29 @@ describe("buildTaskEventPrompt", () => {
     expect(prompt).toContain("Done.");
     expect(prompt).toContain("Tests green.");
   });
+
+  it("frames progress events as a one-sentence update request", () => {
+    const prompt = buildTaskEventPrompt({
+      type: "voice_task_event",
+      taskTabId: "tab-3",
+      label: "audit the auth flow",
+      status: "progress",
+      finalText: "Reading the session middleware.",
+    });
+    expect(prompt).toContain('The task "audit the auth flow" is still working');
+    expect(prompt).toContain(
+      "<activity>\nReading the session middleware.\n</activity>",
+    );
+    expect(prompt).toContain("one short spoken sentence");
+    expect(prompt).not.toContain("finished");
+  });
+});
+
+describe("VOICE_BRAIN_PREAMBLE", () => {
+  it("forbids asking the user questions and mandates dispatch-first", () => {
+    expect(VOICE_BRAIN_PREAMBLE).toContain("Never ask the user questions");
+    expect(VOICE_BRAIN_PREAMBLE).not.toContain("clarifying question");
+  });
 });
 
 describe("stripUnspeakable", () => {

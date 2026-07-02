@@ -21,7 +21,7 @@ import {
   resolveString,
 } from "../../utils/dataBinding";
 import { useExtensionRegistry } from "../ExtensionRegistry";
-import type { QueuedMessage } from "../../types/tab";
+import type { QueuedMessage, Tab } from "../../types/tab";
 import { SlashPicker } from "./slash-picker";
 import { AtPicker } from "./at-picker";
 import { atMentionRoot } from "./at-mention";
@@ -179,6 +179,31 @@ export function ChatInput({
           : {}),
         ...(model ? { defaultModel: model } : {}),
         ...(voice?.brainModel ? { brainModel: voice.brainModel } : {}),
+      };
+    },
+    getTaskActivity: (tabId) => {
+      // A dispatched tab may sit in the visible strip or a backgrounded
+      // workspace bucket — check both.
+      const current = stateRef.current;
+      const buckets = current.persistedTabBuckets as
+        | Record<string, { tabs?: Tab[] }>
+        | undefined;
+      const tab =
+        ((current.tabs as Tab[] | undefined) ?? []).find(
+          (t) => t.id === tabId,
+        ) ??
+        Object.values(buckets ?? {})
+          .flatMap((bucket) => bucket.tabs ?? [])
+          .find((t) => t.id === tabId);
+      if (!tab) return null;
+      const lastAgentText =
+        [...(tab.messages ?? [])]
+          .reverse()
+          .find((m) => m.role === "agent" && (m.text ?? "").trim().length > 0)
+          ?.text ?? "";
+      return {
+        running: tab.waiting === true || (tab.queueCount ?? 0) > 0,
+        recentText: lastAgentText,
       };
     },
   });
