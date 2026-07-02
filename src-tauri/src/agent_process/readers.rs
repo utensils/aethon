@@ -60,6 +60,7 @@ pub(super) struct StdoutReaderCtx {
     pub(super) tab_id: Option<String>,
     pub(super) mutation_routes: Arc<Mutex<HashMap<String, String>>>,
     pub(super) intentional_exits: Arc<Mutex<HashSet<String>>>,
+    pub(super) pending_reloads: Arc<Mutex<HashSet<String>>>,
     pub(super) meta: Arc<Mutex<HashMap<String, WorkerMeta>>>,
     pub(super) stderr_tail: Arc<Mutex<VecDeque<String>>>,
 }
@@ -73,6 +74,7 @@ pub(super) fn spawn_stdout_reader(ctx: StdoutReaderCtx) {
         tab_id,
         mutation_routes,
         intentional_exits,
+        pending_reloads,
         meta,
         stderr_tail,
     } = ctx;
@@ -130,7 +132,22 @@ pub(super) fn spawn_stdout_reader(ctx: StdoutReaderCtx) {
         tracing::debug!(target: "aethon::agent", key = key, "stdout reader for pid={pid} exited");
         let intentional_exit =
             lock_recover(&intentional_exits, "intentional exits (eof)").remove(&key);
+        let reload_was_asked = lock_recover(&pending_reloads, "pending reloads (eof)").remove(&key);
         if intentional_exit || saw_reload_done {
+            cleanup_after_stdout_eof(&meta, &mutation_routes, &key, pid);
+            return;
+        }
+        // The watcher asked this child to reload but the `_reload_done`
+        // sentinel never arrived (lost or corrupted in the pipe). The exit
+        // was still requested — classify as a reload, not a crash, so the
+        // user doesn't get a phantom "exited unexpectedly" toast.
+        if reload_was_asked {
+            tracing::info!(
+                target: "aethon::agent",
+                key = key,
+                "reload-asked pid={pid} closed stdout without sentinel; treating as reload"
+            );
+            let _ = app.emit("agent-reloaded", "");
             cleanup_after_stdout_eof(&meta, &mutation_routes, &key, pid);
             return;
         }
