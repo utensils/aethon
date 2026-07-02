@@ -137,7 +137,7 @@ pub(super) fn normalize_interleaved_f64(input: &[f64], channels: u16) -> Vec<f32
     normalize_interleaved_samples(input, channels)
 }
 
-fn normalize_interleaved_i8(input: &[i8], channels: u16) -> Vec<f32> {
+pub(super) fn normalize_interleaved_i8(input: &[i8], channels: u16) -> Vec<f32> {
     normalize_interleaved_samples(input, channels)
 }
 
@@ -145,7 +145,7 @@ pub(super) fn normalize_interleaved_i16(input: &[i16], channels: u16) -> Vec<f32
     normalize_interleaved_samples(input, channels)
 }
 
-fn normalize_interleaved_i24(input: &[cpal::I24], channels: u16) -> Vec<f32> {
+pub(super) fn normalize_interleaved_i24(input: &[cpal::I24], channels: u16) -> Vec<f32> {
     normalize_interleaved_samples(input, channels)
 }
 
@@ -153,7 +153,7 @@ pub(super) fn normalize_interleaved_i32(input: &[i32], channels: u16) -> Vec<f32
     normalize_interleaved_samples(input, channels)
 }
 
-fn normalize_interleaved_i64(input: &[i64], channels: u16) -> Vec<f32> {
+pub(super) fn normalize_interleaved_i64(input: &[i64], channels: u16) -> Vec<f32> {
     normalize_interleaved_samples(input, channels)
 }
 
@@ -165,15 +165,15 @@ pub(super) fn normalize_interleaved_u16(input: &[u16], channels: u16) -> Vec<f32
     normalize_interleaved_samples(input, channels)
 }
 
-fn normalize_interleaved_u24(input: &[cpal::U24], channels: u16) -> Vec<f32> {
+pub(super) fn normalize_interleaved_u24(input: &[cpal::U24], channels: u16) -> Vec<f32> {
     normalize_interleaved_samples(input, channels)
 }
 
-fn normalize_interleaved_u32(input: &[u32], channels: u16) -> Vec<f32> {
+pub(super) fn normalize_interleaved_u32(input: &[u32], channels: u16) -> Vec<f32> {
     normalize_interleaved_samples(input, channels)
 }
 
-fn normalize_interleaved_u64(input: &[u64], channels: u16) -> Vec<f32> {
+pub(super) fn normalize_interleaved_u64(input: &[u64], channels: u16) -> Vec<f32> {
     normalize_interleaved_samples(input, channels)
 }
 
@@ -225,6 +225,74 @@ pub(super) fn resample(samples: &[f32], from_rate: u32, to_rate: u32) -> Vec<f32
 
 pub(super) fn resample_to_target_rate(samples: &[f32], sample_rate: u32) -> Vec<f32> {
     resample(samples, sample_rate, TARGET_SAMPLE_RATE)
+}
+
+/// Stateful linear resampler for chunked audio streams.
+///
+/// The batch `resample()` above interpolates over a complete buffer; calling
+/// it once per chunk resets the fractional read position at every chunk
+/// boundary, which audibly clicks. This variant carries the read position and
+/// the previous chunk's trailing sample across calls, so a stream fed chunk by
+/// chunk produces the same samples as one batch call over the concatenation.
+pub(super) struct StreamResampler {
+    from_rate: u32,
+    to_rate: u32,
+    /// Fractional read position into the virtual input, where index 0 is the
+    /// carried sample from the previous chunk (once primed).
+    pos: f64,
+    carry: f32,
+    primed: bool,
+}
+
+impl StreamResampler {
+    pub(super) fn new(from_rate: u32, to_rate: u32) -> Self {
+        Self {
+            from_rate,
+            to_rate,
+            pos: 0.0,
+            carry: 0.0,
+            primed: false,
+        }
+    }
+
+    pub(super) fn process(&mut self, input: &[f32]) -> Vec<f32> {
+        if input.is_empty() {
+            return Vec::new();
+        }
+        if self.from_rate == self.to_rate {
+            return input.to_vec();
+        }
+
+        // Virtual input: the carried sample (when primed) followed by this
+        // chunk. `pos` indexes into that concatenation.
+        let prime_len = usize::from(self.primed);
+        let virtual_len = prime_len + input.len();
+        let sample_at = |index: usize| -> f32 {
+            if index < prime_len {
+                self.carry
+            } else {
+                input[index - prime_len]
+            }
+        };
+
+        let ratio = f64::from(self.from_rate) / f64::from(self.to_rate);
+        let mut output = Vec::new();
+        // Only emit samples whose right interpolation neighbour exists; the
+        // remainder waits for the next chunk (that's the carried state).
+        while self.pos.floor() as usize + 1 < virtual_len {
+            let left = self.pos.floor() as usize;
+            let frac = (self.pos - left as f64) as f32;
+            output.push(sample_at(left) * (1.0 - frac) + sample_at(left + 1) * frac);
+            self.pos += ratio;
+        }
+
+        // Rebase `pos` so index 0 of the next call's virtual input is this
+        // chunk's final sample.
+        self.pos -= (virtual_len - 1) as f64;
+        self.carry = input[input.len() - 1];
+        self.primed = true;
+        output
+    }
 }
 
 impl AudioRecorder for CpalAudioRecorder {

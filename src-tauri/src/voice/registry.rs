@@ -16,6 +16,30 @@ pub struct VoiceProviderRegistry {
 }
 
 impl VoiceProviderRegistry {
+    /// Whether a batch dictation capture currently owns the microphone. The
+    /// conversation engine checks this before opening its streaming mic (and
+    /// vice versa) so the two capture paths never contend for the device.
+    pub(crate) fn recording_active(&self) -> bool {
+        self.active_recording.lock().is_some()
+    }
+
+    // Component accessors for the conversation engine's local providers —
+    // the streaming path reuses the batch registry's models and backends
+    // rather than loading its own copies. `pub(super)` because the trait
+    // objects are voice-internal; commands go through the connectors'
+    // `from_registry` constructors.
+    pub(super) fn model_root(&self) -> &Path {
+        &self.model_root
+    }
+
+    pub(super) fn whisper_transcriber(&self) -> Arc<dyn VoiceTranscriber> {
+        Arc::clone(&self.transcriber)
+    }
+
+    pub(super) fn lfm2_backend(&self) -> Arc<dyn Lfm2Backend> {
+        Arc::clone(&self.lfm2)
+    }
+
     pub fn new(model_root: PathBuf) -> Self {
         Self::with_runtime(
             model_root,
@@ -146,6 +170,7 @@ impl VoiceProviderRegistry {
             PlatformVoiceProvider.status(self, db),
             DistilWhisperCandleProvider.status(self, db),
             Lfm2AudioProvider.status(self, db),
+            DeepgramVoiceProvider.status(self, db),
         ]
     }
 
@@ -193,6 +218,7 @@ impl VoiceProviderRegistry {
                     .await
             }
             LFM2_ID => Lfm2AudioProvider.prepare(self, app, db_path).await,
+            DEEPGRAM_ID => DeepgramVoiceProvider.prepare(self, app, db_path).await,
             _ => Err(format!("Unknown voice provider: {provider_id}")),
         }
     }
@@ -238,6 +264,7 @@ impl VoiceProviderRegistry {
             PLATFORM_ID => self.start_platform_recording(db_path, app).await,
             DISTIL_ID => self.start_distil_recording(db_path, app).await,
             LFM2_ID => self.start_lfm2_recording(db_path, app).await,
+            DEEPGRAM_ID => self.start_deepgram_recording(db_path, app).await,
             _ => Err(format!("Unknown voice provider: {provider_id}")),
         }?;
         Ok(VoiceStartLatency { stream_open_ms })
@@ -249,6 +276,7 @@ impl VoiceProviderRegistry {
             PLATFORM_ID => self.stop_platform_recording().await,
             DISTIL_ID => self.stop_distil_recording().await,
             LFM2_ID => self.stop_lfm2_recording().await,
+            DEEPGRAM_ID => self.stop_deepgram_recording().await,
             _ => Err(format!("Unknown voice provider: {provider_id}")),
         }
     }
@@ -259,6 +287,7 @@ impl VoiceProviderRegistry {
             PLATFORM_ID => self.cancel_platform_recording().await,
             DISTIL_ID => self.cancel_distil_recording().await,
             LFM2_ID => self.cancel_lfm2_recording().await,
+            DEEPGRAM_ID => self.cancel_deepgram_recording().await,
             _ => Err(format!("Unknown voice provider: {provider_id}")),
         }
     }
@@ -518,6 +547,68 @@ impl VoiceProviderRegistry {
         Ok(())
     }
 
+    async fn start_deepgram_recording(
+        &self,
+        db_path: &Path,
+        app: Option<AppHandle>,
+    ) -> Result<u128, String> {
+        {
+            let db = VoiceSettings::open(db_path).map_err(|e| e.to_string())?;
+            if !self.enabled(&db, DEEPGRAM_ID) {
+                return Err("Deepgram voice input is disabled".to_string());
+            }
+            if resolve_deepgram_key().is_none() {
+                return Err(
+                    "Add a Deepgram API key in Settings → Voice, or set DEEPGRAM_API_KEY"
+                        .to_string(),
+                );
+            }
+        }
+
+        let mut active = self.active_recording.lock();
+        if active.is_some() {
+            return Err("Voice recording is already active".to_string());
+        }
+        let t_stream = Instant::now();
+        let mut session = self.recorder.start()?;
+        let stream_open_ms = t_stream.elapsed().as_millis();
+        if let Some(app) = app {
+            let abort = spawn_level_emitter(app, Arc::clone(&session.samples));
+            session._level_task = Some(LevelTask(abort));
+        }
+        *active = Some(session);
+        Ok(stream_open_ms)
+    }
+
+    async fn stop_deepgram_recording(&self) -> Result<String, String> {
+        let session = self
+            .active_recording
+            .lock()
+            .take()
+            .ok_or_else(|| "No voice recording is active".to_string())?;
+        let audio = session.finish()?;
+        if audio.samples.is_empty() {
+            return Err("No audio was captured".to_string());
+        }
+        validate_captured_audio(&audio)?;
+
+        let api_key = resolve_deepgram_key().ok_or_else(|| {
+            "Add a Deepgram API key in Settings → Voice, or set DEEPGRAM_API_KEY".to_string()
+        })?;
+        let transcript = deepgram_transcribe_batch(&api_key, audio).await?;
+        if transcript.is_empty() {
+            return Err(
+                "No speech was recognized. Try again closer to the microphone.".to_string(),
+            );
+        }
+        Ok(transcript)
+    }
+
+    async fn cancel_deepgram_recording(&self) -> Result<(), String> {
+        let _ = self.active_recording.lock().take();
+        Ok(())
+    }
+
     /// Synthesize speech for `text` via the LFM2-Audio runner, returning 24 kHz
     /// mono PCM. Requires the LFM2 provider to be enabled with its model +
     /// binary present; cancellable via `cancel_speech` and bounded by the
@@ -583,7 +674,7 @@ impl VoiceProviderRegistry {
 
     fn ensure_known(&self, provider_id: &str) -> Result<(), String> {
         match provider_id {
-            PLATFORM_ID | DISTIL_ID | LFM2_ID => Ok(()),
+            PLATFORM_ID | DISTIL_ID | LFM2_ID | DEEPGRAM_ID => Ok(()),
             _ => Err(format!("Unknown voice provider: {provider_id}")),
         }
     }

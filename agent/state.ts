@@ -80,6 +80,7 @@ import type { AethonApi } from "./aethon-api";
 export type AethonExtensionApi = AethonApi;
 
 import type { LoadSubagentsResult } from "./subagents/types";
+import type { VoiceBrain } from "./voice/brain";
 import { DEFAULT_AGENT_TIMEOUT_SECONDS } from "./runtime-config";
 
 export interface AethonExtensionModule {
@@ -509,6 +510,12 @@ export class AethonAgentState {
   /** Persisted per-tab session directories discovered at boot. Shipped
    *  in `ready` so the frontend can offer "Recent sessions". */
   discoveredTabs: DiscoveredTab[] = [];
+
+  // -- Voice brain ----------------------------------------------------------
+  /** Singleton conversational session for the hands-free voice mode. Lazily
+   *  created on the first `voice_turn` (global bridge only — the Rust router
+   *  never sends voice_* messages to tab workers). See agent/voice/brain.ts. */
+  voiceBrain: VoiceBrain | undefined = undefined;
 
   /** Per-turn tabId propagated through the async call chain that runs
    *  inside session.prompt(). Concurrent prompts on different tabs each

@@ -245,4 +245,26 @@ describe("SettingsPanel", () => {
       args: { root: "/repo" },
     });
   });
+
+  it("offers the header picker's models in the voice brain select", async () => {
+    renderSettings({
+      sidebar: {
+        models: [
+          { id: "anthropic/claude-haiku-4-5", label: "Claude Haiku 4.5" },
+          { id: "ollama/qwen3", label: "Qwen 3 (local)" },
+        ],
+      },
+    });
+
+    const select: HTMLSelectElement = await screen.findByLabelText(
+      "Voice brain model",
+    );
+    const labels = Array.from(select.options).map((o) => o.textContent);
+    expect(labels).toEqual([
+      "Default model (same as chat)",
+      "Claude Haiku 4.5",
+      "Qwen 3 (local)",
+    ]);
+    expect(select.value).toBe("");
+  });
 });

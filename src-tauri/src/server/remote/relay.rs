@@ -58,8 +58,7 @@ impl TauriRelay {
             .flatten()
             .map(|raw| policy::allowed_roots_from_projects_json(&raw))
             .unwrap_or_default();
-        *self.roots.lock().expect("roots lock") =
-            Some((std::time::Instant::now(), roots.clone()));
+        *self.roots.lock().expect("roots lock") = Some((std::time::Instant::now(), roots.clone()));
         roots
     }
 
@@ -220,7 +219,10 @@ impl TauriRelay {
             )?),
             "start_agent" => {
                 let state = app.state::<crate::agent_process::AgentProcesses>();
-                to_value(crate::agent_commands::start_agent(state.clone(), app.clone())?)
+                to_value(crate::agent_commands::start_agent(
+                    state.clone(),
+                    app.clone(),
+                )?)
             }
             "send_message" => {
                 let state = app.state::<crate::agent_process::AgentProcesses>();
@@ -292,8 +294,7 @@ impl TauriRelay {
                 let server = app.state::<Arc<crate::server::ServerState>>();
                 let remote = app.state::<Arc<super::RemoteState>>();
                 to_value(
-                    crate::commands::remote::remote_status(server.clone(), remote.clone())
-                        .await?,
+                    crate::commands::remote::remote_status(server.clone(), remote.clone()).await?,
                 )
             }
             // ── shells — the user's own interactive terminals ─────────
@@ -331,7 +332,10 @@ impl TauriRelay {
             }
             "shell_close" => {
                 let state = app.state::<crate::shell::ShellRegistry>();
-                to_value(crate::shell::shell_close(state.clone(), arg(&args, "tabId")?)?)
+                to_value(crate::shell::shell_close(
+                    state.clone(),
+                    arg(&args, "tabId")?,
+                )?)
             }
             "shell_is_busy" => {
                 let state = app.state::<crate::shell::ShellRegistry>();
@@ -421,13 +425,12 @@ impl TauriRelay {
                 arg(&args, "path")?,
             )?),
             "fs_discover_project_icon" => to_value(
-                crate::commands::fs::fs_discover_project_icon(arg(&args, "projectPath")?)
-                    .await?,
+                crate::commands::fs::fs_discover_project_icon(arg(&args, "projectPath")?).await?,
             ),
             // ── git + gh reads ────────────────────────────────────────
-            "git_status" => to_value(
-                crate::commands::git::status::git_status(arg(&args, "path")?).await?,
-            ),
+            "git_status" => {
+                to_value(crate::commands::git::status::git_status(arg(&args, "path")?).await?)
+            }
             "git_working_context" => to_value(
                 crate::commands::git::status::git_working_context(arg(&args, "cwd")?).await?,
             ),
@@ -441,18 +444,15 @@ impl TauriRelay {
                     .await?,
                 )
             }
-            "git_file_status" => to_value(
-                crate::commands::git::status::git_file_status(arg(&args, "root")?).await?,
-            ),
+            "git_file_status" => {
+                to_value(crate::commands::git::status::git_file_status(arg(&args, "root")?).await?)
+            }
             "git_ignored_paths" => to_value(
                 crate::commands::git::status::git_ignored_paths(arg(&args, "root")?).await?,
             ),
             "git_file_diff" => to_value(
-                crate::commands::git::diff::git_file_diff(
-                    arg(&args, "root")?,
-                    arg(&args, "path")?,
-                )
-                .await?,
+                crate::commands::git::diff::git_file_diff(arg(&args, "root")?, arg(&args, "path")?)
+                    .await?,
             ),
             "git_file_diff_hunks" => to_value(
                 crate::commands::git::diff::git_file_diff_hunks(
@@ -469,18 +469,14 @@ impl TauriRelay {
                 .await?,
             ),
             "git_show_head" => to_value(
-                crate::commands::git::diff::git_show_head(
-                    arg(&args, "root")?,
-                    arg(&args, "path")?,
-                )
-                .await?,
-            ),
-            "git_diff_stat" => to_value(
-                crate::commands::git::diff::git_diff_stat(arg(&args, "root")?).await?,
-            ),
-            "git_worktrees" => to_value(
-                crate::commands::git::worktrees::git_worktrees(arg(&args, "projectPath")?)
+                crate::commands::git::diff::git_show_head(arg(&args, "root")?, arg(&args, "path")?)
                     .await?,
+            ),
+            "git_diff_stat" => {
+                to_value(crate::commands::git::diff::git_diff_stat(arg(&args, "root")?).await?)
+            }
+            "git_worktrees" => to_value(
+                crate::commands::git::worktrees::git_worktrees(arg(&args, "projectPath")?).await?,
             ),
             "git_branch_list" => to_value(
                 crate::commands::git::worktrees::git_branch_list(arg(&args, "projectPath")?)
@@ -501,12 +497,10 @@ impl TauriRelay {
                 .await?,
             ),
             "gh_repo_overview" => to_value(
-                crate::commands::git::github::gh_repo_overview(arg(&args, "projectPath")?)
-                    .await?,
+                crate::commands::git::github::gh_repo_overview(arg(&args, "projectPath")?).await?,
             ),
             "gh_repo_avatar_url" => to_value(
-                crate::commands::git::github::gh_repo_avatar_url(arg(&args, "projectPath")?)
-                    .await,
+                crate::commands::git::github::gh_repo_avatar_url(arg(&args, "projectPath")?).await,
             ),
             "gh_issue_list" => to_value(
                 crate::commands::git::issues::gh_issue_list(

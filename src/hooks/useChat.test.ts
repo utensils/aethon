@@ -53,6 +53,13 @@ const fullConfig: AethonConfig = {
     speakAgentReplies: true,
     speakMaxChars: 1200,
     conversationContinuous: true,
+    conversationEngine: "auto" as const,
+    brainModel: null,
+    sttProvider: "deepgram-flux",
+    ttsProvider: "cartesia",
+    ttsVoice: null,
+    deepgramApiKeySet: false,
+    cartesiaApiKeySet: false,
   },
   updates: { channel: "nightly", disableAutoCheck: true },
   devshell: {

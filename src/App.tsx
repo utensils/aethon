@@ -800,6 +800,7 @@ export default function App() {
     syncNativeWindowsToState,
     routeShellWrite,
     startTaskInProject,
+    sendChat,
     markStartupChromeReady: () => setStartupChromeReady(true),
   });
 

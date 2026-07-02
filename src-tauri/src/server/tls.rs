@@ -181,8 +181,7 @@ mod tests {
 
     #[test]
     fn pem_der_roundtrip_matches_rcgen_der() {
-        let certified =
-            rcgen::generate_simple_self_signed(vec!["test.local".to_string()]).unwrap();
+        let certified = rcgen::generate_simple_self_signed(vec!["test.local".to_string()]).unwrap();
         let der = pem_certificate_der(&certified.cert.pem()).unwrap();
         assert_eq!(der, certified.cert.der().as_ref());
     }

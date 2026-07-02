@@ -51,6 +51,9 @@ function makeController(continuous = false) {
       getActiveTabId: () => "t1",
       continuous,
       maxSpokenChars: 600,
+      // These tests exercise the LFM2 loop specifically; "auto" would probe
+      // cascade availability over IPC at enter time.
+      engine: "lfm2",
     }),
   );
   return { result, submitText, unmount };

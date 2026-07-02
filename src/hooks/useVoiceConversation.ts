@@ -7,9 +7,15 @@ import {
   stopAndTranscribeVoice,
   stopVoicePlayback,
 } from "../services/voice";
+import { voiceConvoStatus } from "../services/voiceConvo";
 import { onAgentTurnComplete } from "../utils/agentTurnEvents";
 import { setConversationActive } from "../utils/conversationMode";
 import { LFM2_VOICE_PROVIDER_ID, capSpokenText } from "../utils/voice";
+import {
+  useCascadeConversation,
+  type VoiceConvoContext,
+  type VoiceTaskActivity,
+} from "./useCascadeConversation";
 
 /** A full turn of the LFM2-Audio conversation loop:
  *  idle → listening → transcribing → thinking → speaking → (continue|idle). */
@@ -19,6 +25,8 @@ export type ConversationPhase =
   | "transcribing"
   | "thinking"
   | "speaking";
+
+export type ConversationEngineKind = "cascade" | "lfm2";
 
 export interface UseVoiceConversationOptions {
   /** Send the transcript to the agent (reuses the composer submit path). */
@@ -32,12 +40,32 @@ export interface UseVoiceConversationOptions {
   maxSpokenChars: number;
   /** Routed to Settings when the LFM2 model/binary isn't ready. */
   onNeedsSetup?: (providerId: string) => void;
+  /** Which pipeline drives the conversation. `"cascade"` is the streaming
+   *  engine (useCascadeConversation); `"lfm2"` the local batch loop below;
+   *  `"auto"` (default) probes cascade availability at ENTER time — so a key
+   *  saved in Settings takes effect on the next conversation, no reload. */
+  engine?: ConversationEngineKind | "auto";
+  /** Runtime context stamped on cascade voice turns (active tab, project,
+   *  models). Required for the cascade engine to dispatch tasks. */
+  getConvoContext?: () => VoiceConvoContext;
+  /** Live activity of a dispatched task tab, polled for spoken progress
+   *  updates while the work agent runs (cascade engine). */
+  getTaskActivity?: (tabId: string) => VoiceTaskActivity | null;
+  /** When true (engine came from "auto"), a cascade session that dies —
+   *  failed start or exhausted reconnects — hands the conversation to the
+   *  local LFM2 loop instead of stranding the user with an error. */
+  allowFallback?: boolean;
 }
 
 export interface VoiceConversationController {
   active: boolean;
   phase: ConversationPhase;
   error: string | null;
+  /** Live partial transcript while listening (cascade engine only). */
+  interimText: string | null;
+  /** Last measured time-to-first-audio for a spoken reply, in ms (cascade
+   *  engine, debug builds emit the metric). */
+  latencyMs: number | null;
   enter: () => void;
   exit: () => void;
   /** Context-aware tap: start speaking / finish speaking / interrupt. */
@@ -51,6 +79,106 @@ export interface VoiceConversationController {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+/** Route to the configured conversation pipeline. Both hooks mount
+ *  unconditionally (rules of hooks); each is inert until entered, so the
+ *  inactive one costs a few no-op listeners. */
+export function useVoiceConversation(
+  options: UseVoiceConversationOptions,
+): VoiceConversationController {
+  const lfm2 = useLfm2Conversation(options);
+  const cascade = useCascadeConversation({
+    getContext: options.getConvoContext ?? (() => ({})),
+    submitTranscript: options.submitText,
+    getActiveTabId: options.getActiveTabId,
+    ...(options.getTaskActivity
+      ? { getTaskActivity: options.getTaskActivity }
+      : {}),
+  });
+  const [fellBack, setFellBack] = useState(false);
+  // Which pipeline the CURRENT (or most recent) session runs on. "auto"
+  // resolves here at enter time via a live availability probe.
+  const [resolvedEngine, setResolvedEngine] = useState<ConversationEngineKind>(
+    "lfm2",
+  );
+  // Invalidates in-flight "auto" probes: bumped on every enter() and exit()
+  // so a voiceConvoStatus() that resolves after the user left (or re-entered)
+  // can't re-activate a conversation they already ended.
+  const enterAttemptRef = useRef(0);
+  const usingCascade = resolvedEngine === "cascade" && !fellBack;
+
+  // A dead cascade session (error while idle-but-active: failed start or
+  // exhausted mid-session reconnects) hands off to the local loop when the
+  // engine choice was automatic. The switch is spoken through the local TTS
+  // so a hands-free user isn't left talking to a dead mic.
+  const shouldFallBack =
+    options.allowFallback === true &&
+    usingCascade &&
+    cascade.active &&
+    cascade.phase === "idle" &&
+    cascade.error !== null;
+  const cascadeExit = cascade.exit;
+  const lfm2Enter = lfm2.enter;
+  useEffect(() => {
+    if (!shouldFallBack) return;
+    cascadeExit();
+    // One-shot engine handoff reacting to the cascade's error state — the
+    // set is the transition itself, not a resync loop.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setFellBack(true);
+    lfm2Enter();
+    void speakVoice(
+      "Cloud voice is unavailable, switching to the local engine.",
+    ).catch(() => {});
+  }, [shouldFallBack, cascadeExit, lfm2Enter]);
+
+  const controller = usingCascade ? cascade : lfm2;
+  const cascadeEnter = cascade.enter;
+  return {
+    ...controller,
+    enter: () => {
+      const attempt = ++enterAttemptRef.current;
+      const configured = options.engine ?? "auto";
+      if (configured === "cascade") {
+        setFellBack(false);
+        setResolvedEngine("cascade");
+        cascadeEnter();
+        return;
+      }
+      if (configured === "lfm2") {
+        setResolvedEngine("lfm2");
+        lfm2Enter();
+        return;
+      }
+      // Auto: probe availability NOW, so keys/models added since boot count.
+      // The attempt token gates the resolution — an exit() (or re-enter)
+      // while the probe is in flight makes this resolution a no-op.
+      void voiceConvoStatus()
+        .then((status) => {
+          if (attempt !== enterAttemptRef.current) return;
+          if (status.available) {
+            setFellBack(false);
+            setResolvedEngine("cascade");
+            cascadeEnter();
+          } else {
+            setResolvedEngine("lfm2");
+            lfm2Enter();
+          }
+        })
+        .catch(() => {
+          if (attempt !== enterAttemptRef.current) return;
+          setResolvedEngine("lfm2");
+          lfm2Enter();
+        });
+    },
+    exit: () => {
+      enterAttemptRef.current += 1;
+      controller.exit();
+      // The next session gets a fresh shot at the cascade.
+      setFellBack(false);
+    },
+  };
 }
 
 // Voice-activity detection thresholds (over the recorder's ~30 Hz
@@ -68,7 +196,8 @@ interface VoiceLevel {
   level: number;
 }
 
-export function useVoiceConversation(
+/** The original LFM2-Audio loop: batch ASR → composer submit → batch TTS. */
+function useLfm2Conversation(
   options: UseVoiceConversationOptions,
 ): VoiceConversationController {
   const [active, setActive] = useState(false);
@@ -357,5 +486,16 @@ export function useVoiceConversation(
     };
   }, []);
 
-  return { active, phase, error, enter, exit, primaryAction, beginHold, endHold };
+  return {
+    active,
+    phase,
+    error,
+    interimText: null,
+    latencyMs: null,
+    enter,
+    exit,
+    primaryAction,
+    beginHold,
+    endHold,
+  };
 }

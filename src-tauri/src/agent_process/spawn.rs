@@ -25,6 +25,15 @@ use super::readers::{
 };
 use super::sidecar::{find_sidecar_binary, project_root};
 
+/// The supervisor-shared bookkeeping a freshly spawned child's reader
+/// threads need to own (`'static` clones of the `AgentProcesses` Arcs).
+pub(super) struct SpawnShared {
+    pub(super) mutation_routes: Arc<Mutex<HashMap<String, String>>>,
+    pub(super) intentional_exits: Arc<Mutex<HashSet<String>>>,
+    pub(super) pending_reloads: Arc<Mutex<HashSet<String>>>,
+    pub(super) meta: Arc<Mutex<HashMap<String, WorkerMeta>>>,
+}
+
 /// Spawn the agent if no live child is held. Idempotent. Callers own the
 /// mutex around this. In dev (`debug_assertions`) we run `bun run
 /// agent/main.ts` from the project root. In release we run the bundled
@@ -34,11 +43,15 @@ pub(super) fn ensure_agent_spawned(
     guard: &mut HashMap<String, Arc<Mutex<Child>>>,
     key: &str,
     app: &AppHandle,
-    mutation_routes: Arc<Mutex<HashMap<String, String>>>,
-    intentional_exits: Arc<Mutex<HashSet<String>>>,
-    meta: Arc<Mutex<HashMap<String, WorkerMeta>>>,
+    shared: SpawnShared,
     worker: Option<&AgentWorker>,
 ) -> Result<(), String> {
+    let SpawnShared {
+        mutation_routes,
+        intentional_exits,
+        pending_reloads,
+        meta,
+    } = shared;
     let exited_status = guard.get(key).and_then(|child| {
         lock_recover(child, "agent child (exit check)")
             .try_wait()
@@ -90,6 +103,10 @@ pub(super) fn ensure_agent_spawned(
     let pid = child.id();
     tracing::info!(target: "aethon::agent", key = key, "spawned pid={pid}");
 
+    // A fresh child has not been asked to reload — drop any stale mark left
+    // by a prior generation so its future EOF classifies on its own merits.
+    lock_recover(&pending_reloads, "pending reloads (spawn)").remove(key);
+
     let stderr_tail: Arc<Mutex<VecDeque<String>>> =
         Arc::new(Mutex::new(VecDeque::with_capacity(STDERR_TAIL_CAP)));
 
@@ -102,6 +119,7 @@ pub(super) fn ensure_agent_spawned(
         tab_id: worker.map(|w| w.tab_id.clone()),
         mutation_routes,
         intentional_exits,
+        pending_reloads,
         meta: Arc::clone(&meta),
         stderr_tail: Arc::clone(&stderr_tail),
     });

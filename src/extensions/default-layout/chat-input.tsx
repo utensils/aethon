@@ -1,5 +1,6 @@
 import {
   createElement,
+  useEffect,
   useMemo,
   useRef,
   useState,
@@ -20,7 +21,7 @@ import {
   resolveString,
 } from "../../utils/dataBinding";
 import { useExtensionRegistry } from "../ExtensionRegistry";
-import type { QueuedMessage } from "../../types/tab";
+import type { QueuedMessage, Tab } from "../../types/tab";
 import { SlashPicker } from "./slash-picker";
 import { AtPicker } from "./at-picker";
 import { atMentionRoot } from "./at-mention";
@@ -28,6 +29,7 @@ import { useAtMentionTextarea } from "./use-at-mention-textarea";
 import { useComposerResize } from "./use-composer-resize";
 import { useDraftCommit } from "./use-draft-commit";
 import { useVoiceConversation } from "../../hooks/useVoiceConversation";
+import { activeWorkspaceCwd } from "../../utils/activeWorkspaceRoot";
 import { ConversationHud } from "./conversation-hud";
 import {
   VoiceConversationButton,
@@ -138,14 +140,85 @@ export function ChatInput({
         holdHotkey?: string | null;
         speakMaxChars?: number;
         conversationContinuous?: boolean;
+        conversationEngine?: string;
+        brainModel?: string | null;
       }
     | undefined) ?? { toggleHotkey: "mod+shift+m", holdHotkey: null };
+  // Latest state for event-time context resolution (mirrors optionsRef in
+  // the conversation hooks — refs must not be written during render).
+  const stateRef = useRef(state);
+  useEffect(() => {
+    stateRef.current = state;
+  });
   const conversation = useVoiceConversation({
     submitText: (text) => onEvent("submit", { value: text, mode: "normal" }),
     getActiveTabId: () => state.activeTabId as string | undefined,
     continuous: voiceConfig.conversationContinuous ?? false,
     maxSpokenChars: voiceConfig.speakMaxChars ?? 600,
     onNeedsSetup: (providerId) => onEvent("voice:setup", { providerId }),
+    engine:
+      voiceConfig.conversationEngine === "cascade"
+        ? "cascade"
+        : voiceConfig.conversationEngine === "lfm2"
+          ? "lfm2"
+          : "auto",
+    allowFallback: (voiceConfig.conversationEngine ?? "auto") === "auto",
+    getConvoContext: () => {
+      const current = stateRef.current;
+      const voice = current.voice as { brainModel?: string | null } | undefined;
+      const activeTabId =
+        typeof current.activeTabId === "string" ? current.activeTabId : undefined;
+      const model =
+        (typeof current.model === "string" && current.model) ||
+        (typeof current.piDefaultModel === "string" && current.piDefaultModel) ||
+        undefined;
+      // The project list (label + path) lets the brain dispatch to a project
+      // the user NAMES even when none is active in the sidebar.
+      const knownProjects = (
+        (current.projects as { label?: unknown; path?: unknown }[] | undefined) ??
+        []
+      )
+        .flatMap((p) =>
+          typeof p.label === "string" && typeof p.path === "string" && p.path
+            ? [{ label: p.label, path: p.path }]
+            : [],
+        )
+        .slice(0, 12);
+      return {
+        ...(activeTabId ? { activeTabId } : {}),
+        ...(activeWorkspaceCwd(current)
+          ? { projectPath: activeWorkspaceCwd(current) ?? undefined }
+          : {}),
+        ...(model ? { defaultModel: model } : {}),
+        ...(voice?.brainModel ? { brainModel: voice.brainModel } : {}),
+        ...(knownProjects.length > 0 ? { knownProjects } : {}),
+      };
+    },
+    getTaskActivity: (tabId) => {
+      // A dispatched tab may sit in the visible strip or a backgrounded
+      // workspace bucket — check both.
+      const current = stateRef.current;
+      const buckets = current.persistedTabBuckets as
+        | Record<string, { tabs?: Tab[] }>
+        | undefined;
+      const tab =
+        ((current.tabs as Tab[] | undefined) ?? []).find(
+          (t) => t.id === tabId,
+        ) ??
+        Object.values(buckets ?? {})
+          .flatMap((bucket) => bucket.tabs ?? [])
+          .find((t) => t.id === tabId);
+      if (!tab) return null;
+      const lastAgentText =
+        [...(tab.messages ?? [])]
+          .reverse()
+          .find((m) => m.role === "agent" && (m.text ?? "").trim().length > 0)
+          ?.text ?? "";
+      return {
+        running: tab.waiting === true || (tab.queueCount ?? 0) > 0,
+        recentText: lastAgentText,
+      };
+    },
   });
   const settings = state.settings as { open?: boolean } | undefined;
   const palette = state.commandPalette as { open?: boolean } | undefined;
@@ -349,6 +422,8 @@ export function ChatInput({
         <ConversationHud
           phase={conversation.phase}
           error={conversation.error}
+          interim={conversation.interimText}
+          latencyMs={conversation.latencyMs}
           autoListen={voiceConfig.conversationContinuous ?? false}
           onPrimary={conversation.primaryAction}
           onToggleAutoListen={() =>

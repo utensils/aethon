@@ -62,8 +62,10 @@ pub(super) fn lfm2_model_paths(cache_path: &Path) -> Lfm2ModelPaths {
 }
 
 /// Locate the `llama-lfm2-audio` binary. Order: explicit dev override, a
-/// sidecar staged next to the running executable (release bundle), then `PATH`
-/// through the shared resolver in `env.rs`.
+/// sidecar staged next to the running executable (release bundle), the
+/// repo's staged runner (debug builds only — `cargo tauri dev` runs from
+/// `target/debug` with no sidecar), then `PATH` through the shared resolver
+/// in `env.rs`.
 pub(super) fn resolve_lfm2_binary() -> Option<PathBuf> {
     if let Some(raw) = std::env::var_os(LFM2_BIN_ENV) {
         let path = PathBuf::from(raw);
@@ -76,6 +78,18 @@ pub(super) fn resolve_lfm2_binary() -> Option<PathBuf> {
         && let Some(found) = bundled_lfm2_binary(dir)
     {
         return Some(found);
+    }
+    // Debug-only: release binaries must never reference a build machine's
+    // source tree.
+    #[cfg(debug_assertions)]
+    {
+        let staged = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("binaries")
+            .join(LFM2_BUNDLE_SUBDIR)
+            .join(LFM2_BIN_NAME);
+        if staged.is_file() {
+            return Some(staged);
+        }
     }
     crate::env::resolve_program(LFM2_BIN_NAME)
 }

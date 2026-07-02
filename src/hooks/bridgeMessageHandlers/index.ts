@@ -64,6 +64,11 @@ import { handleSubagentProgress } from "./subagentProgress";
 import { handleTabClosed } from "./tabClosed";
 import { handleTabReady } from "./tabReady";
 import { handleTerminalOutput } from "./terminalOutput";
+import {
+  handleVoiceBrainDelta,
+  handleVoiceBrainEnd,
+  handleVoiceBrainError,
+} from "./voiceBrain";
 
 export const bridgeMessageHandlers: Readonly<
   Record<string, BridgeMessageHandler>
@@ -123,6 +128,9 @@ export const bridgeMessageHandlers: Readonly<
   tab_closed: handleTabClosed,
   tab_ready: handleTabReady,
   terminal_output: handleTerminalOutput,
+  voice_brain_delta: handleVoiceBrainDelta,
+  voice_brain_end: handleVoiceBrainEnd,
+  voice_brain_error: handleVoiceBrainError,
 });
 
 export type {

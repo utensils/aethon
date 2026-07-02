@@ -116,6 +116,18 @@ export const handleDashboardQuery: BridgeMessageHandler = (data, ctx) => {
       return { ok: true, projectId: project.id, ...(launched ?? {}) };
     }
 
+    if (op === "send_followup") {
+      const tabId = args.tabId as string | undefined;
+      const prompt = args.prompt as string | undefined;
+      if (!tabId || !prompt?.trim()) {
+        throw new Error("send_followup requires tabId + prompt");
+      }
+      // Normal mode: the chat pipeline queues behind an in-flight prompt,
+      // so a follow-up never clobbers the work agent mid-turn.
+      await ctx.sendChat(prompt, { tabId });
+      return { ok: true, tabId };
+    }
+
     if (op === "get_repo_overview") {
       const projectPath = args.projectPath as string | undefined;
       if (!projectPath) {

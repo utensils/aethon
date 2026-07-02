@@ -18,7 +18,8 @@
   justify-content: center;
   gap: 16px;
   min-height: 100dvh;
-  padding: calc(var(--ae-safe-top) + 24px) 20px calc(var(--ae-safe-bottom) + 24px);
+  padding: calc(var(--ae-safe-top) + 24px) 20px
+    calc(var(--ae-safe-bottom) + 24px);
   background: var(--bg);
   color: var(--text);
   text-align: center;

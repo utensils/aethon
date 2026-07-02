@@ -21,7 +21,7 @@ use tauri::{AppHandle, State};
 use tokio::time::sleep;
 
 use super::sidecar::project_root;
-use super::spawn::ensure_agent_spawned;
+use super::spawn::{SpawnShared, ensure_agent_spawned};
 use crate::env;
 
 pub(crate) const GLOBAL_AGENT_KEY: &str = "__global__";
@@ -80,6 +80,11 @@ pub(crate) struct AgentProcesses {
     pub(crate) children: Mutex<HashMap<String, Arc<Mutex<Child>>>>,
     pub(crate) mutation_routes: Arc<Mutex<HashMap<String, String>>>,
     pub(crate) intentional_exits: Arc<Mutex<HashSet<String>>>,
+    /// Keys the file-watcher has asked to reload gracefully. Consumed at
+    /// stdout-EOF so a drain whose `_reload_done` sentinel got lost (or
+    /// corrupted in the pipe) still classifies as a reload — emitting
+    /// `agent-reloaded` — instead of popping a phantom crash toast.
+    pub(crate) pending_reloads: Arc<Mutex<HashSet<String>>>,
     pub(crate) meta: Arc<Mutex<HashMap<String, WorkerMeta>>>,
 }
 
@@ -89,7 +94,19 @@ impl AgentProcesses {
             children: Mutex::new(HashMap::new()),
             mutation_routes: Arc::new(Mutex::new(HashMap::new())),
             intentional_exits: Arc::new(Mutex::new(HashSet::new())),
+            pending_reloads: Arc::new(Mutex::new(HashSet::new())),
             meta: Arc::new(Mutex::new(HashMap::new())),
+        }
+    }
+
+    /// `'static` clones of the bookkeeping Arcs a spawn hands to its
+    /// reader threads.
+    pub(super) fn spawn_shared(&self) -> SpawnShared {
+        SpawnShared {
+            mutation_routes: Arc::clone(&self.mutation_routes),
+            intentional_exits: Arc::clone(&self.intentional_exits),
+            pending_reloads: Arc::clone(&self.pending_reloads),
+            meta: Arc::clone(&self.meta),
         }
     }
 }
@@ -284,15 +301,7 @@ pub(crate) async fn write_agent_payload(
     for _attempt in 0..2 {
         let child = {
             let mut guard = lock_recover(&state.children, "agent children (write)");
-            ensure_agent_spawned(
-                &mut guard,
-                &key,
-                app,
-                Arc::clone(&state.mutation_routes),
-                Arc::clone(&state.intentional_exits),
-                Arc::clone(&state.meta),
-                worker.as_ref(),
-            )?;
+            ensure_agent_spawned(&mut guard, &key, app, state.spawn_shared(), worker.as_ref())?;
             guard.get(&key).cloned().ok_or("agent not running")?
         };
 
@@ -353,9 +362,7 @@ pub(crate) fn ensure_global_agent(
         &mut guard,
         GLOBAL_AGENT_KEY,
         app,
-        Arc::clone(&state.mutation_routes),
-        Arc::clone(&state.intentional_exits),
-        Arc::clone(&state.meta),
+        state.spawn_shared(),
         None,
     )
 }

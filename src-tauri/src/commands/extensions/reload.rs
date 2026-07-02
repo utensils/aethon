@@ -82,6 +82,12 @@ pub(super) fn run_debounce_worker(rx: std::sync::mpsc::Receiver<DebounceMsg>, ap
                 };
                 match write_result {
                     Ok(()) => {
+                        // Mark the ask so a drain whose `_reload_done`
+                        // sentinel gets lost still classifies its EOF as a
+                        // reload rather than a crash.
+                        if let Ok(mut pending) = state.pending_reloads.lock() {
+                            pending.insert(key.clone());
+                        }
                         tracing::info!(
                             target: "aethon::agent_watch",
                             key = key,

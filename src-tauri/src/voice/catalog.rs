@@ -40,6 +40,7 @@ pub(crate) const DISTIL_MODEL_FILES: [(&str, Option<u64>); 5] = [
 // / `-mv` flags. See `lfm2.rs` for the runtime contract distilled from the
 // Phase 0 spike.
 pub(crate) const LFM2_ID: &str = "voice-lfm2-audio-llamacpp";
+pub(crate) const DEEPGRAM_ID: &str = "voice-deepgram-nova";
 pub(crate) const LFM2_CACHE_DIR: &str = "lfm2-audio-1.5b";
 pub(crate) const LFM2_HF_REPO: &str = "LiquidAI/LFM2-Audio-1.5B-GGUF";
 pub(crate) const LFM2_READY_MESSAGE: &str = "Ready for offline speech";
