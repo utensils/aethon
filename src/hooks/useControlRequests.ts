@@ -131,9 +131,25 @@ async function handleControlRequest(
       return waitForIdle(ctx, params);
     case "agent.stop":
       return stopAgent(ctx, params);
+    case "config.write":
+      return writeConfigForRemote(params);
     default:
       throw new Error(`unsupported control request: ${request.method}`);
   }
+}
+
+/** Remote (companion) Settings edits round through the desktop webview
+ *  so the single-writer invariant on config.toml holds. The desktop's
+ *  own boot-config listener re-primes live values on the next read. */
+async function writeConfigForRemote(
+  params: Record<string, unknown>,
+): Promise<unknown> {
+  const config = params.config;
+  if (!config || typeof config !== "object") {
+    throw new Error("config.write requires a config object");
+  }
+  await invoke("write_config", { config });
+  return { ok: true };
 }
 
 async function openTab(

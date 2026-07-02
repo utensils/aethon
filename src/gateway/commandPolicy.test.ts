@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { routeFor, stubResult } from "./commandPolicy";
+import { gatewayCommand, routeFor, stubResult } from "./commandPolicy";
 
 describe("mobile command policy", () => {
   it("routes native plugin commands locally", () => {
@@ -13,22 +13,25 @@ describe("mobile command policy", () => {
       "voice_start_recording",
       "native_window_open_canvas",
       "devshell_status",
-      "shell_open",
-      "git_status",
-      "gh_repo_overview",
       "fs_watch_dirs",
+      "fs_open_in_default_app",
+      "git_worktree_add",
+      "git_watch_root",
       "updater_available",
       "write_state",
       "toggle_devtools",
+      "pick_project_directory",
+      // Gateway-admin / control-plane never drive from the phone.
       "server_status",
       "remote_pairing_begin",
+      "remote_status",
       "control_update_state",
     ]) {
       expect(routeFor(cmd)).toBe("stub");
     }
   });
 
-  it("forwards the chat + read surface to the gateway", () => {
+  it("forwards the chat + read + terminal/files/git surface to the gateway", () => {
     for (const cmd of [
       "send_message",
       "agent_command",
@@ -39,9 +42,25 @@ describe("mobile command policy", () => {
       "search_sessions",
       "fork_session",
       "host_info",
+      // Phase 4 surfaces now reach the desktop over the gateway.
+      "shell_open",
+      "shell_input",
+      "git_status",
+      "gh_repo_overview",
+      "fs_read_file",
+      "fs_list_dir",
     ]) {
       expect(routeFor(cmd)).toBe("gateway");
     }
+  });
+
+  it("translates write_config to the gated config.write forward", () => {
+    // Routed to the gateway (not stubbed) but under the ui.* method the
+    // desktop webview applies + persists.
+    expect(routeFor("write_config")).toBe("gateway");
+    expect(gatewayCommand("write_config")).toBe("ui.config.write");
+    // Untranslated commands keep their name.
+    expect(gatewayCommand("send_message")).toBe("send_message");
   });
 
   it("gives updater_available a falsey stub and unknown stubs null", () => {

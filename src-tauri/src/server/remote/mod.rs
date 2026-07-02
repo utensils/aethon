@@ -34,6 +34,10 @@ pub struct RemoteState {
     /// Live-connection close signals keyed by device id, so revocation
     /// can drop a device's sessions immediately (`bye revoked`).
     live: Mutex<HashMap<String, Vec<Arc<Notify>>>>,
+    /// Invoke rate limiters keyed by device id — shared across a
+    /// device's sessions so opening extra sockets doesn't multiply the
+    /// budget. Pruned when a device's last session deregisters.
+    rate: Mutex<HashMap<String, ws::RateLimiter>>,
 }
 
 impl RemoteState {
@@ -48,6 +52,7 @@ impl RemoteState {
             pairing: Mutex::new(None),
             hub: Arc::new(EventHub::new()),
             live: Mutex::new(HashMap::new()),
+            rate: Mutex::new(HashMap::new()),
         }
     }
 
@@ -77,8 +82,24 @@ impl RemoteState {
             handles.retain(|h| !Arc::ptr_eq(h, handle));
             if handles.is_empty() {
                 live.remove(device_id);
+                if let Ok(mut rate) = self.rate.lock() {
+                    rate.remove(device_id);
+                }
             }
         }
+    }
+
+    /// Record an invoke against the device's shared rate budget;
+    /// `false` when its current window is exhausted. Fails open on a
+    /// poisoned lock — the limiter is flood protection, not auth, and
+    /// bricking every remote invoke would be the worse failure.
+    pub fn allow_invoke(&self, device_id: &str) -> bool {
+        let Ok(mut rate) = self.rate.lock() else {
+            return true;
+        };
+        rate.entry(device_id.to_string())
+            .or_insert_with(ws::RateLimiter::new)
+            .allow()
     }
 
     /// Close every live session for a device (post-revocation).
@@ -103,6 +124,21 @@ impl Default for RemoteState {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// Whether closing the last window should keep the app alive:
+/// `[server] keep_alive = true` AND at least one non-revoked paired
+/// device. Without a device the flag is inert, so a fresh install never
+/// turns into an invisible background process.
+pub fn keep_alive_active(app: &tauri::AppHandle) -> bool {
+    use tauri::Manager;
+    if !crate::server::keep_alive_enabled(app) {
+        return false;
+    }
+    let Some(remote) = app.try_state::<Arc<RemoteState>>() else {
+        return false;
+    };
+    remote.devices.list().iter().any(|d| !d.revoked)
 }
 
 /// Axum router state for the gateway routes.

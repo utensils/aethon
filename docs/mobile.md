@@ -29,8 +29,16 @@ Xcode SDK):
 
 ```sh
 xcode-select --install      # or a full Xcode from the App Store
-brew install cocoapods      # only if a plugin needs CocoaPods over SPM
+brew install cocoapods      # required — the Tauri iOS CLI shells out to pod
 ```
+
+Cross-compiling the crate's C deps (ring, …) needs Apple's **unwrapped**
+clang: the Nix cc-wrapper injects `-mmacos-version-min`, which clang rejects
+alongside the simulator's `-mios-simulator-version-min`. Xcode's "Build Rust
+Code" script phase spawns cargo with a sanitized environment, so shell
+exports can't fix this — `apps/mobile/src-tauri/.cargo/config.toml` pins
+`CC_<ios-triple>=/usr/bin/clang` via cargo's `[env]` table, which travels
+with the crate regardless of who invokes cargo.
 
 ## Dev loops
 
@@ -45,14 +53,28 @@ bun run dev:mobile
 Pair once from the desktop (Settings → Remote Devices) to mint a device token,
 or use `cli/aethonRemote.ts pair <code>`.
 
-**Simulator / device.**
+**Simulator / device.** Use the devshell helpers (they wrap
+`scripts/ios.sh`, which puts Homebrew tools on PATH, scaffolds `gen/apple`
+on first run, and hands off to the Tauri CLI):
 
 ```sh
-cd apps/mobile
-bun install                 # first time — installs @tauri-apps/cli
-bun run ios:init            # generates gen/apple (commit it)
-bun run ios:dev             # simulator; add --host for a physical device
+ios-dev                     # dev loop in the Simulator (defaults to
+                            # iPhone 17 Pro; AETHON_IOS_DEVICE overrides)
+ios-run                     # install + launch the last ios-build output
+                            # (static bundle — no dev server, no Xcode)
+ios-build                   # unsigned simulator .app (the no-arg default)
+ios-dev --host              # physical device over LAN
+ios-build --target aarch64  # signed device build — needs a development
+                            # team in tauri.conf.json bundle.iOS first
 ```
+
+Only one `ios-dev` session can run at a time: the xcodebuild "Build Rust
+Code" phase dials back into the CLI's options server, so a second
+session — or building from Xcode without the CLI running — fails with
+`failed to read CLI options … Connection refused`.
+
+The raw path (`cd apps/mobile && bun run ios:dev`) still works but doesn't
+set up the Homebrew PATH for `pod`.
 
 `gen/apple/` is committed so CLI upgrades don't silently regenerate it; pin
 `@tauri-apps/cli` in `apps/mobile/package.json`.

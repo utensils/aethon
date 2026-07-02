@@ -1,0 +1,29 @@
+# iOS cross-compile C-compiler pin.
+#
+# Xcode's "Build Rust Code" script phase runs `cargo build` with a
+# sanitized environment, so shell exports (or the devshell's global
+# CC=/usr/bin/cc) don't reach it. cc-rs then defaults to bare `clang`,
+# which under Nix resolves to the cc-wrapper — and that wrapper injects
+# `-mmacos-version-min=…`, which clang rejects alongside the iOS
+# simulator's `-mios-simulator-version-min=…`.
+#
+# cargo's [env] table travels with the crate and is applied to build
+# scripts however cargo is invoked, so pin Apple's unwrapped clang for
+# the iOS triples here. The desktop build (a different crate + target)
+# is unaffected.
+[env]
+"CC_aarch64-apple-ios" = "/usr/bin/clang"
+"CC_aarch64-apple-ios-sim" = "/usr/bin/clang"
+"CC_x86_64-apple-ios" = "/usr/bin/clang"
+"CXX_aarch64-apple-ios" = "/usr/bin/clang++"
+"CXX_aarch64-apple-ios-sim" = "/usr/bin/clang++"
+"CXX_x86_64-apple-ios" = "/usr/bin/clang++"
+
+[target.aarch64-apple-ios]
+linker = "/usr/bin/clang"
+
+[target.aarch64-apple-ios-sim]
+linker = "/usr/bin/clang"
+
+[target.x86_64-apple-ios]
+linker = "/usr/bin/clang"

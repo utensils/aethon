@@ -12,7 +12,7 @@
 
 export * from "@tauri-real/core";
 
-import { routeFor, stubResult } from "./commandPolicy";
+import { gatewayCommand, routeFor, stubResult } from "./commandPolicy";
 import { gateway } from "./transport";
 
 interface TauriInternals {
@@ -39,7 +39,7 @@ export function invoke<T = unknown>(
     case "stub":
       return Promise.resolve(stubResult(cmd) as T);
     case "gateway":
-      return gateway.request<T>(cmd, args);
+      return gateway.request<T>(gatewayCommand(cmd), args);
   }
 }
 

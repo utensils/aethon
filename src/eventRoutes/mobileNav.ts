@@ -89,5 +89,28 @@ export const handleMobileNav: EventRouteHandler = ({ component, eventType, data 
     return true;
   }
 
+  if (component.type === "mobile-file-list") {
+    if (eventType === "open-file") {
+      const sel = data as { root?: string; path?: string } | undefined;
+      if (sel?.root && sel.path) {
+        ctx.setState((prev) => ({
+          ...prev,
+          mobileFileViewer: { open: true, root: sel.root, path: sel.path },
+        }));
+      }
+    }
+    return true;
+  }
+
+  if (component.type === "mobile-file-viewer") {
+    if (eventType === "close") {
+      ctx.setState((prev) => ({
+        ...prev,
+        mobileFileViewer: { open: false },
+      }));
+    }
+    return true;
+  }
+
   return false;
 };

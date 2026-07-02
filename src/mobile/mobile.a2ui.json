@@ -100,6 +100,14 @@
           ]
         },
         {
+          "id": "mobile-file-viewer-overlay",
+          "type": "mobile-file-viewer",
+          "props": {
+            "area": "canvas",
+            "visible": { "$ref": "/mobileFileViewer/open" }
+          }
+        },
+        {
           "id": "mobile-bottom-nav",
           "type": "mobile-nav",
           "props": { "area": "nav" }
@@ -121,6 +129,7 @@
       "isFiles": false,
       "isGit": false,
       "isSettings": false
-    }
+    },
+    "mobileFileViewer": { "open": false }
   }
 }

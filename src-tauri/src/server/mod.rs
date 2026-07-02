@@ -143,6 +143,13 @@ fn allow_insecure_ws_from_config_text(raw: &str) -> bool {
         .unwrap_or(false)
 }
 
+/// Read `[server] keep_alive` (default false).
+pub fn keep_alive_enabled(app: &AppHandle) -> bool {
+    crate::helpers::parse_config_toml(&server_config_raw(app))["server"]["keepAlive"]
+        .as_bool()
+        .unwrap_or(false)
+}
+
 async fn start_on_boot_if_enabled<F, Fut>(
     enabled: bool,
     start_listener: F,
