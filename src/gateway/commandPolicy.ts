@@ -42,6 +42,10 @@ const STUB_PREFIXES = [
   // fs reads/writes forward to the gateway.
   "fs_watch",
   "fs_unwatch",
+  // Execution-boundary approvals stay physically at the desktop; the
+  // phone treats startup as nothing-to-approve (null stub — the
+  // workspace-startup hook maps it to "disabled").
+  "workspace_startup_",
 ];
 
 const STUB_EXACT = new Set<string>([

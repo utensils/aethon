@@ -13,7 +13,7 @@ interface NavItem {
 const ITEMS: NavItem[] = [
   { screen: "sessions", label: "Sessions", glyph: "☰" },
   { screen: "chat", label: "Chat", glyph: "◆" },
-  { screen: "terminal", label: "Terminal", glyph: "⌘" },
+  { screen: "terminal", label: "Terminal", glyph: "❯_" },
   { screen: "files", label: "Files", glyph: "▤" },
   { screen: "git", label: "Git", glyph: "⑃" },
   { screen: "settings", label: "Settings", glyph: "⚙" },
@@ -21,7 +21,7 @@ const ITEMS: NavItem[] = [
 
 export function MobileNav({ state, onEvent }: BuiltinComponentProps) {
   const active =
-    ((state.mobileNav as { active?: string } | undefined)?.active) ?? "chat";
+    ((state.mobileNav as { active?: string } | undefined)?.active) ?? "sessions";
   return (
     <nav className="ae-mobile-nav" aria-label="Sections">
       {ITEMS.map((item) => (

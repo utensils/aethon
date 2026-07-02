@@ -205,7 +205,16 @@ function streamTurn(client: Client, tabId: string) {
   ];
   let delay = 150;
   for (const chunk of chunks) {
-    setTimeout(() => emitAgent(client, { type: "message_delta", tabId, delta: chunk }), delay);
+    setTimeout(
+      () =>
+        emitAgent(client, {
+          type: "response_delta",
+          tabId,
+          channel: "text",
+          content: chunk,
+        }),
+      delay,
+    );
     delay += 250;
   }
   setTimeout(() => emitAgent(client, { type: "response_end", tabId }), delay + 200);
@@ -270,7 +279,8 @@ Bun.serve({
           }
           const data = invokeResult(cmd, args);
           if (data === null && !(cmd in { gh_branch_status: 1, gh_checks: 1, gh_repo_overview: 1 })) {
-            console.log(`[fake-gateway] unfixtured invoke: ${cmd}`);
+            const detail = cmd === "agent_command" ? ` ${JSON.stringify(args).slice(0, 160)}` : "";
+            console.log(`[fake-gateway] unfixtured invoke: ${cmd}${detail}`);
           }
           ws.send(JSON.stringify({ t: "result", id: frame.id, ok: true, data }));
           break;
