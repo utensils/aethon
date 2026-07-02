@@ -22,6 +22,7 @@ interface MobileDeviceLandingState {
 export function MobileDeviceLanding({
   component,
   state,
+  onEvent,
 }: BuiltinComponentProps) {
   const props = component.props as {
     landing?: { $ref: string };
@@ -68,12 +69,43 @@ export function MobileDeviceLanding({
           and agent work.
         </p>
         <dl className="a2ui-mobile-device-landing-grid">
-          <DeviceFact label="Status" value={status} emphasis={landing.connected} />
+          <DeviceFact
+            label="Status"
+            value={status}
+            emphasis={landing.connected}
+          />
           <DeviceFact label="Platform" value={platform} />
+          <DeviceFact label="Role" value="Client only" />
+          <DeviceFact label="Projects" value="Uses this desktop host" />
+          <DeviceFact label="Sessions" value="Dispatches through this host" />
+          <DeviceFact
+            label="Access"
+            value={landing.paired ? "Paired token" : "Not paired"}
+          />
           <DeviceFact label="Paired" value={pairedAt} />
           <DeviceFact label="Last seen" value={lastSeen} />
           <DeviceFact label="Device id" value={deviceId} mono />
         </dl>
+        <div className="a2ui-mobile-device-landing-actions">
+          <button
+            type="button"
+            className="a2ui-mobile-device-landing-unpair"
+            onClick={() =>
+              onEvent(
+                "unpair-mobile-device",
+                {
+                  sectionId: "mobile-devices",
+                  itemId: landing.deviceId,
+                  deviceId: landing.deviceId,
+                  label: title,
+                },
+                landing.deviceId,
+              )
+            }
+          >
+            Unpair device
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -94,10 +126,7 @@ function DeviceFact({
     <div className="a2ui-mobile-device-landing-fact">
       <dt>{label}</dt>
       <dd
-        className={[
-          emphasis ? "is-emphasis" : "",
-          mono ? "is-mono" : "",
-        ]
+        className={[emphasis ? "is-emphasis" : "", mono ? "is-mono" : ""]
           .filter(Boolean)
           .join(" ")}
       >

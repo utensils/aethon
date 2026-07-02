@@ -2,7 +2,22 @@
 // desktop project dashboard's information architecture without trying to
 // squeeze the desktop dashboard into a phone-width webview.
 
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { BuiltinComponentProps } from "../../components/A2UIRenderer";
+import { DEFAULT_WORKSPACE_BASE_BRANCH } from "../../projects";
+import {
+  type GhIssue,
+  getIssueDetail,
+  refreshIssues,
+} from "../../ghIssuesCache";
+import { buildIssueTask } from "../../extensions/default-layout/dashboard/issue-task";
+import {
+  loadIssueTemplates,
+  matchingIssueTemplates,
+  type IssueTemplate,
+} from "../../extensions/default-layout/dashboard/issue-templates";
+import { firstIssueSessionTab } from "../../extensions/default-layout/dashboard/issue-sessions";
+import { formatRelativeTime } from "../../utils/time";
 
 interface GitStatusLike {
   branch?: string | null;
@@ -31,6 +46,7 @@ interface ProjectLike {
   active?: boolean;
   iconUrl?: string;
   git?: GitStatusLike;
+  workspaceBaseBranch?: string;
   workspaces?: WorkspaceLike[];
 }
 
@@ -148,7 +164,8 @@ function dashboardWorkspaces(
   const fromDashboard = Array.isArray(dashboard?.workspaces)
     ? (dashboard.workspaces as WorkspaceLike[])
     : [];
-  const raw = fromDashboard.length > 0 ? fromDashboard : (project.workspaces ?? []);
+  const raw =
+    fromDashboard.length > 0 ? fromDashboard : (project.workspaces ?? []);
   if (raw.length > 0) return raw;
   return [
     {
@@ -170,11 +187,172 @@ function dashboardSessions(state: Record<string, unknown>): SessionLike[] {
     : [];
 }
 
-export function MobileProjectDetail({
-  state,
-  onEvent,
-}: BuiltinComponentProps) {
+function projectWorkspaceBranches(
+  state: Record<string, unknown>,
+  projectId: string,
+): Set<string> {
+  const sidebar =
+    (state.sidebar as
+      | {
+          projects?: {
+            id: string;
+            workspaces?: { branch?: string | null; label?: string }[];
+          }[];
+        }
+      | undefined) ?? {};
+  const project = sidebar.projects?.find((p) => p.id === projectId);
+  return new Set(
+    (project?.workspaces ?? [])
+      .flatMap((workspace) => [workspace.branch, workspace.label])
+      .filter((value): value is string => Boolean(value)),
+  );
+}
+
+function currentProjectWorkspaceId(
+  state: Record<string, unknown>,
+  projectId: string,
+): string | undefined {
+  const activeWorkspaceId =
+    typeof state.activeWorkspaceId === "string" &&
+    state.activeWorkspaceId.length > 0
+      ? state.activeWorkspaceId
+      : undefined;
+  const sidebar =
+    (state.sidebar as
+      | { projects?: { id: string; workspaces?: WorkspaceLike[] }[] }
+      | undefined) ?? {};
+  const project = sidebar.projects?.find((p) => p.id === projectId);
+  const workspace =
+    project?.workspaces?.find((w) => w.id === activeWorkspaceId) ??
+    project?.workspaces?.find((w) => w.active === true);
+  return workspace?.id;
+}
+
+function issueSessionStatus(
+  state: Record<string, unknown>,
+  projectId: string,
+  issue: GhIssue,
+): { tabId: string; label: string } | null {
+  const tab = firstIssueSessionTab(state, projectId, issue.number);
+  if (!tab?.sourceIssue) return null;
+  const running = Boolean(
+    (state.agentRunningTabs as Record<string, unknown> | undefined)?.[tab.id],
+  );
+  const attention = Boolean(
+    (state.agentAttentionTabs as Record<string, unknown> | undefined)?.[tab.id],
+  );
+  return {
+    tabId: tab.id,
+    label: running ? "Working" : attention ? "Ready" : "Open",
+  };
+}
+
+export function MobileProjectDetail({ state, onEvent }: BuiltinComponentProps) {
   const project = activeProjectFromState(state);
+  const projectPath = project?.path || project?.tooltip || "";
+  const [issues, setIssues] = useState<GhIssue[] | null>(null);
+  const [loadedFor, setLoadedFor] = useState<string | null>(null);
+  const [issueTemplates, setIssueTemplates] = useState<IssueTemplate[]>([]);
+  const [templateWarning, setTemplateWarning] = useState<string | null>(null);
+  const [sendingIssue, setSendingIssue] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!project || !projectPath) return;
+    if (loadedFor === projectPath) return;
+    let cancelled = false;
+    void (async () => {
+      const [fetched, templateConfig] = await Promise.all([
+        refreshIssues(projectPath, 12),
+        loadIssueTemplates(projectPath),
+      ]);
+      if (cancelled) return;
+      setIssues(fetched);
+      setIssueTemplates(templateConfig.templates);
+      setTemplateWarning(templateConfig.warning);
+      onEvent(
+        "issues-refreshed",
+        {
+          projectId: project.id,
+          openIssueNumbers: fetched.map((issue) => issue.number),
+        },
+        "mobile-issues",
+      );
+      setLoadedFor(projectPath);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [loadedFor, onEvent, project, projectPath]);
+
+  const sendIssueToAgent = useCallback(
+    async (issue: GhIssue) => {
+      if (!project || !projectPath) return;
+      const existing = firstIssueSessionTab(state, project.id, issue.number);
+      if (existing) {
+        onEvent(
+          "open-issue-session",
+          { tabId: existing.id, issueNumber: issue.number },
+          `issue-${issue.number}`,
+        );
+        return;
+      }
+      setSendingIssue(issue.number);
+      try {
+        const detail = await getIssueDetail(projectPath, issue.number);
+        const template =
+          matchingIssueTemplates(issueTemplates, issue)[0] ?? null;
+        const task = buildIssueTask(
+          detail,
+          issue,
+          {
+            id: project.id,
+            label: project.label || baseName(projectPath) || project.id,
+            path: projectPath,
+          },
+          {
+            template,
+            forceNewWorkspace: true,
+            existingBranches: projectWorkspaceBranches(state, project.id),
+          },
+        );
+        onEvent(
+          "start-task",
+          {
+            projectId: project.id,
+            prompt: task.prompt,
+            newWorkspace: task.newWorkspace,
+            branch: task.branch,
+            baseBranch: task.newWorkspace
+              ? (project.workspaceBaseBranch ?? DEFAULT_WORKSPACE_BASE_BRANCH)
+              : undefined,
+            workspaceId: task.newWorkspace
+              ? undefined
+              : currentProjectWorkspaceId(state, project.id),
+            source: "github-issue",
+            issueNumber: issue.number,
+            issueUrl: issue.url,
+            issueTitle: issue.title,
+            issueTemplateId: task.templateId,
+            issueTemplateLabel: task.templateLabel,
+          },
+          `issue-${issue.number}`,
+        );
+      } catch (err) {
+        console.warn("mobile issue dispatch failed:", err);
+      } finally {
+        setSendingIssue(null);
+      }
+    },
+    [issueTemplates, onEvent, project, projectPath, state],
+  );
+
+  const loadedForActiveProject = loadedFor === projectPath;
+  const issuesForProject = loadedForActiveProject ? issues : null;
+  const templateWarningForProject = loadedForActiveProject
+    ? templateWarning
+    : null;
+  const issueList = useMemo(() => issuesForProject ?? [], [issuesForProject]);
+
   if (!project) {
     return (
       <div className="ae-mobile-project-detail ae-mobile-project-detail-empty">
@@ -191,8 +369,9 @@ export function MobileProjectDetail({
   }
 
   const activeWorkspaceId =
-    typeof state.activeWorkspaceId === "string" ? state.activeWorkspaceId : null;
-  const projectPath = project.path || project.tooltip || "";
+    typeof state.activeWorkspaceId === "string"
+      ? state.activeWorkspaceId
+      : null;
   const workspaces = dashboardWorkspaces(state, project);
   const sessions = dashboardSessions(state);
   const vcs = (state.vcs as VcsLike | undefined) ?? null;
@@ -232,8 +411,9 @@ export function MobileProjectDetail({
           tone: "warning",
         }
       : null,
-  ].filter((row): row is { key: string; label: string; value: string; tone: string } =>
-    Boolean(row),
+  ].filter(
+    (row): row is { key: string; label: string; value: string; tone: string } =>
+      Boolean(row),
   );
 
   return (
@@ -252,7 +432,9 @@ export function MobileProjectDetail({
           onClick={() =>
             onEvent("start-session", {
               projectId: project.id,
-              workspaceId: activeWorkspace?.isMain ? undefined : activeWorkspace?.id,
+              workspaceId: activeWorkspace?.isMain
+                ? undefined
+                : activeWorkspace?.id,
               path: activeWorkspace?.path || projectPath,
             })
           }
@@ -301,7 +483,9 @@ export function MobileProjectDetail({
         </div>
         <div className="ae-mobile-detail-facts">
           <span>Active workspace</span>
-          <strong>{activeWorkspace ? workspaceLabel(activeWorkspace) : "Main"}</strong>
+          <strong>
+            {activeWorkspace ? workspaceLabel(activeWorkspace) : "Main"}
+          </strong>
           <span>Branch</span>
           <strong>{gitSummary}</strong>
           <span>Root</span>
@@ -314,7 +498,9 @@ export function MobileProjectDetail({
           <h2>Workspaces</h2>
           <button
             type="button"
-            onClick={() => onEvent("create-workspace", { projectId: project.id })}
+            onClick={() =>
+              onEvent("create-workspace", { projectId: project.id })
+            }
           >
             New
           </button>
@@ -378,8 +564,63 @@ export function MobileProjectDetail({
             Git
           </button>
         </div>
-        {issueRows.length > 0 ? (
+        {templateWarningForProject ? (
+          <p className="ae-mobile-detail-empty-copy">
+            {templateWarningForProject}
+          </p>
+        ) : null}
+        {issuesForProject === null ? (
+          <p className="ae-mobile-detail-empty-copy">
+            Loading GitHub issues...
+          </p>
+        ) : null}
+        {issueList.length > 0 || issueRows.length > 0 ? (
           <div className="ae-mobile-detail-list">
+            {issueList.map((issue) => {
+              const session = issueSessionStatus(state, project.id, issue);
+              const isSending = sendingIssue === issue.number;
+              return (
+                <article
+                  key={issue.number}
+                  className="ae-mobile-detail-issue is-gh"
+                >
+                  <button
+                    type="button"
+                    className="ae-mobile-detail-issue-main"
+                    onClick={() => onEvent("open-url", { url: issue.url })}
+                  >
+                    <span>Issue #{issue.number}</span>
+                    <strong>{issue.title}</strong>
+                    <small>
+                      {issue.updatedAt
+                        ? `updated ${formatRelativeTime(Date.parse(issue.updatedAt))}`
+                        : "open issue"}
+                    </small>
+                  </button>
+                  <button
+                    type="button"
+                    className="ae-mobile-detail-row-action"
+                    disabled={isSending}
+                    aria-label={
+                      session
+                        ? `Open session for issue #${issue.number}`
+                        : `Send issue #${issue.number} to agent`
+                    }
+                    onClick={() =>
+                      session
+                        ? onEvent(
+                            "open-issue-session",
+                            { tabId: session.tabId, issueNumber: issue.number },
+                            `issue-${issue.number}`,
+                          )
+                        : void sendIssueToAgent(issue)
+                    }
+                  >
+                    {isSending ? "..." : (session?.label ?? "Agent")}
+                  </button>
+                </article>
+              );
+            })}
             {issueRows.map((row) => (
               <div
                 key={row.key}
@@ -390,11 +631,11 @@ export function MobileProjectDetail({
               </div>
             ))}
           </div>
-        ) : (
+        ) : issuesForProject !== null ? (
           <p className="ae-mobile-detail-empty-copy">
-            No source control issues reported for this workspace.
+            No GitHub issues or source control warnings for this workspace.
           </p>
-        )}
+        ) : null}
       </section>
 
       {sessions.length > 0 ? (
@@ -423,7 +664,9 @@ export function MobileProjectDetail({
                 }
               >
                 <span>{session.label || "Untitled session"}</span>
-                <small>{sessionTime(session) || displayPath(session.cwd)}</small>
+                <small>
+                  {sessionTime(session) || displayPath(session.cwd)}
+                </small>
               </button>
             ))}
           </div>
@@ -431,7 +674,10 @@ export function MobileProjectDetail({
       ) : null}
 
       <section className="ae-mobile-detail-actions" aria-label="Project tools">
-        <button type="button" onClick={() => onEvent("open-screen", { screen: "files" })}>
+        <button
+          type="button"
+          onClick={() => onEvent("open-screen", { screen: "files" })}
+        >
           Files
         </button>
         <button
@@ -440,7 +686,10 @@ export function MobileProjectDetail({
         >
           Terminal
         </button>
-        <button type="button" onClick={() => onEvent("open-screen", { screen: "git" })}>
+        <button
+          type="button"
+          onClick={() => onEvent("open-screen", { screen: "git" })}
+        >
           Git
         </button>
       </section>

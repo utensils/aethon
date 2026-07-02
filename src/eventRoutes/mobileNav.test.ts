@@ -7,7 +7,11 @@ describe("handleMobileNav", () => {
   it("switches screens by setting exactly one visibility flag", async () => {
     const { ctx, applySetState } = buildRouteFixture();
     const handled = await handleMobileNav(
-      { component: { id: "nav", type: "mobile-nav" }, eventType: "mobile-nav", data: { screen: "sessions" } },
+      {
+        component: { id: "nav", type: "mobile-nav" },
+        eventType: "mobile-nav",
+        data: { screen: "sessions" },
+      },
       ctx,
     );
     expect(handled).toBe(true);
@@ -29,38 +33,61 @@ describe("handleMobileNav", () => {
   it("opens the settings overlay for the settings screen and closes it otherwise", async () => {
     const opened = buildRouteFixture();
     await handleMobileNav(
-      { component: { id: "nav", type: "mobile-nav" }, eventType: "mobile-nav", data: { screen: "settings" } },
+      {
+        component: { id: "nav", type: "mobile-nav" },
+        eventType: "mobile-nav",
+        data: { screen: "settings" },
+      },
       opened.ctx,
     );
-    expect((opened.applySetState({}).settings as { open?: boolean }).open).toBe(true);
+    expect((opened.applySetState({}).settings as { open?: boolean }).open).toBe(
+      true,
+    );
 
     const closed = buildRouteFixture();
     await handleMobileNav(
-      { component: { id: "nav", type: "mobile-nav" }, eventType: "mobile-nav", data: { screen: "chat" } },
+      {
+        component: { id: "nav", type: "mobile-nav" },
+        eventType: "mobile-nav",
+        data: { screen: "chat" },
+      },
       closed.ctx,
     );
-    expect((closed.applySetState({}).settings as { open?: boolean }).open).toBe(false);
+    expect((closed.applySetState({}).settings as { open?: boolean }).open).toBe(
+      false,
+    );
   });
 
   it("select-tab activates the tab and jumps to chat", async () => {
     const { ctx, mocks, applySetState } = buildRouteFixture();
     const handled = await handleMobileNav(
-      { component: { id: "sessions", type: "mobile-sessions" }, eventType: "select-tab", data: { tabId: "t7" } },
+      {
+        component: { id: "sessions", type: "mobile-sessions" },
+        eventType: "select-tab",
+        data: { tabId: "t7" },
+      },
       ctx,
     );
     expect(handled).toBe(true);
     expect(mocks.activateTabAnywhere).toHaveBeenCalledWith("t7");
-    expect((applySetState({}).mobileNav as { isChat?: boolean }).isChat).toBe(true);
+    expect((applySetState({}).mobileNav as { isChat?: boolean }).isChat).toBe(
+      true,
+    );
   });
 
   it("new-session opens a tab and jumps to chat", async () => {
     const { ctx, mocks, applySetState } = buildRouteFixture();
     await handleMobileNav(
-      { component: { id: "sessions", type: "mobile-sessions" }, eventType: "new-session" },
+      {
+        component: { id: "sessions", type: "mobile-sessions" },
+        eventType: "new-session",
+      },
       ctx,
     );
     expect(mocks.newTab).toHaveBeenCalledTimes(1);
-    expect((applySetState({}).mobileNav as { active?: string }).active).toBe("chat");
+    expect((applySetState({}).mobileNav as { active?: string }).active).toBe(
+      "chat",
+    );
   });
 
   it("restore-session reopens the session by id and jumps to chat", async () => {
@@ -79,7 +106,9 @@ describe("handleMobileNav", () => {
       "My session",
       expect.objectContaining({ restoredSession: true }),
     );
-    expect((applySetState({}).mobileNav as { isChat?: boolean }).isChat).toBe(true);
+    expect((applySetState({}).mobileNav as { isChat?: boolean }).isChat).toBe(
+      true,
+    );
   });
 
   it("routes mobile project selection through the project selector", async () => {
@@ -171,7 +200,70 @@ describe("handleMobileNav", () => {
       undefined,
       expect.objectContaining({ cwd: "/repo" }),
     );
-    expect((applySetState({}).mobileNav as { active?: string }).active).toBe("chat");
+    expect((applySetState({}).mobileNav as { active?: string }).active).toBe(
+      "chat",
+    );
+  });
+
+  it("starts an issue task from project detail and jumps to chat", async () => {
+    const { ctx, applySetState } = buildRouteFixture({
+      state: { activeProjectId: "p1" },
+    });
+
+    const handled = await handleMobileNav(
+      {
+        component: { id: "detail", type: "mobile-project-detail" },
+        eventType: "start-task",
+        data: {
+          projectId: "p1",
+          prompt: "Work on issue #33",
+          newWorkspace: true,
+          source: "github-issue",
+          issueNumber: 33,
+          issueUrl: "https://github.com/example/aethon/issues/33",
+          issueTitle: "Fix mobile issue rendering",
+        },
+      },
+      ctx,
+    );
+
+    expect(handled).toBe(true);
+    expect(ctx.startTaskInProject).toHaveBeenCalledWith(
+      expect.objectContaining({
+        projectId: "p1",
+        prompt: "Work on issue #33",
+        newWorkspace: true,
+        sourceIssue: expect.objectContaining({
+          kind: "github-issue",
+          projectId: "p1",
+          number: 33,
+          url: "https://github.com/example/aethon/issues/33",
+          title: "Fix mobile issue rendering",
+        }),
+      }),
+    );
+    expect((applySetState({}).mobileNav as { active?: string }).active).toBe(
+      "chat",
+    );
+  });
+
+  it("opens an existing issue session from project detail and jumps to chat", async () => {
+    const { ctx, mocks, applySetState } = buildRouteFixture();
+
+    const handled = await handleMobileNav(
+      {
+        component: { id: "detail", type: "mobile-project-detail" },
+        eventType: "open-issue-session",
+        data: { tabId: "tab-issue-33", issueNumber: 33 },
+      },
+      ctx,
+    );
+
+    expect(handled).toBe(true);
+    expect(mocks.activateTabAnywhere).toHaveBeenCalledWith("tab-issue-33");
+    expect((applySetState({}).mobileNav as { active?: string }).active).toBe(
+      "chat",
+    );
   });
 
   it("starts a project session from mobile projects and jumps to chat", async () => {
@@ -192,7 +284,9 @@ describe("handleMobileNav", () => {
       undefined,
       expect.objectContaining({ cwd: "/repo" }),
     );
-    expect((applySetState({}).mobileNav as { active?: string }).active).toBe("chat");
+    expect((applySetState({}).mobileNav as { active?: string }).active).toBe(
+      "chat",
+    );
   });
 
   it("rejects unknown screen values instead of blanking every flag", async () => {
@@ -207,7 +301,9 @@ describe("handleMobileNav", () => {
       },
       ctx,
     );
-    const state = applySetState({ mobileNav: { active: "chat", isChat: true } });
+    const state = applySetState({
+      mobileNav: { active: "chat", isChat: true },
+    });
     expect((state.mobileNav as { active?: string }).active).toBe("chat");
   });
 
@@ -271,16 +367,25 @@ describe("handleMobileNav", () => {
   it("viewer close clears the open flag", async () => {
     const { ctx, applySetState } = buildRouteFixture();
     await handleMobileNav(
-      { component: { id: "viewer", type: "mobile-file-viewer" }, eventType: "close" },
+      {
+        component: { id: "viewer", type: "mobile-file-viewer" },
+        eventType: "close",
+      },
       ctx,
     );
-    expect((applySetState({}).mobileFileViewer as { open?: boolean }).open).toBe(false);
+    expect(
+      (applySetState({}).mobileFileViewer as { open?: boolean }).open,
+    ).toBe(false);
   });
 
   it("ignores unrelated component types", async () => {
     const { ctx } = buildRouteFixture();
     const handled = await handleMobileNav(
-      { component: { id: "tabs", type: "tab-strip" }, eventType: "select", data: { tabId: "x" } },
+      {
+        component: { id: "tabs", type: "tab-strip" },
+        eventType: "select",
+        data: { tabId: "x" },
+      },
       ctx,
     );
     expect(handled).toBe(false);

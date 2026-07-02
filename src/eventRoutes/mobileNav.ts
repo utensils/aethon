@@ -82,7 +82,10 @@ function asScreen(value: unknown): Screen | undefined {
 }
 
 function hasProjectContext(state: Record<string, unknown>): boolean {
-  const project = state.project as { id?: unknown; path?: unknown } | null | undefined;
+  const project = state.project as
+    | { id?: unknown; path?: unknown }
+    | null
+    | undefined;
   return (
     typeof state.activeProjectId === "string" ||
     typeof project?.id === "string" ||
@@ -98,9 +101,14 @@ export const handleMobileNav: EventRouteHandler = async (
     if (eventType === "mobile-nav") {
       // Validate, don't cast: events can arrive over the gateway, and an
       // unknown screen would zero every visibility flag (blank canvas).
-      const screen = asScreen((data as { screen?: unknown } | undefined)?.screen);
+      const screen = asScreen(
+        (data as { screen?: unknown } | undefined)?.screen,
+      );
       if (screen) {
-        if (PROJECT_SCREENS.has(screen) && !hasProjectContext(ctx.stateRef.current)) {
+        if (
+          PROJECT_SCREENS.has(screen) &&
+          !hasProjectContext(ctx.stateRef.current)
+        ) {
           setScreen(ctx, "projects");
         } else {
           setScreen(ctx, screen);
@@ -155,7 +163,10 @@ export const handleMobileNav: EventRouteHandler = async (
         (data as { screen?: unknown } | undefined)?.screen,
       );
       if (screen) {
-        if (PROJECT_SCREENS.has(screen) && !hasProjectContext(ctx.stateRef.current)) {
+        if (
+          PROJECT_SCREENS.has(screen) &&
+          !hasProjectContext(ctx.stateRef.current)
+        ) {
           setScreen(ctx, "projects");
         } else {
           setScreen(ctx, screen);
@@ -178,9 +189,20 @@ export const handleMobileNav: EventRouteHandler = async (
       eventType === "delete-session" ||
       eventType === "create-workspace" ||
       eventType === "remove-workspace" ||
+      eventType === "start-task" ||
+      eventType === "open-issue-session" ||
+      eventType === "issues-refreshed" ||
+      eventType === "paste-image-failed" ||
       eventType === "open-url"
     ) {
-      return handleProjectDashboard({ component, eventType, data }, ctx);
+      const handled = await handleProjectDashboard(
+        { component, eventType, data },
+        ctx,
+      );
+      if (eventType === "start-task" || eventType === "open-issue-session") {
+        setScreen(ctx, "chat");
+      }
+      return handled;
     }
     return true;
   }
@@ -200,7 +222,9 @@ export const handleMobileNav: EventRouteHandler = async (
       case "restore-session": {
         restoreSessionFromSelection(
           ctx,
-          data as { sessionId?: string; cwd?: string; label?: string } | undefined,
+          data as
+            | { sessionId?: string; cwd?: string; label?: string }
+            | undefined,
         );
         setScreen(ctx, "chat");
         return true;

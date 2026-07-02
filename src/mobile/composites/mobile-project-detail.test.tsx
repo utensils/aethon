@@ -1,11 +1,44 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+const issueCache = vi.hoisted(() => ({
+  refreshIssues: vi.fn(),
+  getIssueDetail: vi.fn(),
+}));
+
+const tauriApi = vi.hoisted(() => ({
+  invoke: vi.fn(),
+}));
+
+vi.mock("../../ghIssuesCache", () => issueCache);
+vi.mock("@tauri-apps/api/core", () => tauriApi);
 
 import { MobileProjectDetail } from "./mobile-project-detail";
 
-afterEach(cleanup);
+beforeEach(() => {
+  issueCache.refreshIssues.mockResolvedValue([]);
+  issueCache.getIssueDetail.mockResolvedValue({
+    number: 33,
+    title: "Fix mobile issue rendering",
+    url: "https://github.com/example/aethon/issues/33",
+    body: "Issue body",
+    author: "jamesbrink",
+  });
+  tauriApi.invoke.mockResolvedValue({ templates: [], warning: null });
+});
+
+afterEach(() => {
+  cleanup();
+  vi.clearAllMocks();
+});
 
 describe("MobileProjectDetail", () => {
   it("renders project overview, workspaces, issues, and recent sessions", () => {
@@ -104,5 +137,70 @@ describe("MobileProjectDetail", () => {
     expect(onEvent).toHaveBeenCalledWith("open-screen", { screen: "files" });
     expect(onEvent).toHaveBeenCalledWith("open-screen", { screen: "terminal" });
     expect(onEvent).toHaveBeenCalledWith("open-screen", { screen: "git" });
+  });
+
+  it("renders GitHub issues and dispatches one to the agent", async () => {
+    const onEvent = vi.fn();
+    issueCache.refreshIssues.mockResolvedValue([
+      {
+        number: 33,
+        title: "Fix mobile issue rendering",
+        url: "https://github.com/example/aethon/issues/33",
+        state: "OPEN",
+        labels: [{ name: "bug", color: "ff5c5c" }],
+        updatedAt: "2026-07-02T12:00:00Z",
+        author: "jamesbrink",
+        comments: 2,
+      },
+    ]);
+
+    render(
+      <MobileProjectDetail
+        component={{ id: "detail", type: "mobile-project-detail" }}
+        state={{
+          activeProjectId: "p1",
+          activeWorkspaceId: "main",
+          sidebar: {
+            projects: [
+              {
+                id: "p1",
+                label: "aethon",
+                path: "/repo/aethon",
+                workspaces: [
+                  {
+                    id: "main",
+                    label: "Main",
+                    path: "/repo/aethon",
+                    isMain: true,
+                  },
+                ],
+              },
+            ],
+          },
+        }}
+        onEvent={onEvent}
+      />,
+    );
+
+    expect(await screen.findByText("Fix mobile issue rendering")).toBeDefined();
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Send issue #33 to agent" }),
+    );
+
+    await waitFor(() =>
+      expect(onEvent).toHaveBeenCalledWith(
+        "start-task",
+        expect.objectContaining({
+          projectId: "p1",
+          source: "github-issue",
+          issueNumber: 33,
+          issueUrl: "https://github.com/example/aethon/issues/33",
+          issueTitle: "Fix mobile issue rendering",
+          newWorkspace: true,
+        }),
+        "issue-33",
+      ),
+    );
   });
 });
