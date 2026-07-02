@@ -41,12 +41,18 @@ export function perfMark(name: string): void {
   if (!enabled) return;
   try {
     performance.mark(PREFIX + name);
-    if (name === "hello-ok" && helloOkAt === null) {
-      helloOkAt = performance.now();
-      reportTimer = setTimeout(perfReport, REPORT_DELAY_MS);
-    }
   } catch {
     /* marks are best-effort */
+  }
+  // Separate best-effort block: a throwing performance.mark must not
+  // also kill report scheduling + invoke-window tracking.
+  if (name === "hello-ok" && helloOkAt === null) {
+    try {
+      helloOkAt = performance.now();
+      reportTimer = setTimeout(perfReport, REPORT_DELAY_MS);
+    } catch {
+      /* the report is best-effort */
+    }
   }
 }
 
