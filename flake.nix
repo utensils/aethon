@@ -427,8 +427,14 @@
                 # on first run, then runs `cargo tauri ios dev`. Point the
                 # app at a running desktop instance (Settings → Remote
                 # Devices) to pair.
-                help = "Run the iOS companion in the Simulator (needs Xcode + `brew install cocoapods`)";
+                help = "Dev-loop the iOS companion in the Simulator — defaults to iPhone 17 Pro, no Xcode (needs Xcode CLI tools + `brew install cocoapods`; AETHON_IOS_DEVICE overrides)";
                 command = "exec ./scripts/ios.sh dev \"$@\"";
+              }
+              {
+                category = "dev";
+                name = "ios-run";
+                help = "Install + launch the last ios-build output in the Simulator (builds first if missing) — static bundle, no dev server, no Xcode";
+                command = "exec ./scripts/ios.sh run \"$@\"";
               }
               {
                 category = "build";

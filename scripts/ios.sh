@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # iOS companion helper — drives `cargo tauri ios <dev|build>` for the thin
-# crate under apps/mobile. Xcode + CocoaPods live OUTSIDE the Nix devshell
+# crate under apps/mobile, plus a `run` mode that installs the built app
+# into a simulator. Xcode + CocoaPods live OUTSIDE the Nix devshell
 # (Tauri's iOS tooling shells out to xcodebuild); this puts Homebrew on
 # PATH so `pod` / `xcodegen` resolve, generates gen/apple on first run,
 # then hands off to the Tauri CLI. See docs/mobile.md.
@@ -11,6 +12,8 @@ shift || true
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 app_dir="$repo_root/apps/mobile"
+bundle_id="com.utensils.aethon.mobile"
+sim_app="src-tauri/gen/apple/build/arm64-sim/Aethon.app"
 
 # Homebrew ships pod/xcodegen/idevice* the Tauri iOS CLI needs; the Nix
 # devshell deliberately doesn't carry them.
@@ -40,6 +43,30 @@ if ! command -v pod >/dev/null 2>&1; then
   exit 1
 fi
 
+# Preferred simulator: AETHON_IOS_DEVICE override, else iPhone 17 Pro,
+# else the first available iPhone. Echoes the resolved device name.
+pick_device() {
+  local want="${AETHON_IOS_DEVICE:-iPhone 17 Pro}"
+  local sims
+  sims="$(xcrun simctl list devices available)"
+  # "$want (" keeps the match exact — "iPhone 17 Pro (" can't hit
+  # "iPhone 17 Pro Max (…" because Max breaks the "name (" adjacency.
+  if grep -qF "$want (" <<<"$sims"; then
+    echo "$want"
+    return
+  fi
+  grep -oE '^ +iPhone [^(]+' <<<"$sims" | head -1 | sed 's/^ *//;s/ *$//'
+}
+
+# UDID for a device name. Several runtimes can carry the same name
+# (iPhone 17 Pro exists for iOS 26.0…26.5); the Tauri CLI resolves a
+# bare name to the FIRST simctl match (runtimes list oldest-first), so
+# take head -1 to target the same simulator it will deploy to.
+device_udid() {
+  xcrun simctl list devices available | grep -F "$1 (" |
+    grep -oE '[0-9A-F-]{36}' | head -1
+}
+
 cd "$app_dir"
 
 # First-run scaffold: generate the Xcode project if it isn't there yet.
@@ -50,7 +77,29 @@ fi
 
 case "$mode" in
   dev)
-    echo "==> cargo tauri ios dev ${*:-(default simulator)}"
+    # Zero-arg default: pick a simulator by name so the Tauri CLI never
+    # prompts (and Xcode never opens). Only one `ios dev` session can
+    # run at a time — the xcodebuild script phase dials back into the
+    # CLI's options server, so a second session (or a build started
+    # from Xcode without the CLI) dies with "Connection refused".
+    if [ $# -eq 0 ]; then
+      device="$(pick_device)"
+      if [ -z "$device" ]; then
+        echo "error: no available iPhone simulator (xcrun simctl list devices available)" >&2
+        exit 1
+      fi
+      # The CLI installs without booting — a Shutdown target fails
+      # deploy with SimError 405 ("Unable to lookup in current state").
+      # Pre-boot the exact UDID it will resolve the name to.
+      udid="$(device_udid "$device")"
+      if [ -n "$udid" ]; then
+        echo "==> booting $device ($udid)"
+        xcrun simctl boot "$udid" 2>/dev/null || true # already booted is fine
+        open -a Simulator
+      fi
+      set -- "$device"
+    fi
+    echo "==> cargo tauri ios dev $*"
     exec cargo tauri ios dev "$@"
     ;;
   build)
@@ -60,6 +109,13 @@ case "$mode" in
     # products only — incremental state lives in DerivedData and
     # target/ — so clearing it is cheap and makes rebuilds reliable.
     rm -rf src-tauri/gen/apple/build
+    # generate_context! embeds frontendDist (dist-mobile) into the
+    # binary at macro-expansion time, but cargo doesn't track the dist
+    # as a dependency — without dirtying the crate, a frontend-only
+    # change ships the PREVIOUS embed (black screen, stale UI). The
+    # beforeBuildCommand rebuilds dist-mobile before cargo runs, so a
+    # touch here guarantees the fresh bundle is what gets embedded.
+    touch src-tauri/src/lib.rs
     # A bare device build (the Tauri CLI default) needs code signing,
     # and bundle.iOS.developmentTeam is unset — xcodebuild fails with
     # "requires a development team". Default to the unsigned simulator
@@ -73,8 +129,29 @@ case "$mode" in
     echo "==> cargo tauri ios build $*"
     exec cargo tauri ios build "$@"
     ;;
+  run)
+    # Install + launch the last `ios-build` output in a simulator —
+    # static bundle, no dev server, no Xcode. Builds first if missing.
+    if [ ! -d "$sim_app" ]; then
+      echo "==> no simulator build yet — running ios.sh build"
+      bash "$repo_root/scripts/ios.sh" build || exit 1
+    fi
+    device="$(pick_device)"
+    udid="$(device_udid "$device")"
+    if [ -z "$udid" ]; then
+      echo "error: no available iPhone simulator (xcrun simctl list devices available)" >&2
+      exit 1
+    fi
+    echo "==> booting $device ($udid)"
+    xcrun simctl boot "$udid" 2>/dev/null || true # already booted is fine
+    open -a Simulator
+    echo "==> installing $sim_app"
+    xcrun simctl install "$udid" "$sim_app"
+    echo "==> launching $bundle_id"
+    xcrun simctl launch --terminate-running-process "$udid" "$bundle_id"
+    ;;
   *)
-    echo "usage: ios.sh <dev|build> [tauri-ios-args...]" >&2
+    echo "usage: ios.sh <dev|build|run> [tauri-ios-args...]" >&2
     exit 2
     ;;
 esac
