@@ -20,11 +20,16 @@ import {
   type ProjectsState,
 } from "../projects";
 import { registerGrammar as registerHighlightGrammar } from "../utils/highlight";
+// theme-registry, NOT theme: registering a Monaco theme from the boot
+// path must not pull the monaco-editor chunk. The registry replays
+// registrations when the editor chunk loads.
 import {
   registerMonacoTheme as registerMonacoThemeImpl,
-  applyMonacoTheme,
-} from "../monaco/theme";
-import { registerFileViewer as registerFileViewerImpl } from "../extensions/default-layout/editor";
+  applyMonacoThemeIfLoaded,
+} from "../monaco/theme-registry";
+// file-viewers directly, NOT the ./editor barrel — the barrel's canvas
+// re-exports carry the monaco bootstrap side effect.
+import { registerFileViewer as registerFileViewerImpl } from "../extensions/default-layout/editor/file-viewers";
 import type * as monaco from "monaco-editor";
 import { askUserWithChat, type AskUserInput } from "../questions";
 
@@ -201,7 +206,7 @@ export function useWindowApi(ctx: UseWindowApiContext): void {
           document.documentElement.dataset.theme ??
           "";
         if (active === id.trim()) {
-          applyMonacoTheme(active);
+          applyMonacoThemeIfLoaded(active);
         }
         return true;
       },

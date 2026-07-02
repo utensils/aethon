@@ -5,6 +5,7 @@ import A2UIRenderer from "./components/A2UIRenderer";
 import { ExtensionRegistry } from "./extensions/ExtensionRegistry";
 import { ExtensionRegistryProvider } from "./extensions/ExtensionRegistryProvider";
 import { defaultLayoutExtension } from "./extensions/default-layout";
+import { releaseLazySurfaceBootDeferral } from "./extensions/default-layout/lazySurface";
 import {
   reconcileFrontendModules,
   type ExtensionFrontendModule,
@@ -53,6 +54,11 @@ export default function NativeCanvasWindowApp({
   id,
 }: NativeCanvasWindowAppProps) {
   const [registry] = useState(() => {
+    // A native canvas window is a fresh webview spawned on demand —
+    // post-boot by definition, and it never runs App's chrome-ready
+    // release. Drop the lazy-surface boot latch so its shell/editor
+    // canvases load immediately.
+    releaseLazySurfaceBootDeferral();
     const r = new ExtensionRegistry();
     r.register(defaultLayoutExtension);
     return r;

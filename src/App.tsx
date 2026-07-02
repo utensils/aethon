@@ -4,7 +4,11 @@ import { bootMark, reportBootTimeline } from "./utils/bootTrace";
 import { flushDeferredTabOpen } from "./hooks/bridgeMessageHandlers/readyEffects";
 import { ExtensionRegistry } from "./extensions/ExtensionRegistry";
 import { persistStatusesDebounced } from "./gitStatusCache";
-import { defaultLayoutExtension } from "./extensions/default-layout";
+import {
+  defaultLayoutExtension,
+  preloadDefaultLayoutSurfaces,
+} from "./extensions/default-layout";
+import { releaseLazySurfaceBootDeferral } from "./extensions/default-layout/lazySurface";
 import { mobileLayoutExtension } from "./mobile/mobileLayoutExtension";
 import { AppRoot } from "./app/AppRoot";
 import { BOOT_LAYOUT, hangWarnNotifId } from "./app/bootConstants";
@@ -994,6 +998,8 @@ export default function App() {
 
   // Boot timeline: mark the chrome-ready flip, then log the summary once
   // the first real-chrome frame commits. See src/utils/bootTrace.ts.
+  // Then warm the lazy surface chunks (editor, terminal, settings,
+  // palette, …) on the first idle so their first open pays ~nothing.
   useEffect(() => {
     if (!chromeReady) return;
     bootMark("chrome-ready");
@@ -1001,7 +1007,23 @@ export default function App() {
       bootMark("chrome-ready-commit");
       reportBootTimeline();
     });
-    return () => cancelAnimationFrame(raf);
+    const onIdle = () => {
+      // Boot is over: lazy surfaces rendered from here on (palette,
+      // settings, first editor tab) load immediately, parked loads
+      // (visible-at-boot surfaces) flush now, and the warmup below
+      // pulls every remaining chunk in the background.
+      releaseLazySurfaceBootDeferral();
+      preloadDefaultLayoutSurfaces();
+    };
+    const hasIdleCallback = typeof requestIdleCallback === "function";
+    const idleHandle = hasIdleCallback
+      ? requestIdleCallback(onIdle, { timeout: 5_000 })
+      : setTimeout(onIdle, 2_000);
+    return () => {
+      cancelAnimationFrame(raf);
+      if (hasIdleCallback) cancelIdleCallback(idleHandle);
+      else clearTimeout(idleHandle);
+    };
   }, [chromeReady]);
 
   return (

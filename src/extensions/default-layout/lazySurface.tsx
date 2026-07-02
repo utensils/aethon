@@ -25,12 +25,57 @@ export type LazySurfaceComponent = SurfaceImpl & {
   preload: () => Promise<void>;
 };
 
+/** During the boot window, a rendered lazy surface must not start its
+ *  import immediately: the workstation layout mounts hidden cells
+ *  (editor-canvas, terminal-panel, …) with `display: none` at first
+ *  chrome render, and an eager trigger would pull monaco/xterm right
+ *  back into the boot sequence, competing with first paint. Loads
+ *  requested before the latch releases are queued behind an idle
+ *  callback; `releaseLazySurfaceBootDeferral()` (App, at chrome-ready)
+ *  drops the latch so every later open loads immediately. */
+let bootDeferralActive = true;
+/** Loads parked during the boot window. Released (all at once) the
+ *  moment App declares chrome-ready idle, so a surface that is VISIBLE
+ *  at boot (e.g. a restored-open terminal panel) starts loading at the
+ *  earliest safe moment rather than waiting out its own idle timer. */
+const parkedLoads = new Set<() => void>();
+
+export function releaseLazySurfaceBootDeferral(): void {
+  bootDeferralActive = false;
+  for (const fire of [...parkedLoads]) fire();
+  parkedLoads.clear();
+}
+
+/** Test-only. */
+export function resetLazySurfaceBootDeferralForTest(): void {
+  bootDeferralActive = true;
+  parkedLoads.clear();
+}
+
+const scheduleIdle: (cb: () => void) => void =
+  typeof requestIdleCallback === "function"
+    ? (cb) => requestIdleCallback(cb, { timeout: 3_000 })
+    : (cb) => setTimeout(cb, 1_500);
+
 export function lazySurface(
   name: string,
   load: () => Promise<{ default: SurfaceImpl }>,
 ): LazySurfaceComponent {
   let loadPromise: Promise<{ default: SurfaceImpl }> | null = null;
-  const memoLoad = () => (loadPromise ??= load());
+  const memoLoad = () =>
+    (loadPromise ??= bootDeferralActive
+      ? new Promise<{ default: SurfaceImpl }>((resolve, reject) => {
+          let fired = false;
+          const fire = () => {
+            if (fired) return;
+            fired = true;
+            parkedLoads.delete(fire);
+            load().then(resolve, reject);
+          };
+          parkedLoads.add(fire);
+          scheduleIdle(fire);
+        })
+      : load());
   const Lazy = lazy(memoLoad);
   // Null fallback: every wave-1 surface either fills a flex/grid cell
   // (canvases, panels — the chrome around it doesn't move) or is an
@@ -43,8 +88,10 @@ export function lazySurface(
   );
   Wrapper.displayName = `LazySurface(${name})`;
   const surface = Wrapper as LazySurfaceComponent;
+  // preload always loads NOW: it runs from App's post-chrome-ready idle
+  // callback, after the boot latch has been released.
   surface.preload = () =>
-    memoLoad().then(
+    (loadPromise ??= load()).then(
       () => undefined,
       () => undefined,
     );

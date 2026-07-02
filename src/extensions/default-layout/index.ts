@@ -7,31 +7,29 @@
 
 import type { A2UIPayload } from "../../types/a2ui";
 import type { A2UIExtension } from "../types";
+// Eager surfaces import their SOURCE modules directly, not the
+// ./components barrel — the barrel re-exports the editor/terminal/shell
+// families, whose side-effect imports (monaco bootstrap, xterm CSS)
+// would drag those chunks back into the boot bundle.
 import {
-  ChatHistory,
-  ChatInput,
-  EditorCanvas,
-  DiffCanvas,
   EmptyState,
   MobileDeviceLanding,
   WorkspaceLanding,
-  FileTreePanel,
-  ImageViewer,
   Layout,
-  MainCanvas,
-  MarkdownPreview,
-  QueuedMessagesPopover,
-  QuestionCard,
-  ShellCanvas,
-  Sidebar,
   StatusBar,
-  TabStrip,
-  Terminal,
-  TerminalPanel,
-  ToolCard,
+} from "./layout";
+import { Sidebar } from "./sidebar";
+import { FileTreePanel } from "./sidebar/file-tree";
+import {
+  ChatHistory,
+  ChatInput,
+  MainCanvas,
+  QueuedMessagesPopover,
   SubagentResult,
-  AuthProfilePanel,
-} from "./components";
+  ToolCard,
+} from "./chat";
+import { QuestionCard } from "./question-card";
+import { TabStrip } from "./shell/tab-strip";
 import {
   AccountSelector,
   AgentStatusPill,
@@ -39,13 +37,8 @@ import {
   ModelPicker,
   VcsStatus,
 } from "./variation-components";
-import { SourceControlPanel } from "./sidebar/source-control-panel";
 import { ComposerVisibilityPills } from "./composer-visibility-pills";
-import { CommandPalette } from "./command-palette";
 import { NotificationStack } from "./notifications";
-import { SettingsPanel } from "./settings-panel";
-import { SearchPanel } from "./search-panel";
-import { ScheduledTasksPanel } from "./scheduled-tasks-panel";
 import { ShareModeBadge } from "./share-mode-badge";
 import { GhStatsStrip } from "./dashboard/gh-stats-strip";
 import { ProjectCard } from "./dashboard/project-card";
@@ -53,8 +46,89 @@ import { TaskLauncher } from "./dashboard/task-launcher";
 import { ProjectsDashboard } from "./dashboard/projects-dashboard";
 import { ProjectDashboard } from "./dashboard/project-dashboard";
 import { IssuesSection } from "./dashboard/issues-section";
-import { SubagentsConfig } from "./dashboard/subagents-config";
+import { lazySurface } from "./lazySurface";
 import workstationPayload from "./workstation.a2ui.json";
+
+// Heavy surfaces that are closed (or invisible) at first paint load as
+// their own chunks on first mount; `preloadDefaultLayoutSurfaces` warms
+// them post-chrome-ready. Each loads its DIRECT source module so a
+// light surface (markdown preview) never rides in a heavy chunk
+// (monaco).
+const EditorCanvas = lazySurface("editor-canvas", () =>
+  import("./editor/canvas").then((m) => ({ default: m.EditorCanvas })),
+);
+const DiffCanvas = lazySurface("diff-canvas", () =>
+  import("./editor/diff-canvas").then((m) => ({ default: m.DiffCanvas })),
+);
+const ImageViewer = lazySurface("image-viewer", () =>
+  import("./editor/image-viewer").then((m) => ({ default: m.ImageViewer })),
+);
+const MarkdownPreview = lazySurface("markdown-preview", () =>
+  import("./editor/markdown-preview").then((m) => ({
+    default: m.MarkdownPreview,
+  })),
+);
+const ShellCanvas = lazySurface("shell-canvas", () =>
+  import("./shell/canvas").then((m) => ({ default: m.ShellCanvas })),
+);
+const TerminalPanel = lazySurface("terminal-panel", () =>
+  import("./shell/panel").then((m) => ({ default: m.TerminalPanel })),
+);
+const Terminal = lazySurface("terminal", () =>
+  import("./terminal").then((m) => ({ default: m.Terminal })),
+);
+const SettingsPanel = lazySurface("settings-panel", () =>
+  import("./settings-panel").then((m) => ({ default: m.SettingsPanel })),
+);
+const AuthProfilePanel = lazySurface("auth-profile-panel", () =>
+  import("./auth-profile-panel").then((m) => ({
+    default: m.AuthProfilePanel,
+  })),
+);
+const SearchPanel = lazySurface("search-panel", () =>
+  import("./search-panel").then((m) => ({ default: m.SearchPanel })),
+);
+const ScheduledTasksPanel = lazySurface("scheduled-tasks-panel", () =>
+  import("./scheduled-tasks-panel").then((m) => ({
+    default: m.ScheduledTasksPanel,
+  })),
+);
+const CommandPalette = lazySurface("command-palette", () =>
+  import("./command-palette").then((m) => ({ default: m.CommandPalette })),
+);
+const SourceControlPanel = lazySurface("source-control-panel", () =>
+  import("./sidebar/source-control-panel").then((m) => ({
+    default: m.SourceControlPanel,
+  })),
+);
+const SubagentsConfig = lazySurface("subagents-config", () =>
+  import("./dashboard/subagents-config").then((m) => ({
+    default: m.SubagentsConfig,
+  })),
+);
+
+/** Warm every lazy surface chunk. Called from App on the first idle
+ *  after chrome-ready so first-open latency is ~zero. */
+export function preloadDefaultLayoutSurfaces(): void {
+  for (const surface of [
+    EditorCanvas,
+    DiffCanvas,
+    ImageViewer,
+    MarkdownPreview,
+    ShellCanvas,
+    TerminalPanel,
+    Terminal,
+    SettingsPanel,
+    AuthProfilePanel,
+    SearchPanel,
+    ScheduledTasksPanel,
+    CommandPalette,
+    SourceControlPanel,
+    SubagentsConfig,
+  ]) {
+    void surface.preload();
+  }
+}
 
 export {
   layoutSlots,
