@@ -13,6 +13,7 @@ import {
   GIT_FETCH_INTERVAL_MS,
 } from "./gitFetchScheduler";
 import { dueStatusRoots, warmStatusRoots } from "./statusPollScheduler";
+import { scheduleAfterMobileBootWindow } from "./mobileBootDefer";
 
 export interface GitStatus {
   branch?: string;
@@ -232,6 +233,7 @@ export function useProjects(ctx: UseProjectsContext): UseProjectsActions {
   useEffect(() => {
     let cancelled = false;
     let rerun = false;
+    let cancelBootDefer: () => void = () => {};
     const tick = async () => {
       // Skip background git polling while the window is hidden — no chips are
       // visible to update, so it's pure wasted subprocess churn. The
@@ -268,8 +270,15 @@ export function useProjects(ctx: UseProjectsContext): UseProjectsActions {
       }
       gitFetchAttemptsRef.current = await loadGitFetchAttempts();
       if (cancelled) return;
-      void tick();
-      void fetchGitRemotesIfDue(tick);
+      // Desktop: refresh immediately. Mobile companion: the cached
+      // hydrate above already painted the chips — defer the first live
+      // per-project poll past the boot window so it doesn't compete
+      // with hydration for the gateway's invoke budget.
+      cancelBootDefer = scheduleAfterMobileBootWindow(() => {
+        if (cancelled) return;
+        void tick();
+        void fetchGitRemotesIfDue(tick);
+      });
     };
     void bootstrap();
     const onFocus = () => {
@@ -294,6 +303,7 @@ export function useProjects(ctx: UseProjectsContext): UseProjectsActions {
     );
     return () => {
       cancelled = true;
+      cancelBootDefer();
       window.clearInterval(interval);
       window.clearInterval(fetchInterval);
       window.removeEventListener("focus", onFocus);

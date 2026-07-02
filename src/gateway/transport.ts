@@ -55,6 +55,10 @@ interface Pending {
   resolve: (value: unknown) => void;
   reject: (err: Error) => void;
   timer: ReturnType<typeof setTimeout>;
+  /** Serialized invoke frame, kept for rate-limited re-sends. */
+  frame: string;
+  /** Rate-limited re-send count so far. */
+  attempts: number;
 }
 
 type EventHandler = (payload: unknown) => void;
@@ -63,6 +67,18 @@ type StatusListener = (status: GatewayStatus) => void;
 const DEFAULT_TIMEOUT_MS = 30_000;
 const BACKOFF_MIN_MS = 500;
 const BACKOFF_MAX_MS = 30_000;
+/** Client-side invoke budget per rolling second. Deliberate headroom
+ *  under the server's 40/s fixed window (`allow_invoke` in ws.rs) —
+ *  the two windows don't align, so 32 absorbs the phase offset. Boot
+ *  fires a burst of invokes well past 40; without pacing the excess
+ *  came back "rate limited" and startup data was silently dropped. */
+const CLIENT_RATE_MAX = 32;
+const CLIENT_RATE_WINDOW_MS = 1_000;
+/** Rate-limited retry: the server rejects BEFORE `relay.invoke` runs,
+ *  so the command never executed and a same-id re-send is safe — even
+ *  for non-idempotent commands like send_message. */
+const RATE_RETRY_BASE_MS = 250;
+const RATE_RETRY_MAX_ATTEMPTS = 3;
 /** How long a connection must survive before the reconnect backoff
  *  resets. Resetting on hello_ok alone let a server-side slow-consumer
  *  kick loop reconnect at the minimum delay forever (connect → kicked
@@ -98,6 +114,16 @@ export class GatewayTransport {
    *  half-open or half-dead socket can't double-deliver events or kill
    *  a fresh connection with its own close. */
   private generation = 0;
+  /** FIFO of invoke frames awaiting a rate-budget slot. Only the
+   *  physical send is paced — `request()` semantics (fail fast when
+   *  offline, timeout from call time) are unchanged. sub/unsub/hello
+   *  frames bypass the queue; only invoke frames are rate-limited
+   *  server-side. */
+  private sendQueue: string[] = [];
+  /** Send timestamps inside the rolling rate window. */
+  private sentAt: number[] = [];
+  private drainTimer: ReturnType<typeof setTimeout> | null = null;
+  private retryTimers = new Set<ReturnType<typeof setTimeout>>();
 
   configure(config: GatewayConfig): void {
     this.config = config;
@@ -144,6 +170,8 @@ export class GatewayTransport {
       clearTimeout(this.stableTimer);
       this.stableTimer = null;
     }
+    // Deterministic even when the adapter's close event is async.
+    this.clearRatePacing();
     // Reject an in-flight connect() so its awaiter doesn't hang forever,
     // and so a later reconnect can't resolve this abandoned attempt.
     if (this.helloReject) {
@@ -170,13 +198,65 @@ export class GatewayTransport {
         this.pending.delete(id);
         reject(new Error(`gateway request timed out: ${cmd}`));
       }, timeoutMs);
+      const frame = JSON.stringify({ t: "invoke", id, cmd, args });
       this.pending.set(id, {
         resolve: resolve as (v: unknown) => void,
         reject,
         timer,
+        frame,
+        attempts: 0,
       });
-      this.adapter?.send(JSON.stringify({ t: "invoke", id, cmd, args }));
+      this.enqueueInvoke(frame);
     });
+  }
+
+  /** Send an invoke frame through the client-side rate budget: send
+   *  immediately when under budget (the common case — zero added
+   *  latency), otherwise queue FIFO and drain when the window frees. */
+  private enqueueInvoke(frame: string): void {
+    this.sendQueue.push(frame);
+    this.drainSendQueue();
+  }
+
+  private drainSendQueue(): void {
+    if (this.status !== "connected" || !this.adapter) return;
+    const now = Date.now();
+    while (
+      this.sentAt.length > 0 &&
+      this.sentAt[0] <= now - CLIENT_RATE_WINDOW_MS
+    ) {
+      this.sentAt.shift();
+    }
+    while (this.sendQueue.length > 0 && this.sentAt.length < CLIENT_RATE_MAX) {
+      const frame = this.sendQueue.shift();
+      if (frame === undefined) break;
+      this.sentAt.push(now);
+      this.adapter.send(frame);
+    }
+    if (this.sendQueue.length > 0 && this.drainTimer === null) {
+      const wait = Math.max(
+        this.sentAt[0] + CLIENT_RATE_WINDOW_MS - now,
+        10,
+      );
+      this.drainTimer = setTimeout(() => {
+        this.drainTimer = null;
+        this.drainSendQueue();
+      }, wait);
+    }
+  }
+
+  /** Drop all rate-pacing state. Runs on every close/disconnect so a
+   *  stale drain or retry timer can never write into a superseded
+   *  socket (the zombie-socket class of bug). */
+  private clearRatePacing(): void {
+    this.sendQueue.length = 0;
+    this.sentAt.length = 0;
+    if (this.drainTimer !== null) {
+      clearTimeout(this.drainTimer);
+      this.drainTimer = null;
+    }
+    for (const timer of this.retryTimers) clearTimeout(timer);
+    this.retryTimers.clear();
   }
 
   subscribe(topic: string, handler: EventHandler): () => void {
@@ -275,6 +355,25 @@ export class GatewayTransport {
         const id = frame.id as string;
         const entry = this.pending.get(id);
         if (!entry) break;
+        if (!frame.ok) {
+          const message = String(frame.error ?? "invoke failed");
+          if (
+            message.startsWith("rate limited") &&
+            entry.attempts < RATE_RETRY_MAX_ATTEMPTS
+          ) {
+            // The server rejected BEFORE executing — re-send the same
+            // frame (same id; the server doesn't track ids) after a
+            // short backoff. The request's own timeout keeps running
+            // as the overall cap; close rejects it like any pending.
+            entry.attempts += 1;
+            const timer = setTimeout(() => {
+              this.retryTimers.delete(timer);
+              if (this.pending.has(id)) this.enqueueInvoke(entry.frame);
+            }, RATE_RETRY_BASE_MS * entry.attempts);
+            this.retryTimers.add(timer);
+            break;
+          }
+        }
         this.pending.delete(id);
         clearTimeout(entry.timer);
         if (frame.ok) entry.resolve(frame.data);
@@ -307,6 +406,7 @@ export class GatewayTransport {
       clearTimeout(this.stableTimer);
       this.stableTimer = null;
     }
+    this.clearRatePacing();
     for (const entry of this.pending.values()) {
       clearTimeout(entry.timer);
       entry.reject(new Error("gateway connection closed"));

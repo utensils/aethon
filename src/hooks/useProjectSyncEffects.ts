@@ -1,6 +1,7 @@
-import { useCallback, useEffect, type MutableRefObject } from "react";
+import { useCallback, useEffect, useRef, type MutableRefObject } from "react";
 import type { ProjectsState } from "../projects";
 import { discoverIcon } from "../projectIcons";
+import { scheduleAfterMobileBootWindow } from "./mobileBootDefer";
 import type { Tab } from "../types/tab";
 import { workspaceIdForCwd } from "./useProjectOps";
 
@@ -72,7 +73,17 @@ export function useProjectSyncEffects({
     }
   }, [projectsRef, setProjectIconUrl]);
 
+  // First run defers past the mobile boot window (fs_discover_project_icon
+  // + gh_repo_avatar_url per icon-less project would otherwise burn the
+  // gateway's boot invoke budget); later project-list changes are user
+  // actions and run immediately. Desktop is unchanged — the helper runs
+  // synchronously there.
+  const iconsBootDeferredRef = useRef(false);
   useEffect(() => {
+    if (!iconsBootDeferredRef.current) {
+      iconsBootDeferredRef.current = true;
+      return scheduleAfterMobileBootWindow(discoverIconsForProjects);
+    }
     discoverIconsForProjects();
   }, [discoverIconsForProjects, state.projects]);
 }

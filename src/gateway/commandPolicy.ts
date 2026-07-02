@@ -71,6 +71,12 @@ const STUB_EXACT = new Set<string>([
   // companion's issue-dispatch / new-workspace flows work end-to-end.
   "git_watch_root",
   "git_unwatch_root",
+  // Extension hot-reload watchers are equally desktop-local; the
+  // desktop's own webview already watches these. Forwarding them just
+  // burned two guaranteed-Deny round-trips (and rate-limit slots) per
+  // project announcement at boot.
+  "watch_project_extensions",
+  "unwatch_project_extensions",
   // Gateway-admin + control-plane: never driven from the phone.
   "server_status",
   "server_start",

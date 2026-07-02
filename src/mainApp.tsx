@@ -14,6 +14,7 @@ import { prewarmHighlighter } from "./utils/highlight";
 // single index.css — Vite's HMR dep graph tracks JS module imports
 // reliably, but `@import` chains in CSS files have produced silently
 // stale stylesheets in the webview after edits to chrome.css.
+import "./styles/fonts";
 import "./styles/tokens.css";
 import "./styles/themes.css";
 import "./styles/chrome.css";
