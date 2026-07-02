@@ -165,14 +165,17 @@ impl PairedHostStore {
             .cloned()
     }
 
-    pub fn touch_candidates(&self, id: &str, candidates: Vec<String>) -> Result<(), String> {
+    pub fn touch_candidates(&self, id: &str, candidates: Vec<String>) -> Result<bool, String> {
         let mut records = self.records.lock().map_err(|e| e.to_string())?;
         let Some(record) = records.iter_mut().find(|r| r.id == id) else {
-            return Ok(());
+            return Ok(false);
         };
+        let before = record.candidates.clone();
         merge_candidates(&mut record.candidates, candidates);
+        let changed = record.candidates != before;
         record.last_seen_at = now_ms();
-        self.persist(&records)
+        self.persist(&records)?;
+        Ok(changed)
     }
 
     pub fn forget(&self, id: &str) -> Result<(), String> {
@@ -259,5 +262,30 @@ mod tests {
         let rec = store.get(&host_id_for_fingerprint(&fp)).unwrap();
         assert_eq!(rec.token, "tok-2");
         assert_eq!(rec.candidates, vec!["bender.local:1", "bender-2.local:1"]);
+    }
+
+    #[test]
+    fn touch_candidates_reports_only_candidate_changes() {
+        let store = PairedHostStore::load(None);
+        let fp = "b".repeat(64);
+        let id = host_id_for_fingerprint(&fp);
+        store
+            .upsert(info(&fp), "tok-1".into(), vec!["bender.local:1".into()])
+            .unwrap();
+
+        assert!(
+            !store
+                .touch_candidates(&id, vec!["bender.local:1".into()])
+                .unwrap()
+        );
+        assert!(
+            store
+                .touch_candidates(&id, vec!["192.168.1.44:1".into()])
+                .unwrap()
+        );
+        assert_eq!(
+            store.get(&id).unwrap().candidates,
+            vec!["bender.local:1", "192.168.1.44:1"]
+        );
     }
 }

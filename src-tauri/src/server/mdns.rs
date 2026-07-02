@@ -206,7 +206,18 @@ pub fn start_browser(app: AppHandle) -> Result<(), String> {
                     if let Some(remote) =
                         app.try_state::<std::sync::Arc<crate::server::remote::RemoteState>>()
                     {
-                        let _ = remote.hosts.touch_candidates(&id, host.candidates.clone());
+                        let candidates_changed = remote
+                            .hosts
+                            .touch_candidates(&id, host.candidates.clone())
+                            .unwrap_or(false);
+                        if candidates_changed && let Some(record) = remote.hosts.get(&id) {
+                            let cancel = remote.replace_host_forwarder(&id);
+                            crate::server::remote::client::spawn_event_forwarder(
+                                record,
+                                app.clone(),
+                                cancel,
+                            );
+                        }
                         let _ = app.emit("remote-hosts-changed", HostRemoved { id: id.clone() });
                     }
                     let fullname = info.get_fullname().to_string();

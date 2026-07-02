@@ -68,7 +68,7 @@ describe("useHostInfo", () => {
     expect(result.current.hosts[0]?.isLocal).toBe(true);
   });
 
-  it("keeps discovered remote hosts visible when mDNS remove events flicker", async () => {
+  it("removes unpaired discovered hosts when mDNS drops them", async () => {
     const { useHostInfo } = await import("./useHostInfo");
     const { _resetLocalHostCacheForTests } = await import("../hosts");
     _resetLocalHostCacheForTests();
@@ -97,10 +97,7 @@ describe("useHostInfo", () => {
       fireEvent("host-removed", { id: "remote:bender" });
     });
     await waitFor(() => {
-      expect(result.current.hosts.find((h) => h.id === "remote:bender")).toMatchObject({
-        connected: false,
-        discovered: true,
-      });
+      expect(result.current.hosts.find((h) => h.id === "remote:bender")).toBeUndefined();
     });
   });
 
@@ -227,6 +224,16 @@ describe("useHostInfo", () => {
         candidates: ["bender.local:4242", "192.168.1.44:4242"],
         lastSeen: 3,
       });
+    });
+    await waitFor(() => {
+      expect(result.current.hosts.find((h) => h.id === "remote:bender")).toMatchObject({
+        paired: true,
+        connected: false,
+        candidates: ["bender.local:4242", "192.168.1.44:4242"],
+      });
+    });
+    act(() => {
+      fireEvent("host-removed", { id: "remote:bender" });
     });
     await waitFor(() => {
       expect(result.current.hosts.find((h) => h.id === "remote:bender")).toMatchObject({

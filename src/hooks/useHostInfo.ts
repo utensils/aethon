@@ -125,11 +125,14 @@ export function useHostInfo(): UseHostInfo {
         host.hostname === other.hostname &&
         host.displayName === other.displayName &&
         host.isLocal === other.isLocal &&
+        host.fingerprint === other.fingerprint &&
+        host.fingerprintPrefix === other.fingerprintPrefix &&
         host.paired === other.paired &&
         host.connected === other.connected &&
         host.discovered === other.discovered &&
         host.createdAt === other.createdAt &&
-        host.lastSeen === other.lastSeen
+        host.lastSeen === other.lastSeen &&
+        stringArraysEqual(host.candidates, other.candidates)
       );
     });
   }
@@ -186,14 +189,7 @@ export function useHostInfo(): UseHostInfo {
         const offRemoved = await listen<{ id: string }>("host-removed", (event) => {
           const id = event.payload?.id;
           if (!id) return;
-          const remote = remotesRef.current.get(id);
-          if (remote) {
-            remotesRef.current.set(id, {
-              ...remote,
-              connected: false,
-              discovered: true,
-              lastSeen: remote.lastSeen ?? Date.now(),
-            });
+          if (remotesRef.current.delete(id)) {
             emitRemotes();
           }
         });
@@ -356,6 +352,12 @@ export function useHostInfo(): UseHostInfo {
     localHostId: localHost?.id ?? null,
     remoteProjectsByHost,
   };
+}
+
+function stringArraysEqual(a?: string[], b?: string[]): boolean {
+  if (!a?.length && !b?.length) return true;
+  if (!a || !b || a.length !== b.length) return false;
+  return a.every((value, index) => value === b[index]);
 }
 
 function projectMirrorsFromSnapshot(

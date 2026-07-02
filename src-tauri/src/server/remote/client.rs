@@ -567,6 +567,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tokio::net::TcpListener;
 
     #[test]
     fn urls_normalize_candidates() {
@@ -600,5 +601,60 @@ mod tests {
         let (status, body) = parse_http_response(raw).unwrap();
         assert_eq!(status, 200);
         assert_eq!(body, b"{}");
+    }
+
+    #[tokio::test]
+    async fn pair_desktop_tries_next_candidate_after_connect_failure() {
+        let bad = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let bad_addr = bad.local_addr().unwrap();
+        drop(bad);
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let good_addr = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let mut buf = [0_u8; 4096];
+            let n = socket.read(&mut buf).await.unwrap();
+            let request = String::from_utf8_lossy(&buf[..n]);
+            assert!(request.starts_with("POST /pair HTTP/1.1"));
+            assert!(request.contains(r#""code":"12345678""#));
+            let body = serde_json::json!({
+                "deviceToken": "remote-token",
+                "host": {
+                    "id": "local:remote",
+                    "hostname": "remote.local",
+                    "displayName": "remote",
+                    "fingerprint": "remote-fingerprint"
+                }
+            })
+            .to_string();
+            let response = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                body.len()
+            );
+            socket.write_all(response.as_bytes()).await.unwrap();
+        });
+
+        let local = HostInfo {
+            id: "local:test".into(),
+            hostname: "local.test".into(),
+            display_name: "local".into(),
+            fingerprint: "local-fingerprint".into(),
+        };
+        let (token, host) = pair_desktop(
+            &[bad_addr.to_string(), good_addr.to_string()],
+            "",
+            "12345678",
+            "local",
+            &local,
+            "reciprocal-token",
+            vec!["local.test:1234".into()],
+        )
+        .await
+        .unwrap();
+
+        server.await.unwrap();
+        assert_eq!(token, "remote-token");
+        assert_eq!(host.id, "local:remote");
     }
 }
