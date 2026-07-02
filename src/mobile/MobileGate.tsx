@@ -3,10 +3,19 @@
 // App only mounts post-connect, so its boot `invoke("start_agent")`
 // never races the socket. A reconnect hook re-hydrates after the phone
 // wakes from background (iOS drops sockets on lock).
+//
+// App is loaded lazily (not just mounted lazily): the module graph is
+// multiple MB and parsing it synchronously would delay the very first
+// paint of this gate's own spinner/ConnectScreen. `loadApp()` kicks the
+// dynamic import off a frame after mount (so the gate paints first) and
+// memoizes the promise so StrictMode's double-invoke and React.lazy's
+// own call to the loader collapse onto one fetch+parse. The import is
+// allowed to happen well before the socket connects — it's *mounting*
+// App that stays strictly gated on phase === "connected" below, so its
+// boot `invoke("start_agent")` still never races the handshake.
 
-import { useCallback, useEffect, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useState, type ComponentType } from "react";
 
-import App from "../App";
 import { setAssetBase } from "../gateway/tauriCoreShim";
 import { RustBridgeAdapter, isTauriRuntime } from "../gateway/rustBridgeAdapter";
 import { gateway, type SocketAdapter } from "../gateway/transport";
@@ -23,6 +32,30 @@ import {
 import { perfEnabled, perfMark } from "./perfMarks";
 
 type Phase = "connecting" | "connected" | "need-config";
+
+let appModulePromise: Promise<{ default: ComponentType }> | null = null;
+const loadApp = () => (appModulePromise ??= import("../App"));
+const App = lazy(loadApp);
+
+interface ConnectingScreenProps {
+  hostLabel: string;
+  onForget: () => void;
+}
+
+// Shared with the Suspense fallback below so the "still connecting" UI
+// looks identical whether we're waiting on the socket handshake or on
+// the App chunk finishing its parse after the handshake already landed.
+function ConnectingScreen({ hostLabel, onForget }: ConnectingScreenProps) {
+  return (
+    <div className="ae-mobile-connecting">
+      <div className="ae-mobile-spinner" aria-hidden />
+      <p>Connecting to {hostLabel}…</p>
+      <button type="button" className="ae-mobile-text-button" onClick={onForget}>
+        Use a different host
+      </button>
+    </div>
+  );
+}
 
 export function MobileGate() {
   const [connection, setConnection] = useState<MobileConnection | null>(loadConnection);
@@ -69,6 +102,17 @@ export function MobileGate() {
   useEffect(() => {
     if (connection) queueMicrotask(() => void connect(connection, false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Kick the App chunk's download+parse off a frame after mount, so this
+  // gate's own first paint (ConnectScreen or the spinner below) isn't
+  // delayed by it. On the saved-host path this overlaps the App parse
+  // with the gateway.connect() handshake kicked off in the effect above.
+  // Loading the module early is fine — mounting <App /> stays gated on
+  // phase === "connected" in the render below.
+  useEffect(() => {
+    const raf = requestAnimationFrame(() => void loadApp());
+    return () => cancelAnimationFrame(raf);
   }, []);
 
   // Startup perf marks (no-ops unless perf capture is enabled): first
@@ -130,13 +174,7 @@ export function MobileGate() {
 
   if (phase === "connecting") {
     return (
-      <div className="ae-mobile-connecting">
-        <div className="ae-mobile-spinner" aria-hidden />
-        <p>Connecting to {connection?.host ?? "desktop"}…</p>
-        <button type="button" className="ae-mobile-text-button" onClick={onForget}>
-          Use a different host
-        </button>
-      </div>
+      <ConnectingScreen hostLabel={connection?.host ?? "desktop"} onForget={onForget} />
     );
   }
 
@@ -147,7 +185,13 @@ export function MobileGate() {
           Reconnecting…
         </div>
       ) : null}
-      <App />
+      <Suspense
+        fallback={
+          <ConnectingScreen hostLabel={connection?.host ?? "desktop"} onForget={onForget} />
+        }
+      >
+        <App />
+      </Suspense>
     </>
   );
 }

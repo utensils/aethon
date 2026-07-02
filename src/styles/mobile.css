@@ -1233,6 +1233,29 @@ body:has(.ae-mobile-nav) .ae-mobile-header .ae-mobile-conn-label {
   padding: 16px 14px;
 }
 
+/* Desktop-only editor stub — mobile build swaps in DesktopOnlyCanvas for
+   editor-canvas/diff-canvas (see src/mobile/composites/desktop-only-canvas.tsx). */
+.ae-mobile-desktop-only {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 100%;
+  padding: 24px;
+  text-align: center;
+  color: var(--text-dim);
+}
+.ae-mobile-desktop-only-message {
+  color: var(--text);
+  font-size: 0.95rem;
+  margin: 0;
+}
+.ae-mobile-desktop-only-hint {
+  font-size: 0.82rem;
+  margin: 0;
+}
+
 /* =============================================================================
    Pairing — QR scan overlay + nearby-desktops discovery
    ============================================================================= */
