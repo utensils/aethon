@@ -64,6 +64,10 @@ describe("MobileDeviceLanding", () => {
     );
 
     fireEvent.click(screen.getByRole("button", { name: "Unpair device" }));
+    expect(
+      onEvent.mock.calls.some((call) => call[0] === "unpair-mobile-device"),
+    ).toBe(false);
+    fireEvent.click(screen.getByRole("button", { name: "Confirm unpair" }));
     expect(onEvent).toHaveBeenCalledWith(
       "unpair-mobile-device",
       {

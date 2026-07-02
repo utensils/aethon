@@ -382,6 +382,15 @@
   width: 100%;
   gap: var(--space-2);
   padding-top: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.a2ui-mobile-device-landing-unpair-confirm {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  justify-content: center;
 }
 
 .a2ui-mobile-device-landing-rename-save,

@@ -286,6 +286,13 @@ export function useSidebarContextMenu(
     });
     close();
   };
+  const confirmContextMobileDeviceUnpair = () => {
+    if (!contextMenu) return;
+    setContextMenu({
+      ...contextMenu,
+      kind: "mobile-device-unpair",
+    });
+  };
   const renameContextMobileDevice = () => {
     if (!contextMenu) return;
     setContextMenu({
@@ -311,6 +318,7 @@ export function useSidebarContextMenu(
     openItemContextMenu,
     openWorkspaceContextMenu,
     handlers: {
+      closeContextMenu: close,
       createWorkspaceForContextProject,
       editContextProjectWorkspaceBase,
       submitContextProjectWorkspaceBase,
@@ -324,6 +332,7 @@ export function useSidebarContextMenu(
       renameContextWorkspace,
       removeContextWorkspace,
       renameContextMobileDevice,
+      confirmContextMobileDeviceUnpair,
       submitContextMobileDeviceRename,
       unpairContextMobileDevice,
       renameContextSession,

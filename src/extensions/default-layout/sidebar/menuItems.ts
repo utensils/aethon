@@ -27,6 +27,7 @@ export interface SidebarContextMenuState {
     | "workspace"
     | "mobile-device"
     | "mobile-device-rename"
+    | "mobile-device-unpair"
     | "session"
     | "extension-enabled"
     | "extension-disabled";
@@ -74,7 +75,9 @@ export interface SidebarMenuHandlers {
   renameContextWorkspace: () => void;
   removeContextWorkspace: () => void;
   // Session + extension (unchanged)
+  closeContextMenu: () => void;
   renameContextMobileDevice: () => void;
+  confirmContextMobileDeviceUnpair: () => void;
   submitContextMobileDeviceRename: (name: string) => void;
   unpairContextMobileDevice: () => void;
   renameContextSession: () => void;
@@ -222,9 +225,10 @@ export function buildSidebarMenuItems(
         { type: "separator" },
         {
           id: "unpair-mobile-device",
-          label: "Unpair device",
+          label: "Unpair device…",
           danger: true,
-          onSelect: h.unpairContextMobileDevice,
+          keepOpenOnSelect: true,
+          onSelect: h.confirmContextMobileDeviceUnpair,
         },
         { type: "note", label: "Revokes this client's token" },
       ];
@@ -239,6 +243,25 @@ export function buildSidebarMenuItems(
           placeholder: "iPhone",
           submitLabel: "Rename",
           onSubmit: h.submitContextMobileDeviceRename,
+        },
+      ];
+    case "mobile-device-unpair":
+      return [
+        { type: "header", label: "Unpair device?" },
+        {
+          type: "note",
+          label: "Revokes this client's token. The device must pair again.",
+        },
+        {
+          id: "confirm-unpair-mobile-device",
+          label: "Confirm unpair",
+          danger: true,
+          onSelect: h.unpairContextMobileDevice,
+        },
+        {
+          id: "cancel-unpair-mobile-device",
+          label: "Cancel",
+          onSelect: h.closeContextMenu,
         },
       ];
     case "session":

@@ -36,6 +36,7 @@ export function MobileDeviceLanding({
   })();
   const [renaming, setRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState("");
+  const [confirmingUnpair, setConfirmingUnpair] = useState(false);
   if (!landing || landing.kind !== "mobile-device") return null;
 
   const title = landing.label || "Mobile device";
@@ -64,6 +65,20 @@ export function MobileDeviceLanding({
       landing.deviceId,
     );
     setRenaming(false);
+  };
+
+  const confirmUnpair = () => {
+    if (!landing.deviceId) return;
+    onEvent(
+      "unpair-mobile-device",
+      {
+        sectionId: "mobile-devices",
+        itemId: landing.deviceId,
+        deviceId: landing.deviceId,
+        label: title,
+      },
+      landing.deviceId,
+    );
   };
 
   return (
@@ -161,28 +176,40 @@ export function MobileDeviceLanding({
             onClick={() => {
               setRenameValue(title);
               setRenaming(true);
+              setConfirmingUnpair(false);
             }}
           >
             Rename device
           </button>
-          <button
-            type="button"
-            className="a2ui-mobile-device-landing-unpair"
-            onClick={() =>
-              onEvent(
-                "unpair-mobile-device",
-                {
-                  sectionId: "mobile-devices",
-                  itemId: landing.deviceId,
-                  deviceId: landing.deviceId,
-                  label: title,
-                },
-                landing.deviceId,
-              )
-            }
-          >
-            Unpair device
-          </button>
+          {confirmingUnpair ? (
+            <span className="a2ui-mobile-device-landing-unpair-confirm">
+              <button
+                type="button"
+                className="a2ui-mobile-device-landing-unpair"
+                onClick={confirmUnpair}
+              >
+                Confirm unpair
+              </button>
+              <button
+                type="button"
+                className="a2ui-mobile-device-landing-rename-cancel"
+                onClick={() => setConfirmingUnpair(false)}
+              >
+                Cancel
+              </button>
+            </span>
+          ) : (
+            <button
+              type="button"
+              className="a2ui-mobile-device-landing-unpair"
+              onClick={() => {
+                setRenaming(false);
+                setConfirmingUnpair(true);
+              }}
+            >
+              Unpair device
+            </button>
+          )}
         </div>
       </div>
     </div>

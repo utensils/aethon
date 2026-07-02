@@ -740,6 +740,12 @@ describe("Sidebar mobile devices", () => {
 
     fireEvent.contextMenu(screen.getByText("iPhone").closest("li")!);
     fireEvent.click(screen.getByRole("menuitem", { name: /Unpair device/ }));
+    expect(onEvent).not.toHaveBeenCalledWith(
+      "unpair-mobile-device",
+      expect.anything(),
+    );
+    expect(screen.getByText("Unpair device?")).toBeTruthy();
+    fireEvent.click(screen.getByRole("menuitem", { name: /Confirm unpair/ }));
 
     expect(onEvent).toHaveBeenCalledWith("unpair-mobile-device", {
       sectionId: "mobile-devices",
@@ -747,6 +753,37 @@ describe("Sidebar mobile devices", () => {
       deviceId: "device:dev-iphone",
       label: "iPhone",
     });
+  });
+
+  it("cancels phone context menu unpair confirmation", () => {
+    const { onEvent } = renderSidebar({
+      props: {
+        sections: [
+          {
+            id: "mobile-devices",
+            title: "mobile devices",
+            items: [
+              {
+                id: "device:dev-iphone",
+                label: "iPhone",
+                icon: "phone",
+                hint: "paired",
+              },
+            ],
+          },
+        ],
+      },
+    });
+
+    fireEvent.contextMenu(screen.getByText("iPhone").closest("li")!);
+    fireEvent.click(screen.getByRole("menuitem", { name: /Unpair device/ }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /Cancel/ }));
+
+    expect(onEvent).not.toHaveBeenCalledWith(
+      "unpair-mobile-device",
+      expect.anything(),
+    );
+    expect(screen.queryByRole("menu")).toBeNull();
   });
 
   it("renames phones from the context menu inline input", () => {
