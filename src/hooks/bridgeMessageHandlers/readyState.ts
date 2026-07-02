@@ -3,7 +3,13 @@ import type { AuthProfilesSnapshot } from "../../auth-profiles";
 import { OVERVIEW_TAB_ID, type Tab } from "../../types/tab";
 import { deletePointer } from "../../utils/jsonPointer";
 import { deepMergeState } from "../../utils/stateMutation";
-import { WORKSTATION_AREAS, workstationRows } from "../useFocus";
+import {
+  MOBILE_AREAS,
+  MOBILE_COLUMNS,
+  MOBILE_ROWS,
+  WORKSTATION_AREAS,
+  workstationRows,
+} from "../useFocus";
 import { TAB_MIRROR_KEYS } from "../useTabs";
 import { mirrorOverviewSurfaceToRoot } from "../tabOps/helpers";
 import { contextUsageFromMessage } from "./contextUsage";
@@ -55,9 +61,31 @@ function terminalHeightFromState(state: Record<string, unknown>): number {
   return typeof height === "number" && Number.isFinite(height) ? height : 240;
 }
 
+export function normalizeMobileLayout(
+  state: Record<string, unknown>,
+): Record<string, unknown> {
+  const layout = (state.layout as Record<string, unknown> | undefined) ?? {};
+  return {
+    ...state,
+    layout: {
+      ...layout,
+      columns: MOBILE_COLUMNS,
+      rows: MOBILE_ROWS,
+      areas: MOBILE_AREAS,
+    },
+  };
+}
+
 export function normalizeWorkstationLayout(
   state: Record<string, unknown>,
 ): Record<string, unknown> {
+  if (import.meta.env.VITE_AETHON_SURFACE === "mobile") {
+    // Ready snapshots can carry desktop layout values (the desktop is
+    // the state authority) — the companion re-asserts its own grid,
+    // columns included, or the workstation's sidebar tracks squeeze the
+    // phone into a fraction of the viewport.
+    return normalizeMobileLayout(state);
+  }
   const layout = (state.layout as Record<string, unknown> | undefined) ?? {};
   const terminal = state.terminal as { open?: boolean } | undefined;
   return {
