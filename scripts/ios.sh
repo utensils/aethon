@@ -187,7 +187,10 @@ case "$mode" in
     echo "==> installing $app_path on device $udid"
     xcrun devicectl device install app --device "$udid" "$app_path"
     echo "==> launching $bundle_id"
-    xcrun devicectl device process launch --terminate-existing --device "$udid" "$bundle_id"
+    if ! xcrun devicectl device process launch --terminate-existing --device "$udid" "$bundle_id"; then
+      # Install already succeeded — a locked phone just can't auto-launch.
+      echo "==> installed, but launch failed (phone locked?) — unlock the iPhone and open Aethon."
+    fi
     ;;
   *)
     echo "usage: ios.sh <dev|build|run|device> [tauri-ios-args...]" >&2
