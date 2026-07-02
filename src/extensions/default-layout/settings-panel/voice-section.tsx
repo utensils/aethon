@@ -11,12 +11,21 @@ import { formatVoiceDownloadProgress } from "../../../utils/voice";
 import { Field, Section, type SettingsUpdate } from "./sections";
 import { useVoiceProviders } from "./useVoiceProviders";
 
+/** Model entries mirrored from the header picker (`/sidebar/models`), so the
+ *  voice brain offers the same registry the rest of the app selects from. */
+export interface VoiceBrainModelOption {
+  id: string;
+  label: string;
+}
+
 export function VoiceSection({
   config,
   update,
+  models,
 }: {
   config: AethonConfig;
   update: SettingsUpdate;
+  models?: VoiceBrainModelOption[];
 }) {
   return (
     <Section id="voice" title="Voice">
@@ -66,7 +75,7 @@ export function VoiceSection({
       </p>
       <VoiceProviders />
 
-      <ConversationSettings config={config} update={update} />
+      <ConversationSettings config={config} update={update} models={models} />
 
       <h4 className="ae-settings-subhead">Spoken replies</h4>
       <Field label="Speak agent replies aloud (outside conversation mode)">
@@ -110,9 +119,11 @@ export function VoiceSection({
 function ConversationSettings({
   config,
   update,
+  models,
 }: {
   config: AethonConfig;
   update: SettingsUpdate;
+  models?: VoiceBrainModelOption[];
 }) {
   const [testResult, setTestResult] = useState<string | null>(null);
   const [testing, setTesting] = useState(false);
@@ -279,21 +290,32 @@ function ConversationSettings({
           <option value="lfm2">LFM2-Audio (offline)</option>
         </select>
       </Field>
-      <Field label="Voice brain model (empty = default model)">
-        <input
-          type="text"
+      <Field label="Voice brain model">
+        <select
           className="ae-settings-input"
           value={config.voice.brainModel ?? ""}
-          placeholder="anthropic/claude-haiku-4-5"
           onChange={(e) =>
             update({
               voice: {
                 ...config.voice,
-                brainModel: e.target.value.trim() || null,
+                brainModel: e.target.value || null,
               },
             })
           }
-        />
+        >
+          <option value="">Default model (same as chat)</option>
+          {(models ?? []).map((m) => (
+            <option key={m.id} value={m.id}>
+              {m.label}
+            </option>
+          ))}
+          {config.voice.brainModel &&
+            !(models ?? []).some((m) => m.id === config.voice.brainModel) && (
+              <option value={config.voice.brainModel}>
+                {config.voice.brainModel} (not in registry)
+              </option>
+            )}
+        </select>
       </Field>
       <Field label="Cartesia voice id (empty = default voice)">
         <div className="ae-voice-key-row">

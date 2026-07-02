@@ -57,6 +57,21 @@ const SETTINGS_NAV: { id: string; label: string }[] = [
   { id: "advanced", label: "Advanced" },
 ];
 
+/** The header model picker's entries (`/sidebar/models`), reused so the
+ *  voice-brain select offers the same registry as the rest of the app. */
+function readSidebarModels(
+  state: Record<string, unknown>,
+): { id: string; label: string }[] {
+  const sidebar = state.sidebar as
+    | { models?: { id?: unknown; label?: unknown }[] }
+    | undefined;
+  return (sidebar?.models ?? []).flatMap((m) =>
+    typeof m.id === "string" && m.id
+      ? [{ id: m.id, label: typeof m.label === "string" ? m.label : m.id }]
+      : [],
+  );
+}
+
 export function SettingsPanel({ state, onEvent }: BuiltinComponentProps) {
   const settings = readSettingsState(state);
   const configSnapshot = useConfigSnapshot(settings.open);
@@ -152,7 +167,11 @@ export function SettingsPanel({ state, onEvent }: BuiltinComponentProps) {
               />
               <ShellSection config={eff} update={update} />
               <BehaviorSection config={eff} update={update} />
-              <VoiceSection config={eff} update={update} />
+              <VoiceSection
+                config={eff}
+                update={update}
+                models={readSidebarModels(state)}
+              />
               <UpdaterSection config={eff} update={update} />
               <RemoteDevicesSection open={settings.open} />
               <DevshellSection config={eff} state={state} update={update} />
