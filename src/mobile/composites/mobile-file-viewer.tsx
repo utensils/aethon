@@ -29,9 +29,7 @@ export function MobileFileViewer({ state, onEvent }: BuiltinComponentProps) {
   useEffect(() => {
     if (!open || !root || !path) return;
     let cancelled = false;
-    // Reset for the newly-opened file before the async read resolves —
-    // a resync to the open/path deps, not ongoing effect state.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- reset for the newly-opened file before the async read resolves; a resync to the open/path deps
     setContent(null);
     setError(null);
     invoke<string>("fs_read_file", { root, path })

@@ -153,7 +153,6 @@ async fn run_session(
     let mut subs: HashSet<String> = HashSet::new();
     let mut hub_rx = ctx.remote.hub.subscribe();
     let (results_tx, mut results_rx) = mpsc::channel::<String>(RESULT_QUEUE);
-    let mut rate = RateLimiter::new();
     let mut ping = tokio::time::interval(PING_INTERVAL);
     ping.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     let mut last_inbound = Instant::now();
@@ -166,7 +165,7 @@ async fn run_session(
                     Some(Ok(Message::Close(_))) => return,
                     Some(Ok(Message::Text(text))) => {
                         last_inbound = Instant::now();
-                        handle_text_frame(ctx, device, &text, &mut subs, &results_tx, &mut rate);
+                        handle_text_frame(ctx, device, &text, &mut subs, &results_tx);
                     }
                     Some(Ok(_)) => {
                         // Pong / Ping / Binary — liveness only.
@@ -248,20 +247,21 @@ async fn run_session(
     }
 }
 
-/// Per-connection invoke rate limit — a fixed window so a buggy or
+/// Per-device invoke rate limit — a fixed window so a buggy or
 /// hostile client can't wedge the relay with unbounded concurrent
 /// dispatch. Generous enough for real bursts (a screen mounting fires a
-/// handful of reads at once).
+/// handful of reads at once). Keyed by device id in [`RemoteState`], so
+/// a device opening several concurrent sessions shares one budget.
 const RATE_WINDOW: Duration = Duration::from_secs(1);
 const RATE_MAX_INVOKES: u32 = 40;
 
-struct RateLimiter {
+pub(super) struct RateLimiter {
     window_start: Instant,
     count: u32,
 }
 
 impl RateLimiter {
-    fn new() -> Self {
+    pub(super) fn new() -> Self {
         Self {
             window_start: Instant::now(),
             count: 0,
@@ -269,7 +269,7 @@ impl RateLimiter {
     }
 
     /// Record an invoke; `false` when the current window is exhausted.
-    fn allow(&mut self) -> bool {
+    pub(super) fn allow(&mut self) -> bool {
         let now = Instant::now();
         if now.duration_since(self.window_start) >= RATE_WINDOW {
             self.window_start = now;
@@ -289,7 +289,6 @@ fn handle_text_frame(
     text: &str,
     subs: &mut HashSet<String>,
     results_tx: &mpsc::Sender<String>,
-    rate: &mut RateLimiter,
 ) {
     let frame: ClientFrame = match serde_json::from_str(text) {
         Ok(frame) => frame,
@@ -323,13 +322,19 @@ fn handle_text_frame(
             }
         }
         ClientFrame::Invoke { id, cmd, args } => {
-            if !rate.allow() {
+            if !ctx.remote.allow_invoke(&device.id) {
                 let frame = ServerFrame::result_err(
                     id,
                     "rate limited: too many requests, retry shortly".to_string(),
                 );
                 if let Ok(wire) = frame.wire() {
-                    let _ = results_tx.try_send(wire);
+                    // Same awaited-send path as real results — a full
+                    // queue must delay the rejection, not drop it, or
+                    // the client waits out its invoke timeout instead.
+                    let results_tx = results_tx.clone();
+                    tauri::async_runtime::spawn(async move {
+                        let _ = results_tx.send(wire).await;
+                    });
                 }
                 return;
             }
@@ -557,5 +562,22 @@ mod tests {
         // Force the window open and confirm it refills.
         rate.window_start = Instant::now() - RATE_WINDOW - Duration::from_millis(1);
         assert!(rate.allow());
+    }
+
+    #[test]
+    fn invoke_budget_is_shared_per_device_not_per_session() {
+        let state = super::super::RemoteState::in_memory();
+        for _ in 0..RATE_MAX_INVOKES {
+            assert!(state.allow_invoke("device-a"));
+        }
+        // A second session of the same device shares the exhausted
+        // budget; a different device gets its own.
+        assert!(!state.allow_invoke("device-a"));
+        assert!(state.allow_invoke("device-b"));
+        // Last-session deregistration prunes the entry, so a fresh
+        // connection starts a fresh window.
+        let handle = state.register_live("device-a");
+        state.deregister_live("device-a", &handle);
+        assert!(state.allow_invoke("device-a"));
     }
 }
