@@ -7,6 +7,10 @@ import type { BridgeMessageHandler } from "./types";
  *  and renders identically to a default-layout boot. */
 export const handleLayoutSet: BridgeMessageHandler = (data, ctx) => {
   if (import.meta.env.VITE_AETHON_SURFACE === "mobile") {
+    // The companion keeps its fixed mobile layout; ack so the sender
+    // doesn't retry, but leave a trace for extension authors debugging
+    // why their layout "succeeded" without effect on the phone.
+    console.debug("layout_set ignored on the mobile surface");
     ctx.ackMutation(data.mutationId, true);
     return;
   }

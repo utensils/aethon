@@ -5,7 +5,7 @@
 //   3. Manual host + token + fingerprint (collapsed) — the permanent
 //      fallback and the browser dev-loop path.
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 import { isTauriRuntime } from "../gateway/rustBridgeAdapter";
 import type { MobileConnection } from "./mobileConnection";
@@ -36,6 +36,9 @@ export function ConnectScreen({
 
   const native = isTauriRuntime();
   const nearby = useNearbyDesktops(native && phase === "idle");
+  // Synchronous re-entry guard: the 8th-digit auto-pair and the submit
+  // button can both fire within one render, before `phase` updates.
+  const pairingRef = useRef(false);
 
   const canConnect = host.trim().length > 0 && token.trim().length > 0;
   const selectedDesktop = codeFor;
@@ -52,6 +55,8 @@ export function ConnectScreen({
     );
 
   const finishPairing = async (run: () => ReturnType<typeof pairWithHosts>) => {
+    if (pairingRef.current) return;
+    pairingRef.current = true;
     setPhase("pairing");
     setPairError(null);
     try {
@@ -62,6 +67,7 @@ export function ConnectScreen({
     } catch (err) {
       setPairError(pairErrorMessage(classifyPairError(err)));
     } finally {
+      pairingRef.current = false;
       setPhase("idle");
     }
   };

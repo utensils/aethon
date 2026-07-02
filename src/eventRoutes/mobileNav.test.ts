@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { handleMobileNav } from "./mobileNav";
 import { buildRouteFixture } from "./testFixtures";
@@ -245,6 +245,40 @@ describe("handleMobileNav", () => {
     expect((applySetState({}).mobileNav as { active?: string }).active).toBe(
       "chat",
     );
+  });
+
+  it("stays on project detail when the issue task fails to launch", async () => {
+    const base = {
+      activeProjectId: "p1",
+      mobileNav: {
+        active: "projects",
+        detail: "project-detail",
+        isProjectDetail: true,
+      },
+    };
+    const { ctx, applySetState } = buildRouteFixture({ state: base });
+    vi.mocked(ctx.startTaskInProject).mockResolvedValue(undefined);
+
+    const handled = await handleMobileNav(
+      {
+        component: { id: "detail", type: "mobile-project-detail" },
+        eventType: "start-task",
+        data: {
+          projectId: "p1",
+          prompt: "Work on issue #33",
+          newWorkspace: true,
+        },
+      },
+      ctx,
+    );
+
+    expect(handled).toBe(true);
+    expect(ctx.startTaskInProject).toHaveBeenCalled();
+    const state = applySetState(base);
+    expect((state.mobileNav as { active?: string }).active).toBe("projects");
+    expect(
+      (state.mobileNav as { isProjectDetail?: boolean }).isProjectDetail,
+    ).toBe(true);
   });
 
   it("opens an existing issue session from project detail and jumps to chat", async () => {

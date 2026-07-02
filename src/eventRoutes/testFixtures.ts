@@ -240,7 +240,10 @@ export function buildRouteFixture(
     refreshProjectWorkspaces: vi.fn(() => Promise.resolve()),
     activateWorkspace,
     createWorkspaceForProject: vi.fn(() => Promise.resolve()),
-    startTaskInProject: vi.fn(() => Promise.resolve()),
+    // Resolves a launch descriptor like the real launcher does on
+    // success; tests override with `Promise.resolve(undefined)` to
+    // exercise failure paths.
+    startTaskInProject: vi.fn(() => Promise.resolve({ tabId: "tab-task" })),
     clearClosedIssueLinksForProject,
     removeWorkspaceById: vi.fn(() => Promise.resolve()),
     dismissPendingWorkspace: vi.fn(),

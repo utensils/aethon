@@ -49,7 +49,6 @@ export function useHostInfo(): UseHostInfo {
       connected: device.connected === true,
       createdAt: device.createdAt,
       lastSeen: device.lastSeenAt,
-      fingerprintPrefix: device.connected ? "connected" : undefined,
     };
   }
 
@@ -63,7 +62,6 @@ export function useHostInfo(): UseHostInfo {
         host.hostname === other.hostname &&
         host.displayName === other.displayName &&
         host.isLocal === other.isLocal &&
-        host.fingerprintPrefix === other.fingerprintPrefix &&
         host.paired === other.paired &&
         host.connected === other.connected &&
         host.createdAt === other.createdAt &&
@@ -140,10 +138,9 @@ export function useHostInfo(): UseHostInfo {
           emitDevices();
         }
       } catch {
-        if (!cancelled && devicesRef.current.size > 0) {
-          devicesRef.current = new Map();
-          emitDevices();
-        }
+        // Transient IPC failure (server restart, teardown) — keep the
+        // last-known list rather than blanking the sidebar section; the
+        // next event/poll tick reconciles.
       }
     }
     void refreshDevices();

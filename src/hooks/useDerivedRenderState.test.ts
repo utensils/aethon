@@ -267,6 +267,54 @@ describe("useDerivedRenderState", () => {
     ]);
   });
 
+  it("overlays live connection facts onto an open device landing", () => {
+    const buildSidebarHistory = vi.fn(() => []);
+    const mobileHostInfo: UseHostInfo = {
+      ...hostInfo,
+      mobileDevices: [
+        {
+          id: "device:dev-iphone",
+          hostname: "ios",
+          displayName: "iPhone",
+          isLocal: false,
+          paired: true,
+          connected: false,
+          createdAt: 1,
+          lastSeen: 99,
+        },
+      ],
+    };
+    const { result } = renderHook(() =>
+      useDerivedRenderState({
+        state: {
+          tabs: [],
+          activeTabId: OVERVIEW_TAB_ID,
+          // Snapshot captured while the phone was still connected.
+          landing: {
+            kind: "mobile-device",
+            deviceId: "device:dev-iphone",
+            label: "Pocket Aethon",
+            status: "Connected",
+            connected: true,
+            lastSeenAt: 2,
+          },
+          sidebar: {},
+        },
+        buildSidebarHistory,
+        hostInfo: mobileHostInfo,
+      }),
+    );
+
+    expect(result.current.renderState.landing).toMatchObject({
+      kind: "mobile-device",
+      // Snapshot label survives (rename updates it optimistically).
+      label: "Pocket Aethon",
+      status: "Paired",
+      connected: false,
+      lastSeenAt: 99,
+    });
+  });
+
   it("synthesizes workspace landing when active workspace state loses its landing object", () => {
     const buildSidebarHistory = vi.fn(() => []);
     const { result } = renderHook(() =>

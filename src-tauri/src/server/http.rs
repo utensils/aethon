@@ -119,7 +119,13 @@ pub async fn serve(
         .map_err(|e| format!("addr: {e}"))?;
     let app_for_devices = app.clone();
     let device_changed = Arc::new(move |device: &crate::server::remote::devices::DeviceView| {
-        let _ = app_for_devices.emit("remote-devices-changed", device);
+        // Id-only payload, matching the revoke/rename emits: the
+        // DeviceView here predates the live-connection bookkeeping, so
+        // its `connected` field would lie. Listeners re-list on receipt.
+        let _ = app_for_devices.emit(
+            "remote-devices-changed",
+            serde_json::json!({ "id": device.id }),
+        );
     });
     let app = router(info, remote, relay, device_changed);
     match tls {

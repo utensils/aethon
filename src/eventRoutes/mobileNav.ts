@@ -8,7 +8,7 @@
 // types never appear in the workstation layout.
 
 import type { EventRouteHandler } from "./types";
-import { handleProjectDashboard } from "./dashboard";
+import { handleProjectDashboard, launchStartTask } from "./dashboard";
 import { restoreSessionFromSelection } from "./sessionRestore";
 import {
   handleSectionedSelect,
@@ -184,12 +184,19 @@ export const handleMobileNav: EventRouteHandler = async (
       setScreen(ctx, "project-detail");
       return true;
     }
+    if (eventType === "start-task") {
+      // Await the launch so a failure (workspace create error, missing
+      // project) keeps the user on the detail screen with the failure
+      // notification instead of dumping them on an unchanged chat.
+      const launched = await launchStartTask(data, ctx);
+      if (launched) setScreen(ctx, "chat");
+      return true;
+    }
     if (
       eventType === "restore-session" ||
       eventType === "delete-session" ||
       eventType === "create-workspace" ||
       eventType === "remove-workspace" ||
-      eventType === "start-task" ||
       eventType === "open-issue-session" ||
       eventType === "issues-refreshed" ||
       eventType === "paste-image-failed" ||
@@ -199,7 +206,10 @@ export const handleMobileNav: EventRouteHandler = async (
         { component, eventType, data },
         ctx,
       );
-      if (eventType === "start-task" || eventType === "open-issue-session") {
+      if (
+        eventType === "open-issue-session" ||
+        eventType === "restore-session"
+      ) {
         setScreen(ctx, "chat");
       }
       return handled;

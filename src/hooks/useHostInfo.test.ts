@@ -111,17 +111,20 @@ describe("useHostInfo", () => {
 
     await waitFor(() => {
       expect(result.current.hosts.find((h) => h.id === "device:dev-iphone")).toBeUndefined();
-      expect(
-        result.current.mobileDevices.find((h) => h.id === "device:dev-iphone"),
-      ).toMatchObject({
+      const device = result.current.mobileDevices.find(
+        (h) => h.id === "device:dev-iphone",
+      );
+      expect(device).toMatchObject({
         displayName: "iPhone",
         hostname: "ios",
-        fingerprintPrefix: "connected",
         paired: true,
         connected: true,
         createdAt: 1,
         lastSeen: 2,
       });
+      // Connection state travels on `connected` — never smuggled
+      // through the TLS fingerprint field.
+      expect(device?.fingerprintPrefix).toBeUndefined();
     });
   });
 });

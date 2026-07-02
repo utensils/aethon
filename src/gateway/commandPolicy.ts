@@ -66,10 +66,9 @@ const STUB_EXACT = new Set<string>([
   "fs_reveal_in_file_manager",
   "fs_open_in_file_manager",
   "fs_open_in_default_app",
-  // Worktree mutation + git watchers are desktop-only.
-  "git_worktree_add",
-  "git_worktree_remove",
-  "git_worktree_remove_orphan",
+  // Git watchers are desktop-local (the phone doesn't drive OS
+  // watchers). Worktree add/remove forward to the gateway so the
+  // companion's issue-dispatch / new-workspace flows work end-to-end.
   "git_watch_root",
   "git_unwatch_root",
   // Gateway-admin + control-plane: never driven from the phone.

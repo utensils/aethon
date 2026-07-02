@@ -21,8 +21,11 @@ describe("mobile CSS layout contract", () => {
   });
 
   it("stacks dense workspace and detail rows on narrow phones", () => {
+    // Capture through the media block's own closing brace (column 0 —
+    // nested rule closers are indented) rather than anchoring on a
+    // neighbouring comment that could be reworded.
     const narrowRules = css.match(
-      /@media\s*\(max-width:\s*380px\)\s*\{([\s\S]*?)\/\* Sessions screen \*\//m,
+      /@media\s*\(max-width:\s*380px\)\s*\{([\s\S]*?)\n\}/m,
     )?.[1];
 
     expect(narrowRules).toContain(".ae-mobile-workspace");

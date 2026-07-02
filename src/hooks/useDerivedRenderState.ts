@@ -189,7 +189,7 @@ export function useDerivedRenderState({
       label: h.displayName || h.hostname,
       hint: h.isLocal
         ? "this mac"
-        : h.fingerprintPrefix === "connected"
+        : h.connected === true
           ? "connected"
           : (h.paired ? "paired" : h.hostname),
       tooltip: h.hostname,
@@ -201,8 +201,7 @@ export function useDerivedRenderState({
         ? (landing as { deviceId: string }).deviceId
         : null;
     const sidebarMobileDevices = hostInfo.mobileDevices.map((device) => {
-      const connected =
-        device.connected === true || device.fingerprintPrefix === "connected";
+      const connected = device.connected === true;
       const platform = device.hostname || "mobile";
       return {
         id: device.id,
@@ -218,6 +217,29 @@ export function useDerivedRenderState({
         tooltip: `${device.displayName || platform} · ${platform} client`,
       };
     });
+    // The mobile-device landing is a snapshot taken at select time —
+    // overlay the live entry's connection facts so connect/disconnect
+    // updates while the page is open. Label/createdAt stay from the
+    // snapshot (rename already updates it optimistically), and a device
+    // missing from the list (mid-unpair) keeps the snapshot rather than
+    // blanking the page.
+    const liveLanding =
+      landing?.kind === "mobile-device" && activeMobileDeviceId
+        ? (() => {
+            const live = hostInfo.mobileDevices.find(
+              (device) => device.id === activeMobileDeviceId,
+            );
+            if (!live) return landing;
+            const connected = live.connected === true;
+            return {
+              ...landing,
+              status: connected ? "Connected" : "Paired",
+              connected,
+              paired: live.paired === true,
+              lastSeenAt: live.lastSeen,
+            };
+          })()
+        : landing;
     const activeHost =
       hostInfo.hosts.find((h) => h.id === activeHostId) ?? null;
 
@@ -284,7 +306,7 @@ export function useDerivedRenderState({
       hasSessionTabs,
       overviewActive: landingVisible ? true : overviewActive,
       overviewTabId: OVERVIEW_TAB_ID,
-      landing,
+      landing: liveLanding,
       empty,
       emptyAndProject,
       emptyAndNoProject,
