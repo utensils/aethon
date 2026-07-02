@@ -161,6 +161,7 @@ export function useHostInfo(): UseHostInfo {
             ...host,
             isLocal: false,
             discovered: true,
+            connected: true,
             candidates:
               Array.isArray(host.candidates) && host.candidates.length > 0
                 ? host.candidates
@@ -184,14 +185,20 @@ export function useHostInfo(): UseHostInfo {
         const offRemoved = await listen<{ id: string }>("host-removed", (event) => {
           const id = event.payload?.id;
           if (!id) return;
-          if (remotesRef.current.delete(id)) {
+          const remote = remotesRef.current.get(id);
+          if (remote) {
+            remotesRef.current.set(id, {
+              ...remote,
+              connected: false,
+              discovered: true,
+              lastSeen: remote.lastSeen ?? Date.now(),
+            });
             const paired = pairedHostsRef.current.get(id);
             if (paired) {
               pairedHostsRef.current.set(id, { ...paired, connected: false });
               emitPairedHosts();
             }
             emitRemotes();
-            setActiveHostState((prev) => (prev === id ? localHost?.id ?? null : prev));
           }
         });
         const offStatus = await listen<{ id?: string; connected?: boolean }>(

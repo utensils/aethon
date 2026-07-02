@@ -9,7 +9,7 @@
 //! Resolution events are coalesced through a 250ms debounce buffer so a
 //! noisy LAN doesn't fan out hundreds of emits per second.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::net::{IpAddr, SocketAddr};
 use std::time::Duration;
 
@@ -157,6 +157,7 @@ pub fn start_browser(app: AppHandle) -> Result<(), String> {
         // browser lifetime; ServiceFound below also uses it to force
         // resolution when the cache only has a PTR record.
         let mut fullname_to_id: HashMap<String, String> = HashMap::new();
+        let mut id_to_fullnames: HashMap<String, HashSet<String>> = HashMap::new();
         let mut pending: HashMap<String, DiscoveredHost> = HashMap::new();
         let mut next_flush: Option<tokio::time::Instant> = None;
         loop {
@@ -210,11 +211,22 @@ pub fn start_browser(app: AppHandle) -> Result<(), String> {
                     }
                     let fullname = info.get_fullname().to_string();
                     fullname_to_id.insert(fullname, id.clone());
+                    id_to_fullnames
+                        .entry(id.clone())
+                        .or_default()
+                        .insert(info.get_fullname().to_string());
                     pending.insert(id, host);
                     next_flush = Some(tokio::time::Instant::now() + DEBOUNCE);
                 }
                 ServiceEvent::ServiceRemoved(_, fullname) => {
                     if let Some(id) = fullname_to_id.remove(&fullname) {
+                        if let Some(fullnames) = id_to_fullnames.get_mut(&id) {
+                            fullnames.remove(&fullname);
+                            if !fullnames.is_empty() {
+                                continue;
+                            }
+                        }
+                        id_to_fullnames.remove(&id);
                         pending.remove(&id);
                         let _ = app.emit("host-removed", HostRemoved { id });
                     }
