@@ -95,6 +95,33 @@ describe("handleMobileNav", () => {
     expect((state.mobileNav as { active?: string }).active).toBe("chat");
   });
 
+  it("open-file opens the viewer with the tapped root+path", () => {
+    const { ctx, applySetState } = buildRouteFixture();
+    const handled = handleMobileNav(
+      {
+        component: { id: "files", type: "mobile-file-list" },
+        eventType: "open-file",
+        data: { root: "/repo", path: "src/main.ts" },
+      },
+      ctx,
+    );
+    expect(handled).toBe(true);
+    expect(applySetState({}).mobileFileViewer).toEqual({
+      open: true,
+      root: "/repo",
+      path: "src/main.ts",
+    });
+  });
+
+  it("viewer close clears the open flag", () => {
+    const { ctx, applySetState } = buildRouteFixture();
+    handleMobileNav(
+      { component: { id: "viewer", type: "mobile-file-viewer" }, eventType: "close" },
+      ctx,
+    );
+    expect((applySetState({}).mobileFileViewer as { open?: boolean }).open).toBe(false);
+  });
+
   it("ignores unrelated component types", () => {
     const { ctx } = buildRouteFixture();
     const handled = handleMobileNav(

@@ -296,3 +296,62 @@
   width: 1em;
   color: var(--text-dim);
 }
+
+/* Read-only file viewer overlay */
+.ae-mobile-viewer {
+  position: fixed;
+  inset: 0;
+  z-index: 900;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  padding-top: var(--ae-safe-top);
+  padding-bottom: var(--ae-safe-bottom);
+}
+.ae-mobile-viewer-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+}
+.ae-mobile-viewer-name {
+  flex: 1 1 auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.9rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ae-mobile-viewer-close {
+  flex: 0 0 auto;
+  width: 40px;
+  height: 40px;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font-size: 1.6rem;
+  line-height: 1;
+  cursor: pointer;
+}
+.ae-mobile-viewer-body {
+  flex: 1 1 auto;
+  overflow: auto;
+}
+.ae-mobile-viewer-pre {
+  margin: 0;
+  padding: 12px 14px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.82rem;
+  line-height: 1.5;
+  white-space: pre;
+  color: var(--text);
+}
+.ae-mobile-viewer-error {
+  color: var(--danger, #e5484d);
+  padding: 16px 14px;
+}
+.ae-mobile-viewer-loading {
+  color: var(--text-dim);
+  padding: 16px 14px;
+}

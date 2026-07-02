@@ -150,6 +150,8 @@ export const BUILTIN_ROUTE_TABLE: ReadonlyMap<string, readonly EventRouteHandler
     // (these component types never appear in the workstation layout).
     ["type:mobile-nav", [handleMobileNav]],
     ["type:mobile-sessions", [handleMobileNav]],
+    ["type:mobile-file-list", [handleMobileNav]],
+    ["type:mobile-file-viewer", [handleMobileNav]],
     ["type:shell-canvas", [handleShareModeCycle]],
     ["type:share-mode-badge", [handleShareModeCycle]],
     ["type:editor-canvas", [handleEditorCanvas]],
