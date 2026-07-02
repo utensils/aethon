@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   handleSidebarResize,
   handleSidebarResizeEnd,
@@ -19,6 +19,11 @@ import {
 import { OVERVIEW_TAB_ID } from "../types/tab";
 import { buildRouteFixture } from "./testFixtures";
 
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+});
+
 describe("handleSidebarResize", () => {
   it("rewrites just the leading column token", async () => {
     const { ctx, applySetState } = buildRouteFixture();
@@ -36,6 +41,41 @@ describe("handleSidebarResize", () => {
     });
     expect((next.layout as { columns: string }).columns).toBe(
       "280px minmax(0,1fr) 320px",
+    );
+  });
+});
+
+describe("handleSectionedSelect remote host pairing", () => {
+  it("prompts for the visible host code and invokes desktop pairing", async () => {
+    const promptSpy = vi.fn(() => "1234 5678");
+    vi.stubGlobal("window", { prompt: promptSpy });
+    const { ctx, mocks } = buildRouteFixture();
+
+    const handled = await handleSectionedSelect(
+      {
+        component: { id: "sidebar", type: "sidebar" },
+        eventType: "pair-remote-host",
+        data: {
+          sectionId: "hosts",
+          itemId: "remote:bender",
+          label: "bender",
+          hostname: "aethon-123.local",
+          fingerprint: "abcdef",
+          candidates: ["aethon-123.local:38123"],
+        },
+      },
+      ctx,
+    );
+
+    expect(handled).toBe(true);
+    expect(promptSpy).toHaveBeenCalled();
+    expect(mocks.invoke).toHaveBeenCalledWith("remote_host_pair", {
+      host: "aethon-123.local:38123",
+      fingerprint: "abcdef",
+      code: "12345678",
+    });
+    expect(mocks.pushNotification).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: "success", title: "Paired bender" }),
     );
   });
 });

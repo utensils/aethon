@@ -191,6 +191,11 @@ export function useDerivedRenderState({
     const sidebarHosts = hostInfo.hosts.map((h) => ({
       id: h.id,
       label: h.displayName || h.hostname,
+      hostname: h.hostname,
+      fingerprint: h.fingerprint ?? h.fingerprintPrefix,
+      candidates: h.candidates,
+      paired: h.paired === true,
+      discovered: h.discovered === true,
       hint: h.isLocal
         ? "this mac"
         : h.connected === true

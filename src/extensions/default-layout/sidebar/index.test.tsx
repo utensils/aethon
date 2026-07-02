@@ -640,6 +640,38 @@ describe("Sidebar host groups", () => {
     );
   });
 
+  it("offers pairing directly on visible discovered desktop hosts", () => {
+    const { onEvent } = renderWithHost({
+      hosts: [
+        { id: "local:abc", label: "halcyon", hint: "this mac", active: true },
+        {
+          id: "remote:bender",
+          label: "bender",
+          hint: "aethon-123.local",
+          active: false,
+          discovered: true,
+          paired: false,
+          hostname: "aethon-123.local",
+          fingerprint: "123456",
+          candidates: ["aethon-123.local:38123"],
+        },
+      ],
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Pair bender" }));
+    expect(onEvent).toHaveBeenCalledWith(
+      "pair-remote-host",
+      {
+        sectionId: "hosts",
+        itemId: "remote:bender",
+        label: "bender",
+        hostname: "aethon-123.local",
+        fingerprint: "123456",
+        candidates: ["aethon-123.local:38123"],
+      },
+      "remote:bender",
+    );
+  });
+
   it("renders project rows as two-line cards with branch + ahead/behind meta", () => {
     renderWithHost({
       projectItem: {

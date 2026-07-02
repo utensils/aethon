@@ -637,6 +637,23 @@ body.ae-resizing-sidebar .a2ui-layout {
   color: var(--accent);
   background: var(--accent-soft);
 }
+.ae-host-pair-button {
+  flex: 0 0 auto;
+  border: 1px solid var(--accent-soft-border, var(--accent-soft));
+  border-radius: 6px;
+  padding: 2px 8px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font: inherit;
+  font-size: var(--font-size-xs, 12px);
+  font-weight: 700;
+  line-height: 1.4;
+  cursor: pointer;
+}
+.ae-host-pair-button:hover {
+  background: var(--accent);
+  color: var(--accent-contrast, var(--bg));
+}
 
 /* The host's projects, nested one tier in. A left rail makes the
    grouping unmistakable and scales to multiple stacked hosts — each

@@ -19,6 +19,11 @@ import { Chevron } from "./chevron";
 export interface HostGroupItem {
   id: string;
   label: string;
+  hostname?: string;
+  fingerprint?: string;
+  candidates?: string[];
+  paired?: boolean;
+  discovered?: boolean;
   /** "this mac" for the local host, otherwise the remote hostname. */
   hint?: string;
   tooltip?: string;
@@ -39,6 +44,7 @@ export interface HostGroupProps {
   collapsible: boolean;
   onToggleExpand: () => void;
   onSelectHost: () => void;
+  onPairHost?: () => void;
   children?: ReactNode;
 }
 
@@ -71,9 +77,11 @@ export function HostGroup({
   collapsible,
   onToggleExpand,
   onSelectHost,
+  onPairHost,
   children,
 }: HostGroupProps) {
   const isLocal = (host.hint ?? "").toLowerCase() === "this mac";
+  const canPair = !isLocal && host.paired !== true && host.discovered === true;
   return (
     <div
       className={[
@@ -125,6 +133,19 @@ export function HostGroup({
         >
           {isLocal ? "this mac" : (host.hint ?? "remote")}
         </span>
+        {canPair ? (
+          <button
+            type="button"
+            className="ae-host-pair-button"
+            aria-label={`Pair ${host.label}`}
+            onClick={(event) => {
+              event.stopPropagation();
+              onPairHost?.();
+            }}
+          >
+            Pair
+          </button>
+        ) : null}
       </div>
       {expanded && children ? (
         <div className="ae-host-group-body">{children}</div>

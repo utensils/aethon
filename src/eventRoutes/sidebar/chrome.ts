@@ -31,6 +31,22 @@ interface ProjectSelectItem {
   remoteId?: string;
 }
 
+interface RemoteHostPairItem {
+  sectionId?: string;
+  itemId?: string;
+  label?: string;
+  hostname?: string;
+  fingerprint?: string;
+  candidates?: string[];
+}
+
+function candidateHost(item: RemoteHostPairItem): string {
+  const firstCandidate = item.candidates?.find(
+    (candidate) => typeof candidate === "string" && candidate.trim().length > 0,
+  );
+  return firstCandidate ?? item.hostname ?? "";
+}
+
 /** Sidebar select + dropdown chrome pickers (model-picker /
  *  appearance-menu) all use the same `{sectionId, itemId}` event
  *  shape. Registered under three route-table type keys
@@ -45,9 +61,55 @@ export const handleSectionedSelect: EventRouteHandler = async (
   if (
     eventType !== "select" &&
     eventType !== "thinking-level" &&
+    eventType !== "pair-remote-host" &&
     eventType !== "codex-fast-mode"
   ) {
     return false;
+  }
+
+  if (eventType === "pair-remote-host") {
+    const item = data as RemoteHostPairItem | undefined;
+    const host = item ? candidateHost(item) : "";
+    const fingerprint = item?.fingerprint ?? "";
+    if (!host || !fingerprint) {
+      ctx.pushNotification({
+        title: "Pair host unavailable",
+        message: "Aethon can see this host, but its pairing address is missing.",
+        kind: "error",
+        durationMs: 6000,
+      });
+      return true;
+    }
+    const label = item?.label || host;
+    const rawCode = window.prompt(
+      `Enter the pairing code shown on ${label}.\n\nOn ${label}: Settings -> Remote Devices -> Start pairing.`,
+    );
+    const code = (rawCode ?? "").replace(/\D/g, "");
+    if (!code) return true;
+    if (code.length !== 8) {
+      ctx.pushNotification({
+        title: "Pairing code must be 8 digits",
+        kind: "error",
+        durationMs: 5000,
+      });
+      return true;
+    }
+    try {
+      await ctx.invoke("remote_host_pair", { host, fingerprint, code });
+      ctx.pushNotification({
+        title: `Paired ${label}`,
+        kind: "success",
+        durationMs: 3000,
+      });
+    } catch (err) {
+      ctx.pushNotification({
+        title: `Pair ${label} failed`,
+        message: String(err),
+        kind: "error",
+        durationMs: 8000,
+      });
+    }
+    return true;
   }
 
   const selected = data as { sectionId?: string; itemId?: string } | undefined;
