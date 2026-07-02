@@ -63,6 +63,14 @@ async fn client_session(ctx: GatewayCtx, socket: WebSocket) {
         }
     };
 
+    // Register the live handle BEFORE announcing hello_ok, so a client
+    // that revokes the instant it sees hello_ok can't race the
+    // registration — the handle is guaranteed to exist by the time the
+    // client can act, and `close_device`'s notify_one stores a permit
+    // even before the session loop starts awaiting it.
+    ctx.remote.devices.touch(&device.id);
+    let revoked = ctx.remote.register_live(&device.id);
+
     let hello_ok = ServerFrame::HelloOk {
         protocol: PROTOCOL_VERSION,
         host: ctx.info.clone(),
@@ -72,14 +80,16 @@ async fn client_session(ctx: GatewayCtx, socket: WebSocket) {
     match hello_ok.wire() {
         Ok(wire) => {
             if sink.send(Message::Text(wire)).await.is_err() {
+                ctx.remote.deregister_live(&device.id, &revoked);
                 return;
             }
         }
-        Err(_) => return,
+        Err(_) => {
+            ctx.remote.deregister_live(&device.id, &revoked);
+            return;
+        }
     }
 
-    ctx.remote.devices.touch(&device.id);
-    let revoked = ctx.remote.register_live(&device.id);
     tracing::info!(
         target: "aethon::server::remote",
         "device {} ({}) connected", device.id, device.name

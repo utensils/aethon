@@ -112,11 +112,17 @@ async fn full_flow_pair_hello_invoke_subscribe_event() {
     assert_eq!(result["ok"], true);
     assert_eq!(result["data"]["cmd"], "host_info");
 
-    // Subscribe, then publish through the hub — the event must arrive
-    // with the payload verbatim.
+    // Subscribe, then fire a second invoke as a barrier: inbound frames
+    // are processed in order, so once its result returns the `sub` has
+    // been applied — no sleep, no race with the publish below.
     send(&mut ws, json!({ "t": "sub", "topics": ["agent-response"] })).await;
-    // Small yield so the sub frame is processed before we publish.
-    tokio::time::sleep(Duration::from_millis(50)).await;
+    send(
+        &mut ws,
+        json!({ "t": "invoke", "id": "i-2", "cmd": "host_info", "args": {} }),
+    )
+    .await;
+    let barrier = next_json(&mut ws).await;
+    assert_eq!(barrier["id"], "i-2");
     h.remote
         .hub
         .publish("agent-response", "\"{\\\"type\\\":\\\"ready\\\"}\"".to_string());
@@ -173,8 +179,9 @@ async fn revocation_closes_the_live_session() {
     let hello_ok = next_json(&mut ws).await;
     let device_id = hello_ok["deviceId"].as_str().unwrap().to_string();
 
-    // Let the session register its live handle before revoking.
-    tokio::time::sleep(Duration::from_millis(50)).await;
+    // hello_ok is sent only after the live handle is registered, so no
+    // sleep is needed; close_device's notify_one stores a permit even if
+    // the session loop hasn't started awaiting revocation yet.
     h.remote.devices.revoke(&device_id).unwrap();
     h.remote.close_device(&device_id);
 

@@ -11,6 +11,10 @@
     "moduleResolution": "bundler",
     "allowImportingTsExtensions": true,
     "resolveJsonModule": true,
+    "paths": {
+      "@tauri-real/core": ["./node_modules/@tauri-apps/api/core"],
+      "@tauri-real/event": ["./node_modules/@tauri-apps/api/event"]
+    },
     "verbatimModuleSyntax": true,
     "moduleDetection": "force",
     "noEmit": true,

@@ -82,13 +82,18 @@ impl RemoteState {
     }
 
     /// Close every live session for a device (post-revocation).
+    /// `notify_one` (not `notify_waiters`) so the signal survives the
+    /// startup window: if the session task hasn't reached
+    /// `revoked.notified()` yet, a permit is stored and the next await
+    /// completes immediately — `notify_waiters` would drop it and the
+    /// socket would linger until its next reconnect.
     pub fn close_device(&self, device_id: &str) {
         let Ok(live) = self.live.lock() else {
             return;
         };
         if let Some(handles) = live.get(device_id) {
             for handle in handles {
-                handle.notify_waiters();
+                handle.notify_one();
             }
         }
     }

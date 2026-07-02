@@ -1,0 +1,39 @@
+[package]
+name = "aethon-mobile"
+version = "0.11.2"
+edition = "2024"
+license = "MIT"
+description = "Aethon iOS companion — thin Tauri shell that bridges the reused web UI to a paired desktop over the remote gateway"
+authors = ["James Brink <brink.james@gmail.com>"]
+
+# Standalone workspace: the crate must NOT join the desktop workspace,
+# whose heavy deps (portable-pty, cpal, candle, tray, updater sidecar)
+# don't build for iOS.
+[workspace]
+
+[lib]
+name = "aethon_mobile_lib"
+# staticlib for the iOS build, cdylib/rlib for desktop dev + tests.
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-opener = "2"
+tauri-plugin-notification = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["rt", "rt-multi-thread", "sync", "macros", "net", "time"] }
+tokio-tungstenite = { version = "0.24", default-features = false, features = ["connect", "rustls-tls-native-roots"] }
+tokio-rustls = { version = "0.26", default-features = false, features = ["ring"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+futures-util = "0.3"
+sha2 = "0.10"
+tracing = "0.1"
+
+[features]
+# Matches Tauri's mobile detection so `#[cfg(mobile)]` / the mobile
+# entry point compile in.
+default = []
