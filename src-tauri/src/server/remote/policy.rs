@@ -51,6 +51,7 @@ pub const COMMAND_POLICIES: &[(&str, RemotePolicy)] = &[
     ("agent_broadcast_command", Deny(LIFECYCLE)),
     ("force_restart_agent", Deny(LIFECYCLE)),
     ("reload_agent", Deny(LIFECYCLE)),
+    ("request_worker_reloads", Deny(LIFECYCLE)),
     ("agent_diagnostics", Direct),
     ("reconcile_agent_workers", Deny(LIFECYCLE)),
     ("dispatch_a2ui_event", Direct),

@@ -45,6 +45,7 @@ import { handleQueueReset } from "./queueReset";
 import { handleQueued } from "./queued";
 import { handleReady } from "./ready";
 import { handleReloadRequired } from "./reloadRequired";
+import { handleWorkerRefreshRequired } from "./workerRefreshRequired";
 import { handleRegisterHighlightGrammar } from "./registerHighlightGrammar";
 import { handleResponse } from "./response";
 import { handleResponseDelta } from "./responseDelta";
@@ -109,6 +110,7 @@ export const bridgeMessageHandlers: Readonly<
   queued: handleQueued,
   ready: handleReady,
   reload_required: handleReloadRequired,
+  worker_refresh_required: handleWorkerRefreshRequired,
   register_highlight_grammar: handleRegisterHighlightGrammar,
   response: handleResponse,
   response_delta: handleResponseDelta,

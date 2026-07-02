@@ -77,6 +77,10 @@ const STUB_EXACT = new Set<string>([
   // project announcement at boot.
   "watch_project_extensions",
   "unwatch_project_extensions",
+  // Worker refresh after an extension hot toggle: the desktop webview
+  // performs it; the companion receiving the broadcast must not burn a
+  // doomed Deny round-trip.
+  "request_worker_reloads",
   // Gateway-admin + control-plane: never driven from the phone.
   "server_status",
   "server_start",

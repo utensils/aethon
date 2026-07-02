@@ -1,7 +1,8 @@
-import type { AethonAgentState } from "./state";
+import type { AethonAgentState, AethonExtensionApi } from "./state";
 import type { ExtensionSource } from "./state";
 import type { DispatcherDeps, InboundMessage } from "./dispatcherTypes";
 import { saveDisabledExtensionsSnapshot } from "./disabled-extensions";
+import { canHotToggle, hotReloadExtensions } from "./extension-hot-toggle";
 import { notify } from "./notifications";
 
 function extensionLifecycleSource(
@@ -17,6 +18,7 @@ export async function handleSetExtensionDisabled(
   deps: DispatcherDeps,
   notifDeps: { send: (m: Record<string, unknown>) => void },
   msg: InboundMessage,
+  extensionApi?: AethonExtensionApi,
 ): Promise<void> {
   const name = (msg as { name?: unknown }).name;
   const disabled = (msg as { disabled?: unknown }).disabled;
@@ -116,19 +118,54 @@ export async function handleSetExtensionDisabled(
     });
     return;
   }
-  // Surface the change to the frontend immediately. The loaded set
-  // doesn't change until restart; the sidebar shows a `(disabled)` row
-  // by deriving from `loadedExtensions` plus the explicit disabled list.
-  // Re-emitting the lifecycle event gives layouts and the default system
-  // message handler immediate feedback before the bridge restart.
+  // Surface the change to the frontend immediately. The sidebar shows a
+  // `(disabled)` row by deriving from `loadedExtensions` plus the
+  // explicit disabled list; the hot path below (or the respawn) makes
+  // the loaded set follow.
   deps.send({
     type: "extension_lifecycle",
     name,
     source: lifecycleSource,
     status: disabled ? "disabled" : "enabled",
   });
-  // Notify the user before signalling the bridge restart so the toast
-  // is rendered before agent-reloaded clears the in-flight UI state.
+
+  // Preferred path: apply the toggle IN process — full teardown +
+  // reload of every extension source honoring the updated disabled set
+  // — instead of killing the bridge (sessions, MCP, and in-flight
+  // prompts survive). Per-tab workers loaded their extensions at spawn,
+  // so the frontend is asked to drain them for a lazy respawn.
+  const hot = extensionApi
+    ? canHotToggle(state, lifecycleSource)
+    : { ok: false as const, reason: "extension api unavailable" };
+  if (hot.ok && extensionApi) {
+    const outcome = await hotReloadExtensions(state, deps, extensionApi);
+    if (outcome === "applied") {
+      deps.send({
+        type: "extension_lifecycle",
+        name,
+        source: lifecycleSource,
+        status: disabled ? "disabled" : "enabled",
+        hotApplied: true,
+      });
+      void notify(state, notifDeps, {
+        id: `aethon:extension-toggle:${name}`,
+        title: disabled ? `Disabled \`${name}\`` : `Enabled \`${name}\``,
+        message: "Applied without a bridge restart.",
+        kind: "info",
+        durationMs: 4000,
+      });
+      deps.send({
+        type: "worker_refresh_required",
+        reason: `extension-toggle:${name}`,
+      });
+      return;
+    }
+  }
+
+  // Fallback: kill-and-respawn (pi extensions, kill-switch, hot-path
+  // failure). Notify the user before signalling the bridge restart so
+  // the toast is rendered before agent-reloaded clears the in-flight UI
+  // state.
   void notify(state, notifDeps, {
     id: `aethon:extension-toggle:${name}`,
     title: disabled ? `Disabled \`${name}\`` : `Enabled \`${name}\``,

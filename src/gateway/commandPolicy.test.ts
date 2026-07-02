@@ -34,6 +34,7 @@ describe("mobile command policy", () => {
       // was a guaranteed policy Deny per project announcement at boot.
       "watch_project_extensions",
       "unwatch_project_extensions",
+      "request_worker_reloads",
       "updater_available",
       "write_state",
       "toggle_devtools",

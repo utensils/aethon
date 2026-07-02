@@ -277,7 +277,13 @@ export async function dispatchInboundMessage(
         state.bootLayout = msg.payload;
         break;
       case "set_extension_disabled":
-        await handleSetExtensionDisabled(state, deps, notifDeps, msg);
+        await handleSetExtensionDisabled(
+          state,
+          deps,
+          notifDeps,
+          msg,
+          extensionApi,
+        );
         break;
       case "set_session_label":
         await handleSetSessionLabel(state, deps, msg);

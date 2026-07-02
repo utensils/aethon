@@ -229,6 +229,7 @@ pub fn run() {
             agent_commands::agent_broadcast_command,
             agent_commands::force_restart_agent,
             agent_commands::reload_agent,
+            commands::extensions::request_worker_reloads,
             agent_commands::agent_diagnostics,
             agent_commands::reconcile_agent_workers,
             agent_commands::dispatch_a2ui_event,
