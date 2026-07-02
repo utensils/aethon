@@ -516,10 +516,7 @@ mod tests {
     #[test]
     fn oversized_run_keeps_tail_and_flags_truncation() {
         let chunk = "x".repeat(40 * 1024);
-        let batch = vec![
-            shell_frame(1, "t1", &chunk),
-            shell_frame(2, "t1", &chunk),
-        ];
+        let batch = vec![shell_frame(1, "t1", &chunk), shell_frame(2, "t1", &chunk)];
         let out = coalesce_batch(&batch);
         assert_eq!(out.len(), 1);
         let parsed: serde_json::Value = serde_json::from_str(&out[0]).unwrap();
@@ -534,10 +531,7 @@ mod tests {
     fn truncation_respects_utf8_boundaries() {
         // 4-byte scorpions guarantee the naive cut lands mid-char.
         let chunk = "🦂".repeat(20 * 1024);
-        let batch = vec![
-            shell_frame(1, "t1", &chunk),
-            shell_frame(2, "t1", &chunk),
-        ];
+        let batch = vec![shell_frame(1, "t1", &chunk), shell_frame(2, "t1", &chunk)];
         let out = coalesce_batch(&batch);
         let parsed: serde_json::Value = serde_json::from_str(&out[0]).unwrap();
         let content = parsed["payload"]["content"].as_str().unwrap();

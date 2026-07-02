@@ -70,10 +70,7 @@ struct AssetQuery {
 /// paired transport. Routed through the relay so it reuses the exact
 /// jailed read path (`read_paste_image_base64`: pastes dir only,
 /// 32 MiB cap) rather than growing a second file-serving surface.
-async fn asset_handler(
-    State(ctx): State<GatewayCtx>,
-    Query(query): Query<AssetQuery>,
-) -> Response {
+async fn asset_handler(State(ctx): State<GatewayCtx>, Query(query): Query<AssetQuery>) -> Response {
     use base64::Engine;
     if ctx.remote.devices.verify_token(&query.token).is_none() {
         return (StatusCode::UNAUTHORIZED, "unauthorized").into_response();
@@ -122,8 +119,7 @@ pub async fn serve(
             )
             .await
             .map_err(|e| format!("tls config: {e}"))?;
-            let listener =
-                std::net::TcpListener::bind(addr).map_err(|e| format!("bind: {e}"))?;
+            let listener = std::net::TcpListener::bind(addr).map_err(|e| format!("bind: {e}"))?;
             listener
                 .set_nonblocking(true)
                 .map_err(|e| format!("nonblocking: {e}"))?;

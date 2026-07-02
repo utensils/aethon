@@ -189,6 +189,16 @@ pub const COMMAND_POLICIES: &[(&str, RemotePolicy)] = &[
     ("voice_cancel_recording", Deny(DESKTOP_ONLY)),
     ("voice_speak", Deny(DESKTOP_ONLY)),
     ("voice_stop_playback", Deny(DESKTOP_ONLY)),
+    // voice conversation engine (device-local mic + speakers)
+    ("voice_convo_start", Deny(DESKTOP_ONLY)),
+    ("voice_convo_stop", Deny(DESKTOP_ONLY)),
+    ("voice_convo_status", Deny(DESKTOP_ONLY)),
+    ("voice_convo_force_end_turn", Deny(DESKTOP_ONLY)),
+    ("voice_convo_speak_chunk", Deny(DESKTOP_ONLY)),
+    ("voice_convo_speak_end", Deny(DESKTOP_ONLY)),
+    ("voice_convo_cancel_speech", Deny(DESKTOP_ONLY)),
+    ("voice_convo_test_providers", Deny(DESKTOP_ONLY)),
+    ("voice_convo_list_voices", Deny(DESKTOP_ONLY)),
     // native windows
     ("native_window_open_canvas", Deny(DESKTOP_ONLY)),
     ("native_window_save_canvas", Deny(DESKTOP_ONLY)),
@@ -261,15 +271,20 @@ pub fn root_arg_value(cmd: &str, args: &serde_json::Value) -> Option<String> {
     let key = match cmd {
         "git_status" => "path",
         "git_working_context" => "cwd",
-        "git_worktrees" | "git_branch_list" | "git_fetch_all" | "gh_branch_status"
-        | "gh_checks" | "gh_repo_overview" | "gh_repo_avatar_url" | "gh_issue_list"
-        | "gh_issue_view" | "fs_discover_project_icon" => "projectPath",
+        "git_worktrees"
+        | "git_branch_list"
+        | "git_fetch_all"
+        | "gh_branch_status"
+        | "gh_checks"
+        | "gh_repo_overview"
+        | "gh_repo_avatar_url"
+        | "gh_issue_list"
+        | "gh_issue_view"
+        | "fs_discover_project_icon" => "projectPath",
         // fs_* + git diff/status/show family all name it `root`.
         _ => "root",
     };
-    args.get(key)
-        .and_then(|v| v.as_str())
-        .map(str::to_string)
+    args.get(key).and_then(|v| v.as_str()).map(str::to_string)
 }
 
 /// `shell_open` may omit its cwd (defaults to home); every other
@@ -427,9 +442,7 @@ mod tests {
             agent_command_remote_denial(&json!({"type": "mutation_ack", "mutationId": "m1"}))
                 .is_some()
         );
-        assert!(
-            agent_command_remote_denial(&json!({"type": "frontend_state_patch"})).is_some()
-        );
+        assert!(agent_command_remote_denial(&json!({"type": "frontend_state_patch"})).is_some());
         assert!(agent_command_remote_denial(&json!({"type": "set_model"})).is_none());
         assert!(agent_command_remote_denial(&json!({"no": "type"})).is_none());
     }
@@ -450,13 +463,15 @@ mod tests {
             Some("/w")
         );
         assert_eq!(
-            root_arg_value("gh_checks", &json!({"projectPath": "/p", "branch": "main"}))
-                .as_deref(),
+            root_arg_value("gh_checks", &json!({"projectPath": "/p", "branch": "main"})).as_deref(),
             Some("/p")
         );
         assert_eq!(
-            root_arg_value("shell_open", &json!({"args": {"tabId": "t", "cwd": "/proj"}}))
-                .as_deref(),
+            root_arg_value(
+                "shell_open",
+                &json!({"args": {"tabId": "t", "cwd": "/proj"}})
+            )
+            .as_deref(),
             Some("/proj")
         );
         // shell_open with no cwd → None (allowed default); others → None

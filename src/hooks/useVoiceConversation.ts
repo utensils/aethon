@@ -100,6 +100,10 @@ export function useVoiceConversation(
   const [resolvedEngine, setResolvedEngine] = useState<ConversationEngineKind>(
     "lfm2",
   );
+  // Invalidates in-flight "auto" probes: bumped on every enter() and exit()
+  // so a voiceConvoStatus() that resolves after the user left (or re-entered)
+  // can't re-activate a conversation they already ended.
+  const enterAttemptRef = useRef(0);
   const usingCascade = resolvedEngine === "cascade" && !fellBack;
 
   // A dead cascade session (error while idle-but-active: failed start or
@@ -132,6 +136,7 @@ export function useVoiceConversation(
   return {
     ...controller,
     enter: () => {
+      const attempt = ++enterAttemptRef.current;
       const configured = options.engine ?? "auto";
       if (configured === "cascade") {
         setFellBack(false);
@@ -145,8 +150,11 @@ export function useVoiceConversation(
         return;
       }
       // Auto: probe availability NOW, so keys/models added since boot count.
+      // The attempt token gates the resolution — an exit() (or re-enter)
+      // while the probe is in flight makes this resolution a no-op.
       void voiceConvoStatus()
         .then((status) => {
+          if (attempt !== enterAttemptRef.current) return;
           if (status.available) {
             setFellBack(false);
             setResolvedEngine("cascade");
@@ -157,11 +165,13 @@ export function useVoiceConversation(
           }
         })
         .catch(() => {
+          if (attempt !== enterAttemptRef.current) return;
           setResolvedEngine("lfm2");
           lfm2Enter();
         });
     },
     exit: () => {
+      enterAttemptRef.current += 1;
       controller.exit();
       // The next session gets a fresh shot at the cascade.
       setFellBack(false);

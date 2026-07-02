@@ -32,7 +32,8 @@ async fn spawn_gateway() -> Harness {
         remote: Arc::clone(&remote),
         relay: Arc::new(EchoRelay),
     };
-    let router = crate::server::http::router(ctx.info.clone(), ctx.remote.clone(), ctx.relay.clone());
+    let router =
+        crate::server::http::router(ctx.info.clone(), ctx.remote.clone(), ctx.relay.clone());
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
     tokio::spawn(async move {
@@ -60,9 +61,8 @@ async fn pair(h: &Harness) -> String {
     resp["deviceToken"].as_str().unwrap().to_string()
 }
 
-type Ws = tokio_tungstenite::WebSocketStream<
-    tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
->;
+type Ws =
+    tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
 
 async fn connect(h: &Harness) -> Ws {
     let (ws, _) = tokio_tungstenite::connect_async(format!("ws://{}/ws", h.addr))
@@ -95,7 +95,11 @@ async fn full_flow_pair_hello_invoke_subscribe_event() {
     let token = pair(&h).await;
     let mut ws = connect(&h).await;
 
-    send(&mut ws, json!({ "t": "hello", "protocol": 1, "token": token })).await;
+    send(
+        &mut ws,
+        json!({ "t": "hello", "protocol": 1, "token": token }),
+    )
+    .await;
     let hello_ok = next_json(&mut ws).await;
     assert_eq!(hello_ok["t"], "hello_ok");
     assert_eq!(hello_ok["host"]["displayName"], "test");
@@ -123,9 +127,10 @@ async fn full_flow_pair_hello_invoke_subscribe_event() {
     .await;
     let barrier = next_json(&mut ws).await;
     assert_eq!(barrier["id"], "i-2");
-    h.remote
-        .hub
-        .publish("agent-response", "\"{\\\"type\\\":\\\"ready\\\"}\"".to_string());
+    h.remote.hub.publish(
+        "agent-response",
+        "\"{\\\"type\\\":\\\"ready\\\"}\"".to_string(),
+    );
     let event = next_json(&mut ws).await;
     assert_eq!(event["t"], "event");
     assert_eq!(event["topic"], "agent-response");
@@ -152,14 +157,16 @@ async fn unsubscribed_topic_is_not_delivered() {
     let h = spawn_gateway().await;
     let token = pair(&h).await;
     let mut ws = connect(&h).await;
-    send(&mut ws, json!({ "t": "hello", "protocol": 1, "token": token })).await;
+    send(
+        &mut ws,
+        json!({ "t": "hello", "protocol": 1, "token": token }),
+    )
+    .await;
     assert_eq!(next_json(&mut ws).await["t"], "hello_ok");
 
     // No sub for agent-response; publish, then invoke — the invoke
     // result must be the next frame (event was filtered out).
-    h.remote
-        .hub
-        .publish("agent-response", "\"x\"".to_string());
+    h.remote.hub.publish("agent-response", "\"x\"".to_string());
     send(
         &mut ws,
         json!({ "t": "invoke", "id": "i-9", "cmd": "host_info", "args": {} }),
@@ -175,7 +182,11 @@ async fn revocation_closes_the_live_session() {
     let h = spawn_gateway().await;
     let token = pair(&h).await;
     let mut ws = connect(&h).await;
-    send(&mut ws, json!({ "t": "hello", "protocol": 1, "token": token.clone() })).await;
+    send(
+        &mut ws,
+        json!({ "t": "hello", "protocol": 1, "token": token.clone() }),
+    )
+    .await;
     let hello_ok = next_json(&mut ws).await;
     let device_id = hello_ok["deviceId"].as_str().unwrap().to_string();
 

@@ -1,12 +1,13 @@
 /**
- * The voice brain's two tools. It gets NOTHING else (`noTools: "builtin"`) —
- * the brain coordinates; the work agent works.
+ * The voice brain's three tools. It gets NOTHING else (`noTools: "builtin"`)
+ * — the brain coordinates; the work agent works.
  *
  * `dispatch_task` rides the same `aethon.tasks.start` path the dashboard and
  * `task` tool use (frontend `dashboardQuery op:"start_task"`), launching a
- * non-focused work-agent tab. `check_status` answers "how's it going" from
- * the brain's own dispatch registry plus the bridge's live prompt-in-flight
- * view.
+ * non-focused work-agent tab. `send_followup` steers an already-running task
+ * (by id, label, or unique substring) instead of dispatching a duplicate.
+ * `check_status` answers "how's it going" from the brain's own dispatch
+ * registry plus the bridge's live prompt-in-flight view.
  */
 
 import { Type } from "typebox";
