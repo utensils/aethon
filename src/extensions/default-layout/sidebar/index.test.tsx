@@ -7,6 +7,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 // Force the macOS branch so the brand-strip drag-region assertion is
 // deterministic under jsdom (navigator.platform is empty there).
@@ -661,7 +662,26 @@ describe("Sidebar host groups", () => {
     });
     const localProjects = [{ id: "project:local", label: "local-aethon" }];
     const remoteProjects = [
-      { id: "remote:bender::project::nix", label: "nix" },
+      {
+        id: "remote:bender::project::nix",
+        remoteId: "nix",
+        hostId: "remote:bender",
+        label: "nix",
+        workspaces: [
+          {
+            id: "remote:bender::workspace::feature",
+            remoteId: "feature",
+            remoteProjectId: "nix",
+            projectId: "remote:bender::project::nix",
+            hostId: "remote:bender",
+            label: "feature",
+            branch: "feature",
+            path: "/remote/nix-feature",
+            active: false,
+            isMain: false,
+          },
+        ],
+      },
     ];
     const stateFor = (activeHostId: string) => ({
       project: null,
@@ -705,6 +725,22 @@ describe("Sidebar host groups", () => {
     fireEvent.click(screen.getByRole("button", { name: "Expand host" }));
     expect(screen.getByText("local-aethon")).toBeTruthy();
     expect(screen.getByText("nix")).toBeTruthy();
+    const remoteGroup = screen.getByText("bender").closest(".ae-host-group");
+    expect(remoteGroup).toBeTruthy();
+    expect(
+      within(remoteGroup as HTMLElement).queryByText("feature"),
+    ).toBeNull();
+    expect(
+      within(remoteGroup as HTMLElement).queryByText("Open project…"),
+    ).toBeNull();
+    fireEvent.click(
+      within(remoteGroup as HTMLElement).getByRole("button", {
+        name: "Expand",
+      }),
+    );
+    expect(
+      within(remoteGroup as HTMLElement).getByText("feature"),
+    ).toBeTruthy();
     fireEvent.click(screen.getByText("bender"));
 
     view.rerender(

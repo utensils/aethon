@@ -141,6 +141,9 @@ export function Sidebar({
   const [hostExpansionOverrides, setHostExpansionOverrides] = useState<
     Record<string, boolean>
   >({});
+  const [projectExpansionOverrides, setProjectExpansionOverrides] = useState<
+    Record<string, boolean>
+  >({});
   const preserveExpandedHosts = useCallback(() => {
     setHostExpansionOverrides((prev) => {
       let next: Record<string, boolean> | null = null;
@@ -269,19 +272,35 @@ export function Sidebar({
                 : host.active && Array.isArray(sidebarState.projects)
                   ? (sidebarState.projects as SidebarItem[])
                   : [];
+              const hostProjectsWithExpansion = hostProjects.map((project) => {
+                const override =
+                  projectExpansionOverrides[`${host.id}::${project.id}`];
+                return override === undefined
+                  ? project
+                  : {
+                      ...project,
+                      expanded: override,
+                    };
+              });
+              const localHost = (host.hint ?? "").toLowerCase() === "this mac";
               const canRenderProjects =
                 !!projectsSection &&
-                (hostProjects.length > 0 ||
-                  host.paired === true ||
-                  (host.hint ?? "").toLowerCase() === "this mac");
+                (hostProjects.length > 0 || host.paired === true || localHost);
               const expanded =
                 canRenderProjects &&
                 (hostExpansionOverrides[host.id] ?? host.active);
+              const hostProjectsSection =
+                localHost || !projectsSection
+                  ? projectsSection
+                  : {
+                      ...projectsSection,
+                      actions: [],
+                    };
               const hostState = {
                 ...state,
                 sidebar: {
                   ...sidebarState,
-                  projects: hostProjects,
+                  projects: hostProjectsWithExpansion,
                 },
               };
               const hostOnEvent: BuiltinComponentProps["onEvent"] = (
@@ -290,6 +309,20 @@ export function Sidebar({
                 id,
               ) => {
                 preserveExpandedHosts();
+                if (eventType === "toggle-project-expand") {
+                  const itemId =
+                    (data as { itemId?: unknown } | undefined)?.itemId ?? id;
+                  if (typeof itemId === "string") {
+                    const target = hostProjectsWithExpansion.find(
+                      (project) => project.id === itemId,
+                    );
+                    setProjectExpansionOverrides((prev) => ({
+                      ...prev,
+                      [`${host.id}::${itemId}`]: !(target?.expanded === true),
+                    }));
+                    if (typeof target?.remoteId === "string") return true;
+                  }
+                }
                 return onEvent(eventType, data, id);
               };
               return (
@@ -311,8 +344,8 @@ export function Sidebar({
                   onPairHost={(event) => menu.openHostPairMenu(event, host)}
                   onHostContextMenu={menu.openHostContextMenu}
                 >
-                  {expanded && projectsSection
-                    ? renderSection(projectsSection, hostState, hostOnEvent)
+                  {expanded && hostProjectsSection
+                    ? renderSection(hostProjectsSection, hostState, hostOnEvent)
                     : null}
                 </HostGroup>
               );

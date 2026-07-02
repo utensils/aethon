@@ -7,8 +7,10 @@ import {
   handleSidebarReorderWorkspace,
   handleSidebarSortProjectWorkspaces,
   handleSidebarDeleteSession,
+  handleSidebarOpenWorkspaceInNewTab,
   handleSidebarRenameSession,
   handleSidebarSetProjectWorkspaceBase,
+  handleSidebarStartSession,
   handleSidebarStopWorkspaceAgent,
   handleSidebarSwitchWorkspace,
   handleSidebarToggleExtension,
@@ -540,9 +542,7 @@ describe("handleSidebarRenameSession", () => {
   it("empty label restores the auto sequential label for the open tab", async () => {
     const { ctx, applySetState } = buildRouteFixture({
       state: {
-        tabs: [
-          { id: "tab-3", kind: "agent", label: "Custom name" },
-        ],
+        tabs: [{ id: "tab-3", kind: "agent", label: "Custom name" }],
       },
     });
     await handleSidebarRenameSession(
@@ -692,6 +692,195 @@ describe("handleSidebarSwitchWorkspace", () => {
       path: "/repo/aethon",
     });
     expect(applySetState().activeTabId).toBe(OVERVIEW_TAB_ID);
+  });
+
+  it("routes visible inactive remote workspace rows through the remote host", async () => {
+    const { ctx, mocks, applySetState } = buildRouteFixture({
+      state: {
+        activeHostId: "local:one",
+        sidebar: {
+          projects: [
+            {
+              id: "local-project",
+              label: "local",
+              workspaces: [{ id: "local-wt", path: "/repo/local" }],
+            },
+          ],
+          projectsByHost: {
+            "remote:bender": [
+              {
+                id: "remote:bender::project::nix",
+                remoteId: "nix",
+                hostId: "remote:bender",
+                label: "nix",
+                path: "/remote/nix",
+                iconUrl: "data:image/png;base64,REMOTE",
+                workspaces: [
+                  {
+                    id: "remote:bender::workspace::feature",
+                    remoteId: "feature",
+                    remoteProjectId: "nix",
+                    projectId: "remote:bender::project::nix",
+                    hostId: "remote:bender",
+                    label: "feature",
+                    branch: "feature",
+                    path: "/remote/nix-feature",
+                    isMain: false,
+                  },
+                ],
+              },
+            ],
+          },
+        },
+      },
+    });
+
+    const handled = await handleSidebarSwitchWorkspace(
+      {
+        component: { id: "sidebar" },
+        eventType: "switch-workspace",
+        data: {
+          workspaceId: "remote:bender::workspace::feature",
+          projectId: "remote:bender::project::nix",
+          hostId: "remote:bender",
+          remoteId: "feature",
+          remoteProjectId: "nix",
+        },
+      },
+      ctx,
+    );
+
+    expect(handled).toBe(true);
+    expect(mocks.activateWorkspace).not.toHaveBeenCalled();
+    expect(ctx.setActiveHost).toHaveBeenCalledWith("remote:bender");
+    const next = applySetState();
+    expect(next.activeHostId).toBe("remote:bender");
+    expect(next.activeProjectId).toBe("remote:bender::project::nix");
+    expect(next.activeWorkspaceId).toBe("remote:bender::workspace::feature");
+    expect(next.activeTabId).toBe(OVERVIEW_TAB_ID);
+    expect(next.landing).toMatchObject({
+      kind: "workspace",
+      hostId: "remote:bender",
+      projectId: "remote:bender::project::nix",
+      workspaceId: "remote:bender::workspace::feature",
+      path: "/remote/nix-feature",
+      iconUrl: "data:image/png;base64,REMOTE",
+    });
+  });
+
+  it("opens visible remote workspaces in new tabs with host context", async () => {
+    const { ctx, mocks, applySetState } = buildRouteFixture({
+      state: {
+        sidebar: {
+          projectsByHost: {
+            "remote:bender": [
+              {
+                id: "remote:bender::project::nix",
+                remoteId: "nix",
+                hostId: "remote:bender",
+                label: "nix",
+                path: "/remote/nix",
+                workspaces: [
+                  {
+                    id: "remote:bender::workspace::feature",
+                    remoteId: "feature",
+                    remoteProjectId: "nix",
+                    projectId: "remote:bender::project::nix",
+                    hostId: "remote:bender",
+                    label: "feature",
+                    path: "/remote/nix-feature",
+                    isMain: false,
+                  },
+                ],
+              },
+            ],
+          },
+        },
+      },
+    });
+
+    const handled = await handleSidebarOpenWorkspaceInNewTab(
+      {
+        component: { id: "sidebar" },
+        eventType: "open-workspace-in-new-tab",
+        data: {
+          workspaceId: "remote:bender::workspace::feature",
+          projectId: "remote:bender::project::nix",
+          hostId: "remote:bender",
+        },
+      },
+      ctx,
+    );
+
+    expect(handled).toBe(true);
+    expect(mocks.activateWorkspace).not.toHaveBeenCalled();
+    expect(mocks.newTab).toHaveBeenCalledWith(undefined, undefined, {
+      cwd: "/remote/nix-feature",
+      hostId: "remote:bender",
+    });
+    expect(applySetState().landing).toBeNull();
+  });
+
+  it("starts remote workspace landing sessions with host context", async () => {
+    const { ctx, mocks, applySetState } = buildRouteFixture({
+      state: {
+        project: {
+          id: "remote:bender::project::nix",
+          remoteId: "nix",
+          hostId: "remote:bender",
+          label: "nix",
+          path: "/remote/nix",
+        },
+        sidebar: {
+          projectsByHost: {
+            "remote:bender": [
+              {
+                id: "remote:bender::project::nix",
+                remoteId: "nix",
+                hostId: "remote:bender",
+                label: "nix",
+                path: "/remote/nix",
+                workspaces: [
+                  {
+                    id: "remote:bender::workspace::feature",
+                    remoteId: "feature",
+                    remoteProjectId: "nix",
+                    projectId: "remote:bender::project::nix",
+                    hostId: "remote:bender",
+                    label: "feature",
+                    path: "/remote/nix-feature",
+                    isMain: false,
+                  },
+                ],
+              },
+            ],
+          },
+        },
+      },
+    });
+
+    const handled = await handleSidebarStartSession(
+      {
+        component: { id: "workspace-landing" },
+        eventType: "start-session",
+        data: {
+          workspaceId: "remote:bender::workspace::feature",
+          projectId: "remote:bender::project::nix",
+          hostId: "remote:bender",
+          path: "/remote/nix-feature",
+        },
+      },
+      ctx,
+    );
+
+    expect(handled).toBe(true);
+    expect(mocks.activateWorkspace).not.toHaveBeenCalled();
+    expect(ctx.setActiveHost).toHaveBeenCalledWith("remote:bender");
+    expect(mocks.newTab).toHaveBeenCalledWith(undefined, undefined, {
+      cwd: "/remote/nix-feature",
+      hostId: "remote:bender",
+    });
+    expect(applySetState().landing).toBeNull();
   });
 
   it("reveals an existing workspace session instead of covering it with landing", async () => {

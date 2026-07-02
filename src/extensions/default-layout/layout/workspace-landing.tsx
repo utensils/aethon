@@ -57,9 +57,7 @@ export function WorkspaceLanding({
   const recentSessions = (() => {
     const raw = props.recentSessions;
     if (!raw) return [];
-    const resolved = Array.isArray(raw)
-      ? raw
-      : resolvePointer(state, raw.$ref);
+    const resolved = Array.isArray(raw) ? raw : resolvePointer(state, raw.$ref);
     if (!Array.isArray(resolved)) return [];
     const landingPath = normalizeLandingPath(landing.path);
     return (resolved as WorkspaceLandingSession[])
@@ -166,9 +164,10 @@ function WorkspaceLandingInner(props: {
     }
     let cancelled = false;
     setGhLoading(true);
-    void (hostId
-      ? getGhBranchStatus(path, branch, hostId)
-      : getGhBranchStatus(path, branch)
+    void (
+      hostId
+        ? getGhBranchStatus(path, branch, hostId)
+        : getGhBranchStatus(path, branch)
     )
       .then((status) => {
         if (cancelled) return;
@@ -226,6 +225,7 @@ function WorkspaceLandingInner(props: {
               onEvent("start-session", {
                 workspaceId: workspaceId ?? undefined,
                 projectId: projectId ?? undefined,
+                hostId: props.hostId ?? undefined,
                 path,
               })
             }
@@ -239,6 +239,7 @@ function WorkspaceLandingInner(props: {
               onEvent("open-workspace-in-finder", {
                 workspaceId: workspaceId ?? undefined,
                 projectId: projectId ?? undefined,
+                hostId: props.hostId ?? undefined,
                 path,
               })
             }
@@ -314,8 +315,8 @@ function GhBranchStatusBlock(props: {
       <div className="a2ui-workspace-landing-gh">
         <h2>Workspace status</h2>
         <p className="a2ui-empty-state-subtitle">
-          This workspace is no longer tracked by git. Use the delete
-          button in the sidebar to remove the leftover folder.
+          This workspace is no longer tracked by git. Use the delete button in
+          the sidebar to remove the leftover folder.
         </p>
       </div>
     );

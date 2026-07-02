@@ -36,7 +36,9 @@ async function liveBranchStillMatches(
   hostId?: string | null,
 ): Promise<boolean> {
   try {
-    const live = hostId ? await gitWorktrees(path, hostId) : await gitWorktrees(path);
+    const live = hostId
+      ? await gitWorktrees(path, hostId)
+      : await gitWorktrees(path);
     const row = live.find((w) => w.path === path);
     if (!row) return true;
     return row.branch === branch;
@@ -49,6 +51,8 @@ export interface WorkspaceSidebarItem {
   id: string;
   projectId?: string;
   hostId?: string;
+  remoteId?: string;
+  remoteProjectId?: string;
   /** User-visible label (defaults to branch name when absent). */
   label: string;
   /** Short branch name; falls back to "detached" for detached HEAD. */
@@ -171,9 +175,10 @@ export function WorkspaceRow({
           status.repo &&
           !status.workspaceBroken &&
           status.prs.length > 0
-            ? await (item.hostId
-                ? getGhChecks(item.path, branch, item.hostId)
-                : getGhChecks(item.path, branch)
+            ? await (
+                item.hostId
+                  ? getGhChecks(item.path, branch, item.hostId)
+                  : getGhChecks(item.path, branch)
               ).catch(() => null)
             : null;
         if (!cancelled) {
@@ -351,7 +356,14 @@ export function WorkspaceRow({
           return;
         onEvent(
           "switch-workspace",
-          { sectionId, workspaceId: item.id },
+          {
+            sectionId,
+            workspaceId: item.id,
+            projectId: item.projectId,
+            hostId: item.hostId,
+            remoteId: item.remoteId,
+            remoteProjectId: item.remoteProjectId,
+          },
           item.id,
         );
       }}
@@ -361,7 +373,14 @@ export function WorkspaceRow({
           return;
         onEvent(
           "open-workspace-in-new-tab",
-          { sectionId, workspaceId: item.id },
+          {
+            sectionId,
+            workspaceId: item.id,
+            projectId: item.projectId,
+            hostId: item.hostId,
+            remoteId: item.remoteId,
+            remoteProjectId: item.remoteProjectId,
+          },
           item.id,
         );
       }}
