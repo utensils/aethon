@@ -118,3 +118,124 @@
   background: var(--accent);
   color: var(--bg);
 }
+
+/* Header + connection badge */
+.ae-mobile-header {
+  padding: calc(var(--ae-safe-top) + 6px) 12px 6px;
+  border-bottom: 1px solid var(--border);
+}
+.ae-mobile-conn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.78rem;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+.ae-mobile-conn-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-dim);
+}
+.ae-mobile-conn--connected .ae-mobile-conn-dot {
+  background: var(--success, #30a46c);
+}
+.ae-mobile-conn--reconnecting .ae-mobile-conn-dot,
+.ae-mobile-conn--connecting .ae-mobile-conn-dot {
+  background: var(--warning, #f5a623);
+}
+.ae-mobile-conn--disconnected .ae-mobile-conn-dot {
+  background: var(--danger, #e5484d);
+}
+
+/* Bottom nav */
+.ae-mobile-nav {
+  display: flex;
+  align-items: stretch;
+  border-top: 1px solid var(--border);
+  padding-bottom: var(--ae-safe-bottom);
+  background: var(--bg);
+}
+.ae-mobile-nav-item {
+  flex: 1 1 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-height: 52px;
+  padding: 6px 0;
+  border: none;
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 0.7rem;
+  cursor: pointer;
+}
+.ae-mobile-nav-item--active {
+  color: var(--accent);
+}
+.ae-mobile-nav-glyph {
+  font-size: 1.15rem;
+  line-height: 1;
+}
+
+/* Sessions screen */
+.ae-mobile-sessions {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px;
+  overflow-y: auto;
+  height: 100%;
+}
+.ae-mobile-new-session {
+  min-height: 44px;
+  border-radius: 10px;
+  border: 1px dashed var(--border);
+  background: transparent;
+  color: var(--accent);
+  font-size: 0.95rem;
+  cursor: pointer;
+}
+.ae-mobile-session-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.ae-mobile-session-heading {
+  margin: 4px 0;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-dim);
+}
+.ae-mobile-session-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  align-items: flex-start;
+  min-height: 52px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--bg-input);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+.ae-mobile-session-name {
+  font-size: 0.95rem;
+}
+.ae-mobile-session-cwd {
+  font-size: 0.78rem;
+  color: var(--text-dim);
+}
+.ae-mobile-session-empty {
+  color: var(--text-dim);
+  text-align: center;
+  margin-top: 32px;
+}
+.ae-mobile-composer {
+  padding-bottom: var(--ae-safe-bottom);
+}

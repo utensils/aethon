@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { ExtensionRegistry } from "./extensions/ExtensionRegistry";
 import { persistStatusesDebounced } from "./gitStatusCache";
 import { defaultLayoutExtension } from "./extensions/default-layout";
+import { mobileLayoutExtension } from "./mobile/mobileLayoutExtension";
 import { AppRoot } from "./app/AppRoot";
 import { BOOT_LAYOUT, hangWarnNotifId } from "./app/bootConstants";
 import { useAppForwardRefs } from "./app/useAppForwardRefs";
@@ -74,6 +75,11 @@ export default function App() {
   const [registry] = useState<ExtensionRegistry>(() => {
     const r = new ExtensionRegistry();
     r.register(defaultLayoutExtension);
+    // Mobile companion composites (nav, sessions screen, connection
+    // badge). Build-time define → tree-shaken from the desktop bundle.
+    if (import.meta.env.VITE_AETHON_SURFACE === "mobile") {
+      r.register(mobileLayoutExtension);
+    }
     return r;
   });
 

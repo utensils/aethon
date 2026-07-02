@@ -34,6 +34,7 @@ import { handleSessionBranch } from "./session";
 import { handleComposerPills } from "./composerPills";
 import { handleQueuedMessages } from "./queue";
 import { handleSettings } from "./settings";
+import { handleMobileNav } from "./mobileNav";
 import { handleAuthProfiles } from "./authProfiles";
 import { handleSearch } from "./search";
 import { handleScheduledTasks } from "./scheduledTasks";
@@ -145,6 +146,10 @@ export const BUILTIN_ROUTE_TABLE: ReadonlyMap<string, readonly EventRouteHandler
     ["type:appearance-menu", [handleSectionedSelect]],
     ["type:terminal-panel", [handleTerminalPanel]],
     ["type:tab-strip", [handleTabStrip]],
+    // Companion (mobile) navigation + sessions screen. Inert on desktop
+    // (these component types never appear in the workstation layout).
+    ["type:mobile-nav", [handleMobileNav]],
+    ["type:mobile-sessions", [handleMobileNav]],
     ["type:shell-canvas", [handleShareModeCycle]],
     ["type:share-mode-badge", [handleShareModeCycle]],
     ["type:editor-canvas", [handleEditorCanvas]],
