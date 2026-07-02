@@ -31,14 +31,17 @@ export function resetMobileBootWindowForTest(): void {
   bootStartedAt = Date.now();
 }
 
-/** Run `fn` immediately on desktop; on the mobile companion, delay it
- *  past the boot window. Returns a cancel function (no-op on desktop —
- *  `fn` already ran). */
+/** Run `fn` immediately on desktop (or once the window has already
+ *  passed); on the mobile companion inside the boot window, delay it to
+ *  the END of the window — not a full window from call time, so a call
+ *  8s into boot fires at ~10s, not ~18s. Returns a cancel function
+ *  (no-op when `fn` already ran). */
 export function scheduleAfterMobileBootWindow(fn: () => void): () => void {
-  if (!isMobileSurface()) {
+  const remaining = MOBILE_BOOT_DEFER_MS - (Date.now() - bootStartedAt);
+  if (!isMobileSurface() || remaining <= 0) {
     fn();
     return () => {};
   }
-  const timer = setTimeout(fn, MOBILE_BOOT_DEFER_MS);
+  const timer = setTimeout(fn, remaining);
   return () => clearTimeout(timer);
 }
