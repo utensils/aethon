@@ -170,11 +170,19 @@ impl DeviceStore {
             .unwrap_or_default()
     }
 
-    /// Revocation keeps the record (audit trail + tombstone) but the
-    /// token stops verifying immediately; the WS layer also closes any
-    /// live connection for the id.
+    /// Revocation removes the record outright — a tombstone protects
+    /// nothing (verification only matches live tokens and a re-pair
+    /// mints a fresh id) and would otherwise clutter the device list
+    /// forever. The command layer closes live connections for the id;
+    /// pairing/revocation history lives in the logs.
     pub fn revoke(&self, id: &str) -> Result<(), String> {
-        self.mutate(id, |r| r.revoked = true)
+        let mut records = self.records.lock().map_err(|e| e.to_string())?;
+        let before = records.len();
+        records.retain(|r| r.id != id);
+        if records.len() == before {
+            return Err(format!("unknown device {id}"));
+        }
+        self.persist(&records)
     }
 
     pub fn rename(&self, id: &str, name: &str) -> Result<(), String> {
@@ -215,15 +223,17 @@ mod tests {
     }
 
     #[test]
-    fn revoked_device_stops_verifying_but_stays_listed() {
+    fn revoked_device_stops_verifying_and_leaves_the_list() {
         let dir = tempfile::tempdir().unwrap();
         let s = store(&dir);
         let added = s.add("iPad", "ios", "tok-1").unwrap();
+        let kept = s.add("iPhone", "ios", "tok-2").unwrap();
         s.revoke(&added.id).unwrap();
         assert!(s.verify_token("tok-1").is_none());
         let listed = s.list();
         assert_eq!(listed.len(), 1);
-        assert!(listed[0].revoked);
+        assert_eq!(listed[0].id, kept.id);
+        assert!(s.revoke("dev-nope").is_err(), "unknown id must error");
     }
 
     #[test]
