@@ -67,6 +67,35 @@ jobs:
       - name: Playwright
         run: bun run test:e2e
 
+  mobile:
+    name: mobile (build:mobile + cargo check ios-sim)
+    # The iOS companion: bundle the mobile frontend, then compile the thin
+    # crate for the simulator target. No signing, no xcodebuild — cargo
+    # check still runs every build script (ring's C cross-compile is the
+    # historically fragile part), which is the breakage this guards.
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install Rust toolchain (with iOS simulator target)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.92.0"
+          targets: aarch64-apple-ios-sim
+      - name: Cache cargo registry + target
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/mobile/src-tauri -> target
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.x
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      - name: Build mobile bundle
+        run: bun run build:mobile
+      - name: Cargo check (aarch64-apple-ios-sim)
+        run: cargo check --manifest-path apps/mobile/src-tauri/Cargo.toml --target aarch64-apple-ios-sim
+
   rust:
     name: rust (clippy + cargo test)
     strategy:
