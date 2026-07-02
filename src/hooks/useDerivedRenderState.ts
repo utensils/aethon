@@ -136,7 +136,10 @@ export function useDerivedRenderState({
       ((state.sidebar as { projects?: unknown } | undefined)?.projects as
         | { id: string; workspaces?: unknown }[]
         | undefined) ?? [];
-    const activeHostId = hostInfo.activeHostId ?? hostInfo.localHostId;
+    const activeHostId =
+      typeof state.activeHostId === "string"
+        ? state.activeHostId
+        : (hostInfo.activeHostId ?? hostInfo.localHostId);
     const hostScopedProjects =
       activeHostId && activeHostId !== hostInfo.localHostId
         ? (hostInfo.remoteProjectsByHost[activeHostId] ?? [])
@@ -207,7 +210,11 @@ export function useDerivedRenderState({
         ? "this mac"
         : h.connected === true
           ? "connected"
-          : (h.paired ? "paired" : h.hostname),
+          : h.paired
+            ? "paired"
+            : h.discovered
+              ? "available"
+              : h.hostname,
       tooltip: h.hostname,
       active: h.id === activeHostId,
     }));

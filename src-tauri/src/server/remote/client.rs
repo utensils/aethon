@@ -129,7 +129,7 @@ fn tls_server_name(host: &str) -> Result<rustls::pki_types::ServerName<'static>,
 }
 
 pub async fn pair_desktop(
-    candidate: &str,
+    candidates: &[String],
     fingerprint: &str,
     code: &str,
     local_name: &str,
@@ -138,30 +138,73 @@ pub async fn pair_desktop(
     reciprocal_candidates: Vec<String>,
 ) -> Result<(String, HostInfo), String> {
     let _ = rustls::crypto::ring::default_provider().install_default();
-    let host = http_host(candidate);
-    let raw = tokio::time::timeout(
-        PAIR_TIMEOUT,
-        pair_exchange(
-            &host,
-            fingerprint,
-            code,
-            local_name,
-            local_info,
-            reciprocal_token,
-            reciprocal_candidates,
-        ),
-    )
-    .await
-    .map_err(|_| format!("timed out pairing with {host}"))??;
-    let (status, body) = parse_http_response(&raw)?;
-    if status != 200 {
-        return Err(format!(
-            "pairing failed ({status}): {}",
-            error_message(&body)
-        ));
+    let candidates = normalize_pair_candidates(candidates);
+    if candidates.is_empty() {
+        return Err("pairing address is missing".into());
     }
+    let mut failures = Vec::new();
+    for candidate in &candidates {
+        let host = http_host(candidate);
+        let result = tokio::time::timeout(
+            PAIR_TIMEOUT,
+            pair_exchange(
+                &host,
+                fingerprint,
+                code,
+                local_name,
+                local_info,
+                reciprocal_token,
+                reciprocal_candidates.clone(),
+            ),
+        )
+        .await;
+        let raw = match result {
+            Ok(Ok(raw)) => raw,
+            Ok(Err(err)) => {
+                failures.push(format!("{host}: {err}"));
+                continue;
+            }
+            Err(_) => {
+                failures.push(format!("{host}: timed out"));
+                continue;
+            }
+        };
+        let (status, body) = match parse_http_response(&raw) {
+            Ok(parsed) => parsed,
+            Err(err) => {
+                failures.push(format!("{host}: {err}"));
+                continue;
+            }
+        };
+        if status != 200 {
+            return Err(format!(
+                "pairing failed ({status}) at {host}: {}",
+                error_message(&body)
+            ));
+        }
+        return parse_pair_body(&body);
+    }
+    Err(format!(
+        "could not reach host for pairing: {}",
+        failures.join("; ")
+    ))
+}
+
+fn normalize_pair_candidates(candidates: &[String]) -> Vec<String> {
+    let mut out = Vec::new();
+    for candidate in candidates {
+        let candidate = http_host(candidate);
+        if candidate.is_empty() || out.iter().any(|existing| existing == &candidate) {
+            continue;
+        }
+        out.push(candidate);
+    }
+    out
+}
+
+fn parse_pair_body(body: &[u8]) -> Result<(String, HostInfo), String> {
     let parsed: Value =
-        serde_json::from_slice(&body).map_err(|e| format!("bad pair response: {e}"))?;
+        serde_json::from_slice(body).map_err(|e| format!("bad pair response: {e}"))?;
     let token = parsed
         .get("deviceToken")
         .and_then(Value::as_str)
@@ -536,6 +579,19 @@ mod tests {
             "ws://bender.local:123/ws"
         );
         assert_eq!(http_host("wss://bender.local:123/ws"), "bender.local:123");
+    }
+
+    #[test]
+    fn pair_candidates_normalize_and_dedupe() {
+        assert_eq!(
+            normalize_pair_candidates(&[
+                "wss://bender.local:123/ws".into(),
+                "bender.local:123".into(),
+                "192.168.1.44:123".into(),
+                "  ".into(),
+            ]),
+            vec!["bender.local:123", "192.168.1.44:123"]
+        );
     }
 
     #[test]

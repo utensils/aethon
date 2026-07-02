@@ -304,6 +304,7 @@ describe("handleProjectDashboard", () => {
     expect(ctx.activateWorkspace).toHaveBeenCalledWith(null);
     expect(ctx.clearActiveProject).toHaveBeenCalled();
     expect(applySetState()).toMatchObject({
+      activeHostId: "remote:fp",
       project: {
         id: "remote:fp::project::aethon",
         remoteId: "aethon",

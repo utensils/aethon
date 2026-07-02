@@ -67,7 +67,7 @@ describe("ProjectsDashboard", () => {
       components: {
         "task-launcher": TaskLauncher,
         "project-card": () => <div />,
-        "subagents-config": () => <div />,
+        "subagents-config": () => <div>local subagents</div>,
       },
     });
     render(
@@ -78,7 +78,7 @@ describe("ProjectsDashboard", () => {
               { id: "p1", label: "aethon", path: "/repo/aethon" },
               { id: "p2", label: "koban", path: "/repo/koban" },
             ],
-            recentSessions: [],
+            recentSessions: [{ id: "local-session", label: "Ping" }],
             extraCards: [],
           })}
           state={{}}
@@ -173,6 +173,9 @@ describe("ProjectsDashboard", () => {
       screen.queryByRole("button", { name: "Open Project…" }),
     ).toBeNull();
     expect(screen.getByRole("button", { name: "New Tab" })).toBeTruthy();
+    expect(screen.queryByText("Recent sessions")).toBeNull();
+    expect(screen.queryByText("Ping")).toBeNull();
+    expect(screen.queryByText("local subagents")).toBeNull();
   });
 
   it("writes host-level startup auto-approve to global config", async () => {

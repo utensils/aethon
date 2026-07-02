@@ -127,6 +127,7 @@ pub async fn remote_host_pair(
     host: String,
     fingerprint: String,
     code: String,
+    candidates: Option<Vec<String>>,
     server: State<'_, Arc<ServerState>>,
     remote: State<'_, Arc<RemoteState>>,
     app: tauri::AppHandle,
@@ -141,8 +142,12 @@ pub async fn remote_host_pair(
         .map(|h| candidate_with_port(&h, port))
         .collect::<Vec<_>>();
     let local_name = local_info.display_name.clone();
+    let mut pair_candidates = vec![host.clone()];
+    if let Some(candidates) = candidates {
+        pair_candidates.extend(candidates);
+    }
     let (token, remote_info) = crate::server::remote::client::pair_desktop(
-        &host,
+        &pair_candidates,
         &fingerprint,
         &code,
         &local_name,
@@ -153,7 +158,7 @@ pub async fn remote_host_pair(
     .await?;
     let view = remote
         .hosts
-        .upsert(remote_info.clone(), token, vec![host.clone()])?;
+        .upsert(remote_info.clone(), token, pair_candidates)?;
     let _ = remote
         .devices
         .add(&remote_info.display_name, "desktop", &reciprocal_token);

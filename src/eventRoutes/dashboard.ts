@@ -100,6 +100,7 @@ function activateRemoteProject(
   ctx.setActiveHost(project.hostId);
   ctx.setState((prev) => ({
     ...prev,
+    activeHostId: project.hostId,
     project: {
       id: project.projectId,
       remoteId: project.remoteId ?? project.projectId,

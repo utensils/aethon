@@ -99,7 +99,12 @@ export const handleSectionedSelect: EventRouteHandler = async (
       return true;
     }
     try {
-      await ctx.invoke("remote_host_pair", { host, fingerprint, code });
+      await ctx.invoke("remote_host_pair", {
+        host,
+        fingerprint,
+        code,
+        candidates: item?.candidates ?? [],
+      });
       ctx.pushNotification({
         title: `Paired ${label}`,
         kind: "success",
@@ -183,6 +188,7 @@ export const handleSectionedSelect: EventRouteHandler = async (
       ctx.clearActiveProject();
       ctx.setState((prev) => ({
         ...prev,
+        activeHostId: projectItem.hostId,
         project: {
           id: selected.itemId,
           remoteId: projectItem.remoteId,
@@ -225,6 +231,7 @@ export const handleSectionedSelect: EventRouteHandler = async (
     ctx.setActiveHost(selected.itemId);
     ctx.setState((prev) => ({
       ...prev,
+      activeHostId: selected.itemId,
       activeTabId: OVERVIEW_TAB_ID,
       activeProjectId: null,
       activeWorkspaceId: null,

@@ -471,6 +471,70 @@ describe("useDerivedRenderState", () => {
     });
   });
 
+  it("uses the mirrored state activeHostId when selecting a host", () => {
+    const remoteHostInfo: UseHostInfo = {
+      ...hostInfo,
+      activeHostId: "local:one",
+      hosts: [
+        ...hostInfo.hosts,
+        {
+          id: "remote:bender",
+          hostname: "bender.local",
+          displayName: "bender",
+          isLocal: false,
+          discovered: true,
+        },
+      ],
+      remoteProjectsByHost: {
+        "remote:bender": [
+          {
+            id: "remote:bender::project::aethon",
+            remoteId: "aethon",
+            hostId: "remote:bender",
+            label: "aethon",
+            tooltip: "/remote/aethon",
+            path: "/remote/aethon",
+            active: false,
+            expanded: false,
+            workspaces: [],
+          },
+        ],
+      },
+    };
+    const { result } = renderHook(() =>
+      useDerivedRenderState({
+        state: {
+          activeHostId: "remote:bender",
+          tabs: [],
+          activeTabId: OVERVIEW_TAB_ID,
+          project: null,
+          projects: [{ id: "local-only", label: "local", path: "/local" }],
+          sidebar: {
+            projects: [{ id: "local-only", label: "local", path: "/local" }],
+          },
+        },
+        buildSidebarHistory: vi.fn(() => []),
+        hostInfo: remoteHostInfo,
+      }),
+    );
+
+    expect(result.current.renderState.activeHostId).toBe("remote:bender");
+    expect(result.current.renderState.projects).toMatchObject([
+      { id: "remote:bender::project::aethon" },
+    ]);
+    expect(result.current.renderState.host).toMatchObject({
+      id: "remote:bender",
+    });
+    expect(
+      (result.current.renderState.sidebar as { hosts?: Array<{ id: string; hint: string }> })
+        .hosts,
+    ).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "remote:bender", hint: "available" }),
+      ]),
+    );
+  });
+
   it("keeps workspace sessions visible on the project dashboard", () => {
     const { result } = renderHook(() =>
       useDerivedRenderState({

@@ -74,6 +74,7 @@ describe("handleSectionedSelect remote host pairing", () => {
       host: "aethon-123.local:38123",
       fingerprint: "abcdef",
       code: "12345678",
+      candidates: ["aethon-123.local:38123"],
     });
     expect(mocks.pushNotification).toHaveBeenCalledWith(
       expect.objectContaining({ kind: "success", title: "Paired bender" }),
@@ -106,6 +107,7 @@ describe("handleSectionedSelect remote host pairing", () => {
       host: "aethon-123.local",
       fingerprint: "abcdef",
       code: "87654321",
+      candidates: [],
     });
   });
 });
@@ -831,6 +833,7 @@ describe("handleSectionedSelect", () => {
     expect(ctx.activateWorkspace).toHaveBeenCalledWith(null);
     expect(ctx.clearActiveProject).toHaveBeenCalled();
     expect(next).toMatchObject({
+      activeHostId: "remote:bender",
       activeTabId: OVERVIEW_TAB_ID,
       activeProjectId: null,
       activeWorkspaceId: null,

@@ -174,6 +174,7 @@ describe("useHostInfo", () => {
       expect(result.current.hosts.find((h) => h.id === "remote:bender")).toMatchObject({
         displayName: "bender",
         paired: true,
+        connected: false,
       });
       expect(result.current.remoteProjectsByHost["remote:bender"]?.[0]).toMatchObject({
         id: "remote:bender::project::p1",
@@ -186,6 +187,63 @@ describe("useHostInfo", () => {
             branch: "main",
           }),
         ],
+      });
+    });
+  });
+
+  it("keeps mDNS reachability separate from paired host connection state", async () => {
+    const { useHostInfo } = await import("./useHostInfo");
+    const { _resetLocalHostCacheForTests } = await import("../hosts");
+    _resetLocalHostCacheForTests();
+    eventListeners.clear();
+    remoteDevices.length = 0;
+    remoteHosts.length = 0;
+    remoteSnapshots.clear();
+    remoteHosts.push({
+      id: "remote:bender",
+      hostId: "local:bender",
+      hostname: "bender.local",
+      displayName: "bender",
+      fingerprint: "bender",
+      candidates: ["bender.local:4242"],
+      createdAt: 1,
+      lastSeenAt: 2,
+    });
+
+    const { result } = renderHook(() => useHostInfo());
+
+    await waitFor(() => {
+      expect(result.current.hosts.find((h) => h.id === "remote:bender")).toMatchObject({
+        paired: true,
+        connected: false,
+      });
+    });
+    act(() => {
+      fireEvent("host-discovered", {
+        id: "remote:bender",
+        hostname: "bender.local",
+        displayName: "bender",
+        fingerprintPrefix: "bender",
+        candidates: ["bender.local:4242", "192.168.1.44:4242"],
+        lastSeen: 3,
+      });
+    });
+    await waitFor(() => {
+      expect(result.current.hosts.find((h) => h.id === "remote:bender")).toMatchObject({
+        paired: true,
+        connected: false,
+      });
+    });
+    act(() => {
+      fireEvent("remote-host-status-changed", {
+        id: "remote:bender",
+        connected: true,
+      });
+    });
+    await waitFor(() => {
+      expect(result.current.hosts.find((h) => h.id === "remote:bender")).toMatchObject({
+        paired: true,
+        connected: true,
       });
     });
   });

@@ -82,6 +82,7 @@ export function useHostInfo(): UseHostInfo {
   }
 
   function pairedHost(remote: RemoteHost): Host {
+    const previous = pairedHostsRef.current.get(remote.id);
     return {
       id: remote.id,
       hostId: remote.hostId,
@@ -92,7 +93,7 @@ export function useHostInfo(): UseHostInfo {
       fingerprintPrefix: remote.fingerprint,
       candidates: remote.candidates,
       paired: true,
-      connected: remotesRef.current.has(remote.id),
+      connected: previous?.connected === true,
       createdAt: remote.createdAt,
       lastSeen: remote.lastSeenAt,
     };
@@ -161,7 +162,7 @@ export function useHostInfo(): UseHostInfo {
             ...host,
             isLocal: false,
             discovered: true,
-            connected: true,
+            connected: false,
             candidates:
               Array.isArray(host.candidates) && host.candidates.length > 0
                 ? host.candidates
@@ -175,7 +176,7 @@ export function useHostInfo(): UseHostInfo {
               ...paired,
               hostname: host.hostname,
               candidates: host.candidates ?? paired.candidates,
-              connected: true,
+              connected: paired.connected === true,
               lastSeen: host.lastSeen ?? paired.lastSeen,
             });
             emitPairedHosts();
@@ -193,11 +194,6 @@ export function useHostInfo(): UseHostInfo {
               discovered: true,
               lastSeen: remote.lastSeen ?? Date.now(),
             });
-            const paired = pairedHostsRef.current.get(id);
-            if (paired) {
-              pairedHostsRef.current.set(id, { ...paired, connected: false });
-              emitPairedHosts();
-            }
             emitRemotes();
           }
         });
