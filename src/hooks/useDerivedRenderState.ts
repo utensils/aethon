@@ -184,10 +184,25 @@ export function useDerivedRenderState({
     const sidebarHosts = hostInfo.hosts.map((h) => ({
       id: h.id,
       label: h.displayName || h.hostname,
-      hint: h.isLocal ? "this mac" : h.hostname,
+      hint: h.isLocal
+        ? "this mac"
+        : h.fingerprintPrefix === "connected"
+          ? "connected"
+          : (h.paired ? "paired" : h.hostname),
       tooltip: h.hostname,
       active: h.id === activeHostId,
     }));
+    const sidebarMobileDevices = hostInfo.mobileDevices.map((device) => {
+      const connected = device.fingerprintPrefix === "connected";
+      const platform = device.hostname || "mobile";
+      return {
+        id: device.id,
+        label: device.displayName || platform,
+        icon: "phone",
+        hint: connected ? "connected" : "paired",
+        tooltip: `${device.displayName || platform} · ${platform} client`,
+      };
+    });
     const activeHost =
       hostInfo.hosts.find((h) => h.id === activeHostId) ?? null;
 
@@ -267,10 +282,12 @@ export function useDerivedRenderState({
         projects: sidebarProjectsWithAgent,
         history,
         hosts: sidebarHosts,
+        mobileDevices: sidebarMobileDevices,
       },
       projectDashboard,
       projectsDashboard,
       hosts: hostInfo.hosts,
+      mobileDevices: hostInfo.mobileDevices,
       activeHostId,
       host: activeHost,
     };
@@ -279,6 +296,7 @@ export function useDerivedRenderState({
     hostInfo.activeHostId,
     hostInfo.hosts,
     hostInfo.localHostId,
+    hostInfo.mobileDevices,
     state,
   ]);
 

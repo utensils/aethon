@@ -1,11 +1,12 @@
 // Connection gate for the companion app. Holds the ConnectScreen until
-// the gateway handshake succeeds, then lazy-mounts the full reused App.
+// the gateway handshake succeeds, then mounts the full reused App.
 // App only mounts post-connect, so its boot `invoke("start_agent")`
 // never races the socket. A reconnect hook re-hydrates after the phone
 // wakes from background (iOS drops sockets on lock).
 
-import { lazy, Suspense, useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
+import App from "../App";
 import { setAssetBase } from "../gateway/tauriCoreShim";
 import { RustBridgeAdapter, isTauriRuntime } from "../gateway/rustBridgeAdapter";
 import { gateway, type SocketAdapter } from "../gateway/transport";
@@ -15,16 +16,16 @@ import {
   clearConnection,
   connectionUrl,
   loadConnection,
+  loadRememberedConnections,
   saveConnection,
   type MobileConnection,
 } from "./mobileConnection";
-
-const App = lazy(() => import("../App"));
 
 type Phase = "connecting" | "connected" | "need-config";
 
 export function MobileGate() {
   const [connection, setConnection] = useState<MobileConnection | null>(loadConnection);
+  const [remembered, setRemembered] = useState<MobileConnection[]>(loadRememberedConnections);
   // Initial phase follows whether we already have a connection to try,
   // so the mount effect never has to setState synchronously.
   const [phase, setPhase] = useState<Phase>(connection ? "connecting" : "need-config");
@@ -48,7 +49,10 @@ export function MobileGate() {
     gateway.configure({ url, token: target.token, appVersion: "companion", adapter });
     try {
       await gateway.connect();
-      if (persist) saveConnection(target);
+      if (persist) {
+        saveConnection(target);
+        setRemembered(loadRememberedConnections());
+      }
       setPhase("connected");
     } catch (err) {
       setError(String(err));
@@ -86,11 +90,19 @@ export function MobileGate() {
     clearConnection();
     gateway.disconnect();
     setConnection(null);
+    setRemembered(loadRememberedConnections());
     setPhase("need-config");
   }, []);
 
   if (phase === "need-config") {
-    return <ConnectScreen initial={connection} error={error} onConnect={onConnect} />;
+    return (
+      <ConnectScreen
+        initial={connection}
+        remembered={remembered}
+        error={error}
+        onConnect={onConnect}
+      />
+    );
   }
 
   if (phase === "connecting") {
@@ -106,13 +118,13 @@ export function MobileGate() {
   }
 
   return (
-    <Suspense fallback={<div className="ae-mobile-connecting">Loading…</div>}>
+    <>
       {status === "disconnected" || status === "reconnecting" ? (
         <div className="ae-mobile-reconnect-banner" role="status">
           Reconnecting…
         </div>
       ) : null}
       <App />
-    </Suspense>
+    </>
   );
 }

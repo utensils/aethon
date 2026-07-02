@@ -9,12 +9,25 @@
 
 import type { EventRouteHandler } from "./types";
 import { restoreSessionFromSelection } from "./sessionRestore";
+import {
+  handleSectionedSelect,
+  handleSidebarStartSession,
+  handleSidebarSwitchWorkspace,
+} from "./sidebar";
 
-type Screen = "sessions" | "chat" | "terminal" | "files" | "git" | "settings";
+type Screen =
+  | "projects"
+  | "sessions"
+  | "chat"
+  | "terminal"
+  | "files"
+  | "git"
+  | "settings";
 
 function screenFlags(active: Screen): Record<string, unknown> {
   return {
     active,
+    isProjects: active === "projects",
     isSessions: active === "sessions",
     isChat: active === "chat",
     isTerminal: active === "terminal",
@@ -42,6 +55,7 @@ function setScreen(
 }
 
 const SCREENS: readonly Screen[] = [
+  "projects",
   "sessions",
   "chat",
   "terminal",
@@ -50,17 +64,54 @@ const SCREENS: readonly Screen[] = [
   "settings",
 ];
 
+const PROJECT_SCREENS = new Set<Screen>(["terminal", "files", "git"]);
+
 function asScreen(value: unknown): Screen | undefined {
   return SCREENS.find((s) => s === value);
 }
 
-export const handleMobileNav: EventRouteHandler = ({ component, eventType, data }, ctx) => {
+function hasProjectContext(state: Record<string, unknown>): boolean {
+  const project = state.project as { id?: unknown; path?: unknown } | null | undefined;
+  return (
+    typeof state.activeProjectId === "string" ||
+    typeof project?.id === "string" ||
+    typeof project?.path === "string"
+  );
+}
+
+export const handleMobileNav: EventRouteHandler = async (
+  { component, eventType, data },
+  ctx,
+) => {
   if (component.type === "mobile-nav") {
     if (eventType === "mobile-nav") {
       // Validate, don't cast: events can arrive over the gateway, and an
       // unknown screen would zero every visibility flag (blank canvas).
       const screen = asScreen((data as { screen?: unknown } | undefined)?.screen);
-      if (screen) setScreen(ctx, screen);
+      if (screen) {
+        if (PROJECT_SCREENS.has(screen) && !hasProjectContext(ctx.stateRef.current)) {
+          setScreen(ctx, "projects");
+        } else {
+          setScreen(ctx, screen);
+        }
+      }
+    }
+    return true;
+  }
+
+  if (component.type === "mobile-projects") {
+    if (eventType === "select") {
+      await handleSectionedSelect({ component, eventType, data }, ctx);
+      return true;
+    }
+    if (eventType === "switch-workspace") {
+      await handleSidebarSwitchWorkspace({ component, eventType, data }, ctx);
+      return true;
+    }
+    if (eventType === "start-session") {
+      await handleSidebarStartSession({ component, eventType, data }, ctx);
+      setScreen(ctx, "chat");
+      return true;
     }
     return true;
   }

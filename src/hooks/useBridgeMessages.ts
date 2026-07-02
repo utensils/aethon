@@ -271,10 +271,16 @@ export function useBridgeMessages(
     // agents emit ready unconditionally, so the duplicate is harmless.
     (async () => {
       try {
+        const mobileSurface = import.meta.env.VITE_AETHON_SURFACE === "mobile";
         await invoke("start_agent");
-        await invoke("agent_command", {
-          payload: JSON.stringify({ type: "boot_layout", payload: bootLayout }),
-        });
+        if (!mobileSurface) {
+          await invoke("agent_command", {
+            payload: JSON.stringify({
+              type: "boot_layout",
+              payload: bootLayout,
+            }),
+          });
+        }
         await invoke("agent_command", {
           payload: JSON.stringify({ type: "report" }),
         });

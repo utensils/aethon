@@ -179,6 +179,25 @@ export function ItemRow({
       className="a2ui-sidebar-item-icon"
       loading="lazy"
     />
+  ) : item.icon === "phone" ? (
+    <span
+      className="a2ui-sidebar-item-icon a2ui-sidebar-item-icon--phone"
+      aria-hidden="true"
+    >
+      <svg
+        width="11"
+        height="14"
+        viewBox="0 0 12 16"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.4"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <rect x="2.25" y="1.25" width="7.5" height="13.5" rx="1.6" />
+        <path d="M5 12.6h2" />
+      </svg>
+    </span>
   ) : stacked ? (
     // Fallback repo glyph so the icon column (and the workspace guide that
     // aligns to it) stays consistent across projects without a favicon.

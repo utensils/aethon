@@ -227,6 +227,7 @@ mod tests {
             },
             remote: Arc::new(RemoteState::in_memory()),
             relay: Arc::new(crate::server::remote::relay::EchoRelay),
+            device_changed: Arc::new(|_| {}),
         }
     }
 

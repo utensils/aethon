@@ -82,6 +82,7 @@ describe("pairWithHosts", () => {
       host: "halcyon.local:48213",
       token: "tok-1",
       fingerprint: PAYLOAD.fp,
+      name: "halcyon",
     });
     expect(outcome.deviceId).toBe("dev-1");
   });

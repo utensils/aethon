@@ -149,6 +149,7 @@ export const BUILTIN_ROUTE_TABLE: ReadonlyMap<string, readonly EventRouteHandler
     // Companion (mobile) navigation + sessions screen. Inert on desktop
     // (these component types never appear in the workstation layout).
     ["type:mobile-nav", [handleMobileNav]],
+    ["type:mobile-projects", [handleMobileNav]],
     ["type:mobile-sessions", [handleMobileNav]],
     ["type:mobile-file-list", [handleMobileNav]],
     ["type:mobile-file-viewer", [handleMobileNav]],

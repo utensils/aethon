@@ -203,14 +203,17 @@ export const handleReady: BridgeMessageHandler = (data, ctx) => {
   // disabled extension stops bleeding stale chrome across agent reloads.
   // The layout's own `state` hydrates below alongside extensionState —
   // same semantics as the live `layout_set` path so replay matches.
+  const mobileSurface = import.meta.env.VITE_AETHON_SURFACE === "mobile";
   const baseLayout: A2UIPayload =
-    extLayout &&
-    typeof extLayout === "object" &&
-    Array.isArray(extLayout.components)
-      ? extLayout
-      : ctx.bootLayout;
+    mobileSurface ||
+    !extLayout ||
+    typeof extLayout !== "object" ||
+    !Array.isArray(extLayout.components)
+      ? ctx.bootLayout
+      : extLayout;
   const shouldNormalizeWorkstationLayout =
-    baseLayout === ctx.bootLayout && isWorkstationBootLayout(baseLayout);
+    mobileSurface ||
+    (baseLayout === ctx.bootLayout && isWorkstationBootLayout(baseLayout));
   const patchedLayout = extPatches.reduce<A2UIPayload>(
     (acc, p) => layoutPatch(acc, p.path, p.value),
     baseLayout,

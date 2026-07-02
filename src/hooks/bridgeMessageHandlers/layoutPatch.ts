@@ -8,6 +8,10 @@ import type { BridgeMessageHandler } from "./types";
  *  renderer on `components.map()`. Walk manually here so arrays stay
  *  arrays. */
 export const handleLayoutPatch: BridgeMessageHandler = (data, ctx) => {
+  if (import.meta.env.VITE_AETHON_SURFACE === "mobile") {
+    ctx.ackMutation(data.mutationId, true);
+    return;
+  }
   const path = data.path as string | undefined;
   if (!path) {
     ctx.ackMutation(data.mutationId, false, "missing path");

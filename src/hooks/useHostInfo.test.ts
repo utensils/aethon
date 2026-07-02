@@ -6,12 +6,21 @@ import { act, renderHook, waitFor } from "@testing-library/react";
 // tests can fire host-discovered / host-removed payloads.
 const eventListeners = new Map<string, Array<(event: { payload: unknown }) => void>>();
 
+const remoteDevices: unknown[] = [];
+
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: (cmd: string) =>
     Promise.resolve(
       cmd === "host_info"
-        ? { id: "local:abc", hostname: "halcyon.local", displayName: "halcyon", fingerprint: "fp" }
-        : null,
+        ? {
+            id: "local:abc",
+            hostname: "halcyon.local",
+            displayName: "halcyon",
+            fingerprint: "fp",
+          }
+        : cmd === "remote_devices_list"
+          ? remoteDevices
+          : null,
     ),
 }));
 
@@ -42,6 +51,7 @@ describe("useHostInfo", () => {
     const { _resetLocalHostCacheForTests } = await import("../hosts");
     _resetLocalHostCacheForTests();
     eventListeners.clear();
+    remoteDevices.length = 0;
     const { result } = renderHook(() => useHostInfo());
     await waitFor(() => {
       expect(result.current.localHostId).toBe("local:abc");
@@ -55,6 +65,7 @@ describe("useHostInfo", () => {
     const { _resetLocalHostCacheForTests } = await import("../hosts");
     _resetLocalHostCacheForTests();
     eventListeners.clear();
+    remoteDevices.length = 0;
     const { result } = renderHook(() => useHostInfo());
     await waitFor(() => {
       expect(result.current.localHostId).toBe("local:abc");
@@ -77,6 +88,37 @@ describe("useHostInfo", () => {
     });
     await waitFor(() => {
       expect(result.current.hosts.find((h) => h.id === "remote:bender")).toBeUndefined();
+    });
+  });
+
+  it("surfaces paired mobile devices separately from remote hosts", async () => {
+    const { useHostInfo } = await import("./useHostInfo");
+    const { _resetLocalHostCacheForTests } = await import("../hosts");
+    _resetLocalHostCacheForTests();
+    eventListeners.clear();
+    remoteDevices.length = 0;
+    remoteDevices.push({
+      id: "dev-iphone",
+      name: "iPhone",
+      platform: "ios",
+      createdAt: 1,
+      lastSeenAt: 2,
+      revoked: false,
+      connected: true,
+    });
+
+    const { result } = renderHook(() => useHostInfo());
+
+    await waitFor(() => {
+      expect(result.current.hosts.find((h) => h.id === "device:dev-iphone")).toBeUndefined();
+      expect(
+        result.current.mobileDevices.find((h) => h.id === "device:dev-iphone"),
+      ).toMatchObject({
+        displayName: "iPhone",
+        hostname: "ios",
+        fingerprintPrefix: "connected",
+        paired: true,
+      });
     });
   });
 });

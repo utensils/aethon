@@ -6,6 +6,10 @@ import type { BridgeMessageHandler } from "./types";
  *  path window.aethon.setLayout uses so the new payload hydrates state
  *  and renders identically to a default-layout boot. */
 export const handleLayoutSet: BridgeMessageHandler = (data, ctx) => {
+  if (import.meta.env.VITE_AETHON_SURFACE === "mobile") {
+    ctx.ackMutation(data.mutationId, true);
+    return;
+  }
   const next = data.payload as A2UIPayload | undefined;
   if (!next || typeof next !== "object" || !Array.isArray(next.components)) {
     ctx.ackMutation(data.mutationId, false, "payload missing components[]");

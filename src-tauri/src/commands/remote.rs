@@ -7,7 +7,7 @@
 
 use std::sync::Arc;
 
-use tauri::State;
+use tauri::{Emitter, State};
 
 use crate::server::ServerState;
 use crate::server::remote::pairing::{self, PairingBegin};
@@ -67,14 +67,27 @@ pub fn remote_pairing_cancel(remote: State<'_, Arc<RemoteState>>) -> Result<(), 
 
 #[tauri::command]
 pub fn remote_devices_list(remote: State<'_, Arc<RemoteState>>) -> Result<Vec<DeviceView>, String> {
-    Ok(remote.devices.list())
+    Ok(remote
+        .devices
+        .list()
+        .into_iter()
+        .map(|mut device| {
+            device.connected = remote.is_device_live(&device.id);
+            device
+        })
+        .collect())
 }
 
 #[tauri::command]
-pub fn remote_device_revoke(id: String, remote: State<'_, Arc<RemoteState>>) -> Result<(), String> {
+pub fn remote_device_revoke(
+    id: String,
+    remote: State<'_, Arc<RemoteState>>,
+    app: tauri::AppHandle,
+) -> Result<(), String> {
     remote.devices.revoke(&id)?;
     // Token is dead for new connections; drop live ones immediately.
     remote.close_device(&id);
+    let _ = app.emit("remote-devices-changed", serde_json::json!({ "id": id }));
     Ok(())
 }
 
@@ -83,6 +96,9 @@ pub fn remote_device_rename(
     id: String,
     name: String,
     remote: State<'_, Arc<RemoteState>>,
+    app: tauri::AppHandle,
 ) -> Result<(), String> {
-    remote.devices.rename(&id, &name)
+    remote.devices.rename(&id, &name)?;
+    let _ = app.emit("remote-devices-changed", serde_json::json!({ "id": id }));
+    Ok(())
 }

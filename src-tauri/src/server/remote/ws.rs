@@ -99,9 +99,11 @@ async fn client_session(ctx: GatewayCtx, socket: WebSocket) {
         target: "aethon::server::remote",
         "device {} ({}) connected", device.id, device.name
     );
+    (ctx.device_changed)(&device);
     run_session(&ctx, &device, &mut sink, &mut stream, &revoked).await;
     ctx.remote.deregister_live(&device.id, &revoked);
     tracing::info!(target: "aethon::server::remote", "device {} disconnected", device.id);
+    (ctx.device_changed)(&device);
 }
 
 async fn authenticate(

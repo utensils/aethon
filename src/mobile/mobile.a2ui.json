@@ -13,56 +13,26 @@
         "areas": {
           "$ref": "/layout/areas"
         },
-        "slotMap": {
-          "sessions": "canvas",
-          "terminal-screen": "canvas",
-          "files": "canvas",
-          "git": "canvas"
-        }
+        "slotMap": {}
       },
       "children": [
         {
           "id": "mobile-header",
-          "type": "container",
+          "type": "mobile-header",
           "props": {
             "area": "header",
-            "direction": "row",
-            "align": "center",
-            "gap": 8,
             "className": "ae-mobile-header"
-          },
-          "children": [
-            {
-              "id": "mobile-pill",
-              "type": "agent-pulse",
-              "props": {
-                "label": {
-                  "$ref": "/agentStatus/label"
-                },
-                "state": {
-                  "$ref": "/agentStatus/state"
-                }
-              }
-            },
-            {
-              "id": "mobile-header-spacer",
-              "type": "container",
-              "props": {
-                "direction": "row",
-                "className": "ae-header-spacer"
-              }
-            },
-            {
-              "id": "mobile-model",
-              "type": "model-picker",
-              "props": {}
-            },
-            {
-              "id": "mobile-conn",
-              "type": "connection-badge",
-              "props": {}
+          }
+        },
+        {
+          "id": "mobile-projects-screen",
+          "type": "mobile-projects",
+          "props": {
+            "area": "canvas",
+            "visible": {
+              "$ref": "/mobileNav/isProjects"
             }
-          ]
+          }
         },
         {
           "id": "mobile-chat-canvas",
@@ -81,7 +51,7 @@
           "id": "mobile-sessions-screen",
           "type": "mobile-sessions",
           "props": {
-            "area": "sessions",
+            "area": "canvas",
             "visible": {
               "$ref": "/mobileNav/isSessions"
             }
@@ -91,7 +61,7 @@
           "id": "mobile-terminal-screen",
           "type": "terminal-panel",
           "props": {
-            "area": "terminal-screen",
+            "area": "canvas",
             "visible": {
               "$ref": "/mobileNav/isTerminal"
             },
@@ -104,7 +74,7 @@
           "id": "mobile-files-screen",
           "type": "mobile-file-list",
           "props": {
-            "area": "files",
+            "area": "canvas",
             "visible": {
               "$ref": "/mobileNav/isFiles"
             }
@@ -114,7 +84,7 @@
           "id": "mobile-git-screen",
           "type": "source-control-panel",
           "props": {
-            "area": "git",
+            "area": "canvas",
             "visible": {
               "$ref": "/mobileNav/isGit"
             },
@@ -169,8 +139,9 @@
       "areas": ["header", "canvas", "composer", "nav"]
     },
     "mobileNav": {
-      "active": "sessions",
-      "isSessions": true,
+      "active": "projects",
+      "isProjects": true,
+      "isSessions": false,
       "isChat": false,
       "isTerminal": false,
       "isFiles": false,

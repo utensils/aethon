@@ -98,6 +98,12 @@
                     "actions": [
                       { "id": "open-project", "label": "Open project…" }
                     ]
+                  },
+                  {
+                    "id": "mobile-devices",
+                    "title": "mobile devices",
+                    "items": { "$ref": "/sidebar/mobileDevices" },
+                    "hideWhenEmpty": true
                   }
                 ],
                 "extraSections": { "$ref": "/sidebar/extraSections" }

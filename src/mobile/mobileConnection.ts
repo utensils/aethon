@@ -13,9 +13,45 @@ export interface MobileConnection {
   token: string;
   /** Pinned cert fingerprint (wss) — absent means plaintext ws (dev). */
   fingerprint?: string;
+  /** Friendly desktop name captured at pairing time, when available. */
+  name?: string;
+  /** Last successful connection attempt, epoch ms. */
+  lastConnectedAt?: number;
 }
 
 const STORAGE_KEY = "aethon-mobile-connection";
+const REMEMBERED_STORAGE_KEY = "aethon-mobile-connections";
+
+function normalizeConnection(raw: unknown): MobileConnection | null {
+  if (typeof raw !== "object" || raw === null) return null;
+  const candidate = raw as Partial<MobileConnection>;
+  if (typeof candidate.host !== "string" || typeof candidate.token !== "string") {
+    return null;
+  }
+  const host = candidate.host.trim();
+  const token = candidate.token.trim();
+  if (!host || !token) return null;
+  return {
+    host,
+    token,
+    fingerprint:
+      typeof candidate.fingerprint === "string" && candidate.fingerprint.trim()
+        ? candidate.fingerprint.trim()
+        : undefined,
+    name:
+      typeof candidate.name === "string" && candidate.name.trim()
+        ? candidate.name.trim()
+        : undefined,
+    lastConnectedAt:
+      typeof candidate.lastConnectedAt === "number"
+        ? candidate.lastConnectedAt
+        : undefined,
+  };
+}
+
+function connectionKey(connection: MobileConnection): string {
+  return connection.fingerprint || connection.host;
+}
 
 export function loadConnection(): MobileConnection | null {
   // Dev / e2e override: ?gateway=ws://host:port&token=…[&fp=<sha256>].
@@ -35,15 +71,53 @@ export function loadConnection(): MobileConnection | null {
   }
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? (JSON.parse(raw) as MobileConnection) : null;
+    return raw ? normalizeConnection(JSON.parse(raw)) : null;
   } catch {
     return null;
   }
 }
 
-export function saveConnection(connection: MobileConnection): void {
+export function loadRememberedConnections(): MobileConnection[] {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(connection));
+    const raw = localStorage.getItem(REMEMBERED_STORAGE_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    const remembered = Array.isArray(parsed)
+      ? parsed
+          .map(normalizeConnection)
+          .filter((c): c is MobileConnection => c !== null)
+      : [];
+    const active = loadConnection();
+    const all = active ? [active, ...remembered] : remembered;
+    const byKey = new Map<string, MobileConnection>();
+    for (const connection of all) {
+      byKey.set(connectionKey(connection), connection);
+    }
+    return [...byKey.values()].sort(
+      (a, b) => (b.lastConnectedAt ?? 0) - (a.lastConnectedAt ?? 0),
+    );
+  } catch {
+    return [];
+  }
+}
+
+export function saveConnection(connection: MobileConnection): void {
+  const saved: MobileConnection = {
+    ...connection,
+    host: connection.host.trim(),
+    token: connection.token.trim(),
+    fingerprint: connection.fingerprint?.trim() || undefined,
+    name: connection.name?.trim() || undefined,
+    lastConnectedAt: Date.now(),
+  };
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(saved));
+    const remembered = loadRememberedConnections().filter(
+      (existing) => connectionKey(existing) !== connectionKey(saved),
+    );
+    localStorage.setItem(
+      REMEMBERED_STORAGE_KEY,
+      JSON.stringify([saved, ...remembered].slice(0, 8)),
+    );
   } catch {
     // Private-mode / quota — the session still works, just won't persist.
   }

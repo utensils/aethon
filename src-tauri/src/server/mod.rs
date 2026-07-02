@@ -208,6 +208,7 @@ pub async fn start(app: &AppHandle, state: &ServerState, advertise: bool) -> Res
         identity,
         remote,
         relay,
+        app.clone(),
     )
     .await?;
     let advertise_daemon = if advertise {

@@ -344,6 +344,7 @@ pub fn agent_command_remote_denial(payload: &serde_json::Value) -> Option<&'stat
         Some("frontend_state_patch") => {
             Some("frontend_state_patch is reserved for the desktop webview")
         }
+        Some("boot_layout") => Some("boot_layout is reserved for the desktop webview"),
         _ => None,
     }
 }
@@ -443,6 +444,7 @@ mod tests {
                 .is_some()
         );
         assert!(agent_command_remote_denial(&json!({"type": "frontend_state_patch"})).is_some());
+        assert!(agent_command_remote_denial(&json!({"type": "boot_layout"})).is_some());
         assert!(agent_command_remote_denial(&json!({"type": "set_model"})).is_none());
         assert!(agent_command_remote_denial(&json!({"no": "type"})).is_none());
     }

@@ -111,6 +111,9 @@ export const handleSectionedSelect: EventRouteHandler = async (
     }
     return true;
   }
+  if (selected?.sectionId === "mobile-devices" && selected.itemId) {
+    return true;
+  }
   if (selected?.sectionId === "history" && selected.itemId) {
     if (selected.itemId.startsWith("tab:")) {
       ctx.setActiveTab(selected.itemId.slice(4));

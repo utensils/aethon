@@ -10,6 +10,7 @@ const hostInfo: UseHostInfo = {
   activeHostId: "local:one",
   localHostId: "local:one",
   setActiveHost: vi.fn(),
+  mobileDevices: [],
   hosts: [
     {
       id: "local:one",
