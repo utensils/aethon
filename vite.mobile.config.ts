@@ -8,6 +8,8 @@
 // rewrites the same imports inside node_modules plugins (which a source
 // codemod could never reach).
 
+import { existsSync, renameSync } from "node:fs";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
@@ -20,7 +22,30 @@ const shim = (p: string) => fileURLToPath(new URL(p, import.meta.url));
 const host = process.env.TAURI_DEV_HOST;
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [
+    react(),
+    {
+      name: "aethon-mobile-index",
+      // The entry file is index.mobile.html (the repo root's index.html
+      // is the desktop entry), but Tauri's embedded-asset resolver and
+      // the webview both load index.html at the root — without these
+      // two hooks the packaged app boots to a black screen and the dev
+      // server serves the desktop entry.
+      writeBundle(options) {
+        const dir = options.dir ?? shim("./dist-mobile");
+        const from = join(dir, "index.mobile.html");
+        if (existsSync(from)) renameSync(from, join(dir, "index.html"));
+      },
+      configureServer(server) {
+        server.middlewares.use((req, _res, next) => {
+          if (req.url === "/" || req.url?.startsWith("/?")) {
+            req.url = `/index.mobile.html${req.url.slice(1)}`;
+          }
+          next();
+        });
+      },
+    },
+  ],
   clearScreen: false,
   resolve: {
     // Exact-match regex so the shims' own `@tauri-apps/api/core.js` /

@@ -11,6 +11,12 @@
   },
   "app": {
     "withGlobalTauri": true,
+    "windows": [
+      {
+        "label": "main",
+        "title": "Aethon"
+      }
+    ],
     "security": {
       "csp": null
     }
