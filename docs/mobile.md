@@ -63,10 +63,19 @@ ios-dev                     # dev loop in the Simulator (defaults to
 ios-run                     # install + launch the last ios-build output
                             # (static bundle — no dev server, no Xcode)
 ios-build                   # unsigned simulator .app (the no-arg default)
-ios-dev --host              # physical device over LAN
-ios-build --target aarch64  # signed device build — needs a development
-                            # team in tauri.conf.json bundle.iOS first
+ios-device                  # signed device build, installed + launched on
+                            # the connected iPhone via devicectl
+                            # (AETHON_IOS_UDID overrides the device pick)
+ios-dev --host              # dev loop on a physical device over LAN
 ```
+
+Device signing comes from `DEVELOPMENT_TEAM` + `CODE_SIGN_STYLE: Automatic`
+in `gen/apple/project.yml` (mirrored in `tauri.conf.json`
+`bundle.iOS.developmentTeam` for future regens); `ios-device` passes
+`-allowProvisioningUpdates` through to xcodebuild so the profile mints
+itself. If provisioning still fails on a fresh machine, run `ios-dev
+--open` once and press Run in Xcode (keep the CLI running — a bare
+xcodebuild dies at the Build Rust Code phase with "Connection refused").
 
 Only one `ios-dev` session can run at a time: the xcodebuild "Build Rust
 Code" phase dials back into the CLI's options server, so a second

@@ -116,14 +116,12 @@ case "$mode" in
     # beforeBuildCommand rebuilds dist-mobile before cargo runs, so a
     # touch here guarantees the fresh bundle is what gets embedded.
     touch src-tauri/src/lib.rs
-    # A bare device build (the Tauri CLI default) needs code signing,
-    # and bundle.iOS.developmentTeam is unset — xcodebuild fails with
-    # "requires a development team". Default to the unsigned simulator
-    # build instead so zero-arg ios-build works out of the box.
+    # A bare device build (the Tauri CLI default) needs code signing —
+    # that's what `ios-device` does. Zero-arg ios-build stays the
+    # unsigned simulator build so it works with no signing setup.
     if [ $# -eq 0 ]; then
       echo "==> no args: defaulting to the unsigned simulator build"
-      echo "    (device build: ios-build --target aarch64 — needs a development"
-      echo "     team in apps/mobile/src-tauri/tauri.conf.json bundle.iOS)"
+      echo "    (signed device build + install: ios-device)"
       set -- --debug --target aarch64-sim
     fi
     echo "==> cargo tauri ios build $*"
@@ -150,8 +148,49 @@ case "$mode" in
     echo "==> launching $bundle_id"
     xcrun simctl launch --terminate-running-process "$udid" "$bundle_id"
     ;;
+  device)
+    # Signed device build + install onto a USB/network-connected iPhone
+    # via devicectl — no Xcode UI. Signing comes from DEVELOPMENT_TEAM +
+    # CODE_SIGN_STYLE Automatic in gen/apple/project.yml against the
+    # team's local cert + wildcard provisioning profile. (Do NOT try to
+    # pass -allowProvisioningUpdates via `--`: tauri forwards trailing
+    # args to cargo, not xcodebuild.)
+    rm -rf src-tauri/gen/apple/build
+    touch src-tauri/src/lib.rs # re-embed dist-mobile (see build mode)
+    echo "==> cargo tauri ios build --debug --target aarch64 (signed device build)"
+    if ! cargo tauri ios build --debug --target aarch64 --export-method debugging; then
+      echo "error: device build failed." >&2
+      echo "If it mentions provisioning/profiles: run 'ios-dev --open' once and press Run in" >&2
+      echo "Xcode to mint the profile (keep the CLI running — a bare xcodebuild dies at the" >&2
+      echo "Build Rust Code phase with 'Connection refused'). Then retry ios-device." >&2
+      exit 1
+    fi
+    udid="${AETHON_IOS_UDID:-$(xcrun devicectl list devices 2>/dev/null | grep -i " connected " | grep -oE '[0-9A-Fa-f-]{36}' | head -1)}"
+    if [ -z "$udid" ]; then
+      echo "error: no connected iPhone (xcrun devicectl list devices; AETHON_IOS_UDID overrides)" >&2
+      exit 1
+    fi
+    app_path=""
+    for candidate in \
+      src-tauri/gen/apple/build/arm64/Aethon.ipa \
+      src-tauri/gen/apple/build/arm64/Aethon.app \
+      src-tauri/gen/apple/build/aethon-mobile_iOS.xcarchive/Products/Applications/Aethon.app; do
+      if [ -e "$candidate" ]; then
+        app_path="$candidate"
+        break
+      fi
+    done
+    if [ -z "$app_path" ]; then
+      echo "error: built app not found under src-tauri/gen/apple/build/" >&2
+      exit 1
+    fi
+    echo "==> installing $app_path on device $udid"
+    xcrun devicectl device install app --device "$udid" "$app_path"
+    echo "==> launching $bundle_id"
+    xcrun devicectl device process launch --terminate-existing --device "$udid" "$bundle_id"
+    ;;
   *)
-    echo "usage: ios.sh <dev|build|run> [tauri-ios-args...]" >&2
+    echo "usage: ios.sh <dev|build|run|device> [tauri-ios-args...]" >&2
     exit 2
     ;;
 esac
