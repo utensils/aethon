@@ -25,6 +25,7 @@ import { disposeEditorBuffer } from "../monaco/editor-buffers";
 import { useProjectStore } from "./projectOps/projectStore";
 import { sweepOrphanWorkspaceTabs } from "./projectOps/orphanTabSweep";
 import { recordWorkspaceActivation } from "./statusPollScheduler";
+import { mobileBootWindowElapsed } from "./mobileBootDefer";
 import {
   projectScopeBucketKey,
   switchProjectBucket as switchTabBucket,
@@ -299,7 +300,11 @@ export function useProjectOps(ctx: UseProjectOpsContext): UseProjectOpsActions {
       projectsLoadedRef.current = true;
       await refreshVisibleProjectWorkspaces();
       syncProjectsToState();
-      void refreshAllGitStatus();
+      // Mobile boot window: skip the immediate all-projects sweep — the
+      // deferred first tick in useProjects covers the catch-up without
+      // bursting the gateway budget during hydration. (Always runs on
+      // desktop and on any post-window re-hydration.)
+      if (mobileBootWindowElapsed()) void refreshAllGitStatus();
       const active = activeProject(ps);
       const tabId =
         (stateRef.current.activeTabId as string | undefined) ?? "default";

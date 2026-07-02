@@ -20,13 +20,20 @@ const expectedChromeImports = [
 ];
 
 describe("stylesheet import order", () => {
-  it("loads shape tokens, theme tokens, then chrome rules from mainApp", () => {
+  it("loads fonts, shape tokens, theme tokens, then chrome rules from mainApp", () => {
     const mainApp = readStyleFile("../mainApp.tsx");
     const styleImports = [...mainApp.matchAll(/import\s+["']\.\/styles\/([^"']+)["'];/g)].map(
       (match) => match[1],
     );
 
-    expect(styleImports).toEqual(["tokens.css", "themes.css", "chrome.css"]);
+    // fonts first: self-hosted @font-face declarations must be in the
+    // sheet before tokens.css names the families.
+    expect(styleImports).toEqual([
+      "fonts",
+      "tokens.css",
+      "themes.css",
+      "chrome.css",
+    ]);
   });
 
   it("keeps chrome domain imports in original cascade order", () => {

@@ -45,6 +45,7 @@ pub(super) fn ensure_agent_spawned(
     app: &AppHandle,
     shared: SpawnShared,
     worker: Option<&AgentWorker>,
+    inject_handshake: bool,
 ) -> Result<(), String> {
     let SpawnShared {
         mutation_routes,
@@ -162,7 +163,13 @@ pub(super) fn ensure_agent_spawned(
     // against a 5s timeout. Synthesise the handshake here so every
     // bridge — global and per-tab — comes up ready. Metadata is registered
     // first so any immediate stdout readiness marker can be recorded.
-    if let Some(stdin) = child.stdin.as_mut()
+    // The boot pre-spawn skips the synthetic report: no JS listener
+    // exists yet, and flipping the bridge's frontendReady early would
+    // route pre-handshake extension mutations onto the 5s-ack path
+    // instead of the retained-state path. React's mount-time report
+    // performs the real handshake.
+    if inject_handshake
+        && let Some(stdin) = child.stdin.as_mut()
         && let Err(e) = inject_initial_handshake(stdin)
     {
         tracing::warn!(

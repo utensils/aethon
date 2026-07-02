@@ -266,3 +266,155 @@ describe("gateway transport", () => {
     expect(socket.opened).toBe(1); // never retried
   });
 });
+
+describe("invoke rate pacing + rate-limited retry", () => {
+  async function connectTransport(
+    socket: FakeSocket,
+  ): Promise<GatewayTransport> {
+    const t = makeTransport(socket);
+    const connected = t.connect();
+    await Promise.resolve();
+    socket.helloOk();
+    await connected;
+    return t;
+  }
+
+  function sentInvokes(socket: FakeSocket): Array<{ id: string; cmd: string }> {
+    return socket.sent
+      .map((s) => JSON.parse(s) as { t: string; id: string; cmd: string })
+      .filter((f) => f.t === "invoke");
+  }
+
+  beforeEach(() => {
+    setJitterSource(() => 0.2);
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("paces a burst to the client budget and drains FIFO", async () => {
+    vi.useFakeTimers();
+    const socket = new FakeSocket();
+    const t = await connectTransport(socket);
+
+    for (let i = 0; i < 50; i++) {
+      void t.request(`cmd_${i}`).catch(() => {});
+    }
+    const immediate = sentInvokes(socket);
+    expect(immediate).toHaveLength(32);
+    expect(immediate[0].cmd).toBe("cmd_0");
+    expect(immediate[31].cmd).toBe("cmd_31");
+
+    // The rest drain once the rolling window frees up, still in order.
+    await vi.advanceTimersByTimeAsync(1_100);
+    const all = sentInvokes(socket);
+    expect(all).toHaveLength(50);
+    expect(all[49].cmd).toBe("cmd_49");
+  });
+
+  it("re-sends the same frame after a rate-limited result and resolves on success", async () => {
+    vi.useFakeTimers();
+    const socket = new FakeSocket();
+    const t = await connectTransport(socket);
+
+    const p = t.request("git_status", { root: "/r" });
+    const id = socket.lastSentInvokeId(0);
+    socket.serverSend({
+      t: "result",
+      id,
+      ok: false,
+      error: "rate limited: too many requests, retry shortly",
+    });
+    await vi.advanceTimersByTimeAsync(260);
+
+    const invokes = sentInvokes(socket);
+    expect(invokes).toHaveLength(2);
+    // Same id — the server rejected before executing, so a re-send is
+    // a fresh attempt, not a duplicate.
+    expect(invokes[1].id).toBe(id);
+    expect(invokes[1].cmd).toBe("git_status");
+
+    socket.serverSend({ t: "result", id, ok: true, data: { branch: "main" } });
+    await expect(p).resolves.toEqual({ branch: "main" });
+  });
+
+  it("gives up after exhausting rate-limit retries", async () => {
+    vi.useFakeTimers();
+    const socket = new FakeSocket();
+    const t = await connectTransport(socket);
+
+    const p = t.request("git_status");
+    const settled = p.catch((err: Error) => err);
+    const id = socket.lastSentInvokeId(0);
+    for (const advance of [260, 520, 780]) {
+      socket.serverSend({ t: "result", id, ok: false, error: "rate limited: x" });
+      await vi.advanceTimersByTimeAsync(advance);
+    }
+    expect(sentInvokes(socket)).toHaveLength(4);
+    // Fourth rejection: attempts exhausted — surfaces the error.
+    socket.serverSend({ t: "result", id, ok: false, error: "rate limited: x" });
+    const err = await settled;
+    expect(err).toBeInstanceOf(Error);
+    expect((err as Error).message).toContain("rate limited");
+  });
+
+  it("non-rate-limit errors reject immediately without a re-send", async () => {
+    const socket = new FakeSocket();
+    const t = await connectTransport(socket);
+
+    const p = t.request("git_status");
+    const id = socket.lastSentInvokeId(0);
+    socket.serverSend({ t: "result", id, ok: false, error: "boom" });
+    await expect(p).rejects.toThrow("boom");
+    expect(sentInvokes(socket)).toHaveLength(1);
+  });
+
+  it("clears the queue on close: nothing leaks into the next connection", async () => {
+    vi.useFakeTimers();
+    const socket = new FakeSocket();
+    const t = await connectTransport(socket);
+
+    const outcomes: Array<Promise<unknown>> = [];
+    for (let i = 0; i < 40; i++) {
+      outcomes.push(t.request(`cmd_${i}`).catch((err: Error) => err.message));
+    }
+    expect(sentInvokes(socket)).toHaveLength(32);
+
+    // Connection drops with 8 frames still queued.
+    socket.close();
+    for (const outcome of outcomes.slice(32)) {
+      await expect(outcome).resolves.toBe("gateway connection closed");
+    }
+
+    // Reconnect (same adapter instance). The queued frames must NOT be
+    // replayed into the fresh socket.
+    await vi.advanceTimersByTimeAsync(2_000);
+    socket.helloOk();
+    expect(t.getStatus()).toBe("connected");
+    expect(sentInvokes(socket)).toHaveLength(32);
+  });
+
+  it("drops a request that timed out while queued — never sends it late", async () => {
+    vi.useFakeTimers();
+    const socket = new FakeSocket();
+    const t = await connectTransport(socket);
+
+    // Fill the budget, then queue one more with a short timeout.
+    for (let i = 0; i < 32; i++) {
+      void t.request(`filler_${i}`).catch(() => {});
+    }
+    const late = t.request("send_message", {}, { timeoutMs: 200 });
+    const lateOutcome = expect(late).rejects.toThrow("timed out");
+    expect(sentInvokes(socket)).toHaveLength(32);
+
+    // The timeout fires while the frame is still queued...
+    await vi.advanceTimersByTimeAsync(250);
+    await lateOutcome;
+    // ...so the drain at window end must NOT deliver it: a
+    // non-idempotent command can't execute after its caller failed.
+    await vi.advanceTimersByTimeAsync(1_000);
+    const cmds = sentInvokes(socket).map((f) => f.cmd);
+    expect(cmds).toHaveLength(32);
+    expect(cmds).not.toContain("send_message");
+  });
+});

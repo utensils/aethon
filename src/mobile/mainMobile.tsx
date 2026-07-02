@@ -11,6 +11,7 @@ import { createRoot } from "react-dom/client";
 import { applyBootTheme } from "../themeBootstrap";
 import { MobileGate } from "./MobileGate";
 import { perfMark } from "./perfMarks";
+import "../styles/fonts";
 import "../styles/tokens.css";
 import "../styles/themes.css";
 import "../styles/chrome.css";

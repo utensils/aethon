@@ -9,9 +9,12 @@
  * elevation shape scale, app-level layout. */
 
 :root {
-  /* Typography — Geist (UI) + Geist Mono (mono); Inter and JetBrains
-     Mono fall back gracefully when Google Fonts is unreachable. */
-  --font-ui: "Geist", "Inter", system-ui, -apple-system, sans-serif;
+  /* Typography — Geist (UI) + Geist Mono (mono), self-hosted via
+     @fontsource (see src/styles/fonts.ts). "Geist Sans" is the family
+     the bundled @fontsource/geist-sans registers; a system-installed
+     "Geist" still wins when present. */
+  --font-ui:
+    "Geist", "Geist Sans", "Inter", system-ui, -apple-system, sans-serif;
   --font-mono:
     "Geist Mono", "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo,
     monospace;

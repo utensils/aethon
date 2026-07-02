@@ -29,6 +29,11 @@ describe("mobile command policy", () => {
       "fs_watch_dirs",
       "fs_open_in_default_app",
       "git_watch_root",
+      "git_unwatch_root",
+      // Extension hot-reload watchers: desktop-local; forwarding them
+      // was a guaranteed policy Deny per project announcement at boot.
+      "watch_project_extensions",
+      "unwatch_project_extensions",
       "updater_available",
       "write_state",
       "toggle_devtools",
@@ -86,6 +91,10 @@ describe("mobile command policy", () => {
   it("gives updater_available a falsey stub and unknown stubs null", () => {
     expect(stubResult("updater_available")).toBe(false);
     expect(stubResult("native_window_list")).toBeNull();
+    // Fire-and-forget watcher stubs resolve null — matching the desktop
+    // command's Result<(), _> shape closely enough for their callers.
+    expect(stubResult("watch_project_extensions")).toBeNull();
+    expect(stubResult("unwatch_project_extensions")).toBeNull();
   });
 
   it("does not stub fs reads (they belong to the gateway)", () => {
