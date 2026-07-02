@@ -8,13 +8,43 @@ export interface ReadyEffectsInput {
   currentProjectCwd: string | null;
   priorActiveTabCwd: string | null;
   priorActiveTabId: string;
+  /** Tab ids the bridge already has live sessions for (from the ready
+   *  snapshot's `tabs`). A tab that was already replayed this webview
+   *  lifetime is only replayed again if the bridge lost it. */
+  bridgeTabIds: ReadonlySet<string>;
 }
 
-function replayRestoredAgentTabs(ctx: BridgeMessageContext): void {
+/** Tabs already replayed to the bridge in this webview's lifetime.
+ *  `ready` is broadcast and re-fires on every project switch and every
+ *  `report` from ANY connected client, so replay must not re-run each
+ *  time: re-opening a live tab re-emits session_history (which can
+ *  interleave with an in-flight stream) and, when the tab's cwd differs
+ *  from the bridge's current project, flips the global project +
+ *  extension surface per ready. The first replay after a webview
+ *  reload (fresh module state) and any tab the bridge lost (missing
+ *  from the ready snapshot — bridge respawn, failed open) still go
+ *  through. */
+const replayedTabIds = new Set<string>();
+
+/** Test-only: fresh-webview replay semantics. */
+export function resetReplayedTabsForTest(): void {
+  replayedTabIds.clear();
+}
+
+function replayRestoredAgentTabs(
+  ctx: BridgeMessageContext,
+  bridgeTabIds: ReadonlySet<string>,
+): void {
   const localTabs = (ctx.stateRef.current.tabs as Tab[] | undefined) ?? [];
   for (const t of localTabs) {
     if ((t.kind ?? "agent") !== "agent") continue;
     if (t.id === "default") continue;
+    // A replay we already sent may not be reflected in the bridge
+    // snapshot yet (ready can re-fire while the open is in flight) —
+    // the pending gate covers that window.
+    if (ctx.pendingTabOpens.current.has(t.id)) continue;
+    if (replayedTabIds.has(t.id) && bridgeTabIds.has(t.id)) continue;
+    replayedTabIds.add(t.id);
     const tabProject = t.projectId
       ? ctx.projectsRef.current.projects.find((p) => p.id === t.projectId)
       : null;
@@ -70,6 +100,18 @@ export function runReadyEffects(
   ctx: BridgeMessageContext,
   input: ReadyEffectsInput,
 ): void {
-  replayRestoredAgentTabs(ctx);
+  // The companion surface is a passive reader of bridge state: the
+  // desktop webview is the single writer for tab lifecycle and the
+  // global active project. `ready` is broadcast to every connected
+  // client, so if each client re-announced its own local view here,
+  // two clients with different active projects would livelock the
+  // bridge in a set_project ping-pong — each flip is a 20-60s
+  // extension unload/reload that re-emits ready and storms every
+  // event consumer.
+  if (import.meta.env.VITE_AETHON_SURFACE === "mobile") {
+    ctx.markStartupChromeReady();
+    return;
+  }
+  replayRestoredAgentTabs(ctx, input.bridgeTabIds);
   finishProjectAnnouncement(ctx, input);
 }

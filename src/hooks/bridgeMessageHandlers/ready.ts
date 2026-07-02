@@ -136,6 +136,17 @@ export const handleReady: BridgeMessageHandler = (data, ctx) => {
       | ExtensionHighlightGrammar[]
       | undefined) ?? [];
   const extStateKeys = (data.extensionStateKeys as string[] | undefined) ?? [];
+  const bridgeTabs =
+    (data.tabs as
+      | {
+          id: string;
+          model: string;
+          cwd?: string;
+          authProfileId?: string;
+          contextUsage?: Record<string, unknown>;
+          thinkingLevel?: string;
+        }[]
+      | undefined) ?? [];
   const discTabs =
     (data.discoveredTabs as DiscoveredSession[] | undefined) ?? [];
   const authProfiles =
@@ -236,17 +247,7 @@ export const handleReady: BridgeMessageHandler = (data, ctx) => {
     reduceReadyState(prev, {
       authProfiles,
       baseLayout,
-      bridgeTabs:
-        (data.tabs as
-          | {
-              id: string;
-              model: string;
-              cwd?: string;
-              authProfileId?: string;
-              contextUsage?: Record<string, unknown>;
-              thinkingLevel?: string;
-            }[]
-          | undefined) ?? [],
+      bridgeTabs,
       codexFastMode: data.codexFastMode,
       extState,
       fallbackModel,
@@ -269,5 +270,6 @@ export const handleReady: BridgeMessageHandler = (data, ctx) => {
     currentProjectCwd,
     priorActiveTabCwd,
     priorActiveTabId,
+    bridgeTabIds: new Set(bridgeTabs.map((t) => t.id)),
   });
 };

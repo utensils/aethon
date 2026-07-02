@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { handleReady } from "./ready";
+import { resetReplayedTabsForTest } from "./readyEffects";
 import { buildHandlerFixture } from "./testFixtures";
 import { clearTauriMocks, installTauriMocks } from "../../test/tauriMocks";
 import { makeEmptyTab } from "../../types/tab";
@@ -11,6 +12,7 @@ describe("handleReady", () => {
 
   beforeEach(() => {
     installTauriMocks();
+    resetReplayedTabsForTest();
   });
   afterEach(() => {
     grammarSpy?.mockRestore();
