@@ -24,6 +24,8 @@ import { listen } from "@tauri-apps/api/event";
 
 import { getGhBranchStatus, type GhPr } from "../ghBranchStatusCache";
 import { getGhChecks, type GhCheckRun } from "../ghChecksCache";
+import { remoteHostInvoke } from "../services/remote";
+import { isRemoteHostId } from "./tabOps/helpers";
 import {
   getCachedVcsSlice,
   hydrateVcsSliceCache,
@@ -113,6 +115,7 @@ export interface VcsSlice {
 export interface UseVcsStatusContext {
   /** Active project/workspace cwd (workspace-aware). Null collapses /vcs. */
   activeRoot: string | null;
+  activeHostId?: string | null;
   setState: Dispatch<SetStateAction<Record<string, unknown>>>;
   /**
    * Optional project/sidebar mirror patcher. Called from the same setState
@@ -250,6 +253,7 @@ function pickPr(prs: GhPr[]): VcsPr | null {
 
 export function useVcsStatus({
   activeRoot,
+  activeHostId,
   setState,
   onGitStatusSettled,
 }: UseVcsStatusContext): void {
@@ -341,18 +345,23 @@ export function useVcsStatus({
         return;
       }
       const root = activeRoot;
+      const hostId = isRemoteHostId(activeHostId) ? activeHostId : null;
+      const invokeGit = <T,>(cmd: string, args: Record<string, unknown>) =>
+        hostId
+          ? remoteHostInvoke<T>(hostId, cmd, args)
+          : invoke<T>(cmd, args);
       polling = true;
       try {
         // Working-tree status + branch (workspace-aware) + change breakdown
         // run together; PR/CI gate on having a branch.
         const [statusRes, filesRes, statRes] = await Promise.all([
-          invoke<GitStatus | null>("git_status", { path: root }).catch(
+          invokeGit<GitStatus | null>("git_status", { path: root }).catch(
             catchGitPollError<GitStatus>,
           ),
-          invoke<GitFileStatusEntry[] | null>("git_file_status", {
+          invokeGit<GitFileStatusEntry[] | null>("git_file_status", {
             root,
           }).catch(catchGitPollError<GitFileStatusEntry[]>),
-          invoke<DiffStat | null>("git_diff_stat", { root }).catch(
+          invokeGit<DiffStat | null>("git_diff_stat", { root }).catch(
             catchGitPollError<DiffStat>,
           ),
         ]);
@@ -457,5 +466,5 @@ export function useVcsStatus({
       unlisten?.();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeRoot]);
+  }, [activeRoot, activeHostId]);
 }

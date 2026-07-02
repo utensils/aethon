@@ -273,6 +273,9 @@ export default function App() {
   // active project's path, else the active editor tab's root — so devshell,
   // VCS, and tree decoration all point at the same cwd.
   const activeWorkspaceRoot = activeWorkspaceCwd(state);
+  const activeWorkspaceHostId =
+    (state.project as { hostId?: string } | null | undefined)?.hostId ??
+    hostInfo.activeHostId;
 
   // Devshell badge wiring. Track the current project root; the hook
   // hydrates the chip from the Rust cache on switch and stays in
@@ -317,11 +320,14 @@ export default function App() {
   // replicating the async home-dir fetch here is noise.
   useVcsStatus({
     activeRoot: activeWorkspaceRoot,
+    activeHostId: activeWorkspaceHostId,
     setState,
     onGitStatusSettled: (root, status) =>
       projectsHandleRef.current.applyVcsGitStatus(root, status),
   });
-  useGitWatch(activeWorkspaceRoot);
+  useGitWatch(
+    activeWorkspaceHostId?.startsWith("remote:") ? null : activeWorkspaceRoot,
+  );
 
   // ---------------------------------------------------------------------
   // Tab lifecycle (create / switch / update / close / undo-close), the
