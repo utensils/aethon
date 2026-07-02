@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!-- iOS 14+ requires an explicit reason before the app may reach hosts
+       on the local network; without it, LAN connections fail silently. -->
+  <key>NSLocalNetworkUsageDescription</key>
+  <string>Aethon connects to your paired desktop instance on the local network.</string>
+  <!-- QR pairing scans the code shown in the desktop's Settings. -->
+  <key>NSCameraUsageDescription</key>
+  <string>Aethon scans the pairing QR code shown on your desktop.</string>
+  <!-- Bonjour service the desktop advertises, so mDNS discovery can find
+       paired hosts on the LAN. -->
+  <key>NSBonjourServices</key>
+  <array>
+    <string>_aethon._tcp</string>
+  </array>
+  <!-- Allow the dev-only plaintext ws:// path to a local desktop
+       instance. Production traffic is wss:// with a pinned cert opened
+       from Rust, which is outside ATS's scope. -->
+  <key>NSAppTransportSecurity</key>
+  <dict>
+    <key>NSAllowsLocalNetworking</key>
+    <true/>
+  </dict>
+</dict>
+</plist>

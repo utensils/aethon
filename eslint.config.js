@@ -18,9 +18,11 @@ export default tseslint.config(
     // Don't lint generated / vendored / cross-language directories.
     ignores: [
       "dist/**",
+      "dist-mobile/**",
       "coverage/**",
       "node_modules/**",
       "src-tauri/**",
+      "apps/mobile/src-tauri/**",
       "examples/**",
       ".aethon/**",
       ".claude/**",

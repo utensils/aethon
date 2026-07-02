@@ -1,0 +1,29 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Aethon",
+  "version": "0.11.2",
+  "identifier": "com.utensils.aethon.mobile",
+  "build": {
+    "beforeDevCommand": "bun --cwd ../.. run dev:mobile",
+    "beforeBuildCommand": "bun --cwd ../.. run build:mobile",
+    "devUrl": "http://localhost:1430",
+    "frontendDist": "../../../dist-mobile"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "publisher": "James Brink",
+    "category": "DeveloperTool",
+    "shortDescription": "Aethon companion — drive a running desktop instance from your phone.",
+    "longDescription": "The Aethon iOS companion pairs with a running Aethon desktop instance over the LAN and reuses the same A2UI web UI, so sessions, chat, terminals, files, and git are all reachable from the phone. The desktop remains the executor; the companion is a thin, authenticated remote client.",
+    "iOS": {
+      "developmentTeam": null
+    }
+  }
+}

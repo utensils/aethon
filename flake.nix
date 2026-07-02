@@ -64,6 +64,14 @@
               "clippy"
               "rust-analyzer"
             ];
+            # iOS targets for the companion app (apps/mobile). Only added
+            # on Darwin — the toolchain can carry them but Xcode + a Mac
+            # host are needed to actually link/run, so Linux builders skip
+            # the extra download. See docs/mobile.md.
+            targets = lib.optionals pkgs.stdenv.isDarwin [
+              "aarch64-apple-ios"
+              "aarch64-apple-ios-sim"
+            ];
           };
 
           rustPlatform = pkgs.makeRustPlatform {
