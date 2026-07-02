@@ -20,7 +20,16 @@ export function VoiceSection({
 }) {
   return (
     <Section id="voice" title="Voice">
-      <Field label="Toggle hotkey">
+      <p className="ae-settings-note">
+        Two voice features share this section: <strong>Dictation</strong>{" "}
+        (the composer mic button and hold-to-talk key type what you say) and{" "}
+        <strong>Conversation</strong> (hands-free voice chat that answers out
+        loud and can dispatch work — enter it with the composer's conversation
+        button).
+      </p>
+
+      <h4 className="ae-settings-subhead">Dictation</h4>
+      <Field label="Toggle hotkey (start/stop dictation)">
         <input
           type="text"
           className="ae-settings-input"
@@ -36,7 +45,7 @@ export function VoiceSection({
           }
         />
       </Field>
-      <Field label="Hold-to-talk key">
+      <Field label="Hold-to-talk key (hold to record, release to send)">
         <input
           type="text"
           className="ae-settings-input"
@@ -52,7 +61,15 @@ export function VoiceSection({
           }
         />
       </Field>
-      <Field label="Speak agent replies aloud (LFM2-Audio)">
+      <p className="ae-settings-note">
+        Dictation transcribes with the provider marked “Use” below.
+      </p>
+      <VoiceProviders />
+
+      <ConversationSettings config={config} update={update} />
+
+      <h4 className="ae-settings-subhead">Spoken replies</h4>
+      <Field label="Speak agent replies aloud (outside conversation mode)">
         <input
           type="checkbox"
           checked={config.voice.speakAgentReplies}
@@ -66,7 +83,7 @@ export function VoiceSection({
           }
         />
       </Field>
-      <Field label="Spoken reply length (characters)">
+      <Field label="Spoken reply length cap (characters)">
         <input
           type="number"
           className="ae-settings-input"
@@ -83,22 +100,6 @@ export function VoiceSection({
           }
         />
       </Field>
-      <Field label="Hands-free conversation (auto-reopen mic)">
-        <input
-          type="checkbox"
-          checked={config.voice.conversationContinuous}
-          onChange={(e) =>
-            update({
-              voice: {
-                ...config.voice,
-                conversationContinuous: e.target.checked,
-              },
-            })
-          }
-        />
-      </Field>
-      <ConversationSettings config={config} update={update} />
-      <VoiceProviders />
     </Section>
   );
 }
@@ -180,6 +181,12 @@ function ConversationSettings({
   return (
     <div className="ae-voice-conversation-settings">
       <h4 className="ae-settings-subhead">Conversation</h4>
+      <p className="ae-settings-note">
+        Speech-to-text hears you, the voice brain replies and dispatches
+        work, text-to-speech reads the answer back. Each stage picks its
+        provider below; “Auto” prefers the cloud provider when its API key is
+        set and falls back to the local model.
+      </p>
       <p
         className={`ae-settings-note${
           engineStatus && !engineStatus.available ? " ae-voice-error" : ""
@@ -187,6 +194,20 @@ function ConversationSettings({
       >
         {statusLine}
       </p>
+      <Field label="Auto-listen after replies (hands-free)">
+        <input
+          type="checkbox"
+          checked={config.voice.conversationContinuous}
+          onChange={(e) =>
+            update({
+              voice: {
+                ...config.voice,
+                conversationContinuous: e.target.checked,
+              },
+            })
+          }
+        />
+      </Field>
       <Field label="Conversation engine">
         <select
           className="ae-settings-input"

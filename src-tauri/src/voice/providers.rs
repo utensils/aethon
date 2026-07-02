@@ -189,6 +189,78 @@ impl VoiceProvider for PlatformVoiceProvider {
     }
 }
 
+pub(super) struct DeepgramVoiceProvider;
+
+#[async_trait]
+impl VoiceProvider for DeepgramVoiceProvider {
+    fn id(&self) -> &'static str {
+        DEEPGRAM_ID
+    }
+
+    fn metadata(&self, _registry: &VoiceProviderRegistry) -> VoiceProviderMetadata {
+        VoiceProviderMetadata {
+            id: DEEPGRAM_ID.to_string(),
+            name: "Deepgram Nova-3 (cloud)".to_string(),
+            description: "Cloud dictation via Deepgram's Nova-3 model. Fast and accurate; needs network and the Deepgram API key from the Conversation settings above.".to_string(),
+            kind: VoiceProviderKind::External,
+            recording_mode: VoiceRecordingMode::Native,
+            privacy_label: "Audio is sent to Deepgram for transcription".to_string(),
+            offline: false,
+            download_required: false,
+            model_size_label: None,
+            cache_path: None,
+            accelerator_label: Some("Deepgram cloud".to_string()),
+        }
+    }
+
+    fn status(&self, registry: &VoiceProviderRegistry, db: &VoiceSettings) -> VoiceProviderInfo {
+        let enabled = registry.enabled(db, self.id());
+        let has_key = resolve_deepgram_key().is_some();
+        let (status, status_label, setup_required) = if !enabled {
+            (
+                VoiceProviderStatus::Unavailable,
+                "Disabled".to_string(),
+                false,
+            )
+        } else if has_key {
+            (
+                VoiceProviderStatus::Ready,
+                "Ready (cloud)".to_string(),
+                false,
+            )
+        } else {
+            (
+                VoiceProviderStatus::NeedsSetup,
+                "Add a Deepgram API key (Conversation settings above, or DEEPGRAM_API_KEY)"
+                    .to_string(),
+                true,
+            )
+        };
+        VoiceProviderInfo {
+            metadata: self.metadata(registry),
+            status,
+            status_label,
+            enabled,
+            selected: registry.selected_provider(db).as_deref() == Some(self.id()),
+            setup_required,
+            can_remove_model: false,
+            error: None,
+        }
+    }
+
+    async fn prepare(
+        &self,
+        registry: &VoiceProviderRegistry,
+        _app: &AppHandle,
+        db_path: &Path,
+    ) -> Result<VoiceProviderInfo, String> {
+        // Nothing to download or authorize locally; "prepare" just re-checks
+        // the key so the Settings card refreshes.
+        let db = VoiceSettings::open(db_path).map_err(|e| e.to_string())?;
+        Ok(self.status(registry, &db))
+    }
+}
+
 pub(super) struct DistilWhisperCandleProvider;
 
 #[async_trait]

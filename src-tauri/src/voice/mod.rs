@@ -37,6 +37,7 @@ use self::audio::{
 };
 
 mod convo;
+mod deepgram;
 mod download;
 mod inference;
 mod lfm2;
@@ -48,6 +49,8 @@ mod settings;
 mod types;
 
 pub(crate) use convo::*;
+
+use deepgram::*;
 
 use download::*;
 use inference::*;

@@ -619,8 +619,18 @@ pub fn write_config(config: serde_json::Value, app: AppHandle) -> Result<(), Str
             }
         }
         set_or_clear_str(voice_table, "brain_model", voice_brain_model);
-        set_or_clear_str(voice_table, "stt_provider", voice_stt_provider);
-        set_or_clear_str(voice_table, "tts_provider", voice_tts_provider);
+        // "auto" is the implicit default — keep the file clean by omitting
+        // it, so future default changes aren't pinned by stale writes.
+        set_or_clear_str(
+            voice_table,
+            "stt_provider",
+            voice_stt_provider.filter(|v| *v != "auto"),
+        );
+        set_or_clear_str(
+            voice_table,
+            "tts_provider",
+            voice_tts_provider.filter(|v| *v != "auto"),
+        );
         set_or_clear_str(voice_table, "tts_voice", voice_tts_voice);
         // Absent → untouched; explicit "" → cleared (see extraction comment).
         for (key, value) in [
