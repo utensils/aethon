@@ -119,6 +119,7 @@ export async function removeWorkspaceById(
         projectPath: project.path,
         workspacePath: workspace.path,
         force: false,
+        hostId: project.hostId,
       });
       finalizeRemoval();
     } catch (err) {
@@ -133,6 +134,7 @@ export async function removeWorkspaceById(
             projectPath: project.path,
             workspacePath: workspace.path,
             force: true,
+            hostId: project.hostId,
           });
           finalizeRemoval();
           return;
@@ -151,6 +153,7 @@ export async function removeWorkspaceById(
           await gitWorktreeRemoveOrphan({
             projectPath: project.path,
             workspacePath: workspace.path,
+            hostId: project.hostId,
           });
           finalizeRemoval();
           return;

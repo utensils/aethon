@@ -190,6 +190,8 @@ export interface Tab {
   // Immutable working directory the bridge session was created with.
   // For workspace sessions this is the workspace path, not the project root.
   cwd?: string;
+  /** Host this tab executes on. Missing means local/back-compat. */
+  hostId?: string;
   /** Auth profile id selected for this agent session, if any. */
   authProfileId?: string;
   /** Per-session transcript visibility overrides (thinking / tool calls).
@@ -224,6 +226,7 @@ export interface ClosedTabEntry {
   kind: TabKind;
   label: string;
   projectId: string | null;
+  hostId?: string;
   /** Agent and shell tabs — passed back to reopen/restore paths. */
   cwd?: string;
   command?: string;

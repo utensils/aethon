@@ -8,6 +8,7 @@ import {
 import { invoke } from "@tauri-apps/api/core";
 
 import type { ContextMenuItem } from "../../../components/primitives/context-menu";
+import { invokeForHost, isRemoteHostId } from "../../../remoteInvoke";
 import {
   parentDirOf,
   type ContextMenuState,
@@ -15,6 +16,7 @@ import {
 } from "./fileTreeModel";
 
 interface UseFileTreeActionsArgs {
+  hostId?: string | null;
   onEvent: (eventType: string, payload?: unknown) => void;
   projectPath: string;
   projectPathRef: RefObject<string>;
@@ -24,6 +26,7 @@ interface UseFileTreeActionsArgs {
 }
 
 function useFileTreeActions({
+  hostId,
   onEvent,
   projectPath,
   projectPathRef,
@@ -68,7 +71,7 @@ function useFileTreeActions({
       if (!name) return;
       const target = `${parentPath.replace(/\/$/, "")}/${name}`;
       try {
-        await invoke(kind === "file" ? "fs_create_file" : "fs_create_dir", {
+        await invokeForHost(hostId, kind === "file" ? "fs_create_file" : "fs_create_dir", {
           root: projectPathRef.current,
           path: target,
         });
@@ -83,7 +86,7 @@ function useFileTreeActions({
         window.alert(`Failed to create ${label}: ${String(err)}`);
       }
     },
-    [onEvent, projectPathRef, refreshFolder],
+    [hostId, onEvent, projectPathRef, refreshFolder],
   );
 
   const onContextNewFile = useCallback(async () => {
@@ -129,7 +132,7 @@ function useFileTreeActions({
           : "/";
       const target = parentPath ? `${parentPath}${separator}${name}` : name;
       try {
-        await invoke("fs_rename", {
+        await invokeForHost(hostId, "fs_rename", {
           root: projectPathRef.current,
           from: node.entry.path,
           to: target,
@@ -144,7 +147,7 @@ function useFileTreeActions({
         window.alert(`Rename failed: ${String(err)}`);
       }
     },
-    [onEvent, projectPathRef, refreshFolder],
+    [hostId, onEvent, projectPathRef, refreshFolder],
   );
 
   const onContextDelete = useCallback(async () => {
@@ -159,7 +162,7 @@ function useFileTreeActions({
     const parentPath =
       dirIdx >= 0 ? node.entry.path.slice(0, dirIdx) : node.entry.path;
     try {
-      await invoke("fs_delete", {
+      await invokeForHost(hostId, "fs_delete", {
         root: projectPathRef.current,
         path: node.entry.path,
       });
@@ -174,6 +177,7 @@ function useFileTreeActions({
   }, [
     activeContextMenu,
     closeContextMenu,
+    hostId,
     onEvent,
     projectPathRef,
     refreshFolder,
@@ -209,6 +213,10 @@ function useFileTreeActions({
     if (!activeContextMenu) return;
     const path = activeContextMenu.node.entry.path;
     closeContextMenu();
+    if (isRemoteHostId(hostId)) {
+      window.alert("Reveal in file manager is only available on the local host.");
+      return;
+    }
     try {
       await invoke("fs_reveal_in_file_manager", {
         root: projectPath,
@@ -217,12 +225,16 @@ function useFileTreeActions({
     } catch (err) {
       window.alert(`Reveal failed: ${String(err)}`);
     }
-  }, [activeContextMenu, closeContextMenu, projectPath]);
+  }, [activeContextMenu, closeContextMenu, hostId, projectPath]);
 
   const onContextOpenWithDefault = useCallback(async () => {
     if (!activeContextMenu) return;
     const path = activeContextMenu.node.entry.path;
     closeContextMenu();
+    if (isRemoteHostId(hostId)) {
+      window.alert("Open with default app is only available on the local host.");
+      return;
+    }
     try {
       await invoke("fs_open_in_default_app", {
         root: projectPath,
@@ -231,7 +243,7 @@ function useFileTreeActions({
     } catch (err) {
       window.alert(`Open failed: ${String(err)}`);
     }
-  }, [activeContextMenu, closeContextMenu, projectPath]);
+  }, [activeContextMenu, closeContextMenu, hostId, projectPath]);
 
   const onContextExpandAll = useCallback(() => {
     const node = activeContextMenu?.node;
@@ -278,12 +290,15 @@ function useFileTreeActions({
             {
               id: "reveal-in-finder",
               label: "Reveal in File Manager",
+              disabled: isRemoteHostId(hostId),
               onSelect: onContextRevealInFinder,
             },
             {
               id: "open-with-default",
               label: "Open with default app",
-              disabled: activeContextMenu.node.entry.kind !== "file",
+              disabled:
+                activeContextMenu.node.entry.kind !== "file" ||
+                isRemoteHostId(hostId),
               onSelect: onContextOpenWithDefault,
             },
             { type: "separator" },
@@ -309,6 +324,7 @@ function useFileTreeActions({
         : [],
     [
       activeContextMenu,
+      hostId,
       onContextCollapse,
       onContextCopyPath,
       onContextCopyRelativePath,

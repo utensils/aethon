@@ -1,6 +1,14 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 // Force the macOS branch so the brand-strip drag-region assertion is
 // deterministic under jsdom (navigator.platform is empty there).
 vi.mock("../../../utils/platform", () => ({ isMacOS: () => true }));
@@ -430,9 +438,7 @@ describe("Sidebar project menu", () => {
     });
 
     fireEvent.contextMenu(screen.getByText("feature-x").closest("li")!);
-    fireEvent.click(
-      screen.getByRole("menuitem", { name: /Rename workspace/ }),
-    );
+    fireEvent.click(screen.getByRole("menuitem", { name: /Rename workspace/ }));
 
     expect(prompt).not.toHaveBeenCalled();
     expect(screen.queryByRole("menu")).toBeNull();
@@ -638,6 +644,243 @@ describe("Sidebar host groups", () => {
       { sectionId: "hosts", itemId: "remote:bender" },
       "remote:bender",
     );
+  });
+
+  it("keeps multiple host project trees expanded across host selection", async () => {
+    const component = sidebarComponent({
+      brandMark: true,
+      version: "v9.9",
+      hostGroups: true,
+      hosts: { $ref: "/sidebar/hosts" },
+      sections: [
+        {
+          id: "projects",
+          title: "projects",
+          items: { $ref: "/sidebar/projects" },
+        },
+      ],
+    });
+    const localProjects = [{ id: "project:local", label: "local-aethon" }];
+    const remoteProjects = [
+      {
+        id: "remote:bender::project::nix",
+        remoteId: "nix",
+        hostId: "remote:bender",
+        label: "nix",
+        workspaces: [
+          {
+            id: "remote:bender::workspace::feature",
+            remoteId: "feature",
+            remoteProjectId: "nix",
+            projectId: "remote:bender::project::nix",
+            hostId: "remote:bender",
+            label: "feature",
+            branch: "feature",
+            path: "/remote/nix-feature",
+            active: false,
+            isMain: false,
+          },
+        ],
+      },
+    ];
+    const stateFor = (activeHostId: string) => ({
+      project: null,
+      sidebar: {
+        hosts: [
+          {
+            id: "local:abc",
+            label: "halcyon",
+            hint: "this mac",
+            active: activeHostId === "local:abc",
+          },
+          {
+            id: "remote:bender",
+            label: "bender",
+            hint: "paired",
+            paired: true,
+            active: activeHostId === "remote:bender",
+          },
+        ],
+        projects:
+          activeHostId === "remote:bender" ? remoteProjects : localProjects,
+        projectsByHost: {
+          "local:abc": localProjects,
+          "remote:bender": remoteProjects,
+        },
+      },
+    });
+
+    const view = render(
+      <Sidebar
+        component={component}
+        state={stateFor("local:abc")}
+        onEvent={vi.fn<SidebarOnEvent>()}
+        renderChildWithState={() => null}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("local-aethon")).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Expand host" }));
+    expect(screen.getByText("local-aethon")).toBeTruthy();
+    expect(screen.getByText("nix")).toBeTruthy();
+    const remoteGroup = screen.getByText("bender").closest(".ae-host-group");
+    expect(remoteGroup).toBeTruthy();
+    expect(
+      within(remoteGroup as HTMLElement).queryByText("feature"),
+    ).toBeNull();
+    expect(
+      within(remoteGroup as HTMLElement).queryByText("Open project…"),
+    ).toBeNull();
+    fireEvent.click(
+      within(remoteGroup as HTMLElement).getByRole("button", {
+        name: "Expand",
+      }),
+    );
+    expect(
+      within(remoteGroup as HTMLElement).getByText("feature"),
+    ).toBeTruthy();
+    fireEvent.click(screen.getByText("bender"));
+
+    view.rerender(
+      <Sidebar
+        component={component}
+        state={stateFor("remote:bender")}
+        onEvent={vi.fn<SidebarOnEvent>()}
+        renderChildWithState={() => null}
+      />,
+    );
+
+    expect(screen.getByText("local-aethon")).toBeTruthy();
+    expect(screen.getByText("nix")).toBeTruthy();
+  });
+
+  it("offers pairing directly on visible discovered desktop hosts", () => {
+    const { onEvent } = renderWithHost({
+      hosts: [
+        { id: "local:abc", label: "halcyon", hint: "this mac", active: true },
+        {
+          id: "remote:bender",
+          label: "bender",
+          hint: "aethon-123.local",
+          active: false,
+          discovered: true,
+          paired: false,
+          hostname: "aethon-123.local",
+          fingerprint: "123456",
+          candidates: ["aethon-123.local:38123"],
+        },
+      ],
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Pair bender" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Pairing code" }), {
+      target: { value: "12345678" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Pair" }));
+    expect(onEvent).toHaveBeenCalledWith(
+      "pair-remote-host",
+      {
+        sectionId: "hosts",
+        itemId: "remote:bender",
+        label: "bender",
+        hostname: "aethon-123.local",
+        fingerprint: "123456",
+        candidates: ["aethon-123.local:38123"],
+        code: "12345678",
+      },
+      "remote:bender",
+    );
+  });
+
+  it("offers remote host pairing from the host context menu", () => {
+    const { onEvent } = renderWithHost({
+      hosts: [
+        { id: "local:abc", label: "halcyon", hint: "this mac", active: true },
+        {
+          id: "remote:bender",
+          label: "bender",
+          hint: "aethon-123.local",
+          active: false,
+          discovered: true,
+          paired: false,
+          hostname: "aethon-123.local",
+          fingerprint: "123456",
+          candidates: ["aethon-123.local:38123"],
+        },
+      ],
+    });
+
+    fireEvent.contextMenu(
+      screen.getByText("bender").closest(".ae-host-group-header")!,
+    );
+    fireEvent.click(screen.getByRole("menuitem", { name: /Pair host/ }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Pairing code" }), {
+      target: { value: "87654321" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Pair" }));
+
+    expect(onEvent).toHaveBeenCalledWith(
+      "pair-remote-host",
+      {
+        sectionId: "hosts",
+        itemId: "remote:bender",
+        label: "bender",
+        hostname: "aethon-123.local",
+        fingerprint: "123456",
+        candidates: ["aethon-123.local:38123"],
+        code: "87654321",
+      },
+      "remote:bender",
+    );
+  });
+
+  it("offers maintenance actions for paired remote hosts", () => {
+    const { onEvent } = renderWithHost({
+      hosts: [
+        { id: "local:abc", label: "halcyon", hint: "this mac", active: true },
+        {
+          id: "remote:bender",
+          label: "bender",
+          hint: "connected",
+          active: false,
+          discovered: true,
+          paired: true,
+        },
+      ],
+    });
+
+    fireEvent.contextMenu(
+      screen.getByText("bender").closest(".ae-host-group-header")!,
+    );
+    expect(screen.getByRole("menuitem", { name: /Reconnect/ })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("menuitem", { name: /Rename host/ }));
+    fireEvent.change(screen.getByLabelText("Host name"), {
+      target: { value: "Bender Lab" },
+    });
+    fireEvent.submit(screen.getByLabelText("Host name").closest("form")!);
+
+    expect(onEvent).toHaveBeenCalledWith("rename-remote-host", {
+      sectionId: "hosts",
+      itemId: "remote:bender",
+      hostId: "remote:bender",
+      label: "Bender Lab",
+      previousLabel: "bender",
+    });
+
+    fireEvent.contextMenu(
+      screen.getByText("bender").closest(".ae-host-group-header")!,
+    );
+    fireEvent.click(screen.getByRole("menuitem", { name: /Forget host/ }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /Confirm forget/ }));
+
+    expect(onEvent).toHaveBeenCalledWith("forget-remote-host", {
+      sectionId: "hosts",
+      itemId: "remote:bender",
+      hostId: "remote:bender",
+      label: "bender",
+    });
   });
 
   it("renders project rows as two-line cards with branch + ahead/behind meta", () => {

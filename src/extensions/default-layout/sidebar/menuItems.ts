@@ -8,6 +8,7 @@
 import type { ContextMenuItem } from "../../../components/primitives/context-menu";
 import type { SidebarItem } from "../../../types/a2ui";
 import { DEFAULT_WORKSPACE_BASE_BRANCH } from "../../../projects";
+import type { HostGroupItem } from "./host-group";
 import type { WorkspaceSidebarItem } from "./workspace-row";
 
 export interface SidebarContextMenuState {
@@ -24,6 +25,10 @@ export interface SidebarContextMenuState {
   kind:
     | "project"
     | "project-base"
+    | "host"
+    | "host-pair"
+    | "host-rename"
+    | "host-forget"
     | "workspace"
     | "mobile-device"
     | "mobile-device-rename"
@@ -39,12 +44,38 @@ export interface SidebarContextMenuState {
   /** For `workspace` kind: the full workspace shape so menu actions can
    *  surface path + branch + main-flag context without re-resolving. */
   workspace?: WorkspaceSidebarItem;
+  host?: HostGroupItem;
+}
+
+function isLocalHost(item: HostGroupItem | undefined): boolean {
+  return (item?.hint ?? "").toLowerCase() === "this mac";
+}
+
+function canPairHost(item: HostGroupItem | undefined): boolean {
+  return (
+    !isLocalHost(item) && item?.paired !== true && item?.discovered === true
+  );
+}
+
+function canManageHost(item: HostGroupItem | undefined): boolean {
+  return !isLocalHost(item) && item?.paired === true;
+}
+
+export function isRemoteWorkspace(
+  item: WorkspaceSidebarItem | undefined,
+): boolean {
+  return (
+    typeof item?.remoteId === "string" ||
+    typeof item?.remoteProjectId === "string" ||
+    (typeof item?.hostId === "string" && item.hostId.startsWith("remote:"))
+  );
 }
 
 export function canRenameWorkspace(
   item: WorkspaceSidebarItem | undefined,
 ): boolean {
   if (!item) return false;
+  if (isRemoteWorkspace(item)) return false;
   const pending = item.pendingState;
   return !pending || pending === "succeeded";
 }
@@ -53,6 +84,7 @@ export function canRemoveWorkspace(
   item: WorkspaceSidebarItem | undefined,
 ): boolean {
   if (!item || item.isMain) return false;
+  if (isRemoteWorkspace(item)) return false;
   const pending = item.pendingState;
   return !pending || pending === "succeeded";
 }
@@ -68,6 +100,15 @@ export interface SidebarMenuHandlers {
   copyContextProjectPath: () => void;
   renameContextProject: () => void;
   removeContextProject: () => void;
+  // Host actions — row click selects the host; menu handles auth and
+  // paired-host maintenance.
+  pairContextRemoteHost: () => void;
+  submitContextRemoteHostPair: (code: string) => void;
+  reconnectContextRemoteHost: () => void;
+  renameContextRemoteHost: () => void;
+  submitContextRemoteHostRename: (name: string) => void;
+  confirmContextRemoteHostForget: () => void;
+  forgetContextRemoteHost: () => void;
   // Workspace actions — same convention as projects: row click handles
   // activation/landing; menu omits a redundant "Switch to workspace".
   openContextWorkspaceInFinder: () => void;
@@ -181,20 +222,131 @@ export function buildSidebarMenuItems(
           label: "Blank or origin/main uses the default",
         },
       ];
-    case "workspace": {
-      const isMain = state.workspace?.isMain === true;
-      const canRemove = canRemoveWorkspace(state.workspace);
+    case "host": {
+      const local = isLocalHost(state.host);
+      const pairable = canPairHost(state.host);
+      const manageable = canManageHost(state.host);
+      if (local) {
+        return [
+          { type: "header", label: state.label },
+          { type: "note", label: "This is the local host" },
+        ];
+      }
       return [
         {
-          id: "open-finder",
-          label: "Open in Finder",
-          onSelect: h.openContextWorkspaceInFinder,
+          id: "pair-remote-host",
+          label: "Pair host…",
+          disabled: !pairable,
+          keepOpenOnSelect: true,
+          onSelect: h.pairContextRemoteHost,
         },
+        {
+          id: "reconnect-remote-host",
+          label: "Reconnect",
+          disabled: !manageable,
+          onSelect: h.reconnectContextRemoteHost,
+        },
+        {
+          id: "rename-remote-host",
+          label: "Rename host…",
+          disabled: !manageable,
+          keepOpenOnSelect: true,
+          onSelect: h.renameContextRemoteHost,
+        },
+        { type: "separator" },
+        {
+          id: "forget-remote-host",
+          label: "Forget host…",
+          danger: true,
+          disabled: !manageable,
+          keepOpenOnSelect: true,
+          onSelect: h.confirmContextRemoteHostForget,
+        },
+        pairable
+          ? { type: "note", label: "Uses the pairing code shown on that host" }
+          : { type: "note", label: "Pair before remote projects can load" },
+      ];
+    }
+    case "host-pair":
+      return [
+        { type: "header", label: `Pair ${state.label}` },
+        {
+          type: "input",
+          id: "remote-host-code-input",
+          label: "Pairing code",
+          placeholder: "12345678",
+          submitLabel: "Pair",
+          onSubmit: h.submitContextRemoteHostPair,
+        },
+        {
+          type: "note",
+          label:
+            "Start pairing on the other host, then enter its 8-digit code.",
+        },
+      ];
+    case "host-rename":
+      return [
+        { type: "header", label: "Rename host" },
+        {
+          type: "input",
+          id: "remote-host-name-input",
+          label: "Host name",
+          defaultValue: state.label,
+          placeholder: "bender",
+          submitLabel: "Rename",
+          onSubmit: h.submitContextRemoteHostRename,
+        },
+      ];
+    case "host-forget":
+      return [
+        { type: "header", label: "Forget host?" },
+        {
+          type: "note",
+          label: "Removes this host's saved token. Pair again to reconnect.",
+        },
+        {
+          id: "confirm-forget-remote-host",
+          label: "Confirm forget",
+          danger: true,
+          onSelect: h.forgetContextRemoteHost,
+        },
+        {
+          id: "cancel-forget-remote-host",
+          label: "Cancel",
+          onSelect: h.closeContextMenu,
+        },
+      ];
+    case "workspace": {
+      const remote = isRemoteWorkspace(state.workspace);
+      const isMain = state.workspace?.isMain === true;
+      const canRemove = canRemoveWorkspace(state.workspace);
+      const safeItems: ContextMenuItem[] = [
+        ...(remote
+          ? []
+          : [
+              {
+                id: "open-finder",
+                label: "Open in Finder",
+                onSelect: h.openContextWorkspaceInFinder,
+              } satisfies ContextMenuItem,
+            ]),
         {
           id: "copy-path",
           label: "Copy path",
           onSelect: h.copyContextWorkspacePath,
         },
+      ];
+      if (remote) {
+        return [
+          ...safeItems,
+          {
+            type: "note",
+            label: "Remote workspace actions run on that host.",
+          },
+        ];
+      }
+      return [
+        ...safeItems,
         {
           id: "rename-workspace",
           label: "Rename workspace…",
@@ -266,7 +418,11 @@ export function buildSidebarMenuItems(
       ];
     case "session":
       return [
-        { id: "rename-session", label: "Rename session…", onSelect: h.renameContextSession },
+        {
+          id: "rename-session",
+          label: "Rename session…",
+          onSelect: h.renameContextSession,
+        },
         {
           id: "delete-session",
           label: "Delete session…",

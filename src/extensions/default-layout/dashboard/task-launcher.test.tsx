@@ -141,6 +141,56 @@ describe("TaskLauncher", () => {
     );
   });
 
+  it("carries remote project identity through host-level launcher submits", async () => {
+    const onEvent = vi.fn();
+    render(
+      <TaskLauncher
+        component={launcher({
+          project: {
+            id: "remote:fp::project::aethon",
+            remoteId: "aethon",
+            hostId: "remote:fp",
+            label: "aethon",
+            path: "/remote/aethon",
+          },
+          projects: [
+            {
+              id: "remote:fp::project::aethon",
+              remoteId: "aethon",
+              hostId: "remote:fp",
+              label: "aethon",
+              path: "/remote/aethon",
+            },
+          ],
+          showProjectSelector: true,
+        })}
+        state={{}}
+        onEvent={onEvent}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Project" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "aethon" }));
+    fireEvent.change(screen.getByLabelText("Task prompt"), {
+      target: { value: "ship remote" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Start" }));
+
+    await waitFor(() =>
+      expect(onEvent).toHaveBeenCalledWith(
+        "start-task",
+        expect.objectContaining({
+          projectId: "remote:fp::project::aethon",
+          remoteId: "aethon",
+          hostId: "remote:fp",
+          projectLabel: "aethon",
+          path: "/remote/aethon",
+          prompt: "ship remote",
+        }),
+      ),
+    );
+  });
+
   it("shows slash commands in the host-level launcher", async () => {
     render(
       <TaskLauncher

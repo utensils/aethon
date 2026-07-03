@@ -151,6 +151,9 @@ export function ProjectsDashboard({
     return byProject;
   }, [state.sidebar]);
   const showHostStartupPolicy = host?.isLocal === true;
+  const showOpenProject = host?.isLocal !== false;
+  const remoteHostOverview = host?.isLocal === false;
+  const visibleRecentSessions = remoteHostOverview ? [] : recentSessions;
 
   useEffect(() => {
     if (!showHostStartupPolicy) {
@@ -217,13 +220,15 @@ export function ProjectsDashboard({
             "Pick a project to keep working, or start something new."}
         </p>
         <div className="a2ui-projects-dashboard-actions">
-          <button
-            type="button"
-            className="a2ui-projects-dashboard-primary"
-            onClick={() => onEvent("open-project")}
-          >
-            Open Project…
-          </button>
+          {showOpenProject && (
+            <button
+              type="button"
+              className="a2ui-projects-dashboard-primary"
+              onClick={() => onEvent("open-project")}
+            >
+              Open Project…
+            </button>
+          )}
           <button
             type="button"
             className="a2ui-projects-dashboard-secondary"
@@ -312,11 +317,11 @@ export function ProjectsDashboard({
             </div>
           </section>
         )}
-        {recentSessions.length > 0 && (
+        {visibleRecentSessions.length > 0 && (
           <section className="a2ui-projects-dashboard-section">
             <h2>Recent sessions</h2>
             <ul className="a2ui-projects-dashboard-sessions">
-              {recentSessions.slice(0, 6).map((s) => (
+              {visibleRecentSessions.slice(0, 6).map((s) => (
                 <DashboardSessionRow
                   key={s.id}
                   session={s}
@@ -340,16 +345,18 @@ export function ProjectsDashboard({
             </ul>
           </section>
         )}
-        <section className="a2ui-projects-dashboard-section">
-          <RegistryComponent
-            type="subagents-config"
-            state={state}
-            onEvent={(_component, eventType, data) =>
-              onEvent(eventType, data, "subagents-config")
-            }
-            componentProps={{ scope: "user" }}
-          />
-        </section>
+        {!remoteHostOverview && (
+          <section className="a2ui-projects-dashboard-section">
+            <RegistryComponent
+              type="subagents-config"
+              state={state}
+              onEvent={(_component, eventType, data) =>
+                onEvent(eventType, data, "subagents-config")
+              }
+              componentProps={{ scope: "user" }}
+            />
+          </section>
+        )}
       </div>
     </div>
   );

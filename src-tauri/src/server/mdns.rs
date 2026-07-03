@@ -9,15 +9,17 @@
 //! Resolution events are coalesced through a 250ms debounce buffer so a
 //! noisy LAN doesn't fan out hundreds of emits per second.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+use std::net::{IpAddr, SocketAddr};
 use std::time::Duration;
 
 use mdns_sd::{ServiceDaemon, ServiceEvent, ServiceInfo};
 use serde::Serialize;
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 
 const SERVICE_TYPE: &str = "_aethon._tcp.local.";
 const DEBOUNCE: Duration = Duration::from_millis(250);
+const VERIFY_TIMEOUT: Duration = Duration::from_secs(3);
 
 #[derive(Debug, Serialize, Clone)]
 pub struct DiscoveredHost {
@@ -28,6 +30,7 @@ pub struct DiscoveredHost {
     pub port: u16,
     #[serde(rename = "fingerprintPrefix")]
     pub fingerprint_prefix: String,
+    pub candidates: Vec<String>,
     #[serde(rename = "lastSeen")]
     pub last_seen: u64,
 }
@@ -45,14 +48,18 @@ pub fn advertise(
     fingerprint: &str,
 ) -> Result<ServiceDaemon, Box<dyn std::error::Error>> {
     let mdns = ServiceDaemon::new()?;
-    let hostname = local_mdns_hostname().unwrap_or_else(|| "localhost.local".to_string());
-    let host_label = hostname.trim_end_matches(".local");
-    let instance_name = format!("{display_name} ({host_label})");
+    let system_hostname = local_mdns_hostname().unwrap_or_else(|| "localhost.local".to_string());
+    let host_label = system_hostname.trim_end_matches(".local");
+    let hostname = advertised_mdns_hostname(fingerprint);
+    let suffix = &fingerprint[..fingerprint.len().min(8)];
+    let instance_name = format!("{display_name} ({host_label}, {suffix})");
     let version = env!("CARGO_PKG_VERSION");
+    let local_info = crate::commands::host::local_host_info();
     let props = [
         ("version", version),
         ("name", display_name),
         ("fingerprint", fingerprint),
+        ("hostId", local_info.id.as_str()),
     ];
     let service = ServiceInfo::new(
         SERVICE_TYPE,
@@ -70,6 +77,25 @@ pub fn advertise(
     .enable_addr_auto();
     mdns.register(service)?;
     Ok(mdns)
+}
+
+/// Fingerprint-derived service target hostname for Aethon's own mDNS
+/// advertisement. Using the system LocalHostName as the target can collide on
+/// networks where another Mac already owns `name.local`, which triggers macOS'
+/// "local hostname is already in use" rename dialog. A synthetic hostname keeps
+/// the service unique while TXT `name` retains the human display label.
+pub(crate) fn advertised_mdns_hostname(fingerprint: &str) -> String {
+    let suffix: String = fingerprint
+        .chars()
+        .filter(|ch| ch.is_ascii_alphanumeric())
+        .take(12)
+        .collect();
+    let suffix = if suffix.is_empty() {
+        "unknown".to_string()
+    } else {
+        suffix.to_ascii_lowercase()
+    };
+    format!("aethon-{suffix}.local")
 }
 
 /// Local host name that Bonjour can resolve, without the trailing dot.
@@ -127,9 +153,11 @@ pub fn start_browser(app: AppHandle) -> Result<(), String> {
         .browse(SERVICE_TYPE)
         .map_err(|e| format!("browse: {e}"))?;
     tauri::async_runtime::spawn(async move {
-        // Hold the daemon alive for the task lifetime.
-        let _mdns = mdns;
+        // `mdns` is owned by this task so the daemon stays alive for the
+        // browser lifetime; ServiceFound below also uses it to force
+        // resolution when the cache only has a PTR record.
         let mut fullname_to_id: HashMap<String, String> = HashMap::new();
+        let mut id_to_fullnames: HashMap<String, HashSet<String>> = HashMap::new();
         let mut pending: HashMap<String, DiscoveredHost> = HashMap::new();
         let mut next_flush: Option<tokio::time::Instant> = None;
         loop {
@@ -150,45 +178,66 @@ pub fn start_browser(app: AppHandle) -> Result<(), String> {
                 break;
             };
             match event {
+                ServiceEvent::ServiceFound(_, fullname) => {
+                    tracing::debug!(
+                        target: "aethon::server::mdns",
+                        "found service {fullname}; verifying"
+                    );
+                    let _ = mdns.verify(fullname, VERIFY_TIMEOUT);
+                }
                 ServiceEvent::ServiceResolved(info) => {
-                    let name = info
-                        .get_property_val_str("name")
-                        .unwrap_or_default()
-                        .to_string();
                     let fingerprint = info
                         .get_property_val_str("fingerprint")
                         .unwrap_or_default()
                         .to_string();
-                    let hostname = info.get_hostname().trim_end_matches('.').to_string();
-                    let port = info.get_port();
-                    let fullname = info.get_fullname().to_string();
                     if fingerprint == local_fingerprint {
                         // mdns-sd echoes our own advertisement; skip it.
                         continue;
                     }
-                    let id = format!("remote:{fingerprint}");
-                    let display = if name.is_empty() {
-                        hostname
-                            .trim_end_matches(".local")
-                            .trim_end_matches(".lan")
-                            .to_string()
-                    } else {
-                        name.clone()
+                    let Some(host) = discovered_host_from_service_info(&info) else {
+                        tracing::debug!(
+                            target: "aethon::server::mdns",
+                            "ignoring unresolved service {}",
+                            info.get_fullname()
+                        );
+                        continue;
                     };
-                    let host = DiscoveredHost {
-                        id: id.clone(),
-                        hostname,
-                        display_name: display,
-                        port,
-                        fingerprint_prefix: fingerprint,
-                        last_seen: now_ms(),
-                    };
+                    let id = host.id.clone();
+                    if let Some(remote) =
+                        app.try_state::<std::sync::Arc<crate::server::remote::RemoteState>>()
+                    {
+                        let candidates_changed = remote
+                            .hosts
+                            .touch_candidates(&id, host.candidates.clone())
+                            .unwrap_or(false);
+                        if candidates_changed && let Some(record) = remote.hosts.get(&id) {
+                            let cancel = remote.replace_host_forwarder(&id);
+                            crate::server::remote::client::spawn_event_forwarder(
+                                record,
+                                app.clone(),
+                                cancel,
+                            );
+                        }
+                        let _ = app.emit("remote-hosts-changed", HostRemoved { id: id.clone() });
+                    }
+                    let fullname = info.get_fullname().to_string();
                     fullname_to_id.insert(fullname, id.clone());
+                    id_to_fullnames
+                        .entry(id.clone())
+                        .or_default()
+                        .insert(info.get_fullname().to_string());
                     pending.insert(id, host);
                     next_flush = Some(tokio::time::Instant::now() + DEBOUNCE);
                 }
                 ServiceEvent::ServiceRemoved(_, fullname) => {
                     if let Some(id) = fullname_to_id.remove(&fullname) {
+                        if let Some(fullnames) = id_to_fullnames.get_mut(&id) {
+                            fullnames.remove(&fullname);
+                            if !fullnames.is_empty() {
+                                continue;
+                            }
+                        }
+                        id_to_fullnames.remove(&id);
                         pending.remove(&id);
                         let _ = app.emit("host-removed", HostRemoved { id });
                     }
@@ -198,6 +247,59 @@ pub fn start_browser(app: AppHandle) -> Result<(), String> {
         }
     });
     Ok(())
+}
+
+fn discovered_host_from_service_info(info: &ServiceInfo) -> Option<DiscoveredHost> {
+    let fingerprint = info
+        .get_property_val_str("fingerprint")
+        .unwrap_or_default()
+        .to_string();
+    if fingerprint.is_empty() {
+        return None;
+    }
+    let hostname = info.get_hostname().trim_end_matches('.').to_string();
+    if hostname.is_empty() {
+        return None;
+    }
+    let name = info
+        .get_property_val_str("name")
+        .unwrap_or_default()
+        .to_string();
+    let display = if name.is_empty() {
+        hostname
+            .trim_end_matches(".local")
+            .trim_end_matches(".lan")
+            .to_string()
+    } else {
+        name
+    };
+    let port = info.get_port();
+    Some(DiscoveredHost {
+        id: format!("remote:{fingerprint}"),
+        hostname: hostname.clone(),
+        display_name: display,
+        port,
+        fingerprint_prefix: fingerprint,
+        candidates: service_candidates(info, &hostname, port),
+        last_seen: now_ms(),
+    })
+}
+
+fn service_candidates(info: &ServiceInfo, hostname: &str, port: u16) -> Vec<String> {
+    let mut out = vec![format!("{hostname}:{port}")];
+    let mut addresses = info
+        .get_addresses()
+        .iter()
+        .copied()
+        .collect::<Vec<IpAddr>>();
+    addresses.sort();
+    for addr in addresses {
+        let candidate = SocketAddr::new(addr, port).to_string();
+        if !out.iter().any(|existing| existing == &candidate) {
+            out.push(candidate);
+        }
+    }
+    out
 }
 
 fn flush(app: &AppHandle, pending: &mut HashMap<String, DiscoveredHost>) {
@@ -237,5 +339,59 @@ mod tests {
         let hostname = local_mdns_hostname_from(None, "halcyon").unwrap();
 
         assert_eq!(hostname, "halcyon.local");
+    }
+
+    #[test]
+    fn advertised_mdns_hostname_is_fingerprint_scoped() {
+        assert_eq!(
+            advertised_mdns_hostname("AB:CD:EF:12:34"),
+            "aethon-abcdef1234.local"
+        );
+        assert_eq!(advertised_mdns_hostname("::"), "aethon-unknown.local");
+    }
+
+    #[test]
+    fn discovered_host_uses_txt_identity_and_resolved_candidates() {
+        let info = ServiceInfo::new(
+            SERVICE_TYPE,
+            "bender (bender-4, 3eb36a78)",
+            "aethon-3eb36a78c099.local.",
+            "192.168.1.143",
+            54148,
+            &[
+                ("name", "bender"),
+                (
+                    "fingerprint",
+                    "3eb36a78c09916acfc50c566fce3087c68ac8232a6cf9e59e5deb713fee0fdd5",
+                ),
+            ][..],
+        )
+        .unwrap();
+
+        let host = discovered_host_from_service_info(&info).unwrap();
+
+        assert_eq!(
+            host.id,
+            "remote:3eb36a78c09916acfc50c566fce3087c68ac8232a6cf9e59e5deb713fee0fdd5"
+        );
+        assert_eq!(host.display_name, "bender");
+        assert_eq!(host.hostname, "aethon-3eb36a78c099.local");
+        assert_eq!(host.candidates[0], "aethon-3eb36a78c099.local:54148");
+        assert!(host.candidates.contains(&"192.168.1.143:54148".to_string()));
+    }
+
+    #[test]
+    fn discovered_host_requires_fingerprint() {
+        let info = ServiceInfo::new(
+            SERVICE_TYPE,
+            "bender",
+            "aethon-3eb36a78c099.local.",
+            "192.168.1.143",
+            54148,
+            &[("name", "bender")][..],
+        )
+        .unwrap();
+
+        assert!(discovered_host_from_service_info(&info).is_none());
     }
 }

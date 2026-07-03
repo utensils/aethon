@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { invokeForHost } from "../../remoteInvoke";
 import type { BridgeMessageHandler } from "./types";
 
 /** Bridge proxy for the agent's `aethon.devshell.*` queries
@@ -29,25 +29,31 @@ export const handleDevshellQuery: BridgeMessageHandler = (data, ctx) => {
     if (op === "status") {
       const root = args.root as string | undefined;
       if (!root) throw new Error("devshell_query.status requires root");
-      return await invoke("devshell_status", { args: { root } });
+      return await invokeForHost(ctx.sourceHostId, "devshell_status", {
+        args: { root },
+      });
     }
     if (op === "env_for_path") {
       const cwd = args.cwd as string | undefined;
       if (!cwd) throw new Error("devshell_query.env_for_path requires cwd");
-      return await invoke("devshell_env_for_path", { args: { cwd } });
+      return await invokeForHost(ctx.sourceHostId, "devshell_env_for_path", {
+        args: { cwd },
+      });
     }
     if (op === "prepare_for_path") {
       const cwd = args.cwd as string | undefined;
       if (!cwd) throw new Error("devshell_query.prepare_for_path requires cwd");
       const includeEnv = args.includeEnv === true;
-      return await invoke("devshell_prepare_for_path", {
+      return await invokeForHost(ctx.sourceHostId, "devshell_prepare_for_path", {
         args: { cwd, includeEnv },
       });
     }
     if (op === "refresh") {
       const root = args.root as string | undefined;
       if (!root) throw new Error("devshell_query.refresh requires root");
-      return await invoke("devshell_refresh", { args: { root } });
+      return await invokeForHost(ctx.sourceHostId, "devshell_refresh", {
+        args: { root },
+      });
     }
     throw new Error(`unknown devshell_query op: ${op}`);
   };

@@ -10,7 +10,7 @@
  * The negative case is environment-stable for the session, so a fresh
  * shellout per dashboard click would be waste.
  */
-import { invoke } from "@tauri-apps/api/core";
+import { invokeForHost } from "./remoteInvoke";
 
 export interface GhRepoOverview {
   ghAvailable: boolean;
@@ -39,6 +39,10 @@ interface CacheEntry {
 const cache = new Map<string, CacheEntry>();
 const inFlight = new Map<string, Promise<GhRepoOverview>>();
 
+function cacheKey(projectPath: string, hostId?: string | null): string {
+  return `${hostId ?? "local"}|${projectPath}`;
+}
+
 function ttlFor(o: GhRepoOverview): number {
   if (!o.ghAvailable || !o.repo) return NEGATIVE_TTL_MS;
   return TTL_MS;
@@ -53,22 +57,28 @@ function isFresh(entry: CacheEntry): boolean {
  *  through the in-flight map. */
 export async function getRepoOverview(
   projectPath: string,
+  hostId?: string | null,
 ): Promise<GhRepoOverview> {
-  const hit = cache.get(projectPath);
+  const key = cacheKey(projectPath, hostId);
+  const hit = cache.get(key);
   if (hit && isFresh(hit)) return hit.overview;
 
-  const pending = inFlight.get(projectPath);
+  const pending = inFlight.get(key);
   if (pending) return pending;
 
-  const promise = invoke<GhRepoOverview>("gh_repo_overview", { projectPath })
+  const promise = invokeForHost<GhRepoOverview>(
+    hostId,
+    "gh_repo_overview",
+    { projectPath },
+  )
     .then((overview) => {
-      cache.set(projectPath, { overview, fetchedAt: Date.now() });
+      cache.set(key, { overview, fetchedAt: Date.now() });
       return overview;
     })
     .finally(() => {
-      inFlight.delete(projectPath);
+      inFlight.delete(key);
     });
-  inFlight.set(projectPath, promise);
+  inFlight.set(key, promise);
   return promise;
 }
 
@@ -77,9 +87,10 @@ export async function getRepoOverview(
  *  per-project dashboard. */
 export async function refreshRepoOverview(
   projectPath: string,
+  hostId?: string | null,
 ): Promise<GhRepoOverview> {
-  cache.delete(projectPath);
-  return getRepoOverview(projectPath);
+  cache.delete(cacheKey(projectPath, hostId));
+  return getRepoOverview(projectPath, hostId);
 }
 
 /** Bust every cached entry. Used by the agent's global
@@ -94,8 +105,11 @@ export function clearAllRepoOverviews(): void {
 
 /** Read-only snapshot for code paths that want cached data without
  *  triggering a fetch (e.g. extension queries via aethon API). */
-export function peekRepoOverview(projectPath: string): GhRepoOverview | null {
-  const hit = cache.get(projectPath);
+export function peekRepoOverview(
+  projectPath: string,
+  hostId?: string | null,
+): GhRepoOverview | null {
+  const hit = cache.get(cacheKey(projectPath, hostId));
   return hit ? hit.overview : null;
 }
 

@@ -116,6 +116,8 @@ export function ChatInput({
   const inputContainerRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const { composerHeight, startComposerResize } = useComposerResize();
+  const chatAtMentionHostId =
+    (state.project as { hostId?: string } | undefined)?.hostId ?? null;
   const {
     atMatch,
     atHighlightIdx,
@@ -129,6 +131,7 @@ export function ChatInput({
     onValueCommit: commitDraft,
     textareaRef,
     root: atMentionRoot(state),
+    hostId: chatAtMentionHostId,
     // The slash picker owns the keyboard while it's open; `/command @arg`
     // drafts stay slash-flavored.
     enabled: !slashMatch,

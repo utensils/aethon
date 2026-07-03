@@ -106,15 +106,18 @@ export function useDerivedRenderState({
     );
     const activeKind = activeTabKind(tabs, activeTabId);
     const overviewActive = activeKind === null || activeKind === "shell";
-    const explicitLanding =
-      state.landing as { kind?: string } | null | undefined;
+    const explicitLanding = state.landing as
+      | { kind?: string }
+      | null
+      | undefined;
     const landing =
       explicitLanding ??
       (overviewActive ? implicitWorkspaceLanding(state) : null);
     const workspaceLandingVisible = !!landing && landing.kind === "workspace";
     const mobileDeviceLandingVisible =
       !!landing && landing.kind === "mobile-device";
-    const landingVisible = workspaceLandingVisible || mobileDeviceLandingVisible;
+    const landingVisible =
+      workspaceLandingVisible || mobileDeviceLandingVisible;
     const effectiveActiveTabId = landingVisible ? OVERVIEW_TAB_ID : activeTabId;
     const history = buildSidebarHistory(
       tabs,
@@ -136,7 +139,19 @@ export function useDerivedRenderState({
       ((state.sidebar as { projects?: unknown } | undefined)?.projects as
         | { id: string; workspaces?: unknown }[]
         | undefined) ?? [];
-    const activeProjectSidebarEntry = sidebarProjects.find(
+    const activeHostId =
+      typeof state.activeHostId === "string"
+        ? state.activeHostId
+        : (hostInfo.activeHostId ?? hostInfo.localHostId);
+    const hostScopedProjects =
+      activeHostId && activeHostId !== hostInfo.localHostId
+        ? (hostInfo.remoteProjectsByHost[activeHostId] ?? [])
+        : sidebarProjects;
+    const remoteHostActive =
+      activeHostId !== null &&
+      activeHostId !== undefined &&
+      activeHostId !== hostInfo.localHostId;
+    const activeProjectSidebarEntry = hostScopedProjects.find(
       (p) => p.id === activeProjectId,
     );
     const projectDashboardWorkspaces =
@@ -144,9 +159,12 @@ export function useDerivedRenderState({
     const projectsArr = Array.isArray(state.projects)
       ? (state.projects as { id: string }[])
       : [];
-    const otherProjects = activeProjectId
-      ? projectsArr.filter((p) => p.id !== activeProjectId)
+    const activeHostProjects = remoteHostActive
+      ? (hostScopedProjects as { id: string }[])
       : projectsArr;
+    const otherProjects = activeProjectId
+      ? activeHostProjects.filter((p) => p.id !== activeProjectId)
+      : activeHostProjects;
     const existingProjectDashboard =
       (state.projectDashboard as { widgets?: unknown[] } | undefined) ?? {};
     const projectDashboard = {
@@ -183,15 +201,23 @@ export function useDerivedRenderState({
       ...existingProjectsDashboard,
       extraCards: existingProjectsDashboard.extraCards ?? [],
     };
-    const activeHostId = hostInfo.activeHostId ?? hostInfo.localHostId;
     const sidebarHosts = hostInfo.hosts.map((h) => ({
       id: h.id,
       label: h.displayName || h.hostname,
+      hostname: h.hostname,
+      fingerprint: h.fingerprint ?? h.fingerprintPrefix,
+      candidates: h.candidates,
+      paired: h.paired === true,
+      discovered: h.discovered === true,
       hint: h.isLocal
         ? "this mac"
         : h.connected === true
           ? "connected"
-          : (h.paired ? "paired" : h.hostname),
+          : h.paired
+            ? "paired"
+            : h.discovered
+              ? "available"
+              : h.hostname,
       tooltip: h.hostname,
       active: h.id === activeHostId,
     }));
@@ -287,9 +313,9 @@ export function useDerivedRenderState({
       if (t.kind !== "agent") continue;
       if (isAgentTabInFlight(t)) runningIds.add(t.id);
     }
-    const sidebarProjectsWithAgent = Array.isArray(sidebar.projects)
+    const sidebarProjectsWithAgent = Array.isArray(hostScopedProjects)
       ? attachAgentActivity(
-          sidebar.projects as Array<{
+          hostScopedProjects as Array<{
             id: string;
             workspaces?: { path?: string; isMain?: boolean }[];
           }>,
@@ -297,10 +323,29 @@ export function useDerivedRenderState({
           runningIds,
           attentionIds,
         )
-      : sidebar.projects;
+      : hostScopedProjects;
+    const projectsByHost: Record<string, unknown[]> = {};
+    for (const host of hostInfo.hosts) {
+      const hostProjects =
+        host.id === hostInfo.localHostId
+          ? sidebarProjects
+          : (hostInfo.remoteProjectsByHost[host.id] ?? []);
+      projectsByHost[host.id] = Array.isArray(hostProjects)
+        ? attachAgentActivity(
+            hostProjects as Array<{
+              id: string;
+              workspaces?: { path?: string; isMain?: boolean }[];
+            }>,
+            agentTabs,
+            runningIds,
+            attentionIds,
+          )
+        : [];
+    }
 
     return {
       ...state,
+      projects: activeHostProjects,
       activeTabId: effectiveActiveTabId,
       hasTabs,
       hasSessionTabs,
@@ -319,6 +364,7 @@ export function useDerivedRenderState({
       sidebar: {
         ...sidebar,
         projects: sidebarProjectsWithAgent,
+        projectsByHost,
         history,
         hosts: sidebarHosts,
         mobileDevices: sidebarMobileDevices,
@@ -336,6 +382,7 @@ export function useDerivedRenderState({
     hostInfo.hosts,
     hostInfo.localHostId,
     hostInfo.mobileDevices,
+    hostInfo.remoteProjectsByHost,
     state,
   ]);
 

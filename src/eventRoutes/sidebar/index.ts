@@ -54,4 +54,9 @@ export {
   handleSidebarRenameMobileDevice,
   handleSidebarUnpairMobileDevice,
 } from "./mobileDevice";
+export {
+  handleSidebarForgetRemoteHost,
+  handleSidebarReconnectRemoteHost,
+  handleSidebarRenameRemoteHost,
+} from "./remoteHost";
 export { handleSectionedSelect } from "./chrome";

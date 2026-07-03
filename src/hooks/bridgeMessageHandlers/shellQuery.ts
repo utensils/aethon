@@ -1,8 +1,8 @@
-import { invoke } from "@tauri-apps/api/core";
 import { makeEmptyTab, type ShellMeta, type Tab } from "../../types/tab";
+import { invokeForHost, isRemoteHostId } from "../../remoteInvoke";
 import type { ShareMode } from "../../utils/shareMode";
 import { initialDevshellTerminalBuffer } from "../tabOps/devshellTerminal";
-import { cwdForNewTab } from "../tabOps/helpers";
+import { cwdForNewTab, projectCwdForNewTab } from "../tabOps/helpers";
 import type { BridgeMessageContext, BridgeMessageHandler } from "./types";
 
 /** Bridge proxy for `aethon.shells.{list, read, write}`. Mode changes go
@@ -31,6 +31,7 @@ export interface CreatedShell {
   args: string[];
   shareMode: ShareMode;
   inheritEnv: boolean;
+  hostId?: string;
 }
 
 function shellOpenPayload(shell: CreatedShell): Record<string, unknown> {
@@ -57,16 +58,20 @@ export function reserveShellTab(
   if (shellTabExists(ctx, tabId)) {
     throw new Error(`shell tab already exists: ${tabId}`);
   }
+  const hostId = ctx.sourceHostId;
+  const isRemote = isRemoteHostId(hostId);
   const cwd =
     optionalString(args.cwd) ??
-    cwdForNewTab(ctx.projectsRef.current, ctx.stateRef.current) ??
+    (isRemote
+      ? projectCwdForNewTab(ctx.projectsRef.current, ctx.stateRef.current)
+      : cwdForNewTab(ctx.projectsRef.current, ctx.stateRef.current)) ??
     "";
   const command = optionalString(args.command) ?? "";
   const commandArgs = optionalStringArray(args.args) ?? [];
   const shareMode: ShareMode = "private";
   const activate = args.activate === true;
   const inheritEnv = args.inheritEnv !== false;
-  const initialTerminalBuffer = cwd
+  const initialTerminalBuffer = cwd && !isRemote
     ? initialDevshellTerminalBuffer(ctx.stateRef.current, cwd)
     : "";
 
@@ -83,6 +88,7 @@ export function reserveShellTab(
     };
     tabs.push({
       ...makeEmptyTab(tabId, label, projectId, "shell"),
+      ...(hostId ? { hostId } : {}),
       terminalBuffer: initialTerminalBuffer,
       shell,
     });
@@ -98,7 +104,7 @@ export function reserveShellTab(
     };
   });
 
-  return { tabId, cwd, command, args: commandArgs, shareMode, inheritEnv };
+  return { tabId, cwd, command, args: commandArgs, shareMode, inheritEnv, hostId };
 }
 
 export function removeReservedShellTab(
@@ -124,7 +130,9 @@ export async function startReservedShell(
   shell: CreatedShell,
   ctx: BridgeMessageContext,
 ): Promise<CreatedShell> {
-  await invoke("shell_open", { args: shellOpenPayload(shell) });
+  await invokeForHost(shell.hostId, "shell_open", {
+    args: shellOpenPayload(shell),
+  });
   ctx.setState((prev) => ({
     ...prev,
     tabs: ((prev.tabs as Tab[] | undefined) ?? []).map((tab) =>
@@ -158,13 +166,15 @@ export const handleShellQuery: BridgeMessageHandler = (data, ctx) => {
   const mid = data.mutationId;
   const route = async (): Promise<unknown> => {
     if (op === "list") {
-      return await invoke("shell_list_shareable");
+      return await invokeForHost(ctx.sourceHostId, "shell_list_shareable");
     }
     if (op === "create") {
       return await createShell(args, ctx);
     }
     if (op === "read") {
-      return await invoke("shell_read_scrollback", { args });
+      return await invokeForHost(ctx.sourceHostId, "shell_read_scrollback", {
+        args,
+      });
     }
     if (op === "write") {
       return await ctx.routeShellWrite(args);

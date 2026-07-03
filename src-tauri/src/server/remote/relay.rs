@@ -102,6 +102,12 @@ pub const DISPATCHABLE: &[&str] = &[
     "read_paste_image_base64",
     "subagents_list",
     "remote_status",
+    "devshell_status",
+    "devshell_prepare_for_path",
+    "devshell_env_for_path",
+    "devshell_refresh",
+    "workspace_startup_status",
+    "workspace_startup_set_auto_approve",
     // terminal / files / git phase
     "shell_open",
     "shell_input",
@@ -299,6 +305,72 @@ impl TauriRelay {
                 let remote = app.state::<Arc<super::RemoteState>>();
                 to_value(
                     crate::commands::remote::remote_status(server.clone(), remote.clone()).await?,
+                )
+            }
+            "devshell_status" => {
+                let cache = app.state::<Arc<crate::devshell::DevshellCache>>();
+                to_value(
+                    crate::commands::devshell::devshell_status(
+                        app.clone(),
+                        cache.clone(),
+                        arg(&args, "args")?,
+                    )
+                    .await?,
+                )
+            }
+            "devshell_prepare_for_path" => {
+                let cache = app.state::<Arc<crate::devshell::DevshellCache>>();
+                to_value(
+                    crate::commands::devshell::devshell_prepare_for_path(
+                        app.clone(),
+                        cache.clone(),
+                        arg(&args, "args")?,
+                    )
+                    .await?,
+                )
+            }
+            "devshell_env_for_path" => {
+                let cache = app.state::<Arc<crate::devshell::DevshellCache>>();
+                to_value(
+                    crate::commands::devshell::devshell_env_for_path(
+                        app.clone(),
+                        cache.clone(),
+                        arg(&args, "args")?,
+                    )
+                    .await?,
+                )
+            }
+            "devshell_refresh" => {
+                let cache = app.state::<Arc<crate::devshell::DevshellCache>>();
+                to_value(
+                    crate::commands::devshell::devshell_refresh(
+                        app.clone(),
+                        cache.clone(),
+                        arg(&args, "args")?,
+                    )
+                    .await?,
+                )
+            }
+            "workspace_startup_status" => {
+                let startup = app.state::<crate::commands::startup::WorkspaceStartupState>();
+                to_value(
+                    crate::commands::startup::workspace_startup_status(
+                        app.clone(),
+                        startup.clone(),
+                        arg(&args, "args")?,
+                    )
+                    .await?,
+                )
+            }
+            "workspace_startup_set_auto_approve" => {
+                let startup = app.state::<crate::commands::startup::WorkspaceStartupState>();
+                to_value(
+                    crate::commands::startup::workspace_startup_set_auto_approve(
+                        app.clone(),
+                        startup.clone(),
+                        arg(&args, "args")?,
+                    )
+                    .await?,
                 )
             }
             // ── shells — the user's own interactive terminals ─────────

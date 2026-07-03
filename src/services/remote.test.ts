@@ -4,6 +4,12 @@ import {
   remoteDeviceRename,
   remoteDeviceRevoke,
   remoteDevicesList,
+  remoteHostForget,
+  remoteHostInvoke,
+  remoteHostProjectSnapshot,
+  remoteHostReconnect,
+  remoteHostRename,
+  remoteHostsList,
   remotePairingBegin,
   remotePairingCancel,
   remoteStatus,
@@ -60,6 +66,36 @@ describe("remote gateway service", () => {
     expect(harness.invoke).toHaveBeenNthCalledWith(3, "remote_device_rename", {
       id: "dev-1",
       name: "James's iPhone",
+    });
+  });
+
+  it("wraps paired desktop host commands", async () => {
+    harness.invoke.mockResolvedValueOnce([]);
+    await remoteHostsList();
+    await remoteHostProjectSnapshot("remote:bender");
+    await remoteHostInvoke("remote:bender", "git_status", { path: "/repo" });
+    await remoteHostRename("remote:bender", "Bender");
+    await remoteHostReconnect("remote:bender");
+    await remoteHostForget("remote:bender");
+
+    expect(harness.invoke).toHaveBeenNthCalledWith(1, "remote_hosts_list");
+    expect(harness.invoke).toHaveBeenNthCalledWith(2, "remote_host_project_snapshot", {
+      id: "remote:bender",
+    });
+    expect(harness.invoke).toHaveBeenNthCalledWith(3, "remote_host_invoke", {
+      id: "remote:bender",
+      cmd: "git_status",
+      args: { path: "/repo" },
+    });
+    expect(harness.invoke).toHaveBeenNthCalledWith(4, "remote_host_rename", {
+      id: "remote:bender",
+      name: "Bender",
+    });
+    expect(harness.invoke).toHaveBeenNthCalledWith(5, "remote_host_reconnect", {
+      id: "remote:bender",
+    });
+    expect(harness.invoke).toHaveBeenNthCalledWith(6, "remote_host_forget", {
+      id: "remote:bender",
     });
   });
 });

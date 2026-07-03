@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   handleSidebarResize,
   handleSidebarResizeEnd,
@@ -7,17 +7,27 @@ import {
   handleSidebarReorderWorkspace,
   handleSidebarSortProjectWorkspaces,
   handleSidebarDeleteSession,
+  handleSidebarOpenWorkspaceInNewTab,
   handleSidebarRenameSession,
   handleSidebarSetProjectWorkspaceBase,
+  handleSidebarStartSession,
   handleSidebarStopWorkspaceAgent,
   handleSidebarSwitchWorkspace,
   handleSidebarToggleExtension,
   handleSidebarRenameMobileDevice,
+  handleSidebarRenameRemoteHost,
+  handleSidebarReconnectRemoteHost,
+  handleSidebarForgetRemoteHost,
   handleSidebarUnpairMobileDevice,
   handleSectionedSelect,
 } from "./sidebar";
 import { OVERVIEW_TAB_ID } from "../types/tab";
 import { buildRouteFixture } from "./testFixtures";
+
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+});
 
 describe("handleSidebarResize", () => {
   it("rewrites just the leading column token", async () => {
@@ -36,6 +46,149 @@ describe("handleSidebarResize", () => {
     });
     expect((next.layout as { columns: string }).columns).toBe(
       "280px minmax(0,1fr) 320px",
+    );
+  });
+});
+
+describe("handleSectionedSelect remote host pairing", () => {
+  it("uses the visible host code and invokes desktop pairing", async () => {
+    const { ctx, mocks } = buildRouteFixture();
+
+    const handled = await handleSectionedSelect(
+      {
+        component: { id: "sidebar", type: "sidebar" },
+        eventType: "pair-remote-host",
+        data: {
+          sectionId: "hosts",
+          itemId: "remote:bender",
+          label: "bender",
+          hostname: "aethon-123.local",
+          fingerprint: "abcdef",
+          candidates: ["aethon-123.local:38123"],
+          code: "1234 5678",
+        },
+      },
+      ctx,
+    );
+
+    expect(handled).toBe(true);
+    expect(mocks.invoke).toHaveBeenCalledWith("remote_host_pair", {
+      host: "aethon-123.local:38123",
+      fingerprint: "abcdef",
+      code: "12345678",
+      candidates: ["aethon-123.local:38123"],
+    });
+    expect(mocks.pushNotification).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: "success", title: "Paired bender" }),
+    );
+  });
+
+  it("keeps the prompt fallback for legacy pairing callers without a code", async () => {
+    const promptSpy = vi.fn(() => "8765 4321");
+    vi.stubGlobal("window", { prompt: promptSpy });
+    const { ctx, mocks } = buildRouteFixture();
+
+    const handled = await handleSectionedSelect(
+      {
+        component: { id: "sidebar", type: "sidebar" },
+        eventType: "pair-remote-host",
+        data: {
+          sectionId: "hosts",
+          itemId: "remote:bender",
+          label: "bender",
+          hostname: "aethon-123.local",
+          fingerprint: "abcdef",
+        },
+      },
+      ctx,
+    );
+
+    expect(handled).toBe(true);
+    expect(promptSpy).toHaveBeenCalled();
+    expect(mocks.invoke).toHaveBeenCalledWith("remote_host_pair", {
+      host: "aethon-123.local",
+      fingerprint: "abcdef",
+      code: "87654321",
+      candidates: [],
+    });
+  });
+});
+
+describe("remote host context menu routes", () => {
+  it("renames paired desktop hosts", async () => {
+    const { ctx, mocks } = buildRouteFixture();
+
+    const handled = await handleSidebarRenameRemoteHost(
+      {
+        component: { id: "sidebar", type: "sidebar" },
+        eventType: "rename-remote-host",
+        data: {
+          itemId: "remote:bender",
+          label: "Bender Lab",
+          previousLabel: "bender",
+        },
+      },
+      ctx,
+    );
+
+    expect(handled).toBe(true);
+    expect(mocks.invoke).toHaveBeenCalledWith("remote_host_rename", {
+      id: "remote:bender",
+      name: "Bender Lab",
+    });
+    await Promise.resolve();
+    expect(mocks.pushNotification).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: "success", title: "Host renamed" }),
+    );
+  });
+
+  it("reconnects paired desktop hosts", async () => {
+    const { ctx, mocks } = buildRouteFixture();
+
+    const handled = await handleSidebarReconnectRemoteHost(
+      {
+        component: { id: "sidebar", type: "sidebar" },
+        eventType: "reconnect-remote-host",
+        data: { itemId: "remote:bender", label: "bender" },
+      },
+      ctx,
+    );
+
+    expect(handled).toBe(true);
+    expect(mocks.invoke).toHaveBeenCalledWith("remote_host_reconnect", {
+      id: "remote:bender",
+    });
+    await Promise.resolve();
+    expect(mocks.pushNotification).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: "success",
+        title: "Reconnect requested for bender",
+      }),
+    );
+  });
+
+  it("forgets paired desktop hosts and leaves active remote host", async () => {
+    const { ctx, mocks } = buildRouteFixture({
+      state: { activeHostId: "remote:bender" },
+    });
+
+    const handled = await handleSidebarForgetRemoteHost(
+      {
+        component: { id: "sidebar", type: "sidebar" },
+        eventType: "forget-remote-host",
+        data: { itemId: "remote:bender", label: "bender" },
+      },
+      ctx,
+    );
+
+    expect(handled).toBe(true);
+    expect(mocks.invoke).toHaveBeenCalledWith("remote_host_forget", {
+      id: "remote:bender",
+    });
+    await Promise.resolve();
+    expect(ctx.setActiveHost).toHaveBeenCalledWith(null);
+    expect(mocks.pushNotification).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: "success", title: "Host forgotten" }),
     );
   });
 });
@@ -389,9 +542,7 @@ describe("handleSidebarRenameSession", () => {
   it("empty label restores the auto sequential label for the open tab", async () => {
     const { ctx, applySetState } = buildRouteFixture({
       state: {
-        tabs: [
-          { id: "tab-3", kind: "agent", label: "Custom name" },
-        ],
+        tabs: [{ id: "tab-3", kind: "agent", label: "Custom name" }],
       },
     });
     await handleSidebarRenameSession(
@@ -543,6 +694,195 @@ describe("handleSidebarSwitchWorkspace", () => {
     expect(applySetState().activeTabId).toBe(OVERVIEW_TAB_ID);
   });
 
+  it("routes visible inactive remote workspace rows through the remote host", async () => {
+    const { ctx, mocks, applySetState } = buildRouteFixture({
+      state: {
+        activeHostId: "local:one",
+        sidebar: {
+          projects: [
+            {
+              id: "local-project",
+              label: "local",
+              workspaces: [{ id: "local-wt", path: "/repo/local" }],
+            },
+          ],
+          projectsByHost: {
+            "remote:bender": [
+              {
+                id: "remote:bender::project::nix",
+                remoteId: "nix",
+                hostId: "remote:bender",
+                label: "nix",
+                path: "/remote/nix",
+                iconUrl: "data:image/png;base64,REMOTE",
+                workspaces: [
+                  {
+                    id: "remote:bender::workspace::feature",
+                    remoteId: "feature",
+                    remoteProjectId: "nix",
+                    projectId: "remote:bender::project::nix",
+                    hostId: "remote:bender",
+                    label: "feature",
+                    branch: "feature",
+                    path: "/remote/nix-feature",
+                    isMain: false,
+                  },
+                ],
+              },
+            ],
+          },
+        },
+      },
+    });
+
+    const handled = await handleSidebarSwitchWorkspace(
+      {
+        component: { id: "sidebar" },
+        eventType: "switch-workspace",
+        data: {
+          workspaceId: "remote:bender::workspace::feature",
+          projectId: "remote:bender::project::nix",
+          hostId: "remote:bender",
+          remoteId: "feature",
+          remoteProjectId: "nix",
+        },
+      },
+      ctx,
+    );
+
+    expect(handled).toBe(true);
+    expect(mocks.activateWorkspace).not.toHaveBeenCalled();
+    expect(ctx.setActiveHost).toHaveBeenCalledWith("remote:bender");
+    const next = applySetState();
+    expect(next.activeHostId).toBe("remote:bender");
+    expect(next.activeProjectId).toBe("remote:bender::project::nix");
+    expect(next.activeWorkspaceId).toBe("remote:bender::workspace::feature");
+    expect(next.activeTabId).toBe(OVERVIEW_TAB_ID);
+    expect(next.landing).toMatchObject({
+      kind: "workspace",
+      hostId: "remote:bender",
+      projectId: "remote:bender::project::nix",
+      workspaceId: "remote:bender::workspace::feature",
+      path: "/remote/nix-feature",
+      iconUrl: "data:image/png;base64,REMOTE",
+    });
+  });
+
+  it("opens visible remote workspaces in new tabs with host context", async () => {
+    const { ctx, mocks, applySetState } = buildRouteFixture({
+      state: {
+        sidebar: {
+          projectsByHost: {
+            "remote:bender": [
+              {
+                id: "remote:bender::project::nix",
+                remoteId: "nix",
+                hostId: "remote:bender",
+                label: "nix",
+                path: "/remote/nix",
+                workspaces: [
+                  {
+                    id: "remote:bender::workspace::feature",
+                    remoteId: "feature",
+                    remoteProjectId: "nix",
+                    projectId: "remote:bender::project::nix",
+                    hostId: "remote:bender",
+                    label: "feature",
+                    path: "/remote/nix-feature",
+                    isMain: false,
+                  },
+                ],
+              },
+            ],
+          },
+        },
+      },
+    });
+
+    const handled = await handleSidebarOpenWorkspaceInNewTab(
+      {
+        component: { id: "sidebar" },
+        eventType: "open-workspace-in-new-tab",
+        data: {
+          workspaceId: "remote:bender::workspace::feature",
+          projectId: "remote:bender::project::nix",
+          hostId: "remote:bender",
+        },
+      },
+      ctx,
+    );
+
+    expect(handled).toBe(true);
+    expect(mocks.activateWorkspace).not.toHaveBeenCalled();
+    expect(mocks.newTab).toHaveBeenCalledWith(undefined, undefined, {
+      cwd: "/remote/nix-feature",
+      hostId: "remote:bender",
+    });
+    expect(applySetState().landing).toBeNull();
+  });
+
+  it("starts remote workspace landing sessions with host context", async () => {
+    const { ctx, mocks, applySetState } = buildRouteFixture({
+      state: {
+        project: {
+          id: "remote:bender::project::nix",
+          remoteId: "nix",
+          hostId: "remote:bender",
+          label: "nix",
+          path: "/remote/nix",
+        },
+        sidebar: {
+          projectsByHost: {
+            "remote:bender": [
+              {
+                id: "remote:bender::project::nix",
+                remoteId: "nix",
+                hostId: "remote:bender",
+                label: "nix",
+                path: "/remote/nix",
+                workspaces: [
+                  {
+                    id: "remote:bender::workspace::feature",
+                    remoteId: "feature",
+                    remoteProjectId: "nix",
+                    projectId: "remote:bender::project::nix",
+                    hostId: "remote:bender",
+                    label: "feature",
+                    path: "/remote/nix-feature",
+                    isMain: false,
+                  },
+                ],
+              },
+            ],
+          },
+        },
+      },
+    });
+
+    const handled = await handleSidebarStartSession(
+      {
+        component: { id: "workspace-landing" },
+        eventType: "start-session",
+        data: {
+          workspaceId: "remote:bender::workspace::feature",
+          projectId: "remote:bender::project::nix",
+          hostId: "remote:bender",
+          path: "/remote/nix-feature",
+        },
+      },
+      ctx,
+    );
+
+    expect(handled).toBe(true);
+    expect(mocks.activateWorkspace).not.toHaveBeenCalled();
+    expect(ctx.setActiveHost).toHaveBeenCalledWith("remote:bender");
+    expect(mocks.newTab).toHaveBeenCalledWith(undefined, undefined, {
+      cwd: "/remote/nix-feature",
+      hostId: "remote:bender",
+    });
+    expect(applySetState().landing).toBeNull();
+  });
+
   it("reveals an existing workspace session instead of covering it with landing", async () => {
     const { ctx, mocks, applySetState } = buildRouteFixture({
       state: sidebarState,
@@ -659,8 +999,16 @@ describe("handleSectionedSelect", () => {
     expect(mocks.setActiveTab).toHaveBeenCalledWith("abc123");
   });
 
-  it("hosts section routes select to setActiveHost", async () => {
-    const { ctx } = buildRouteFixture();
+  it("hosts section selects the host overview and clears project context", async () => {
+    const { ctx, applySetState } = buildRouteFixture({
+      state: {
+        activeHostId: "local:one",
+        activeProjectId: "proj-1",
+        activeWorkspaceId: "wt-1",
+        activeTabId: "tab-7",
+        project: { id: "proj-1", hostId: "local:one" },
+      },
+    });
     await handleSectionedSelect(
       {
         component: { id: "sidebar" },
@@ -669,7 +1017,18 @@ describe("handleSectionedSelect", () => {
       },
       ctx,
     );
+    const next = applySetState();
     expect(ctx.setActiveHost).toHaveBeenCalledWith("remote:bender");
+    expect(ctx.activateWorkspace).toHaveBeenCalledWith(null);
+    expect(ctx.clearActiveProject).toHaveBeenCalled();
+    expect(next).toMatchObject({
+      activeHostId: "remote:bender",
+      activeTabId: OVERVIEW_TAB_ID,
+      activeProjectId: null,
+      activeWorkspaceId: null,
+      project: null,
+      landing: null,
+    });
   });
 
   it("mobile devices section selects the device detail view", async () => {
@@ -942,7 +1301,7 @@ describe("handleSectionedSelect", () => {
     expect(next.activeTabId).toBe(OVERVIEW_TAB_ID);
   });
 
-  it("clicking a different host does NOT force the overview sentinel", async () => {
+  it("clicking a different host opens that host overview", async () => {
     const { ctx, applySetState } = buildRouteFixture({
       state: { activeHostId: "local:one", activeTabId: "tab-7" },
     });
@@ -958,6 +1317,6 @@ describe("handleSectionedSelect", () => {
       activeHostId: "local:one",
       activeTabId: "tab-7",
     });
-    expect(next.activeTabId).toBe("tab-7");
+    expect(next.activeTabId).toBe(OVERVIEW_TAB_ID);
   });
 });

@@ -22,6 +22,32 @@ interface MobileDeviceItem {
   lastSeenAt?: number;
 }
 
+interface ProjectSelectItem {
+  sectionId?: string;
+  itemId?: string;
+  label?: string;
+  path?: string;
+  hostId?: string;
+  remoteId?: string;
+}
+
+interface RemoteHostPairItem {
+  sectionId?: string;
+  itemId?: string;
+  label?: string;
+  hostname?: string;
+  fingerprint?: string;
+  candidates?: string[];
+  code?: string;
+}
+
+function candidateHost(item: RemoteHostPairItem): string {
+  const firstCandidate = item.candidates?.find(
+    (candidate) => typeof candidate === "string" && candidate.trim().length > 0,
+  );
+  return firstCandidate ?? item.hostname ?? "";
+}
+
 /** Sidebar select + dropdown chrome pickers (model-picker /
  *  appearance-menu) all use the same `{sectionId, itemId}` event
  *  shape. Registered under three route-table type keys
@@ -36,9 +62,63 @@ export const handleSectionedSelect: EventRouteHandler = async (
   if (
     eventType !== "select" &&
     eventType !== "thinking-level" &&
+    eventType !== "pair-remote-host" &&
     eventType !== "codex-fast-mode"
   ) {
     return false;
+  }
+
+  if (eventType === "pair-remote-host") {
+    const item = data as RemoteHostPairItem | undefined;
+    const host = item ? candidateHost(item) : "";
+    const fingerprint = item?.fingerprint ?? "";
+    if (!host || !fingerprint) {
+      ctx.pushNotification({
+        title: "Pair host unavailable",
+        message: "Aethon can see this host, but its pairing address is missing.",
+        kind: "error",
+        durationMs: 6000,
+      });
+      return true;
+    }
+    const label = item?.label || host;
+    const rawCode =
+      typeof item?.code === "string"
+        ? item.code
+        : window.prompt(
+            `Enter the pairing code shown on ${label}.\n\nOn ${label}: Settings -> Remote Devices -> Start pairing.`,
+          );
+    const code = (rawCode ?? "").replace(/\D/g, "");
+    if (!code) return true;
+    if (code.length !== 8) {
+      ctx.pushNotification({
+        title: "Pairing code must be 8 digits",
+        kind: "error",
+        durationMs: 5000,
+      });
+      return true;
+    }
+    try {
+      await ctx.invoke("remote_host_pair", {
+        host,
+        fingerprint,
+        code,
+        candidates: item?.candidates ?? [],
+      });
+      ctx.pushNotification({
+        title: `Paired ${label}`,
+        kind: "success",
+        durationMs: 3000,
+      });
+    } catch (err) {
+      ctx.pushNotification({
+        title: `Pair ${label} failed`,
+        message: String(err),
+        kind: "error",
+        durationMs: 8000,
+      });
+    }
+    return true;
   }
 
   const selected = data as { sectionId?: string; itemId?: string } | undefined;
@@ -95,6 +175,36 @@ export const handleSectionedSelect: EventRouteHandler = async (
       ctx.openProjectFromPicker();
       return true;
     }
+    const projectItem = selected as ProjectSelectItem;
+    if (projectItem.hostId && projectItem.remoteId) {
+      const project = ctx.stateRef.current.project as
+        | { id?: string }
+        | null
+        | undefined;
+      const wasAlreadyActiveProjectRoot =
+        project?.id === selected.itemId &&
+        ctx.stateRef.current.activeWorkspaceId == null;
+      ctx.activateWorkspace(null);
+      ctx.clearActiveProject();
+      ctx.setState((prev) => ({
+        ...prev,
+        activeHostId: projectItem.hostId,
+        project: {
+          id: selected.itemId,
+          remoteId: projectItem.remoteId,
+          hostId: projectItem.hostId,
+          label: projectItem.label ?? selected.itemId,
+          path: projectItem.path ?? "",
+        },
+        activeProjectId: selected.itemId,
+        activeWorkspaceId: null,
+        landing: null,
+      }));
+      if (wasAlreadyActiveProjectRoot) {
+        activateOverview(ctx);
+      }
+      return true;
+    }
     const project = ctx.stateRef.current.project as
       | { id?: string }
       | null
@@ -116,13 +226,18 @@ export const handleSectionedSelect: EventRouteHandler = async (
     return true;
   }
   if (selected?.sectionId === "hosts" && selected.itemId) {
-    const wasAlreadyActiveHost =
-      ctx.stateRef.current.activeHostId === selected.itemId;
+    ctx.activateWorkspace(null);
+    ctx.clearActiveProject();
     ctx.setActiveHost(selected.itemId);
-    ctx.setState((prev) => ({ ...prev, landing: null }));
-    if (wasAlreadyActiveHost) {
-      activateOverview(ctx);
-    }
+    ctx.setState((prev) => ({
+      ...prev,
+      activeHostId: selected.itemId,
+      activeTabId: OVERVIEW_TAB_ID,
+      activeProjectId: null,
+      activeWorkspaceId: null,
+      project: null,
+      landing: null,
+    }));
     return true;
   }
   if (selected?.sectionId === "mobile-devices" && selected.itemId) {

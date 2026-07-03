@@ -126,7 +126,7 @@ async function pickGeneratedWorkspaceBranch(
     if (w.label) taken.add(w.label);
   }
   try {
-    const branches = await gitBranchList(project.path);
+    const branches = await gitBranchList(project.path, project.hostId);
     for (const b of branches) taken.add(b.name);
   } catch {
     // Branch list failed; random naming remains good enough.
@@ -167,7 +167,7 @@ export async function refreshProjectWorkspaces(
   const project = deps.lookups.findProject(projectId);
   if (!project) return;
   try {
-    const listing = await gitWorktrees(project.path);
+    const listing = await gitWorktrees(project.path, project.hostId);
     const prior = deps.projectsRef.current.workspacesByProject[projectId] ?? [];
     const next = reconcileWorkspaces(projectId, prior, listing);
     // A successful listing that no longer shows a previously-live
@@ -221,7 +221,7 @@ export async function fetchBranches(
   const project = deps.lookups.findProject(projectId);
   if (!project) return [];
   try {
-    const list = await gitBranchList(project.path);
+    const list = await gitBranchList(project.path, project.hostId);
     return list.map((b) => b.name);
   } catch {
     return [];
@@ -287,6 +287,7 @@ export async function createWorkspaceWithParams(
       targetPath,
       branch,
       base: baseBranch,
+      hostId: project.hostId,
     });
     deps.projectsRef.current = setProjectWorkspaces(
       deps.projectsRef.current,
@@ -363,6 +364,7 @@ export async function retryPendingWorkspace(
       targetPath: hit.workspace.path,
       branch: hit.workspace.branch,
       base: resolveWorkspaceBaseBranch(hit.project),
+      hostId: hit.project.hostId,
     });
     deps.projectsRef.current = setProjectWorkspaces(
       deps.projectsRef.current,

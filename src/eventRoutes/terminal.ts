@@ -3,6 +3,8 @@ import { cycleShareMode } from "../utils/shareMode";
 import type { Tab } from "../types/tab";
 import { WORKSTATION_AREAS, workstationRows } from "../hooks/useFocus";
 import { reorderTabToIndex } from "../utils/tabReorder";
+import { remoteHostInvoke } from "../services/remote";
+import { isRemoteHostId } from "../remoteInvoke";
 
 const TERMINAL_PANEL_MIN_HEIGHT = 120;
 const TERMINAL_PANEL_MAX_HEIGHT = 720;
@@ -107,8 +109,13 @@ export const handleShareModeCycle: EventRouteHandler = (
   const tab = tabs.find((t) => t.id === id);
   if (!tab || tab.kind !== "shell" || !tab.shell) return true;
   const next = cycleShareMode(tab.shell.shareMode);
-  ctx
-    .invoke("shell_set_share_mode", { tabId: id, mode: next })
+  const request = isRemoteHostId(tab.hostId)
+    ? remoteHostInvoke(tab.hostId, "shell_set_share_mode", {
+        tabId: id,
+        mode: next,
+      })
+    : ctx.invoke("shell_set_share_mode", { tabId: id, mode: next });
+  request
     .then(() => {
       ctx.applyShareModeToTab(id, next);
     })

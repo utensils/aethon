@@ -28,8 +28,10 @@ import type { GitStatus } from "../../../hooks/useProjects";
 
 interface ProjectCardData {
   id: string;
+  remoteId?: string;
   label: string;
   path: string;
+  hostId?: string;
   active?: boolean;
   gitStatus?: GitStatus | null;
   iconUrl?: string;
@@ -90,7 +92,11 @@ export function ProjectCard({
   const active = typeof props?.active === "boolean" ? props.active : false;
   const containerRef = useRef<HTMLButtonElement | null>(null);
   const [overview, setOverview] = useState<GhRepoOverview | null>(() =>
-    project ? peekRepoOverview(project.path) : null,
+    project
+      ? project.hostId
+        ? peekRepoOverview(project.path, project.hostId)
+        : peekRepoOverview(project.path)
+      : null,
   );
   const [overviewLoading, setOverviewLoading] = useState(false);
 
@@ -104,7 +110,9 @@ export function ProjectCard({
       void (async () => {
         setOverviewLoading(true);
         try {
-          const o = await getRepoOverview(project.path);
+          const o = project.hostId
+            ? await getRepoOverview(project.path, project.hostId)
+            : await getRepoOverview(project.path);
           setOverview(o);
         } finally {
           setOverviewLoading(false);
@@ -120,7 +128,9 @@ export function ProjectCard({
             void (async () => {
               setOverviewLoading(true);
               try {
-                const o = await getRepoOverview(project.path);
+                const o = project.hostId
+                  ? await getRepoOverview(project.path, project.hostId)
+                  : await getRepoOverview(project.path);
                 setOverview(o);
               } finally {
                 setOverviewLoading(false);
@@ -158,7 +168,13 @@ export function ProjectCard({
       onClick={() =>
         onEvent(
           "select-project-card",
-          { projectId: project.id, path: project.path },
+          {
+            projectId: project.id,
+            remoteId: project.remoteId,
+            hostId: project.hostId,
+            label: project.label,
+            path: project.path,
+          },
           project.id,
         )
       }

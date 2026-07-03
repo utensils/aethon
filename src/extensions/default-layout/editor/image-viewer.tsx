@@ -15,12 +15,13 @@
  */
 
 import { useEffect, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
 
 import type { BuiltinComponentProps } from "../../../components/A2UIRenderer";
+import { invokeForHost } from "../../../remoteInvoke";
 
 interface ImageViewerProps {
   filePath: string;
+  hostId?: string;
   projectPath: string;
 }
 
@@ -62,6 +63,7 @@ function formatBytes(n: number): string {
 export function ImageViewer(props: BuiltinComponentProps) {
   const componentProps = (props.component.props as Partial<ImageViewerProps>) ?? {};
   const filePath = componentProps.filePath ?? "";
+  const hostId = componentProps.hostId;
   const projectPath = componentProps.projectPath ?? "";
   const [src, setSrc] = useState<string>("");
   const [error, setError] = useState<string>("");
@@ -74,7 +76,7 @@ export function ImageViewer(props: BuiltinComponentProps) {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- Clear stale image state immediately when the backing file changes.
     setSrc("");
     setError("");
-    void invoke<string>("fs_read_file_base64", {
+    void invokeForHost<string>(hostId, "fs_read_file_base64", {
       root: projectPath,
       path: filePath,
     })
@@ -91,7 +93,7 @@ export function ImageViewer(props: BuiltinComponentProps) {
     return () => {
       cancelled = true;
     };
-  }, [filePath, projectPath]);
+  }, [filePath, hostId, projectPath]);
 
   return (
     <div className="ae-image-viewer" style={{ gridArea: "canvas" }}>

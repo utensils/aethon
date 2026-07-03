@@ -1,5 +1,5 @@
-import { invoke } from "@tauri-apps/api/core";
 import type { GhIssue } from "../../../ghIssuesCache";
+import { invokeForHost } from "../../../remoteInvoke";
 
 export interface IssueTemplate {
   id: string;
@@ -20,9 +20,14 @@ const EMPTY_CONFIG: IssueTemplatesConfig = { templates: [], warning: null };
 
 export async function loadIssueTemplates(
   projectPath: string,
+  hostId?: string | null,
 ): Promise<IssueTemplatesConfig> {
   try {
-    const raw = await invoke<unknown>("read_issue_templates", { projectPath });
+    const raw = await invokeForHost<unknown>(
+      hostId,
+      "read_issue_templates",
+      { projectPath },
+    );
     return normalizeIssueTemplatesConfig(raw);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

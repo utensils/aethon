@@ -100,6 +100,7 @@ export interface EventRouteContext {
     options?: {
       restoredSession?: boolean;
       cwd?: string;
+      hostId?: string;
       scrollToMatch?: string;
       model?: string;
       sourceIssue?: GitHubIssueSource;
@@ -110,6 +111,7 @@ export interface EventRouteContext {
     filePath: string,
     opts?: {
       rootPath?: string;
+      hostId?: string;
       diff?: boolean;
       diffSnapshot?: EditorDiffSnapshot;
     },

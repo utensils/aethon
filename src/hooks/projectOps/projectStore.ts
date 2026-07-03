@@ -236,6 +236,7 @@ export function useProjectStore(deps: ProjectStoreDeps): ProjectStore {
             id: active.id,
             label: active.label,
             path: active.path,
+            hostId: active.hostId,
             workspaceBaseBranch: active.workspaceBaseBranch,
           }
         : null,
@@ -256,6 +257,7 @@ export function useProjectStore(deps: ProjectStoreDeps): ProjectStore {
             id: p.id,
             label: p.label,
             tooltip: p.path,
+            hostId: p.hostId,
             iconUrl: p.iconUrl,
             active: projectIsActive && !activeWorkspaceBelongsToProject,
             git: gitStatusRef.current.get(p.path),
@@ -263,6 +265,7 @@ export function useProjectStore(deps: ProjectStoreDeps): ProjectStore {
             workspaces: wts.map((w) => ({
               id: w.id,
               projectId: p.id,
+              hostId: p.hostId,
               label: w.label ?? w.branch ?? "workspace",
               branch: w.branch,
               path: w.path,

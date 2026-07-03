@@ -72,6 +72,32 @@ export function activeProjectIdForModelDefaults(
     : null;
 }
 
+export function activeProjectIdForNewTab(
+  projects: ProjectsState,
+  state: Record<string, unknown>,
+): string | null {
+  if (projects.activeId) return projects.activeId;
+  const id =
+    (state.project as { id?: unknown } | null | undefined)?.id ??
+    state.activeProjectId;
+  return typeof id === "string" && id.length > 0 ? id : null;
+}
+
+export function activeHostIdForNewTab(
+  projects: ProjectsState,
+  state: Record<string, unknown>,
+): string | undefined {
+  const projectId = activeProjectIdForNewTab(projects, state);
+  if (projectId) {
+    const localProject = projects.projects.find((p) => p.id === projectId);
+    if (localProject?.hostId) return localProject.hostId;
+  }
+  const hostId =
+    (state.project as { hostId?: unknown } | null | undefined)?.hostId ??
+    state.activeHostId;
+  return typeof hostId === "string" && hostId.length > 0 ? hostId : undefined;
+}
+
 /** Model displayed by overview-owned surfaces. Shell tabs can be the
  *  active tab for terminal focus, but the overview still owns the composer
  *  and header in that state, so the visible model must be the model a new
@@ -125,7 +151,21 @@ export function mirrorOverviewSurfaceSelection(
   return overviewModel;
 }
 
-/** Resolve the cwd a freshly-opened tab should inherit. Active project
+export function projectCwdForNewTab(
+  projects: ProjectsState,
+  appState: Record<string, unknown>,
+): string | null {
+  const projectCwd = activeCwd(projects);
+  if (projectCwd) return projectCwd;
+  const activeProjectPath =
+    (appState.project as { path?: unknown } | null | undefined)?.path ?? null;
+  if (typeof activeProjectPath === "string" && activeProjectPath.length > 0) {
+    return activeProjectPath;
+  }
+  return null;
+}
+
+/** Resolve the cwd a freshly-opened local tab should inherit. Active project
  *  wins; when no project is selected, the host workspace is rooted in
  *  Aethon's user dir. The dev-only `projectRoot` is only a last-resort
  *  fallback when the user dir is unavailable. */
@@ -133,7 +173,7 @@ export function cwdForNewTab(
   projects: ProjectsState,
   appState: Record<string, unknown>,
 ): string | null {
-  const projectCwd = activeCwd(projects);
+  const projectCwd = projectCwdForNewTab(projects, appState);
   if (projectCwd) return projectCwd;
   const aethonRoot = appState.aethonRoot;
   if (typeof aethonRoot === "string" && aethonRoot.length > 0) {

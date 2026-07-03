@@ -15,15 +15,21 @@ import { readState, writeState } from "./persist";
 
 export interface Host {
   id: string;
+  /** Stable host id reported by the peer itself; remote `id` is
+   *  fingerprint-based so mDNS hostname conflicts don't create duplicates. */
+  hostId?: string;
   hostname: string;
   displayName: string;
   isLocal: boolean;
   fingerprintPrefix?: string;
+  fingerprint?: string;
   port?: number;
+  candidates?: string[];
   paired?: boolean;
   lastSeen?: number;
   createdAt?: number;
   connected?: boolean;
+  discovered?: boolean;
 }
 
 const FILE = "hosts.json";

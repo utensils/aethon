@@ -8,11 +8,12 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { renderHook, waitFor } from "@testing-library/react";
 
-const { invokeMock, branchMock, checksMock, listenMock, gitEventHandlers } =
+const { invokeMock, remoteInvokeMock, branchMock, checksMock, listenMock, gitEventHandlers } =
   vi.hoisted(() => {
     const gitEventHandlers: Array<(e: { payload: unknown }) => void> = [];
     return {
       invokeMock: vi.fn(),
+      remoteInvokeMock: vi.fn(),
       branchMock: vi.fn(),
       checksMock: vi.fn(),
       gitEventHandlers,
@@ -27,6 +28,7 @@ const { invokeMock, branchMock, checksMock, listenMock, gitEventHandlers } =
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: invokeMock }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: listenMock }));
+vi.mock("../services/remote", () => ({ remoteHostInvoke: remoteInvokeMock }));
 vi.mock("../ghBranchStatusCache", () => ({ getGhBranchStatus: branchMock }));
 vi.mock("../ghChecksCache", () => ({ getGhChecks: checksMock }));
 
@@ -65,6 +67,7 @@ function makeSetState(opts: { replayFunctionalUpdaters?: boolean } = {}) {
 
 beforeEach(() => {
   invokeMock.mockReset();
+  remoteInvokeMock.mockReset();
   branchMock.mockReset();
   checksMock.mockReset();
   listenMock.mockClear();
@@ -147,6 +150,46 @@ describe("useVcsStatus", () => {
     // git_status + git_file_status, PR/CI come from the (mocked) caches.
     expect(branchMock).toHaveBeenCalledWith("/repo", "feat/x");
     expect(checksMock).toHaveBeenCalledWith("/repo", "feat/x");
+  });
+
+  it("routes git status commands through the remote host bridge for remote roots", async () => {
+    branchMock.mockResolvedValue(null);
+    checksMock.mockResolvedValue(null);
+    remoteInvokeMock.mockImplementation((_hostId: string, cmd: string) => {
+      if (cmd === "git_status")
+        return Promise.resolve({ branch: "main", dirty: true });
+      if (cmd === "git_file_status")
+        return Promise.resolve([{ path: "remote.ts", status: "modified" }]);
+      if (cmd === "git_diff_stat")
+        return Promise.resolve({ insertions: 3, deletions: 1 });
+      return Promise.resolve(null);
+    });
+
+    const h = makeSetState();
+    renderHook(() =>
+      useVcsStatus({
+        activeRoot: "/remote/repo",
+        activeHostId: "remote:fp",
+        setState: h.setState,
+      }),
+    );
+
+    await waitFor(() => expect(h.vcs()?.loading).toBe(false));
+    expect(invokeMock).not.toHaveBeenCalledWith("git_status", expect.anything());
+    expect(remoteInvokeMock).toHaveBeenCalledWith("remote:fp", "git_status", {
+      path: "/remote/repo",
+    });
+    expect(remoteInvokeMock).toHaveBeenCalledWith(
+      "remote:fp",
+      "git_file_status",
+      { root: "/remote/repo" },
+    );
+    expect(h.vcs()).toMatchObject({
+      root: "/remote/repo",
+      branch: "main",
+      dirty: true,
+      changes: { total: 1, insertions: 3, deletions: 1 },
+    });
   });
 
   it("skips PR/CI lookups when there is no branch", async () => {

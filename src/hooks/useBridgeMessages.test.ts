@@ -3,6 +3,7 @@ import {
   bridgeDispatchDecision,
   createBridgePayloadPump,
   processBridgePayload,
+  remoteBridgePayloadTargetsHost,
 } from "./useBridgeMessages";
 import { bridgeMessageRefreshesHangWarn } from "./bridgeMessageHandlers/hangWarn";
 import { buildHandlerFixture } from "./bridgeMessageHandlers/testFixtures";
@@ -190,6 +191,63 @@ describe("processBridgePayload", () => {
     );
 
     expect(ack).not.toHaveBeenCalled();
+  });
+});
+
+describe("remoteBridgePayloadTargetsHost", () => {
+  test("accepts only bridge messages for tabs on the forwarding host", () => {
+    const state = {
+      tabs: [
+        { id: "remote-tab", hostId: "remote:fp" },
+        { id: "local-tab", hostId: "local:bender" },
+      ],
+      persistedTabBuckets: {
+        hidden: {
+          tabs: [{ id: "hidden-remote", hostId: "remote:fp" }],
+        },
+      },
+    };
+
+    expect(
+      remoteBridgePayloadTargetsHost(
+        JSON.stringify({ type: "response_delta", tabId: "remote-tab" }),
+        "remote:fp",
+        state,
+      ),
+    ).toBe(true);
+    expect(
+      remoteBridgePayloadTargetsHost(
+        JSON.stringify({ type: "layout_set", originTabId: "hidden-remote" }),
+        "remote:fp",
+        state,
+      ),
+    ).toBe(true);
+    expect(
+      remoteBridgePayloadTargetsHost(
+        JSON.stringify({ type: "ready" }),
+        "remote:fp",
+        state,
+      ),
+    ).toBe(false);
+    expect(
+      remoteBridgePayloadTargetsHost(
+        JSON.stringify({
+          type: "devshell_query",
+          op: "env_for_path",
+          mutationId: "m1",
+          args: { cwd: "/repo/app" },
+        }),
+        "remote:fp",
+        state,
+      ),
+    ).toBe(true);
+    expect(
+      remoteBridgePayloadTargetsHost(
+        JSON.stringify({ type: "response_delta", tabId: "local-tab" }),
+        "remote:fp",
+        state,
+      ),
+    ).toBe(false);
   });
 });
 

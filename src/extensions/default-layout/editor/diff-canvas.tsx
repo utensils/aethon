@@ -16,13 +16,13 @@
  */
 
 import { useEffect, useRef, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
 // Side-effect import: monaco worker/loader/language bootstrap must run
 // before any monaco API call in this chunk (see canvas.tsx).
 import "../../../monaco/setup";
 import * as monaco from "monaco-editor";
 
 import type { BuiltinComponentProps } from "../../../components/A2UIRenderer";
+import { invokeForHost } from "../../../remoteInvoke";
 import type { EditorDiffSnapshot } from "../../../types/tab";
 import { applyMonacoTheme } from "../../../monaco/theme";
 import { ensureShikiMonacoReady } from "../../../monaco/shiki";
@@ -35,6 +35,7 @@ import {
 
 interface DiffCanvasProps {
   filePath: string;
+  hostId?: string;
   projectPath: string;
   tabId?: string;
   /** Changes to force a re-read (e.g. after the working tree changes). A
@@ -57,6 +58,7 @@ function disposeModels(
 export function DiffCanvas(props: BuiltinComponentProps) {
   const cp = (props.component.props as Partial<DiffCanvasProps>) ?? {};
   const filePath = cp.filePath ?? "";
+  const hostId = cp.hostId;
   const projectPath = cp.projectPath ?? "";
   const tabId = cp.tabId ?? "";
   const refreshKey = cp.refreshKey ?? 0;
@@ -142,13 +144,13 @@ export function DiffCanvas(props: BuiltinComponentProps) {
     if (!projectPath) return;
     const language = languageFromPath(filePath);
     void Promise.all([
-      invoke<string | null>("git_show_head", {
+      invokeForHost<string | null>(hostId, "git_show_head", {
         root: projectPath,
         path: filePath,
       }).catch(() => null),
       // A deleted file has no working-tree content — fall back to empty so
       // the diff still shows the removed lines on the original side.
-      invoke<string>("fs_read_file", {
+      invokeForHost<string>(hostId, "fs_read_file", {
         root: projectPath,
         path: filePath,
       }).catch(() => ""),
@@ -168,7 +170,7 @@ export function DiffCanvas(props: BuiltinComponentProps) {
     return () => {
       cancelled = true;
     };
-  }, [filePath, projectPath, refreshKey, diffSnapshot]);
+  }, [diffSnapshot, filePath, hostId, projectPath, refreshKey]);
 
   return (
     <div className="ae-diff-canvas-wrap" style={{ gridArea: "canvas" }}>

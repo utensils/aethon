@@ -13,9 +13,9 @@
  * each save/load so self-writes don't trip it.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 
+import { invokeForHost, isRemoteHostId } from "../../../remoteInvoke";
 import { decideExternalChange, payloadAffectsFile } from "./externalChange";
 import { getEditorBuffer } from "../../../monaco/editor-buffers";
 import type { FsTreeChangedPayload } from "../sidebar/file-tree-watch";
@@ -23,6 +23,7 @@ import type { FsTreeChangedPayload } from "../sidebar/file-tree-watch";
 interface UseEditorExternalChangeArgs {
   tabId: string;
   filePath: string;
+  hostId?: string | null;
   root: string;
   /** Live unsaved-state accessor (avoids re-subscribing the listener). */
   isDirtyRef: React.RefObject<boolean>;
@@ -41,6 +42,7 @@ export interface EditorExternalChange {
 export function useEditorExternalChange({
   tabId,
   filePath,
+  hostId,
   root,
   isDirtyRef,
   reload,
@@ -68,7 +70,7 @@ export function useEditorExternalChange({
     const r = rootRef.current;
     const tid = tabIdRef.current;
     if (!path || !r) return;
-    void invoke<number>("fs_file_mtime", { root: r, path })
+    void invokeForHost<number>(hostId, "fs_file_mtime", { root: r, path })
       .then((mtime) => {
         const buf = getEditorBuffer(tid);
         if (buf) {
@@ -80,7 +82,7 @@ export function useEditorExternalChange({
       .catch(() => {
         /* file gone / unreadable — leave baseline, watcher will retry */
       });
-  }, []);
+  }, [hostId]);
 
   const reloadExternal = useCallback(() => {
     reloadRef.current();
@@ -94,7 +96,7 @@ export function useEditorExternalChange({
     const r = rootRef.current;
     const tid = tabIdRef.current;
     if (!path || !r) return;
-    void invoke<number>("fs_file_mtime", { root: r, path })
+    void invokeForHost<number>(hostId, "fs_file_mtime", { root: r, path })
       .then((mtime) => {
         const buf = getEditorBuffer(tid);
         const baseline = buf?.externalBaselineMtime ?? 0;
@@ -116,7 +118,7 @@ export function useEditorExternalChange({
       .catch(() => {
         /* file vanished — a delete surfaces via tab pruning elsewhere */
       });
-  }, [isDirtyRef]);
+  }, [hostId, isDirtyRef]);
 
   // On active-file change, restore the buffer's durable warning flag and
   // capture a baseline only the first time we see this buffer — never
@@ -135,9 +137,22 @@ export function useEditorExternalChange({
   useEffect(() => {
     let disposed = false;
     let unlisten: (() => void) | undefined;
-    void listen<FsTreeChangedPayload>("fs-tree-changed", (event) => {
+    const eventName = isRemoteHostId(hostId)
+      ? "remote-host-event"
+      : "fs-tree-changed";
+    void listen<{
+      hostId?: string;
+      topic?: string;
+      payload?: unknown;
+    }>(eventName, (event) => {
       if (disposed) return;
-      if (!payloadAffectsFile(event.payload, rootRef.current, filePathRef.current))
+      const payload = isRemoteHostId(hostId)
+        ? event.payload.hostId === hostId && event.payload.topic === "fs-tree-changed"
+          ? (event.payload.payload as FsTreeChangedPayload | undefined)
+          : undefined
+        : (event.payload as FsTreeChangedPayload);
+      if (!payload) return;
+      if (!payloadAffectsFile(payload, rootRef.current, filePathRef.current))
         return;
       checkNow();
     }).then((fn) => {
@@ -151,7 +166,7 @@ export function useEditorExternalChange({
       disposed = true;
       unlisten?.();
     };
-  }, [checkNow]);
+  }, [checkNow, hostId]);
 
   // Robust path: poll on window focus + a slow interval, so a file in a
   // collapsed/hidden folder (which the non-recursive tree watcher doesn't

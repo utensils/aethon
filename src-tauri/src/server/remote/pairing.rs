@@ -6,6 +6,7 @@
 //! time. `/pair` answers 404 whenever no session is active, so outside
 //! a pairing window the route is indistinguishable from absent.
 
+use std::collections::HashSet;
 use std::time::{Duration, Instant};
 
 use axum::Json;
@@ -68,7 +69,7 @@ pub fn new_device_token() -> String {
 
 /// Non-loopback addresses a phone could dial, most-useful first:
 /// IPv4 (incl. Tailscale's 100.x), then the Bonjour-resolvable mDNS name.
-fn candidate_hosts() -> Vec<String> {
+pub(crate) fn candidate_hosts(fingerprint: Option<&str>) -> Vec<String> {
     let mut hosts: Vec<String> = Vec::new();
     if let Ok(ifaces) = if_addrs::get_if_addrs() {
         for iface in ifaces {
@@ -84,6 +85,11 @@ fn candidate_hosts() -> Vec<String> {
     if let Some(mdns) = crate::server::mdns::local_mdns_hostname() {
         hosts.push(mdns);
     }
+    if let Some(fingerprint) = fingerprint {
+        hosts.push(crate::server::mdns::advertised_mdns_hostname(fingerprint));
+    }
+    let mut seen = HashSet::new();
+    hosts.retain(|host| seen.insert(host.clone()));
     hosts
 }
 
@@ -97,7 +103,7 @@ pub fn begin(display_name: &str, port: u16, fingerprint: &str) -> (PairingSessio
     let qr_payload = json!({
         "v": 1,
         "name": display_name,
-        "hosts": candidate_hosts(),
+        "hosts": candidate_hosts(Some(fingerprint)),
         "port": port,
         "fp": fingerprint,
         "code": code,
@@ -140,6 +146,15 @@ pub struct PairRequest {
     pub device_name: String,
     #[serde(default)]
     pub platform: Option<String>,
+    /// Desktop-to-desktop pairing: the caller's host identity.
+    #[serde(default)]
+    pub host: Option<HostInfo>,
+    /// Token this server should use when calling the caller back.
+    #[serde(default)]
+    pub reciprocal_token: Option<String>,
+    /// `host:port` candidates for the caller, already pairing-ready.
+    #[serde(default)]
+    pub reciprocal_candidates: Option<Vec<String>>,
 }
 
 #[derive(Serialize)]
@@ -197,6 +212,24 @@ pub async fn pair_handler(
                 .devices
                 .add(device_name, platform, &token)
                 .map_err(|e| err_body(StatusCode::INTERNAL_SERVER_ERROR, &e))?;
+            if platform == "desktop"
+                && let (Some(host), Some(reciprocal_token)) =
+                    (req.host.clone(), req.reciprocal_token.clone())
+            {
+                let candidates = req.reciprocal_candidates.unwrap_or_default();
+                match ctx.remote.hosts.upsert(host, reciprocal_token, candidates) {
+                    Ok(view) => {
+                        (ctx.device_changed)(&device);
+                        (ctx.host_changed)(&view.id);
+                    }
+                    Err(e) => {
+                        tracing::warn!(
+                            target: "aethon::server::remote",
+                            "desktop reciprocal host store failed: {e}"
+                        );
+                    }
+                }
+            }
             tracing::info!(
                 target: "aethon::server::remote",
                 "paired device {} ({})", device.id, device.name
@@ -212,7 +245,7 @@ pub async fn pair_handler(
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
+    use std::sync::{Arc, Mutex};
 
     use super::*;
     use crate::server::remote::RemoteState;
@@ -228,6 +261,7 @@ mod tests {
             remote: Arc::new(RemoteState::in_memory()),
             relay: Arc::new(crate::server::remote::relay::EchoRelay),
             device_changed: Arc::new(|_| {}),
+            host_changed: Arc::new(|_| {}),
         }
     }
 
@@ -260,6 +294,9 @@ mod tests {
                 code: b.code.clone(),
                 device_name: "iPhone".into(),
                 platform: Some("ios".into()),
+                host: None,
+                reciprocal_token: None,
+                reciprocal_candidates: None,
             }),
         )
         .await
@@ -274,12 +311,55 @@ mod tests {
                 code: b.code,
                 device_name: "iPhone".into(),
                 platform: None,
+                host: None,
+                reciprocal_token: None,
+                reciprocal_candidates: None,
             }),
         )
         .await
         .err()
         .expect("must fail");
         assert_eq!(replay.0, StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn desktop_pairing_stores_and_notifies_reciprocal_host() {
+        let notified = Arc::new(Mutex::new(Vec::<String>::new()));
+        let notified_for_ctx = Arc::clone(&notified);
+        let ctx = GatewayCtx {
+            host_changed: Arc::new(move |id| {
+                notified_for_ctx.lock().unwrap().push(id.to_string());
+            }),
+            ..test_ctx()
+        };
+        let b = arm(&ctx);
+        let remote_fingerprint = "a".repeat(64);
+
+        let res = pair_handler(
+            State(ctx.clone()),
+            Json(PairRequest {
+                code: b.code,
+                device_name: "bender".into(),
+                platform: Some("desktop".into()),
+                host: Some(HostInfo {
+                    id: "local:bender".into(),
+                    hostname: "bender.local".into(),
+                    display_name: "bender".into(),
+                    fingerprint: remote_fingerprint.clone(),
+                }),
+                reciprocal_token: Some("token".into()),
+                reciprocal_candidates: Some(vec!["bender.local:38123".into()]),
+            }),
+        )
+        .await
+        .expect("pairs");
+
+        assert!(ctx.remote.devices.verify_token(&res.device_token).is_some());
+        let host_id = format!("remote:{remote_fingerprint}");
+        let host = ctx.remote.hosts.get(&host_id).expect("reciprocal host");
+        assert_eq!(host.hostname, "bender.local");
+        assert_eq!(host.token, "token");
+        assert_eq!(notified.lock().unwrap().as_slice(), &[host_id]);
     }
 
     #[tokio::test]
@@ -293,6 +373,9 @@ mod tests {
                     code: "00000000".into(),
                     device_name: "x".into(),
                     platform: None,
+                    host: None,
+                    reciprocal_token: None,
+                    reciprocal_candidates: None,
                 }),
             )
             .await
@@ -311,6 +394,9 @@ mod tests {
                 code: b.code,
                 device_name: "x".into(),
                 platform: None,
+                host: None,
+                reciprocal_token: None,
+                reciprocal_candidates: None,
             }),
         )
         .await
@@ -337,6 +423,9 @@ mod tests {
                 code: b.code,
                 device_name: "x".into(),
                 platform: None,
+                host: None,
+                reciprocal_token: None,
+                reciprocal_candidates: None,
             }),
         )
         .await
@@ -355,6 +444,9 @@ mod tests {
                 code: "12345678".into(),
                 device_name: "x".into(),
                 platform: None,
+                host: None,
+                reciprocal_token: None,
+                reciprocal_candidates: None,
             }),
         )
         .await

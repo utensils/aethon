@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { invokeForHost } from "../../remoteInvoke";
 import type { BridgeMessageHandler } from "./types";
 
 /** Bridge proxy for the agent's working-directory git lookups.
@@ -23,7 +23,9 @@ export const handleGitQuery: BridgeMessageHandler = (data, ctx) => {
     if (op === "working_context") {
       const cwd = args.cwd as string | undefined;
       if (!cwd) throw new Error("git_query.working_context requires cwd");
-      return await invoke("git_working_context", { cwd });
+      return await invokeForHost(ctx.sourceHostId, "git_working_context", {
+        cwd,
+      });
     }
     throw new Error(`unknown git_query op: ${op}`);
   };

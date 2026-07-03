@@ -45,8 +45,10 @@ import {
 
 interface ProjectLite {
   id: string;
+  remoteId?: string;
   label: string;
   path: string;
+  hostId?: string;
   workspaceBaseBranch?: string;
 }
 
@@ -333,6 +335,7 @@ export function TaskLauncher({
     !hostSelected && workspaceChoice.kind === "existing"
       ? workspaceChoice.path
       : (selectedProject?.path ?? null);
+  const atHostId = !hostSelected ? (selectedProject?.hostId ?? null) : null;
   const {
     atMatch,
     atHighlightIdx,
@@ -346,6 +349,7 @@ export function TaskLauncher({
     onValueCommit: () => setTouched(true),
     textareaRef,
     root: atRoot,
+    hostId: atHostId,
     enabled: !submitting && !slashMatch,
   });
 
@@ -359,7 +363,16 @@ export function TaskLauncher({
     onEvent("start-task", {
       ...(hostSelected
         ? { target: "host" }
-        : { projectId: selectedProject?.id }),
+        : {
+            projectId: selectedProject?.id,
+            remoteId: selectedProject?.remoteId,
+            hostId: selectedProject?.hostId,
+            projectLabel: selectedProject?.label,
+            path:
+              workspaceChoice.kind === "existing"
+                ? workspaceChoice.path
+                : selectedProject?.path,
+          }),
       prompt: text,
       attachments,
       newWorkspace: !hostSelected && workspaceChoice.kind === "new",

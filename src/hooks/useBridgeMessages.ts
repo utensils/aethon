@@ -2,6 +2,9 @@ import { useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import type { A2UIPayload } from "../types/a2ui";
+import type { Tab } from "../types/tab";
+import { remoteHostInvoke } from "../services/remote";
+import { isRemoteHostId } from "../remoteInvoke";
 import {
   bridgeMessageHandlers,
   type BridgeMessage,
@@ -47,6 +50,12 @@ const DEFAULT_HANG_WARN_MS = 30_000;
 const hangWarnNotifId = (tabId: string) => `ae-hang-warn:${tabId}`;
 const BRIDGE_DRAIN_BUDGET_MS = 8;
 const BRIDGE_DRAIN_MAX_MESSAGES = 80;
+
+interface RemoteHostEvent {
+  hostId: string;
+  topic: string;
+  payload: unknown;
+}
 
 export type BridgeDispatchDecision =
   | { kind: "handle" }
@@ -101,6 +110,46 @@ function activeTabIdsFromState(state: Record<string, unknown>): Set<string> {
     if (typeof tab?.id === "string") ids.add(tab.id);
   }
   return ids;
+}
+
+function tabHostIdFromState(
+  state: Record<string, unknown>,
+  tabId: string,
+): string | undefined {
+  const inspect = (tabs: unknown): string | undefined => {
+    if (!Array.isArray(tabs)) return undefined;
+    const tab = (tabs as Tab[]).find((candidate) => candidate.id === tabId);
+    return tab?.hostId;
+  };
+  const active = inspect(state.tabs);
+  if (active) return active;
+  const persisted = state.persistedTabBuckets;
+  if (!persisted || typeof persisted !== "object") return undefined;
+  for (const bucket of Object.values(
+    persisted as Record<string, { tabs?: unknown }>,
+  )) {
+    const hit = inspect(bucket?.tabs);
+    if (hit) return hit;
+  }
+  return undefined;
+}
+
+export function remoteBridgePayloadTargetsHost(
+  payload: string,
+  hostId: string,
+  state: Record<string, unknown>,
+): boolean {
+  let data: BridgeMessage;
+  try {
+    data = JSON.parse(payload) as BridgeMessage;
+  } catch {
+    return false;
+  }
+  const candidates = [data.tabId, data.originTabId].filter(
+    (id): id is string => typeof id === "string" && id.length > 0,
+  );
+  if (candidates.length === 0) return data.type === "devshell_query";
+  return candidates.some((tabId) => tabHostIdFromState(state, tabId) === hostId);
 }
 
 type InputPendingNavigator = Navigator & {
@@ -191,6 +240,7 @@ export function processBridgePayload(
   payload: string,
   options: UseBridgeMessagesOptions,
   ackMutation: UseBridgeMessagesActions["ackMutation"],
+  sourceHostId?: string,
 ): void {
   let data: BridgeMessage;
   try {
@@ -216,6 +266,7 @@ export function processBridgePayload(
     hangWarnNotifId,
     hangWarnMs: options.hangWarnMs ?? DEFAULT_HANG_WARN_MS,
     bootLayout: options.bootLayout,
+    sourceHostId,
   };
   try {
     refreshHangWarnForBridgeMessage(data, fullCtx);
@@ -242,25 +293,28 @@ export function useBridgeMessages(
     optionsRef.current = options;
   });
 
-  const ackMutation = (
+  const ackMutationForHost = (hostId?: string) => (
     mutationId: unknown,
     success: boolean,
     error?: string,
     data?: unknown,
   ) => {
     if (typeof mutationId !== "string" || mutationId.length === 0) return;
-    invoke("agent_command", {
-      payload: JSON.stringify({
-        type: "mutation_ack",
-        mutationId,
-        success,
-        ...(error ? { error } : {}),
-        ...(data !== undefined ? { data } : {}),
-      }),
-    }).catch(() => {
+    const payload = JSON.stringify({
+      type: "mutation_ack",
+      mutationId,
+      success,
+      ...(error ? { error } : {}),
+      ...(data !== undefined ? { data } : {}),
+    });
+    const send = isRemoteHostId(hostId)
+      ? remoteHostInvoke(hostId, "agent_command", { payload })
+      : invoke("agent_command", { payload });
+    send.catch(() => {
       /* bridge gone — extension's awaiter will hit the timeout instead */
     });
   };
+  const ackMutation = ackMutationForHost();
 
   useEffect(() => {
     // Boot sequence: spawn the agent, tell the bridge our boot layout
@@ -297,10 +351,40 @@ export function useBridgeMessages(
     const unlistenResponse = listen<string>("agent-response", (event) => {
       pump.enqueue(event.payload);
     });
+    const remotePump = createBridgePayloadPump((payload) => {
+      const envelope = JSON.parse(payload) as { hostId: string; body: string };
+      processBridgePayload(
+        envelope.body,
+        optionsRef.current,
+        ackMutationForHost(envelope.hostId),
+        envelope.hostId,
+      );
+    });
+    const unlistenRemote = listen<RemoteHostEvent>(
+      "remote-host-event",
+      (event) => {
+        const { hostId, topic, payload } = event.payload;
+        if (topic !== "agent-response" || !isRemoteHostId(hostId)) return;
+        const body =
+          typeof payload === "string" ? payload : JSON.stringify(payload);
+        if (
+          !remoteBridgePayloadTargetsHost(
+            body,
+            hostId,
+            optionsRef.current.ctx.stateRef.current,
+          )
+        ) {
+          return;
+        }
+        remotePump.enqueue(JSON.stringify({ hostId, body }));
+      },
+    );
 
     return () => {
       pump.dispose();
+      remotePump.dispose();
       unlistenResponse.then((fn) => fn());
+      unlistenRemote.then((fn) => fn());
     };
     // Boot effect runs once. Subsequent option changes are picked up via
     // optionsRef inside the listener. The eslint disable matches the

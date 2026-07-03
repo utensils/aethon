@@ -3,6 +3,8 @@ import { invoke } from "@tauri-apps/api/core";
 import type { MutableRefObject } from "react";
 import type { ShellMeta, Tab } from "../../types/tab";
 import { TERMINAL_REPLAY_MAX } from "../useTabs";
+import { remoteHostInvoke } from "../../services/remote";
+import { isRemoteHostId } from "../../remoteInvoke";
 
 export interface ShellStreamsDeps {
   updateTab: (tabId: string, mutator: (tab: Tab) => Tab) => void;
@@ -131,12 +133,50 @@ export function subscribeShellStreams(deps: ShellStreamsDeps): () => void {
       });
     },
   );
+  const unlistenRemoteShell = listen<{
+    hostId: string;
+    topic: string;
+    payload: unknown;
+  }>("remote-host-event", (event) => {
+    const { hostId, topic, payload } = event.payload;
+    if (!isRemoteHostId(hostId) || !payload || typeof payload !== "object") {
+      return;
+    }
+    const data = payload as Record<string, unknown>;
+    const tabId = typeof data.tabId === "string" ? data.tabId : "";
+    if (!tabId || liveTabHostId(deps.stateRef, tabId) !== hostId) return;
+    if (topic === "shell-output") {
+      const content = typeof data.content === "string" ? data.content : "";
+      if (!content) return;
+      coalescer.push(tabId, content);
+      window.dispatchEvent(
+        new CustomEvent(`aethon:shell-output:${tabId}`, { detail: content }),
+      );
+      return;
+    }
+    if (topic === "shell-exit") {
+      const code = typeof data.code === "number" ? data.code : null;
+      coalescer.flushTab(tabId);
+      void respawnShellTab(deps, restartingTabs, tabId, code);
+      return;
+    }
+    if (topic === "shell-title") {
+      const title = typeof data.title === "string" ? data.title : "";
+      if (!title) return;
+      const safe = title.length > 64 ? `${title.slice(0, 61)}…` : title;
+      updateTab(tabId, (t) => {
+        if (t.kind !== "shell" || t.label === safe) return t;
+        return { ...t, label: safe };
+      });
+    }
+  });
 
   return () => {
     coalescer.flushAll();
     unlistenShellOutput.then((fn) => fn());
     unlistenShellExit.then((fn) => fn());
     unlistenShellTitle.then((fn) => fn());
+    unlistenRemoteShell.then((fn) => fn());
   };
 }
 
@@ -165,6 +205,14 @@ function shellOpenArgs(
   };
 }
 
+function liveTabHostId(
+  stateRef: MutableRefObject<Record<string, unknown>>,
+  tabId: string,
+): string | undefined {
+  const tabs = (stateRef.current.tabs as Tab[] | undefined) ?? [];
+  return tabs.find((tab) => tab.id === tabId)?.hostId;
+}
+
 async function respawnShellTab(
   deps: ShellStreamsDeps,
   restartingTabs: Set<string>,
@@ -179,10 +227,15 @@ async function respawnShellTab(
   updateShellState(deps, tabId, "starting", code);
 
   try {
-    await invoke("shell_close", { tabId });
+    const hostId = tab.hostId;
+    const invokeShell = (cmd: string, args: Record<string, unknown>) =>
+      isRemoteHostId(hostId)
+        ? remoteHostInvoke(hostId, cmd, args)
+        : invoke(cmd, args);
+    await invokeShell("shell_close", { tabId });
     const latest = liveShellTab(deps.stateRef, tabId);
     if (!latest?.shell) return;
-    await invoke("shell_open", {
+    await invokeShell("shell_open", {
       args: shellOpenArgs(tabId, latest.shell, deps.shellInheritEnvRef.current),
     });
     deps.updateTab(tabId, (t) => {

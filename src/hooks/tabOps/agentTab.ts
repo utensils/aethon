@@ -9,10 +9,14 @@ import {
   initialDevshellTerminalBuffer,
 } from "./devshellTerminal";
 import {
+  activeHostIdForNewTab,
+  activeProjectIdForNewTab,
   cwdForNewTab,
   modelForNewProjectTab,
   sessionLabelFromMessages,
 } from "./helpers";
+import { isRemoteHostId } from "../../remoteInvoke";
+import { remoteHostInvoke } from "../../services/remote";
 
 export interface NewTabDeps {
   setState: Dispatch<SetStateAction<Record<string, unknown>>>;
@@ -48,6 +52,7 @@ export function useNewTab(deps: NewTabDeps) {
     options?: {
       restoredSession?: boolean;
       cwd?: string;
+      hostId?: string;
       scrollToMatch?: string;
       /** Per-launch model override (task-launcher model chip). Wins over
        *  the global default + per-project memory in modelForNewProjectTab. */
@@ -89,10 +94,17 @@ export function useNewTab(deps: NewTabDeps) {
     // Project-scoped model default: new tabs in a project should use
     // the last model selected in that project, then the visible/global
     // model, then pi's ready-reported default.
-    const projectId = projectsRef.current.activeId;
+    const projectId = activeProjectIdForNewTab(
+      projectsRef.current,
+      stateRef.current,
+    );
+    const hostId =
+      options?.hostId ??
+      activeHostIdForNewTab(projectsRef.current, stateRef.current);
+    const isRemote = isRemoteHostId(hostId);
     const inheritedCwd =
       options?.cwd ??
-      cwdForNewTab(projectsRef.current, stateRef.current) ??
+      (isRemote ? null : cwdForNewTab(projectsRef.current, stateRef.current)) ??
       undefined;
     const inheritedModel = modelForNewProjectTab(
       stateRef.current,
@@ -104,10 +116,10 @@ export function useNewTab(deps: NewTabDeps) {
       typeof stateRef.current.defaultThinkingLevel === "string"
         ? stateRef.current.defaultThinkingLevel
         : undefined;
-    const initialTerminalBuffer = inheritedCwd
+    const initialTerminalBuffer = inheritedCwd && !isRemote
       ? initialDevshellTerminalBuffer(stateRef.current, inheritedCwd)
       : "";
-    const preparingDevshell = inheritedCwd
+    const preparingDevshell = inheritedCwd && !isRemote
       ? devshellNeedsPreparation(stateRef.current, inheritedCwd)
       : false;
     const existingSessionLabel = restoreId
@@ -130,6 +142,7 @@ export function useNewTab(deps: NewTabDeps) {
           ? { thinkingLevel: inheritedThinkingLevel }
           : {}),
         ...(inheritedCwd ? { cwd: inheritedCwd } : {}),
+        ...(hostId ? { hostId } : {}),
         ...(options?.sourceIssue ? { sourceIssue: options.sourceIssue } : {}),
       };
       tabs.push(tab);
@@ -164,7 +177,7 @@ export function useNewTab(deps: NewTabDeps) {
     // tab's scrollback until the next switch / output event.
     dispatchTerminalReplay(initialTerminalBuffer);
     const opening = (async () => {
-      if (inheritedCwd) {
+      if (inheritedCwd && !isRemote) {
         try {
           const ok = prepareWorkspaceStartup
             ? await prepareWorkspaceStartup(inheritedCwd)
@@ -201,18 +214,17 @@ export function useNewTab(deps: NewTabDeps) {
           });
         }
       }
-      return await invoke("agent_command", {
-        payload: JSON.stringify({
-          type: "tab_open",
-          tabId: id,
-          ...(inheritedModel ? { model: inheritedModel } : {}),
-          ...(inheritedThinkingLevel
-            ? { thinkingLevel: inheritedThinkingLevel }
-            : {}),
-          ...(inheritedCwd ? { cwd: inheritedCwd } : {}),
-          ...(options?.restoredSession ? { restoreHistory: true } : {}),
-        }),
+      const payload = JSON.stringify({
+        type: "tab_open",
+        tabId: id,
+        ...(inheritedModel ? { model: inheritedModel } : {}),
+        ...(inheritedThinkingLevel ? { thinkingLevel: inheritedThinkingLevel } : {}),
+        ...(inheritedCwd ? { cwd: inheritedCwd } : {}),
+        ...(options?.restoredSession ? { restoreHistory: true } : {}),
       });
+      return isRemote && hostId
+        ? await remoteHostInvoke(hostId, "agent_command", { payload })
+        : await invoke("agent_command", { payload });
     })();
     pendingTabOpens.current.set(id, opening);
     opening

@@ -7,6 +7,8 @@ import { act, renderHook, waitFor } from "@testing-library/react";
 const eventListeners = new Map<string, Array<(event: { payload: unknown }) => void>>();
 
 const remoteDevices: unknown[] = [];
+const remoteHosts: unknown[] = [];
+const remoteSnapshots = new Map<string, { projects: unknown; icons?: unknown }>();
 
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: (cmd: string) =>
@@ -20,6 +22,14 @@ vi.mock("@tauri-apps/api/core", () => ({
           }
         : cmd === "remote_devices_list"
           ? remoteDevices
+          : cmd === "remote_hosts_list"
+            ? remoteHosts
+            : cmd === "remote_host_project_snapshot"
+              ? {
+                  hostId: "remote:bender",
+                  projects: remoteSnapshots.get("remote:bender")?.projects ?? {},
+                  icons: remoteSnapshots.get("remote:bender")?.icons ?? {},
+                }
           : null,
     ),
 }));
@@ -52,6 +62,8 @@ describe("useHostInfo", () => {
     _resetLocalHostCacheForTests();
     eventListeners.clear();
     remoteDevices.length = 0;
+    remoteHosts.length = 0;
+    remoteSnapshots.clear();
     const { result } = renderHook(() => useHostInfo());
     await waitFor(() => {
       expect(result.current.localHostId).toBe("local:abc");
@@ -60,12 +72,14 @@ describe("useHostInfo", () => {
     expect(result.current.hosts[0]?.isLocal).toBe(true);
   });
 
-  it("merges remote hosts and removes them on host-removed", async () => {
+  it("removes unpaired discovered hosts when mDNS drops them", async () => {
     const { useHostInfo } = await import("./useHostInfo");
     const { _resetLocalHostCacheForTests } = await import("../hosts");
     _resetLocalHostCacheForTests();
     eventListeners.clear();
     remoteDevices.length = 0;
+    remoteHosts.length = 0;
+    remoteSnapshots.clear();
     const { result } = renderHook(() => useHostInfo());
     await waitFor(() => {
       expect(result.current.localHostId).toBe("local:abc");
@@ -97,6 +111,8 @@ describe("useHostInfo", () => {
     _resetLocalHostCacheForTests();
     eventListeners.clear();
     remoteDevices.length = 0;
+    remoteHosts.length = 0;
+    remoteSnapshots.clear();
     remoteDevices.push({
       id: "dev-iphone",
       name: "iPhone",
@@ -125,6 +141,160 @@ describe("useHostInfo", () => {
       // Connection state travels on `connected` — never smuggled
       // through the TLS fingerprint field.
       expect(device?.fingerprintPrefix).toBeUndefined();
+    });
+  });
+
+  it("surfaces paired desktop hosts and their remote project snapshot", async () => {
+    const { useHostInfo } = await import("./useHostInfo");
+    const { _resetLocalHostCacheForTests } = await import("../hosts");
+    _resetLocalHostCacheForTests();
+    eventListeners.clear();
+    remoteDevices.length = 0;
+    remoteHosts.length = 0;
+    remoteSnapshots.clear();
+    remoteHosts.push({
+      id: "remote:bender",
+      hostId: "local:bender",
+      hostname: "bender.local",
+      displayName: "bender",
+      fingerprint: "bender",
+      candidates: ["bender.local:4242"],
+      createdAt: 1,
+      lastSeenAt: 2,
+    });
+    remoteSnapshots.set("remote:bender", {
+      projects: {
+        projects: [
+          { id: "p1", label: "aethon", path: "/repo/aethon", uiExpanded: true },
+        ],
+        workspacesByProject: {
+          p1: [
+            {
+              id: "w1",
+              projectId: "p1",
+              path: "/repo/aethon",
+              branch: "main",
+              isMain: true,
+            },
+          ],
+        },
+      },
+      icons: JSON.stringify({ p1: "data:image/png;base64,REMOTE" }),
+    });
+
+    const { result } = renderHook(() => useHostInfo());
+
+    await waitFor(() => {
+      expect(result.current.hosts.find((h) => h.id === "remote:bender")).toMatchObject({
+        displayName: "bender",
+        paired: true,
+        connected: false,
+      });
+      expect(result.current.remoteProjectsByHost["remote:bender"]?.[0]).toMatchObject({
+        id: "remote:bender::project::p1",
+        remoteId: "p1",
+        label: "aethon",
+        iconUrl: "data:image/png;base64,REMOTE",
+        workspaces: [
+          expect.objectContaining({
+            id: "remote:bender::workspace::w1",
+            remoteId: "w1",
+            branch: "main",
+          }),
+        ],
+      });
+    });
+  });
+
+  it("keeps mDNS reachability separate from paired host connection state", async () => {
+    const { useHostInfo } = await import("./useHostInfo");
+    const { _resetLocalHostCacheForTests } = await import("../hosts");
+    _resetLocalHostCacheForTests();
+    eventListeners.clear();
+    remoteDevices.length = 0;
+    remoteHosts.length = 0;
+    remoteSnapshots.clear();
+    remoteHosts.push({
+      id: "remote:bender",
+      hostId: "local:bender",
+      hostname: "bender.local",
+      displayName: "bender",
+      fingerprint: "bender",
+      candidates: ["bender.local:4242"],
+      createdAt: 1,
+      lastSeenAt: 2,
+    });
+
+    const { result } = renderHook(() => useHostInfo());
+
+    await waitFor(() => {
+      expect(result.current.hosts.find((h) => h.id === "remote:bender")).toMatchObject({
+        paired: true,
+        connected: false,
+      });
+    });
+    act(() => {
+      fireEvent("host-discovered", {
+        id: "remote:bender",
+        hostname: "bender.local",
+        displayName: "bender",
+        fingerprintPrefix: "bender",
+        candidates: ["bender.local:4242", "192.168.1.44:4242"],
+        lastSeen: 3,
+      });
+    });
+    await waitFor(() => {
+      expect(result.current.hosts.find((h) => h.id === "remote:bender")).toMatchObject({
+        paired: true,
+        connected: false,
+        candidates: ["bender.local:4242", "192.168.1.44:4242"],
+      });
+    });
+    act(() => {
+      fireEvent("host-removed", { id: "remote:bender" });
+    });
+    await waitFor(() => {
+      expect(result.current.hosts.find((h) => h.id === "remote:bender")).toMatchObject({
+        paired: true,
+        connected: false,
+      });
+    });
+    act(() => {
+      fireEvent("remote-host-status-changed", {
+        id: "remote:bender",
+        connected: true,
+      });
+    });
+    await waitFor(() => {
+      expect(result.current.hosts.find((h) => h.id === "remote:bender")).toMatchObject({
+        paired: true,
+        connected: true,
+      });
+    });
+  });
+
+  it("does not surface desktop peer auth records as mobile devices", async () => {
+    const { useHostInfo } = await import("./useHostInfo");
+    const { _resetLocalHostCacheForTests } = await import("../hosts");
+    _resetLocalHostCacheForTests();
+    eventListeners.clear();
+    remoteDevices.length = 0;
+    remoteHosts.length = 0;
+    remoteSnapshots.clear();
+    remoteDevices.push({
+      id: "dev-desktop",
+      name: "bender",
+      platform: "desktop",
+      createdAt: 1,
+      lastSeenAt: 2,
+      revoked: false,
+      connected: true,
+    });
+
+    const { result } = renderHook(() => useHostInfo());
+
+    await waitFor(() => {
+      expect(result.current.mobileDevices).toHaveLength(0);
     });
   });
 });

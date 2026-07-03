@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { invokeForHost } from "../../remoteInvoke";
 import {
   findActiveAtToken,
   matchAtMentions,
@@ -28,11 +29,13 @@ export function useAtMention({
   value,
   cursor,
   root,
+  hostId,
   enabled,
 }: {
   value: string;
   cursor: number;
   root: string | null;
+  hostId?: string | null;
   enabled: boolean;
 }) {
   const token = useMemo(
@@ -55,7 +58,7 @@ export function useAtMention({
     if (!tokenActive) return;
     let cancelled = false;
     if (root) {
-      invoke<string[]>("fs_walk_project", { root })
+      invokeForHost<string[]>(hostId, "fs_walk_project", { root })
         .then((paths) => {
           if (cancelled) return;
           const normalized = root.replace(/\/+$/, "");
@@ -83,7 +86,7 @@ export function useAtMention({
     return () => {
       cancelled = true;
     };
-  }, [tokenActive, root]);
+  }, [tokenActive, root, hostId]);
 
   const atMatch: AtMention | null = useMemo(() => {
     if (!token) return null;

@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { invokeForHost } from "../../remoteInvoke";
 import type {
   PaletteItem,
   PaletteMode,
@@ -75,10 +76,12 @@ export function usePaletteOverlay(ctx: PaletteOverlayContext) {
     });
 
     if (mode === "files") {
-      const project = stateRef.current.project as { path?: string } | undefined;
+      const project = stateRef.current.project as
+        | { hostId?: string; path?: string }
+        | undefined;
       const root = project?.path ?? "";
       if (!root) return;
-      void invoke<string[]>("fs_walk_project", { root })
+      void invokeForHost<string[]>(project?.hostId, "fs_walk_project", { root })
         .then((paths) => {
           const current =
             (stateRef.current.project as { path?: string } | undefined)?.path ??

@@ -7,6 +7,8 @@ import { isAgentTabInFlight } from "../utils/agentBusy";
 import { flushDeferredTabOpen } from "./bridgeMessageHandlers/readyEffects";
 import { queueOf, withQueue } from "./chatQueue";
 import type { UseChatContext } from "./useChat";
+import { remoteHostInvoke } from "../services/remote";
+import { isRemoteHostId } from "../remoteInvoke";
 
 export interface SendChatOptions {
   mode?: "normal" | "steer";
@@ -294,18 +296,22 @@ export function createChatTransportController(
       tabId,
     );
     try {
-      await invoke("send_message", {
-        request: buildSendMessageRequest({
-          message: bridgeText,
-          tabId,
-          mode,
-          attachments,
-          targetTab,
-          state: stateRef.current,
-          suppressUserSessionEvent: userSessionEventMirrored,
-          controlRequestId: options?.controlRequestId,
-        }),
+      const request = buildSendMessageRequest({
+        message: bridgeText,
+        tabId,
+        mode,
+        attachments,
+        targetTab,
+        state: stateRef.current,
+        suppressUserSessionEvent: userSessionEventMirrored,
+        controlRequestId: options?.controlRequestId,
       });
+      const hostId = targetTab?.hostId;
+      if (isRemoteHostId(hostId)) {
+        await remoteHostInvoke(hostId, "send_message", { request });
+      } else {
+        await invoke("send_message", { request });
+      }
     } catch (err) {
       updateTab(tabId, (tab) => ({
         ...tab,

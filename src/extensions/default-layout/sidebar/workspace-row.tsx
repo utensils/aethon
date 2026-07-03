@@ -33,9 +33,12 @@ export const WORKSPACE_PENDING_CI_REFRESH_MS = 45_000;
 async function liveBranchStillMatches(
   path: string,
   branch: string,
+  hostId?: string | null,
 ): Promise<boolean> {
   try {
-    const live = await gitWorktrees(path);
+    const live = hostId
+      ? await gitWorktrees(path, hostId)
+      : await gitWorktrees(path);
     const row = live.find((w) => w.path === path);
     if (!row) return true;
     return row.branch === branch;
@@ -47,6 +50,9 @@ async function liveBranchStillMatches(
 export interface WorkspaceSidebarItem {
   id: string;
   projectId?: string;
+  hostId?: string;
+  remoteId?: string;
+  remoteProjectId?: string;
   /** User-visible label (defaults to branch name when absent). */
   label: string;
   /** Short branch name; falls back to "detached" for detached HEAD. */
@@ -85,6 +91,14 @@ export interface WorkspaceRowProps {
   consumeSuppressedClick?: () => boolean;
 }
 
+function isRemoteWorkspaceItem(item: WorkspaceSidebarItem): boolean {
+  return (
+    typeof item.remoteId === "string" ||
+    typeof item.remoteProjectId === "string" ||
+    (typeof item.hostId === "string" && item.hostId.startsWith("remote:"))
+  );
+}
+
 export function WorkspaceRow({
   item,
   sectionId,
@@ -111,8 +125,13 @@ export function WorkspaceRow({
   const isFailed = pending === "failed";
   const agentRunning = item.agent?.status === "running";
   const canRenameInline = renaming && !isPendingActive && !isFailed;
+  const isRemote = isRemoteWorkspaceItem(item);
   const canRemoveInline =
-    !item.isMain && !isPendingActive && !isFailed && !canRenameInline;
+    !isRemote &&
+    !item.isMain &&
+    !isPendingActive &&
+    !isFailed &&
+    !canRenameInline;
   const prEligible =
     !item.isMain && !isPendingActive && !isFailed && item.branch != null;
 
@@ -153,7 +172,7 @@ export function WorkspaceRow({
         setPrChip(null);
       }
       try {
-        if (!(await liveBranchStillMatches(item.path, branch))) {
+        if (!(await liveBranchStillMatches(item.path, branch, item.hostId))) {
           if (!cancelled) {
             loadedOnce = true;
             setPrChip(null);
@@ -161,13 +180,19 @@ export function WorkspaceRow({
           }
           return;
         }
-        const status = await getGhBranchStatus(item.path, branch);
+        const status = item.hostId
+          ? await getGhBranchStatus(item.path, branch, item.hostId)
+          : await getGhBranchStatus(item.path, branch);
         const checks =
           status.ghAvailable &&
           status.repo &&
           !status.workspaceBroken &&
           status.prs.length > 0
-            ? await getGhChecks(item.path, branch).catch(() => null)
+            ? await (
+                item.hostId
+                  ? getGhChecks(item.path, branch, item.hostId)
+                  : getGhChecks(item.path, branch)
+              ).catch(() => null)
             : null;
         if (!cancelled) {
           const chip = summarizeWorkspacePrStatus(status, checks);
@@ -204,7 +229,7 @@ export function WorkspaceRow({
       window.removeEventListener("focus", onFocus);
       document.removeEventListener("visibilitychange", onVisibility);
     };
-  }, [item.branch, item.path, prEligible]);
+  }, [item.branch, item.hostId, item.path, prEligible]);
 
   const className = [
     "a2ui-sidebar-item",
@@ -344,7 +369,14 @@ export function WorkspaceRow({
           return;
         onEvent(
           "switch-workspace",
-          { sectionId, workspaceId: item.id },
+          {
+            sectionId,
+            workspaceId: item.id,
+            projectId: item.projectId,
+            hostId: item.hostId,
+            remoteId: item.remoteId,
+            remoteProjectId: item.remoteProjectId,
+          },
           item.id,
         );
       }}
@@ -354,7 +386,14 @@ export function WorkspaceRow({
           return;
         onEvent(
           "open-workspace-in-new-tab",
-          { sectionId, workspaceId: item.id },
+          {
+            sectionId,
+            workspaceId: item.id,
+            projectId: item.projectId,
+            hostId: item.hostId,
+            remoteId: item.remoteId,
+            remoteProjectId: item.remoteProjectId,
+          },
           item.id,
         );
       }}
