@@ -198,8 +198,12 @@ jobs:
             }
 
           mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
-          PROFILE_UUID="$(security cms -D -i "$PROFILE_PATH" | /usr/libexec/PlistBuddy -c 'Print :UUID' /dev/stdin)"
-          PROFILE_NAME="$(security cms -D -i "$PROFILE_PATH" | /usr/libexec/PlistBuddy -c 'Print :Name' /dev/stdin)"
+          PROFILE_PLIST="$(mktemp "$RUNNER_TEMP/aethon.mobileprovision.XXXXXX.plist")"
+          chmod 600 "$PROFILE_PLIST"
+          trap 'rm -f "$PROFILE_PLIST"' EXIT
+          security cms -D -i "$PROFILE_PATH" > "$PROFILE_PLIST"
+          PROFILE_UUID="$(/usr/libexec/PlistBuddy -c 'Print :UUID' "$PROFILE_PLIST")"
+          PROFILE_NAME="$(/usr/libexec/PlistBuddy -c 'Print :Name' "$PROFILE_PLIST")"
           cp "$PROFILE_PATH" "$HOME/Library/MobileDevice/Provisioning Profiles/$PROFILE_UUID.mobileprovision"
           security find-identity -v -p codesigning "$KEYCHAIN_PATH"
 
