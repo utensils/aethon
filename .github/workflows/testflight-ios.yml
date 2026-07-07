@@ -459,8 +459,8 @@ jobs:
           build_number = ENV.fetch("TESTFLIGHT_BUILD_NUMBER")
           expected_versions = [
             build_number,
-            "#{marketing_version}.#{build_number}"
-          ]
+            build_number.start_with?("#{marketing_version}.") ? build_number : "#{marketing_version}.#{build_number}"
+          ].uniq
           app_id = app.fetch("id")
           app_name = app.dig("attributes", "name") || ENV.fetch("APP_NAME")
 
@@ -472,7 +472,7 @@ jobs:
                 {
                   "filter[app]" => app_id,
                   "fields[builds]" => "version,processingState,uploadedDate,expirationDate,usesNonExemptEncryption",
-                  "limit" => "10",
+                  "limit" => "200",
                   "sort" => "-uploadedDate"
                 }
               ),
