@@ -192,7 +192,10 @@ jobs:
             -S apple-tool:,apple:,codesign: \
             -s \
             -k "$IOS_KEYCHAIN_PASSWORD" \
-            "$KEYCHAIN_PATH"
+            "$KEYCHAIN_PATH" || {
+              status=$?
+              echo "::warning title=Keychain ACL rewrite failed::security set-key-partition-list exited with $status; continuing with the imported codesign/security tool ACL."
+            }
 
           mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
           PROFILE_UUID="$(security cms -D -i "$PROFILE_PATH" | /usr/libexec/PlistBuddy -c 'Print :UUID' /dev/stdin)"
