@@ -7,7 +7,6 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		1237749315CA2709E2C15046 /* libapp.a in Resources */ = {isa = PBXBuildFile; fileRef = D53FFF5F235E74CF0801DB4E /* libapp.a */; };
 		37A8D71C1C431310342E569E /* MetalKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 39692A6AC24FA94B0A9BD4C5 /* MetalKit.framework */; };
 		63DB5DF3D32CB498A54D3303 /* WebKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 1A73447EB793F607B5417319 /* WebKit.framework */; };
 		7C5F2103F737F13723F80BD3 /* assets in Resources */ = {isa = PBXBuildFile; fileRef = 0F77EE25BE7798FD0EC6F92A /* assets */; };
@@ -247,7 +246,6 @@
 				95F0A648FCECD704CD4C75FB /* Assets.xcassets in Resources */,
 				C54B46DA53A166874A6602B9 /* LaunchScreen.storyboard in Resources */,
 				7C5F2103F737F13723F80BD3 /* assets in Resources */,
-				1237749315CA2709E2C15046 /* libapp.a in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
