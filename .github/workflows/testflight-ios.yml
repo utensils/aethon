@@ -455,7 +455,12 @@ jobs:
             exit 1
           end
 
+          marketing_version = ENV.fetch("TESTFLIGHT_MARKETING_VERSION")
           build_number = ENV.fetch("TESTFLIGHT_BUILD_NUMBER")
+          expected_versions = [
+            build_number,
+            build_number.start_with?("#{marketing_version}.") ? build_number : "#{marketing_version}.#{build_number}"
+          ].uniq
           app_id = app.fetch("id")
           app_name = app.dig("attributes", "name") || ENV.fetch("APP_NAME")
 
@@ -466,20 +471,23 @@ jobs:
                 "/v1/builds",
                 {
                   "filter[app]" => app_id,
-                  "filter[version]" => build_number,
                   "fields[builds]" => "version,processingState,uploadedDate,expirationDate,usesNonExemptEncryption",
-                  "limit" => "1",
+                  "limit" => "200",
                   "sort" => "-uploadedDate"
                 }
               ),
               token
             )
-            build = builds_response.fetch("data").first
+            builds = builds_response.fetch("data")
+            build = builds.find do |candidate|
+              expected_versions.include?(candidate.dig("attributes", "version"))
+            end
 
             if build
               attributes = build.fetch("attributes")
               processing_state = attributes.fetch("processingState")
-              puts "App Store Connect build #{app_name} #{ENV.fetch("TESTFLIGHT_MARKETING_VERSION")} (#{build_number}) is #{processing_state}."
+              version = attributes.fetch("version")
+              puts "App Store Connect build #{app_name} #{marketing_version} (#{version}) is #{processing_state}."
 
               if processing_state == "VALID"
                 File.open(ENV.fetch("GITHUB_ENV"), "a") do |env|
@@ -495,13 +503,15 @@ jobs:
                 exit 1
               end
             else
-              puts "Waiting for App Store Connect build #{build_number} to appear..."
+              observed_versions = builds.map { |candidate| candidate.dig("attributes", "version") }.compact
+              puts "Waiting for App Store Connect build #{expected_versions.join(" or ")} to appear..."
+              puts "Recent App Store Connect builds: #{observed_versions.join(", ")}" unless observed_versions.empty?
             end
 
             sleep 60 unless attempt == 29
           end
 
-          warn "Timed out waiting for TestFlight processing for build #{build_number}."
+          warn "Timed out waiting for TestFlight processing for build #{expected_versions.join(" or ")}."
           exit 1
           RUBY
 
