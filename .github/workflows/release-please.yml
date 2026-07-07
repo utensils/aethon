@@ -167,6 +167,16 @@ jobs:
     uses: ./.github/workflows/_ci.yml
     # No secrets needed.
 
+  testflight:
+    name: Upload iOS TestFlight
+    needs: [resolve-tag, ci]
+    if: always() && needs.resolve-tag.result == 'success' && needs.ci.result == 'success'
+    uses: ./.github/workflows/testflight-ios.yml
+    secrets: inherit
+    with:
+      git_ref: ${{ needs.resolve-tag.outputs.tag }}
+      internal_testing_only: false
+
   build:
     name: Build (macos-aarch64)
     needs: [resolve-tag, ci]
