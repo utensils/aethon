@@ -80,8 +80,11 @@ jobs:
       - name: Show Rust toolchain
         run: |
           set -euo pipefail
+          rustup default "$RUSTUP_TOOLCHAIN"
           rustup target add aarch64-apple-ios --toolchain "$RUSTUP_TOOLCHAIN"
           rustup show
+          rustup show active-toolchain
+          rustup target list --installed | grep -Fx aarch64-apple-ios
           rustc --version
           cargo --version
 
