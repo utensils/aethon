@@ -52,6 +52,7 @@ env:
   XCODE_CONFIGURATION: release
   IOS_INFO_PLIST: apps/mobile/src-tauri/gen/apple/aethon-mobile_iOS/Info.plist
   IOS_PROFILE_NAME: Aethon Companion App Store
+  RUSTUP_TOOLCHAIN: "1.92.0"
 
 jobs:
   upload:
@@ -73,8 +74,16 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: "1.92.0"
+          toolchain: ${{ env.RUSTUP_TOOLCHAIN }}
           targets: aarch64-apple-ios
+
+      - name: Show Rust toolchain
+        run: |
+          set -euo pipefail
+          rustup target add aarch64-apple-ios --toolchain "$RUSTUP_TOOLCHAIN"
+          rustup show
+          rustc --version
+          cargo --version
 
       - name: Cache cargo registry + targets
         uses: Swatinem/rust-cache@v2
