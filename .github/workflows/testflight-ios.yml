@@ -265,32 +265,48 @@ jobs:
           CC_aarch64_apple_ios: /usr/bin/clang
           CXX_aarch64_apple_ios: /usr/bin/clang++
           CARGO_TARGET_AARCH64_APPLE_IOS_LINKER: /usr/bin/clang
-          IOS_CERTIFICATE: ${{ secrets.IOS_CERTIFICATE_BASE64 }}
-          IOS_CERTIFICATE_PASSWORD: ${{ secrets.IOS_CERTIFICATE_PASSWORD }}
-          IOS_MOBILE_PROVISION: ${{ secrets.IOS_PROVISIONING_PROFILE_BASE64 }}
         run: |
           set -euo pipefail
-
-          : "${IOS_CERTIFICATE:?IOS_CERTIFICATE is required}"
-          : "${IOS_CERTIFICATE_PASSWORD:?IOS_CERTIFICATE_PASSWORD is required}"
-          : "${IOS_MOBILE_PROVISION:?IOS_MOBILE_PROVISION is required}"
 
           cd apps/mobile
           cargo tauri ios build --help | grep -F -- "--export-method"
           rm -rf src-tauri/gen/apple/build
+          mkdir -p src-tauri/gen/apple/build
           touch src-tauri/src/lib.rs
 
+          set +e
           cargo tauri ios build \
             --ci \
             --target aarch64 \
             --export-method app-store-connect \
             --build-number "$TESTFLIGHT_BUILD_NUMBER" \
             -v
+          TAURI_BUILD_STATUS=$?
+          set -e
 
-          ARCHIVE_PATH="$(find src-tauri/gen/apple/build -maxdepth 3 -type d -name '*.xcarchive' | head -n 1)"
+          ARCHIVE_PATH="$(find src-tauri/gen/apple/build -maxdepth 3 -type d -name '*.xcarchive' -print -quit)"
           if [ -z "$ARCHIVE_PATH" ]; then
             echo "Tauri iOS build did not produce an xcarchive under $(pwd)/src-tauri/gen/apple/build." >&2
             find src-tauri/gen/apple/build -maxdepth 4 -print >&2 || true
+            if [ "$TAURI_BUILD_STATUS" -ne 0 ]; then
+              exit "$TAURI_BUILD_STATUS"
+            fi
+            exit 1
+          fi
+
+          if [ "$TAURI_BUILD_STATUS" -ne 0 ]; then
+            echo "::warning title=Tauri export failed after archive::cargo tauri ios build exited with $TAURI_BUILD_STATUS after producing an xcarchive; continuing with the workflow's explicit App Store Connect export step."
+          fi
+
+          if [ "$TAURI_BUILD_STATUS" -eq 0 ]; then
+            echo "Tauri iOS build completed without errors."
+          else
+            echo "Tauri iOS archive exists despite export status $TAURI_BUILD_STATUS."
+          fi
+
+          if [ ! -d "$ARCHIVE_PATH/Products/Applications/$APP_NAME.app" ]; then
+            echo "Tauri archive is missing $APP_NAME.app under $ARCHIVE_PATH/Products/Applications." >&2
+            find "$ARCHIVE_PATH/Products/Applications" -maxdepth 2 -print >&2 || true
             exit 1
           fi
 
