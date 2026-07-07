@@ -76,6 +76,46 @@ mismatches.push(
   ),
 );
 
+mismatches.push(
+  ...update(
+    "apps/mobile/package.json",
+    read("apps/mobile/package.json").replace(
+      /("version"\s*:\s*)"[^"]+"/,
+      `$1"${version}"`,
+    ),
+  ),
+);
+
+mismatches.push(
+  ...update(
+    "apps/mobile/src-tauri/tauri.conf.json",
+    read("apps/mobile/src-tauri/tauri.conf.json").replace(
+      /("version"\s*:\s*)"[^"]+"/,
+      `$1"${version}"`,
+    ),
+  ),
+);
+
+mismatches.push(
+  ...update(
+    "apps/mobile/src-tauri/Cargo.toml",
+    read("apps/mobile/src-tauri/Cargo.toml").replace(
+      /(^\[package\][\s\S]*?^version\s*=\s*)"[^"]+"/m,
+      `$1"${version}"`,
+    ),
+  ),
+);
+
+mismatches.push(
+  ...update(
+    "apps/mobile/src-tauri/Cargo.lock",
+    read("apps/mobile/src-tauri/Cargo.lock").replace(
+      /(\[\[package\]\]\r?\nname = "aethon-mobile"\r?\nversion = )"[^"]+"/,
+      `$1"${version}"`,
+    ),
+  ),
+);
+
 if (mismatches.length > 0) {
   console.error(
     `Version files are out of sync with package.json (${version}):\n` +

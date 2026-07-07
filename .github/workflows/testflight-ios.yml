@@ -1,0 +1,608 @@
+name: Upload iOS TestFlight
+
+on:
+  workflow_dispatch:
+    inputs:
+      git_ref:
+        description: Optional git ref to build. Defaults to the dispatched ref.
+        required: false
+        default: ""
+        type: string
+      build_number:
+        description: Optional CFBundleVersion override. Defaults to UTC timestamp.
+        required: false
+        default: ""
+        type: string
+      internal_testing_only:
+        description: Restrict this build to internal TestFlight testers only.
+        required: true
+        default: false
+        type: boolean
+  workflow_call:
+    inputs:
+      git_ref:
+        description: Optional git ref to build. Defaults to the caller ref.
+        required: false
+        default: ""
+        type: string
+      build_number:
+        description: Optional CFBundleVersion override. Defaults to UTC timestamp.
+        required: false
+        default: ""
+        type: string
+      internal_testing_only:
+        description: Restrict this build to internal TestFlight testers only.
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ inputs.git_ref || github.ref }}
+  cancel-in-progress: false
+
+env:
+  APP_NAME: Aethon
+  APP_BUNDLE_ID: com.utensils.aethon.mobile
+  DEVELOPMENT_TEAM: 28X9H69QGE
+  XCODE_PROJECT: apps/mobile/src-tauri/gen/apple/aethon-mobile.xcodeproj
+  XCODE_SCHEME: aethon-mobile_iOS
+  XCODE_CONFIGURATION: release
+  IOS_INFO_PLIST: apps/mobile/src-tauri/gen/apple/aethon-mobile_iOS/Info.plist
+  IOS_PROFILE_NAME: Aethon Companion App Store
+
+jobs:
+  upload:
+    name: Upload iOS build to TestFlight
+    runs-on: macos-15
+    timeout-minutes: 90
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.git_ref || github.ref }}
+
+      - name: Show Xcode version
+        run: |
+          xcodebuild -version
+          xcode-select -p
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.92.0"
+          targets: aarch64-apple-ios
+
+      - name: Cache cargo registry + targets
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/mobile/src-tauri -> target
+          key: testflight-ios
+
+      - name: Cache cargo-installed Tauri CLI
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/cargo-tauri
+          key: cargo-tauri-2.5.0-${{ runner.os }}-${{ runner.arch }}
+
+      - name: Install Tauri Rust CLI
+        run: |
+          set -euo pipefail
+          if cargo tauri --version 2>/dev/null | grep -q 'tauri-cli 2\.5\.0'; then
+            cargo tauri --version
+            exit 0
+          fi
+          cargo install tauri-cli --version 2.5.0 --locked
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.x
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Version files are synced
+        run: bun run version:check
+
+      - name: Build mobile bundle
+        run: bun run build:mobile
+
+      - name: Install App Store Connect API key
+        env:
+          APP_STORE_CONNECT_API_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_API_KEY_BASE64 }}
+          APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+        run: |
+          set -euo pipefail
+
+          test -n "$APP_STORE_CONNECT_API_KEY_BASE64"
+          test -n "$APP_STORE_CONNECT_KEY_ID"
+          test -n "$APP_STORE_CONNECT_ISSUER_ID"
+
+          API_KEY_PATH="$RUNNER_TEMP/AuthKey_$APP_STORE_CONNECT_KEY_ID.p8"
+          export API_KEY_PATH APP_STORE_CONNECT_API_KEY_BASE64
+
+          python3 - <<'PY'
+          import base64
+          import os
+          from pathlib import Path
+
+          Path(os.environ["API_KEY_PATH"]).write_bytes(
+              base64.b64decode(os.environ["APP_STORE_CONNECT_API_KEY_BASE64"])
+          )
+          PY
+
+          chmod 600 "$API_KEY_PATH"
+          mkdir -p "$HOME/.appstoreconnect/private_keys"
+          cp "$API_KEY_PATH" "$HOME/.appstoreconnect/private_keys/AuthKey_$APP_STORE_CONNECT_KEY_ID.p8"
+          chmod 600 "$HOME/.appstoreconnect/private_keys/AuthKey_$APP_STORE_CONNECT_KEY_ID.p8"
+          {
+            echo "APP_STORE_CONNECT_API_KEY_PATH=$API_KEY_PATH"
+            echo "APP_STORE_CONNECT_KEY_ID=$APP_STORE_CONNECT_KEY_ID"
+            echo "APP_STORE_CONNECT_ISSUER_ID=$APP_STORE_CONNECT_ISSUER_ID"
+          } >> "$GITHUB_ENV"
+
+      - name: Install iOS signing certificate and profile
+        env:
+          IOS_CERTIFICATE_BASE64: ${{ secrets.IOS_CERTIFICATE_BASE64 }}
+          IOS_CERTIFICATE_PASSWORD: ${{ secrets.IOS_CERTIFICATE_PASSWORD }}
+          IOS_PROVISIONING_PROFILE_BASE64: ${{ secrets.IOS_PROVISIONING_PROFILE_BASE64 }}
+          IOS_KEYCHAIN_PASSWORD: ${{ secrets.IOS_KEYCHAIN_PASSWORD }}
+        run: |
+          set -euo pipefail
+
+          test -n "$IOS_CERTIFICATE_BASE64"
+          test -n "$IOS_CERTIFICATE_PASSWORD"
+          test -n "$IOS_PROVISIONING_PROFILE_BASE64"
+          test -n "$IOS_KEYCHAIN_PASSWORD"
+
+          CERT_PATH="$RUNNER_TEMP/aethon-ios-distribution.p12"
+          PROFILE_PATH="$RUNNER_TEMP/aethon.mobileprovision"
+          KEYCHAIN_PATH="$RUNNER_TEMP/aethon-signing.keychain-db"
+          export CERT_PATH PROFILE_PATH IOS_CERTIFICATE_BASE64 IOS_PROVISIONING_PROFILE_BASE64
+
+          python3 - <<'PY'
+          import base64
+          import os
+          from pathlib import Path
+
+          Path(os.environ["CERT_PATH"]).write_bytes(
+              base64.b64decode(os.environ["IOS_CERTIFICATE_BASE64"])
+          )
+          Path(os.environ["PROFILE_PATH"]).write_bytes(
+              base64.b64decode(os.environ["IOS_PROVISIONING_PROFILE_BASE64"])
+          )
+          PY
+
+          security create-keychain -p "$IOS_KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$IOS_KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security import "$CERT_PATH" \
+            -k "$KEYCHAIN_PATH" \
+            -P "$IOS_CERTIFICATE_PASSWORD" \
+            -T /usr/bin/codesign \
+            -T /usr/bin/security
+          security list-keychains -d user -s "$KEYCHAIN_PATH"
+          security default-keychain -d user -s "$KEYCHAIN_PATH"
+          security set-key-partition-list \
+            -S apple-tool:,apple:,codesign: \
+            -s \
+            -k "$IOS_KEYCHAIN_PASSWORD" \
+            "$KEYCHAIN_PATH"
+
+          mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
+          PROFILE_UUID="$(security cms -D -i "$PROFILE_PATH" | /usr/libexec/PlistBuddy -c 'Print :UUID' /dev/stdin)"
+          PROFILE_NAME="$(security cms -D -i "$PROFILE_PATH" | /usr/libexec/PlistBuddy -c 'Print :Name' /dev/stdin)"
+          cp "$PROFILE_PATH" "$HOME/Library/MobileDevice/Provisioning Profiles/$PROFILE_UUID.mobileprovision"
+          security find-identity -v -p codesigning "$KEYCHAIN_PATH"
+
+          {
+            echo "IOS_KEYCHAIN_PATH=$KEYCHAIN_PATH"
+            echo "IOS_PROVISIONING_PROFILE_UUID=$PROFILE_UUID"
+            echo "IOS_PROVISIONING_PROFILE_NAME=$PROFILE_NAME"
+          } >> "$GITHUB_ENV"
+
+      - name: Resolve TestFlight version
+        env:
+          REQUESTED_BUILD_NUMBER: ${{ inputs.build_number }}
+        run: |
+          set -euo pipefail
+
+          MARKETING_VERSION="$(node -p 'require("./package.json").version')"
+          BUILD_NUMBER="$REQUESTED_BUILD_NUMBER"
+          if [ -z "$BUILD_NUMBER" ]; then
+            BUILD_NUMBER="$(date -u +%Y%m%d%H%M)"
+          fi
+
+          if ! [[ "$BUILD_NUMBER" =~ ^[0-9]+([.][0-9]+){0,2}$ ]]; then
+            echo "Build number must be numeric, optionally with up to two dot-separated numeric components." >&2
+            exit 1
+          fi
+
+          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $MARKETING_VERSION" "$IOS_INFO_PLIST"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $BUILD_NUMBER" "$IOS_INFO_PLIST"
+
+          {
+            echo "TESTFLIGHT_MARKETING_VERSION=$MARKETING_VERSION"
+            echo "TESTFLIGHT_BUILD_NUMBER=$BUILD_NUMBER"
+          } >> "$GITHUB_ENV"
+          echo "Using TestFlight version: $MARKETING_VERSION ($BUILD_NUMBER)"
+
+      - name: Build signed iOS archive
+        env:
+          CC: /usr/bin/cc
+          CXX: /usr/bin/c++
+          CARGO_TARGET_AARCH64_APPLE_DARWIN_LINKER: /usr/bin/cc
+          RUSTC_LINKER: /usr/bin/cc
+          CC_aarch64_apple_ios: /usr/bin/clang
+          CXX_aarch64_apple_ios: /usr/bin/clang++
+          CARGO_TARGET_AARCH64_APPLE_IOS_LINKER: /usr/bin/clang
+        run: |
+          set -euo pipefail
+
+          cd apps/mobile
+          rm -rf src-tauri/gen/apple/build
+          touch src-tauri/src/lib.rs
+
+          cargo tauri ios build \
+            --ci \
+            --target aarch64 \
+            --export-method app-store-connect \
+            --build-number "$TESTFLIGHT_BUILD_NUMBER" \
+            -v
+
+          ARCHIVE_PATH="$(find src-tauri/gen/apple/build -maxdepth 3 -type d -name '*.xcarchive' | head -n 1)"
+          if [ -z "$ARCHIVE_PATH" ]; then
+            echo "Tauri iOS build did not produce an xcarchive under apps/mobile/src-tauri/gen/apple/build." >&2
+            find src-tauri/gen/apple/build -maxdepth 4 -print >&2 || true
+            exit 1
+          fi
+
+          ARCHIVE_PATH="$(cd "$(dirname "$ARCHIVE_PATH")" && pwd)/$(basename "$ARCHIVE_PATH")"
+          APP_INFO="$ARCHIVE_PATH/Products/Applications/$APP_NAME.app/Info.plist"
+          MARKETING_VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP_INFO")"
+          BUNDLE_VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP_INFO")"
+          {
+            echo "TESTFLIGHT_MARKETING_VERSION=$MARKETING_VERSION"
+            echo "TESTFLIGHT_ARCHIVE_PATH=$ARCHIVE_PATH"
+          } >> "$GITHUB_ENV"
+          echo "Archived $APP_NAME $MARKETING_VERSION ($BUNDLE_VERSION)"
+
+      - name: Upload to App Store Connect
+        env:
+          INTERNAL_TESTING_ONLY: ${{ inputs.internal_testing_only }}
+        run: |
+          set -euo pipefail
+
+          EXPORT_OPTIONS="$RUNNER_TEMP/ExportOptions-iOS-TestFlight.plist"
+          export EXPORT_OPTIONS INTERNAL_TESTING_ONLY
+          python3 - <<'PY'
+          import os
+          import plistlib
+
+          options = {
+              "destination": "upload",
+              "manageAppVersionAndBuildNumber": False,
+              "method": "app-store-connect",
+              "provisioningProfiles": {
+                  os.environ["APP_BUNDLE_ID"]: os.environ["IOS_PROFILE_NAME"],
+              },
+              "signingStyle": "manual",
+              "stripSwiftSymbols": True,
+              "teamID": os.environ["DEVELOPMENT_TEAM"],
+              "testFlightInternalTestingOnly": os.environ["INTERNAL_TESTING_ONLY"] == "true",
+              "uploadSymbols": True,
+          }
+
+          with open(os.environ["EXPORT_OPTIONS"], "wb") as fh:
+              plistlib.dump(options, fh, sort_keys=False)
+          PY
+
+          xcodebuild -exportArchive \
+            -archivePath "$TESTFLIGHT_ARCHIVE_PATH" \
+            -exportPath "$RUNNER_TEMP/iOS-TestFlight" \
+            -exportOptionsPlist "$EXPORT_OPTIONS" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$APP_STORE_CONNECT_API_KEY_PATH" \
+            -authenticationKeyID "$APP_STORE_CONNECT_KEY_ID" \
+            -authenticationKeyIssuerID "$APP_STORE_CONNECT_ISSUER_ID"
+
+          echo "Uploaded $APP_NAME $TESTFLIGHT_MARKETING_VERSION ($TESTFLIGHT_BUILD_NUMBER) to App Store Connect for TestFlight processing."
+
+      - name: Wait for TestFlight processing
+        run: |
+          set -euo pipefail
+
+          ruby <<'RUBY'
+          require "base64"
+          require "json"
+          require "net/http"
+          require "openssl"
+          require "time"
+          require "uri"
+
+          API_BASE = "https://api.appstoreconnect.apple.com"
+          TERMINAL_FAILURE_STATES = %w[FAILED INVALID].freeze
+
+          def base64url(value)
+            Base64.urlsafe_encode64(value, padding: false)
+          end
+
+          def p256_signature_component(value)
+            bytes = value.to_s(2)
+            bytes = bytes.delete_prefix("\0") while bytes.bytesize > 32 && bytes.start_with?("\0")
+            raise "Invalid ES256 signature component length: #{bytes.bytesize}" if bytes.bytesize > 32
+
+            bytes.rjust(32, "\0")
+          end
+
+          def jwt_signature(private_key, signing_input)
+            der_signature = private_key.sign(OpenSSL::Digest::SHA256.new, signing_input)
+            sequence = OpenSSL::ASN1.decode(der_signature)
+            r = p256_signature_component(sequence.value[0].value)
+            s = p256_signature_component(sequence.value[1].value)
+            r + s
+          end
+
+          def app_store_connect_token
+            key = OpenSSL::PKey.read(File.read(ENV.fetch("APP_STORE_CONNECT_API_KEY_PATH")))
+            now = Time.now.to_i
+            header = {
+              alg: "ES256",
+              kid: ENV.fetch("APP_STORE_CONNECT_KEY_ID"),
+              typ: "JWT"
+            }
+            payload = {
+              aud: "appstoreconnect-v1",
+              exp: now + 20 * 60,
+              iat: now,
+              iss: ENV.fetch("APP_STORE_CONNECT_ISSUER_ID")
+            }
+            signing_input = "#{base64url(header.to_json)}.#{base64url(payload.to_json)}"
+            "#{signing_input}.#{base64url(jwt_signature(key, signing_input))}"
+          end
+
+          def api_get(path, token)
+            uri = URI("#{API_BASE}#{path}")
+            request = Net::HTTP::Get.new(uri)
+            request["Authorization"] = "Bearer #{token}"
+
+            response = Net::HTTP.start(uri.host, uri.port, use_ssl: true) do |http|
+              http.request(request)
+            end
+
+            unless response.is_a?(Net::HTTPSuccess)
+              warn "App Store Connect API request failed: #{response.code} #{response.body}"
+              exit 1
+            end
+
+            JSON.parse(response.body)
+          end
+
+          def query_path(path, params)
+            "#{path}?#{URI.encode_www_form(params)}"
+          end
+
+          token = app_store_connect_token
+          app_response = api_get(
+            query_path(
+              "/v1/apps",
+              {
+                "filter[bundleId]" => ENV.fetch("APP_BUNDLE_ID"),
+                "fields[apps]" => "bundleId,name",
+                "limit" => "1"
+              }
+            ),
+            token
+          )
+
+          app = app_response.fetch("data").first
+          unless app
+            warn "No App Store Connect app found for #{ENV.fetch("APP_BUNDLE_ID")}"
+            exit 1
+          end
+
+          build_number = ENV.fetch("TESTFLIGHT_BUILD_NUMBER")
+          app_id = app.fetch("id")
+          app_name = app.dig("attributes", "name") || ENV.fetch("APP_NAME")
+
+          30.times do |attempt|
+            token = app_store_connect_token
+            builds_response = api_get(
+              query_path(
+                "/v1/builds",
+                {
+                  "filter[app]" => app_id,
+                  "filter[version]" => build_number,
+                  "fields[builds]" => "version,processingState,uploadedDate,expirationDate,usesNonExemptEncryption",
+                  "limit" => "1",
+                  "sort" => "-uploadedDate"
+                }
+              ),
+              token
+            )
+            build = builds_response.fetch("data").first
+
+            if build
+              attributes = build.fetch("attributes")
+              processing_state = attributes.fetch("processingState")
+              puts "App Store Connect build #{app_name} #{ENV.fetch("TESTFLIGHT_MARKETING_VERSION")} (#{build_number}) is #{processing_state}."
+
+              if processing_state == "VALID"
+                File.open(ENV.fetch("GITHUB_ENV"), "a") do |env|
+                  env.puts "TESTFLIGHT_APP_ID=#{app_id}"
+                  env.puts "TESTFLIGHT_BUILD_ID=#{build.fetch("id")}"
+                  env.puts "TESTFLIGHT_APP_NAME=#{app_name}"
+                end
+                exit 0
+              end
+
+              if TERMINAL_FAILURE_STATES.include?(processing_state)
+                warn "App Store Connect build processing failed with state #{processing_state}."
+                exit 1
+              end
+            else
+              puts "Waiting for App Store Connect build #{build_number} to appear..."
+            end
+
+            sleep 60 unless attempt == 29
+          end
+
+          warn "Timed out waiting for TestFlight processing for build #{build_number}."
+          exit 1
+          RUBY
+
+      - name: Assign build to TestFlight group
+        env:
+          TESTFLIGHT_GROUP_NAME: ${{ secrets.TESTFLIGHT_GROUP_NAME }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "$TESTFLIGHT_GROUP_NAME" ]; then
+            echo "TESTFLIGHT_GROUP_NAME is not configured; skipping TestFlight group assignment."
+            exit 0
+          fi
+
+          ruby <<'RUBY'
+          require "base64"
+          require "json"
+          require "net/http"
+          require "openssl"
+          require "uri"
+
+          API_BASE = "https://api.appstoreconnect.apple.com"
+
+          def base64url(value)
+            Base64.urlsafe_encode64(value, padding: false)
+          end
+
+          def p256_signature_component(value)
+            bytes = value.to_s(2)
+            bytes = bytes.delete_prefix("\0") while bytes.bytesize > 32 && bytes.start_with?("\0")
+            raise "Invalid ES256 signature component length: #{bytes.bytesize}" if bytes.bytesize > 32
+
+            bytes.rjust(32, "\0")
+          end
+
+          def jwt_signature(private_key, signing_input)
+            der_signature = private_key.sign(OpenSSL::Digest::SHA256.new, signing_input)
+            sequence = OpenSSL::ASN1.decode(der_signature)
+            r = p256_signature_component(sequence.value[0].value)
+            s = p256_signature_component(sequence.value[1].value)
+            r + s
+          end
+
+          def app_store_connect_token
+            key = OpenSSL::PKey.read(File.read(ENV.fetch("APP_STORE_CONNECT_API_KEY_PATH")))
+            now = Time.now.to_i
+            header = {
+              alg: "ES256",
+              kid: ENV.fetch("APP_STORE_CONNECT_KEY_ID"),
+              typ: "JWT"
+            }
+            payload = {
+              aud: "appstoreconnect-v1",
+              exp: now + 20 * 60,
+              iat: now,
+              iss: ENV.fetch("APP_STORE_CONNECT_ISSUER_ID")
+            }
+            signing_input = "#{base64url(header.to_json)}.#{base64url(payload.to_json)}"
+            "#{signing_input}.#{base64url(jwt_signature(key, signing_input))}"
+          end
+
+          def request(method, path, token, body: nil)
+            uri = URI("#{API_BASE}#{path}")
+            request = method.new(uri)
+            request["Authorization"] = "Bearer #{token}"
+            request["Content-Type"] = "application/json" if body
+            request.body = JSON.generate(body) if body
+
+            Net::HTTP.start(uri.host, uri.port, use_ssl: true) do |http|
+              http.request(request)
+            end
+          end
+
+          def api_get(path, token)
+            response = request(Net::HTTP::Get, path, token)
+            unless response.is_a?(Net::HTTPSuccess)
+              warn "App Store Connect API request failed: #{response.code} #{response.body}"
+              exit 1
+            end
+
+            JSON.parse(response.body)
+          end
+
+          def query_path(path, params)
+            "#{path}?#{URI.encode_www_form(params)}"
+          end
+
+          token = app_store_connect_token
+          group_name = ENV.fetch("TESTFLIGHT_GROUP_NAME")
+          app_id = ENV.fetch("TESTFLIGHT_APP_ID")
+          build_id = ENV.fetch("TESTFLIGHT_BUILD_ID")
+
+          groups_response = api_get(
+            query_path(
+              "/v1/betaGroups",
+              {
+                "filter[app]" => app_id,
+                "fields[betaGroups]" => "name",
+                "limit" => "200"
+              }
+            ),
+            token
+          )
+          group = groups_response.fetch("data").find do |candidate|
+            candidate.dig("attributes", "name") == group_name
+          end
+
+          unless group
+            warn "No TestFlight beta group named #{group_name.inspect} was found for #{ENV.fetch("TESTFLIGHT_APP_NAME")}."
+            exit 1
+          end
+
+          response = request(
+            Net::HTTP::Post,
+            "/v1/betaGroups/#{group.fetch("id")}/relationships/builds",
+            token,
+            body: {
+              data: [
+                {
+                  type: "builds",
+                  id: build_id
+                }
+              ]
+            }
+          )
+
+          if response.is_a?(Net::HTTPSuccess) || response.code.to_i == 409
+            puts "Assigned App Store Connect build #{ENV.fetch("TESTFLIGHT_MARKETING_VERSION")} (#{ENV.fetch("TESTFLIGHT_BUILD_NUMBER")}) to TestFlight group #{group_name}."
+            exit 0
+          end
+
+          if response.code.to_i == 422
+            error_summary = begin
+              JSON
+                .parse(response.body)
+                .fetch("errors", [])
+                .map { |error| [error["title"], error["detail"]].compact.join(" ") }
+                .join(" ")
+            rescue JSON::ParserError
+              response.body
+            end
+
+            if error_summary.include?("Builds cannot be assigned to this internal group") ||
+                error_summary.include?("Cannot add internal group to a build")
+              puts "TestFlight group #{group_name} is internal; App Store Connect does not allow manual build assignment for internal groups."
+              puts "The build is VALID and available through App Store Connect internal TestFlight processing."
+              exit 0
+            end
+          end
+
+          warn "Failed to assign TestFlight build to #{group_name}: #{response.code} #{response.body}"
+          exit 1
+          RUBY

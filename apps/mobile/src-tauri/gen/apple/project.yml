@@ -12,9 +12,12 @@ settingGroups:
     base:
       PRODUCT_NAME: Aethon
       PRODUCT_BUNDLE_IDENTIFIER: com.utensils.aethon.mobile
+      MARKETING_VERSION: 0.11.2
+      CURRENT_PROJECT_VERSION: 1
       # Signed device builds (ios-device). Simulator builds ignore it.
       DEVELOPMENT_TEAM: 28X9H69QGE
       CODE_SIGN_STYLE: Automatic
+      CODE_SIGN_IDENTITY: iPhone Developer
 targetTemplates:
   app:
     type: application
@@ -55,7 +58,8 @@ targets:
           - UIInterfaceOrientationLandscapeLeft
           - UIInterfaceOrientationLandscapeRight
         CFBundleShortVersionString: 0.11.2
-        CFBundleVersion: "0.11.2"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        ITSAppUsesNonExemptEncryption: false
     entitlements:
       path: aethon-mobile_iOS/aethon-mobile_iOS.entitlements
     scheme:
@@ -71,6 +75,11 @@ targets:
         LIBRARY_SEARCH_PATHS[arch=arm64]: $(inherited) $(PROJECT_DIR)/Externals/arm64/$(CONFIGURATION) $(SDKROOT)/usr/lib/swift $(TOOLCHAIN_DIR)/usr/lib/swift/$(PLATFORM_NAME) $(TOOLCHAIN_DIR)/usr/lib/swift-5.0/$(PLATFORM_NAME)
         ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES: true
         EXCLUDED_ARCHS[sdk=iphoneos*]: x86_64
+      configs:
+        release:
+          CODE_SIGN_STYLE: Manual
+          CODE_SIGN_IDENTITY: Apple Distribution
+          PROVISIONING_PROFILE_SPECIFIER: Aethon Companion App Store
       groups: [app]
     dependencies:
       - framework: libapp.a
