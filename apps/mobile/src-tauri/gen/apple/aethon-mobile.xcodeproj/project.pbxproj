@@ -273,7 +273,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "cargo tauri ios xcode-script -v --platform ${PLATFORM_DISPLAY_NAME:?} --sdk-root ${SDKROOT:?} --framework-search-paths \"${FRAMEWORK_SEARCH_PATHS:?}\" --header-search-paths \"${HEADER_SEARCH_PATHS:?}\" --gcc-preprocessor-definitions \"${GCC_PREPROCESSOR_DEFINITIONS:-}\" --configuration ${CONFIGURATION:?} ${FORCE_COLOR} ${ARCHS:?}";
+			shellScript = "if [ -z \"${HOME:-}\" ]; then\n  HOME=\"$(cd ~ && pwd)\"\n  export HOME\nfi\nexport CARGO_HOME=\"${CARGO_HOME:-$HOME/.cargo}\"\nexport RUSTUP_HOME=\"${RUSTUP_HOME:-$HOME/.rustup}\"\nexport RUSTUP_TOOLCHAIN=\"${RUSTUP_TOOLCHAIN:-1.92.0}\"\nexport PATH=\"$CARGO_HOME/bin:$PATH\"\n\nif command -v rustup >/dev/null 2>&1 && rustup toolchain list | grep -q \"^${RUSTUP_TOOLCHAIN}\"; then\n  rustup target add aarch64-apple-ios --toolchain \"$RUSTUP_TOOLCHAIN\"\n  rustup run \"$RUSTUP_TOOLCHAIN\" cargo tauri ios xcode-script -v --platform \"${PLATFORM_DISPLAY_NAME:?}\" --sdk-root \"${SDKROOT:?}\" --framework-search-paths \"${FRAMEWORK_SEARCH_PATHS:?}\" --header-search-paths \"${HEADER_SEARCH_PATHS:?}\" --gcc-preprocessor-definitions \"${GCC_PREPROCESSOR_DEFINITIONS:-}\" --configuration \"${CONFIGURATION:?}\" ${FORCE_COLOR} ${ARCHS:?}\nelse\n  cargo tauri ios xcode-script -v --platform \"${PLATFORM_DISPLAY_NAME:?}\" --sdk-root \"${SDKROOT:?}\" --framework-search-paths \"${FRAMEWORK_SEARCH_PATHS:?}\" --header-search-paths \"${HEADER_SEARCH_PATHS:?}\" --gcc-preprocessor-definitions \"${GCC_PREPROCESSOR_DEFINITIONS:-}\" --configuration \"${CONFIGURATION:?}\" ${FORCE_COLOR} ${ARCHS:?}\nfi";
 		};
 /* End PBXShellScriptBuildPhase section */
 
