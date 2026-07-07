@@ -57,7 +57,7 @@ env:
 jobs:
   upload:
     name: Upload iOS build to TestFlight
-    runs-on: macos-15
+    runs-on: macos-26
     timeout-minutes: 90
 
     steps:
