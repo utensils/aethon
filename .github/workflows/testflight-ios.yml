@@ -268,25 +268,26 @@ jobs:
         run: |
           set -euo pipefail
 
-          cd apps/mobile
-          rm -rf src-tauri/gen/apple/build
-          touch src-tauri/src/lib.rs
+          ARCHIVE_PATH="$RUNNER_TEMP/Aethon.xcarchive"
+          PROFILE_SPECIFIER="${IOS_PROVISIONING_PROFILE_NAME:-$IOS_PROFILE_NAME}"
+          rm -rf "$ARCHIVE_PATH" apps/mobile/src-tauri/gen/apple/build
+          touch apps/mobile/src-tauri/src/lib.rs
+          echo "Using provisioning profile: $PROFILE_SPECIFIER"
 
-          cargo tauri ios build \
-            --ci \
-            --target aarch64 \
-            --export-method app-store-connect \
-            --build-number "$TESTFLIGHT_BUILD_NUMBER" \
-            -v
+          xcodebuild archive \
+            -project "$XCODE_PROJECT" \
+            -scheme "$XCODE_SCHEME" \
+            -configuration "$XCODE_CONFIGURATION" \
+            -destination "generic/platform=iOS" \
+            -archivePath "$ARCHIVE_PATH" \
+            -allowProvisioningUpdates \
+            DEVELOPMENT_TEAM="$DEVELOPMENT_TEAM" \
+            CODE_SIGN_STYLE=Manual \
+            CODE_SIGN_IDENTITY="Apple Distribution" \
+            PROVISIONING_PROFILE_SPECIFIER="$PROFILE_SPECIFIER" \
+            MARKETING_VERSION="$TESTFLIGHT_MARKETING_VERSION" \
+            CURRENT_PROJECT_VERSION="$TESTFLIGHT_BUILD_NUMBER"
 
-          ARCHIVE_PATH="$(find src-tauri/gen/apple/build -maxdepth 3 -type d -name '*.xcarchive' | head -n 1)"
-          if [ -z "$ARCHIVE_PATH" ]; then
-            echo "Tauri iOS build did not produce an xcarchive under apps/mobile/src-tauri/gen/apple/build." >&2
-            find src-tauri/gen/apple/build -maxdepth 4 -print >&2 || true
-            exit 1
-          fi
-
-          ARCHIVE_PATH="$(cd "$(dirname "$ARCHIVE_PATH")" && pwd)/$(basename "$ARCHIVE_PATH")"
           APP_INFO="$ARCHIVE_PATH/Products/Applications/$APP_NAME.app/Info.plist"
           MARKETING_VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP_INFO")"
           BUNDLE_VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP_INFO")"
@@ -313,7 +314,7 @@ jobs:
               "manageAppVersionAndBuildNumber": False,
               "method": "app-store-connect",
               "provisioningProfiles": {
-                  os.environ["APP_BUNDLE_ID"]: os.environ["IOS_PROFILE_NAME"],
+                  os.environ["APP_BUNDLE_ID"]: os.environ.get("IOS_PROVISIONING_PROFILE_NAME") or os.environ["IOS_PROFILE_NAME"],
               },
               "signingStyle": "manual",
               "stripSwiftSymbols": True,
