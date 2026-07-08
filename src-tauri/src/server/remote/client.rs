@@ -301,9 +301,13 @@ fn error_message(body: &[u8]) -> String {
         .unwrap_or_else(|| String::from_utf8_lossy(body).trim().to_string())
 }
 
+fn candidates_newest_first(candidates: &[String]) -> impl Iterator<Item = &String> {
+    candidates.iter().rev()
+}
+
 pub async fn invoke(host: &PairedHostRecord, cmd: &str, args: Value) -> Result<Value, String> {
     let mut last_error = None;
-    for candidate in &host.candidates {
+    for candidate in candidates_newest_first(&host.candidates) {
         match invoke_candidate(candidate, &host.fingerprint, &host.token, cmd, args.clone()).await {
             Ok(value) => return Ok(value),
             Err(err) => last_error = Some(err),
@@ -343,7 +347,7 @@ async fn connect_and_forward_events(
     cancel: &Arc<Notify>,
 ) -> Result<(), String> {
     let mut last_error = None;
-    for candidate in &host.candidates {
+    for candidate in candidates_newest_first(&host.candidates) {
         match forward_events_candidate(candidate, host, app, cancel).await {
             Ok(()) => return Ok(()),
             Err(err) => last_error = Some(err),
@@ -592,6 +596,25 @@ mod tests {
                 "  ".into(),
             ]),
             vec!["bender.local:123", "192.168.1.44:123"]
+        );
+    }
+
+    #[test]
+    fn remote_candidates_prefer_newest_addresses() {
+        let candidates = vec![
+            "bender.local:1111".to_string(),
+            "192.168.1.44:1111".to_string(),
+            "bender.local:2222".to_string(),
+        ];
+        assert_eq!(
+            candidates_newest_first(&candidates)
+                .cloned()
+                .collect::<Vec<_>>(),
+            vec![
+                "bender.local:2222".to_string(),
+                "192.168.1.44:1111".to_string(),
+                "bender.local:1111".to_string(),
+            ]
         );
     }
 

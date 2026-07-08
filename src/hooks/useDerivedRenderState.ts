@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import { activeTabKind, OVERVIEW_TAB_ID, type Tab } from "../types/tab";
-import type { UseHostInfo } from "./useHostInfo";
+import type { RemoteProjectStatus, UseHostInfo } from "./useHostInfo";
 import { attachAgentActivity } from "./projectOps/agentActivity";
 import { isAgentTabInFlight } from "../utils/agentBusy";
 
@@ -85,6 +85,57 @@ function implicitWorkspaceLanding(
   return null;
 }
 
+function remoteHostHint(
+  host: {
+    connected?: boolean;
+    paired?: boolean;
+    discovered?: boolean;
+    hostname: string;
+  },
+  status: RemoteProjectStatus | undefined,
+  projectCount: number,
+): string {
+  if (status?.state === "syncing") return "syncing";
+  if (status?.state === "error") return "sync failed";
+  if (
+    host.connected === true &&
+    (status?.state === "ready" || projectCount > 0)
+  ) {
+    return "connected";
+  }
+  if (host.paired) return "paired";
+  if (host.discovered) return "available";
+  return host.hostname;
+}
+
+function overlaySidebarSelection<T extends { id: string; active?: boolean }>(
+  projects: T[],
+  activeProjectId: string | null,
+  activeWorkspaceId: string | null | undefined,
+): T[] {
+  return projects.map((project) => {
+    const workspaces = Array.isArray(
+      (project as { workspaces?: unknown }).workspaces,
+    )
+      ? ((project as { workspaces?: Array<{ id: string; isMain?: boolean }> })
+          .workspaces ?? [])
+      : undefined;
+    const nextWorkspaces = workspaces?.map((workspace) => ({
+      ...workspace,
+      active:
+        workspace.id === activeWorkspaceId ||
+        (workspace.isMain === true &&
+          project.id === activeProjectId &&
+          activeWorkspaceId == null),
+    }));
+    return {
+      ...project,
+      active: project.id === activeProjectId && activeWorkspaceId == null,
+      ...(nextWorkspaces ? { workspaces: nextWorkspaces } : {}),
+    };
+  });
+}
+
 export function useDerivedRenderState({
   state,
   buildSidebarHistory,
@@ -147,11 +198,22 @@ export function useDerivedRenderState({
       activeHostId && activeHostId !== hostInfo.localHostId
         ? (hostInfo.remoteProjectsByHost[activeHostId] ?? [])
         : sidebarProjects;
+    const selectedHostScopedProjects = Array.isArray(hostScopedProjects)
+      ? overlaySidebarSelection(
+          hostScopedProjects,
+          activeProjectId,
+          state.activeWorkspaceId as string | null | undefined,
+        )
+      : hostScopedProjects;
+    const activeRemoteProjectStatus =
+      activeHostId && activeHostId !== hostInfo.localHostId
+        ? hostInfo.remoteProjectStatusByHost[activeHostId]
+        : undefined;
     const remoteHostActive =
       activeHostId !== null &&
       activeHostId !== undefined &&
       activeHostId !== hostInfo.localHostId;
-    const activeProjectSidebarEntry = hostScopedProjects.find(
+    const activeProjectSidebarEntry = selectedHostScopedProjects.find(
       (p) => p.id === activeProjectId,
     );
     const projectDashboardWorkspaces =
@@ -160,7 +222,7 @@ export function useDerivedRenderState({
       ? (state.projects as { id: string }[])
       : [];
     const activeHostProjects = remoteHostActive
-      ? (hostScopedProjects as { id: string }[])
+      ? (selectedHostScopedProjects as { id: string }[])
       : projectsArr;
     const otherProjects = activeProjectId
       ? activeHostProjects.filter((p) => p.id !== activeProjectId)
@@ -201,26 +263,31 @@ export function useDerivedRenderState({
       ...existingProjectsDashboard,
       extraCards: existingProjectsDashboard.extraCards ?? [],
     };
-    const sidebarHosts = hostInfo.hosts.map((h) => ({
-      id: h.id,
-      label: h.displayName || h.hostname,
-      hostname: h.hostname,
-      fingerprint: h.fingerprint ?? h.fingerprintPrefix,
-      candidates: h.candidates,
-      paired: h.paired === true,
-      discovered: h.discovered === true,
-      hint: h.isLocal
-        ? "this mac"
-        : h.connected === true
-          ? "connected"
-          : h.paired
-            ? "paired"
-            : h.discovered
-              ? "available"
-              : h.hostname,
-      tooltip: h.hostname,
-      active: h.id === activeHostId,
-    }));
+    const sidebarHosts = hostInfo.hosts.map((h) => {
+      const status =
+        h.id !== hostInfo.localHostId
+          ? hostInfo.remoteProjectStatusByHost[h.id]
+          : undefined;
+      const projectCount =
+        h.id !== hostInfo.localHostId
+          ? (hostInfo.remoteProjectsByHost[h.id]?.length ?? 0)
+          : sidebarProjects.length;
+      return {
+        id: h.id,
+        label: h.displayName || h.hostname,
+        hostname: h.hostname,
+        fingerprint: h.fingerprint ?? h.fingerprintPrefix,
+        candidates: h.candidates,
+        paired: h.paired === true,
+        discovered: h.discovered === true,
+        hint: h.isLocal ? "this mac" : remoteHostHint(h, status, projectCount),
+        tooltip:
+          status?.state === "error" && status.error
+            ? `${h.hostname} · ${status.error}`
+            : h.hostname,
+        active: h.id === activeHostId,
+      };
+    });
     const activeMobileDeviceId =
       landing?.kind === "mobile-device" &&
       typeof (landing as { deviceId?: unknown }).deviceId === "string"
@@ -268,6 +335,24 @@ export function useDerivedRenderState({
         : landing;
     const activeHost =
       hostInfo.hosts.find((h) => h.id === activeHostId) ?? null;
+    const activeHostDetails = activeHost
+      ? {
+          id: activeHost.id,
+          hostId: activeHost.hostId,
+          hostname: activeHost.hostname,
+          displayName: activeHost.displayName,
+          isLocal: activeHost.isLocal,
+          fingerprint: activeHost.fingerprint ?? activeHost.fingerprintPrefix,
+          candidates: activeHost.candidates,
+          paired: activeHost.paired === true,
+          connected: activeHost.connected === true,
+          discovered: activeHost.discovered === true,
+          createdAt: activeHost.createdAt,
+          lastSeen: activeHost.lastSeen,
+          port: activeHost.port,
+          projectStatus: activeRemoteProjectStatus,
+        }
+      : null;
 
     // Overlay live agent-activity onto the sidebar project rows. The tab set
     // must span every workspace: the active one in `state.tabs` plus the
@@ -313,9 +398,9 @@ export function useDerivedRenderState({
       if (t.kind !== "agent") continue;
       if (isAgentTabInFlight(t)) runningIds.add(t.id);
     }
-    const sidebarProjectsWithAgent = Array.isArray(hostScopedProjects)
+    const sidebarProjectsWithAgent = Array.isArray(selectedHostScopedProjects)
       ? attachAgentActivity(
-          hostScopedProjects as Array<{
+          selectedHostScopedProjects as Array<{
             id: string;
             workspaces?: { path?: string; isMain?: boolean }[];
           }>,
@@ -330,9 +415,16 @@ export function useDerivedRenderState({
         host.id === hostInfo.localHostId
           ? sidebarProjects
           : (hostInfo.remoteProjectsByHost[host.id] ?? []);
-      projectsByHost[host.id] = Array.isArray(hostProjects)
+      const selectedHostProjects = Array.isArray(hostProjects)
+        ? overlaySidebarSelection(
+            hostProjects,
+            activeProjectId,
+            state.activeWorkspaceId as string | null | undefined,
+          )
+        : [];
+      projectsByHost[host.id] = Array.isArray(selectedHostProjects)
         ? attachAgentActivity(
-            hostProjects as Array<{
+            selectedHostProjects as Array<{
               id: string;
               workspaces?: { path?: string; isMain?: boolean }[];
             }>,
@@ -374,7 +466,7 @@ export function useDerivedRenderState({
       hosts: hostInfo.hosts,
       mobileDevices: hostInfo.mobileDevices,
       activeHostId,
-      host: activeHost,
+      host: activeHostDetails,
     };
   }, [
     buildSidebarHistory,
@@ -383,6 +475,7 @@ export function useDerivedRenderState({
     hostInfo.localHostId,
     hostInfo.mobileDevices,
     hostInfo.remoteProjectsByHost,
+    hostInfo.remoteProjectStatusByHost,
     state,
   ]);
 

@@ -28,10 +28,14 @@ interface SidebarProjectItem {
 interface WorkspaceEventPayload {
   workspaceId?: string;
   projectId?: string;
+  projectLabel?: string;
+  projectPath?: string;
+  iconUrl?: string;
   hostId?: string;
   remoteId?: string;
   remoteProjectId?: string;
   path?: string;
+  label?: string;
 }
 
 interface WorkspaceMatch {
@@ -127,6 +131,15 @@ function findSidebarWorkspace(
   return null;
 }
 
+function remoteProjectIdFromQualified(id?: string): string | undefined {
+  if (!id) return undefined;
+  const marker = "::project::";
+  const markerIndex = id.indexOf(marker);
+  if (markerIndex < 0) return undefined;
+  const remoteProjectId = id.slice(markerIndex + marker.length);
+  return remoteProjectId || undefined;
+}
+
 function activateRemoteWorkspace(
   ctx: Parameters<EventRouteHandler>[1],
   match: WorkspaceMatch,
@@ -165,6 +178,40 @@ function activateRemoteWorkspace(
         }
       : null,
   }));
+}
+
+function syntheticRemoteWorkspaceMatch(
+  workspaceId: string,
+  payload: WorkspaceEventPayload,
+): WorkspaceMatch | null {
+  if (!payload.hostId || !isRemoteHostId(payload.hostId)) return null;
+  const remoteProjectId =
+    payload.remoteProjectId ?? remoteProjectIdFromQualified(payload.projectId);
+  const projectId =
+    payload.projectId ??
+    (remoteProjectId
+      ? `${payload.hostId}::project::${remoteProjectId}`
+      : undefined);
+  if (!projectId) return null;
+  const project: SidebarProjectItem = {
+    id: projectId,
+    remoteId: remoteProjectId,
+    hostId: payload.hostId,
+    label: payload.projectLabel ?? remoteProjectId ?? projectId,
+    path: payload.projectPath ?? payload.path,
+    iconUrl: payload.iconUrl,
+  };
+  const workspace: SidebarWorkspaceItem = {
+    id: workspaceId,
+    remoteId: payload.remoteId,
+    remoteProjectId,
+    projectId,
+    hostId: payload.hostId,
+    label: payload.label ?? payload.remoteId ?? "workspace",
+    path: payload.path,
+    isMain: false,
+  };
+  return { project, workspace, hostId: payload.hostId };
 }
 
 /** Workspace event family — all routed through useProjectOps actions. */
@@ -207,10 +254,12 @@ export const handleSidebarSwitchWorkspace: EventRouteHandler = (
     workspaceId,
     payload,
   );
-  if (match) {
-    const { project, workspace, hostId } = match;
+  const remoteFallback =
+    match ?? syntheticRemoteWorkspaceMatch(workspaceId, payload);
+  if (remoteFallback) {
+    const { project, workspace, hostId } = remoteFallback;
     if (hostId && isRemoteHostId(hostId)) {
-      activateRemoteWorkspace(ctx, match, { showLanding: true });
+      activateRemoteWorkspace(ctx, remoteFallback, { showLanding: true });
       return true;
     }
     const activeProjectId = ctx.stateRef.current.activeProjectId;
@@ -294,12 +343,16 @@ export const handleSidebarOpenWorkspaceInNewTab: EventRouteHandler = (
     workspaceId,
     payload,
   );
-  if (match?.hostId && isRemoteHostId(match.hostId)) {
-    activateRemoteWorkspace(ctx, match, { showLanding: false });
-    ctx.newTab(undefined, undefined, {
-      cwd: match.workspace.path,
-      hostId: match.hostId,
-    });
+  const remoteFallback =
+    match ?? syntheticRemoteWorkspaceMatch(workspaceId, payload);
+  if (remoteFallback?.hostId && isRemoteHostId(remoteFallback.hostId)) {
+    activateRemoteWorkspace(ctx, remoteFallback, { showLanding: false });
+    if (remoteFallback.workspace.path) {
+      ctx.newTab(undefined, undefined, {
+        cwd: remoteFallback.workspace.path,
+        hostId: remoteFallback.hostId,
+      });
+    }
     return true;
   }
   let projectId: string | undefined;

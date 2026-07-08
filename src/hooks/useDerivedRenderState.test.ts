@@ -12,6 +12,7 @@ const hostInfo: UseHostInfo = {
   setActiveHost: vi.fn(),
   mobileDevices: [],
   remoteProjectsByHost: {},
+  remoteProjectStatusByHost: {},
   hosts: [
     {
       id: "local:one",
@@ -404,11 +405,17 @@ describe("useDerivedRenderState", () => {
         ...hostInfo.hosts,
         {
           id: "remote:bender",
+          hostId: "local:bender",
           hostname: "bender.local",
           displayName: "bender",
           isLocal: false,
           paired: true,
           connected: true,
+          discovered: true,
+          candidates: ["bender.local:4242", "192.168.1.44:4242"],
+          fingerprint: "bender-fp",
+          createdAt: 1,
+          lastSeen: 2,
         },
       ],
       remoteProjectsByHost: {
@@ -482,7 +489,226 @@ describe("useDerivedRenderState", () => {
     });
     expect(result.current.renderState.host).toMatchObject({
       id: "remote:bender",
+      hostId: "local:bender",
       displayName: "bender",
+      paired: true,
+      connected: true,
+      discovered: true,
+      candidates: ["bender.local:4242", "192.168.1.44:4242"],
+      fingerprint: "bender-fp",
+      createdAt: 1,
+      lastSeen: 2,
+    });
+  });
+
+  it("does not mark a remote host connected until project sync is ready", () => {
+    const remoteHostInfo: UseHostInfo = {
+      ...hostInfo,
+      activeHostId: "remote:bender",
+      hosts: [
+        ...hostInfo.hosts,
+        {
+          id: "remote:bender",
+          hostname: "bender.local",
+          displayName: "bender",
+          isLocal: false,
+          paired: true,
+          connected: true,
+          discovered: true,
+        },
+      ],
+      remoteProjectStatusByHost: {
+        "remote:bender": {
+          state: "syncing",
+          updatedAt: 10,
+        },
+      },
+    };
+    const { result } = renderHook(() =>
+      useDerivedRenderState({
+        state: {
+          tabs: [],
+          activeTabId: OVERVIEW_TAB_ID,
+          project: null,
+          sidebar: { projects: [] },
+        },
+        buildSidebarHistory: vi.fn(() => []),
+        hostInfo: remoteHostInfo,
+      }),
+    );
+
+    expect(result.current.renderState.host).toMatchObject({
+      id: "remote:bender",
+      projectStatus: { state: "syncing" },
+    });
+    expect(
+      (
+        result.current.renderState.sidebar as {
+          hosts?: Array<{ id: string; hint: string }>;
+        }
+      ).hosts,
+    ).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "remote:bender", hint: "syncing" }),
+      ]),
+    );
+  });
+
+  it("surfaces remote project snapshot failures in the host sidebar", () => {
+    const remoteHostInfo: UseHostInfo = {
+      ...hostInfo,
+      activeHostId: "remote:bender",
+      hosts: [
+        ...hostInfo.hosts,
+        {
+          id: "remote:bender",
+          hostname: "bender.local",
+          displayName: "bender",
+          isLocal: false,
+          paired: true,
+          connected: true,
+          discovered: true,
+        },
+      ],
+      remoteProjectStatusByHost: {
+        "remote:bender": {
+          state: "error",
+          error: "timeout",
+          updatedAt: 10,
+        },
+      },
+    };
+    const { result } = renderHook(() =>
+      useDerivedRenderState({
+        state: {
+          tabs: [],
+          activeTabId: OVERVIEW_TAB_ID,
+          project: null,
+          sidebar: { projects: [] },
+        },
+        buildSidebarHistory: vi.fn(() => []),
+        hostInfo: remoteHostInfo,
+      }),
+    );
+
+    expect(result.current.renderState.host).toMatchObject({
+      id: "remote:bender",
+      projectStatus: { state: "error", error: "timeout" },
+    });
+    expect(
+      (
+        result.current.renderState.sidebar as {
+          hosts?: Array<{ id: string; hint: string; tooltip: string }>;
+        }
+      ).hosts,
+    ).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "remote:bender",
+          hint: "sync failed",
+          tooltip: "bender.local · timeout",
+        }),
+      ]),
+    );
+  });
+
+  it("marks selected remote workspace mirrors active", () => {
+    const remoteHostInfo: UseHostInfo = {
+      ...hostInfo,
+      activeHostId: "remote:bender",
+      hosts: [
+        ...hostInfo.hosts,
+        {
+          id: "remote:bender",
+          hostname: "bender.local",
+          displayName: "bender",
+          isLocal: false,
+          paired: true,
+          connected: true,
+        },
+      ],
+      remoteProjectStatusByHost: {
+        "remote:bender": { state: "ready", updatedAt: 10 },
+      },
+      remoteProjectsByHost: {
+        "remote:bender": [
+          {
+            id: "remote:bender::project::urandom",
+            remoteId: "urandom",
+            hostId: "remote:bender",
+            label: "urandom.io",
+            tooltip: "/remote/urandom",
+            path: "/remote/urandom",
+            active: false,
+            expanded: true,
+            workspaces: [
+              {
+                id: "remote:bender::workspace::james-brink/fix-direnv",
+                remoteId: "james-brink/fix-direnv",
+                projectId: "remote:bender::project::urandom",
+                remoteProjectId: "urandom",
+                hostId: "remote:bender",
+                label: "james-brink/fix-direnv",
+                branch: "james-brink/fix-direnv",
+                path: "/remote/urandom-fix-direnv",
+                active: false,
+                isMain: false,
+              },
+            ],
+          },
+        ],
+      },
+    };
+    const { result } = renderHook(() =>
+      useDerivedRenderState({
+        state: {
+          tabs: [],
+          activeTabId: OVERVIEW_TAB_ID,
+          project: {
+            id: "remote:bender::project::urandom",
+            hostId: "remote:bender",
+            path: "/remote/urandom",
+          },
+          activeProjectId: "remote:bender::project::urandom",
+          activeWorkspaceId: "remote:bender::workspace::james-brink/fix-direnv",
+          sidebar: { projects: [] },
+        },
+        buildSidebarHistory: vi.fn(() => []),
+        hostInfo: remoteHostInfo,
+      }),
+    );
+
+    const sidebar = result.current.renderState.sidebar as {
+      projects?: Array<{
+        id: string;
+        active?: boolean;
+        workspaces?: Array<{ id: string; active?: boolean }>;
+      }>;
+      projectsByHost?: Record<
+        string,
+        Array<{
+          id: string;
+          workspaces?: Array<{ id: string; active?: boolean }>;
+        }>
+      >;
+    };
+    expect(sidebar.projects?.[0]).toMatchObject({
+      id: "remote:bender::project::urandom",
+      active: false,
+      workspaces: [
+        {
+          id: "remote:bender::workspace::james-brink/fix-direnv",
+          active: true,
+        },
+      ],
+    });
+    expect(sidebar.projectsByHost?.["remote:bender"]?.[0]).toMatchObject({
+      workspaces: [
+        {
+          id: "remote:bender::workspace::james-brink/fix-direnv",
+          active: true,
+        },
+      ],
     });
   });
 

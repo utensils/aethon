@@ -1,18 +1,35 @@
 // @vitest-environment jsdom
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { act, renderHook, waitFor } from "@testing-library/react";
 
 // Tauri mocks: invoke returns a local host; listen exposes a hook so
 // tests can fire host-discovered / host-removed payloads.
-const eventListeners = new Map<string, Array<(event: { payload: unknown }) => void>>();
+const eventListeners = new Map<
+  string,
+  Array<(event: { payload: unknown }) => void>
+>();
 
 const remoteDevices: unknown[] = [];
 const remoteHosts: unknown[] = [];
-const remoteSnapshots = new Map<string, { projects: unknown; icons?: unknown }>();
+const remoteSnapshots = new Map<
+  string,
+  { projects: unknown; icons?: unknown }
+>();
+const remoteSnapshotErrors = new Map<string, string>();
 
 vi.mock("@tauri-apps/api/core", () => ({
-  invoke: (cmd: string) =>
-    Promise.resolve(
+  invoke: (cmd: string, args?: { id?: string }) => {
+    if (cmd === "remote_host_project_snapshot") {
+      const hostId = args?.id ?? "remote:bender";
+      const error = remoteSnapshotErrors.get(hostId);
+      if (error) return Promise.reject(new Error(error));
+      return Promise.resolve({
+        hostId,
+        projects: remoteSnapshots.get(hostId)?.projects ?? {},
+        icons: remoteSnapshots.get(hostId)?.icons ?? {},
+      });
+    }
+    return Promise.resolve(
       cmd === "host_info"
         ? {
             id: "local:abc",
@@ -24,18 +41,13 @@ vi.mock("@tauri-apps/api/core", () => ({
           ? remoteDevices
           : cmd === "remote_hosts_list"
             ? remoteHosts
-            : cmd === "remote_host_project_snapshot"
-              ? {
-                  hostId: "remote:bender",
-                  projects: remoteSnapshots.get("remote:bender")?.projects ?? {},
-                  icons: remoteSnapshots.get("remote:bender")?.icons ?? {},
-                }
-          : null,
-    ),
+            : null,
+    );
+  },
 }));
 
 vi.mock("@tauri-apps/api/event", () => ({
-  listen: <T,>(event: string, cb: (e: { payload: T }) => void) => {
+  listen: <T>(event: string, cb: (e: { payload: T }) => void) => {
     const list = eventListeners.get(event) ?? [];
     list.push(cb as (event: { payload: unknown }) => void);
     eventListeners.set(event, list);
@@ -56,6 +68,14 @@ function fireEvent(name: string, payload: unknown): void {
 }
 
 describe("useHostInfo", () => {
+  beforeEach(() => {
+    eventListeners.clear();
+    remoteDevices.length = 0;
+    remoteHosts.length = 0;
+    remoteSnapshots.clear();
+    remoteSnapshotErrors.clear();
+  });
+
   it("resolves the local host and defaults activeHostId to it", async () => {
     const { useHostInfo } = await import("./useHostInfo");
     const { _resetLocalHostCacheForTests } = await import("../hosts");
@@ -95,13 +115,17 @@ describe("useHostInfo", () => {
       });
     });
     await waitFor(() => {
-      expect(result.current.hosts.find((h) => h.id === "remote:bender")).toBeTruthy();
+      expect(
+        result.current.hosts.find((h) => h.id === "remote:bender"),
+      ).toBeTruthy();
     });
     act(() => {
       fireEvent("host-removed", { id: "remote:bender" });
     });
     await waitFor(() => {
-      expect(result.current.hosts.find((h) => h.id === "remote:bender")).toBeUndefined();
+      expect(
+        result.current.hosts.find((h) => h.id === "remote:bender"),
+      ).toBeUndefined();
     });
   });
 
@@ -126,7 +150,9 @@ describe("useHostInfo", () => {
     const { result } = renderHook(() => useHostInfo());
 
     await waitFor(() => {
-      expect(result.current.hosts.find((h) => h.id === "device:dev-iphone")).toBeUndefined();
+      expect(
+        result.current.hosts.find((h) => h.id === "device:dev-iphone"),
+      ).toBeUndefined();
       const device = result.current.mobileDevices.find(
         (h) => h.id === "device:dev-iphone",
       );
@@ -185,12 +211,16 @@ describe("useHostInfo", () => {
     const { result } = renderHook(() => useHostInfo());
 
     await waitFor(() => {
-      expect(result.current.hosts.find((h) => h.id === "remote:bender")).toMatchObject({
+      expect(
+        result.current.hosts.find((h) => h.id === "remote:bender"),
+      ).toMatchObject({
         displayName: "bender",
         paired: true,
         connected: false,
       });
-      expect(result.current.remoteProjectsByHost["remote:bender"]?.[0]).toMatchObject({
+      expect(
+        result.current.remoteProjectsByHost["remote:bender"]?.[0],
+      ).toMatchObject({
         id: "remote:bender::project::p1",
         remoteId: "p1",
         label: "aethon",
@@ -202,6 +232,40 @@ describe("useHostInfo", () => {
             branch: "main",
           }),
         ],
+      });
+      expect(
+        result.current.remoteProjectStatusByHost["remote:bender"],
+      ).toMatchObject({
+        state: "ready",
+      });
+    });
+  });
+
+  it("keeps failed remote project snapshots visible as sync errors", async () => {
+    const { useHostInfo } = await import("./useHostInfo");
+    const { _resetLocalHostCacheForTests } = await import("../hosts");
+    _resetLocalHostCacheForTests();
+    remoteHosts.push({
+      id: "remote:bender",
+      hostId: "local:bender",
+      hostname: "bender.local",
+      displayName: "bender",
+      fingerprint: "bender",
+      candidates: ["bender.local:4242"],
+      createdAt: 1,
+      lastSeenAt: 2,
+    });
+    remoteSnapshotErrors.set("remote:bender", "timeout");
+
+    const { result } = renderHook(() => useHostInfo());
+
+    await waitFor(() => {
+      expect(result.current.remoteProjectsByHost["remote:bender"]).toEqual([]);
+      expect(
+        result.current.remoteProjectStatusByHost["remote:bender"],
+      ).toMatchObject({
+        state: "error",
+        error: "Error: timeout",
       });
     });
   });
@@ -228,7 +292,9 @@ describe("useHostInfo", () => {
     const { result } = renderHook(() => useHostInfo());
 
     await waitFor(() => {
-      expect(result.current.hosts.find((h) => h.id === "remote:bender")).toMatchObject({
+      expect(
+        result.current.hosts.find((h) => h.id === "remote:bender"),
+      ).toMatchObject({
         paired: true,
         connected: false,
       });
@@ -244,19 +310,26 @@ describe("useHostInfo", () => {
       });
     });
     await waitFor(() => {
-      expect(result.current.hosts.find((h) => h.id === "remote:bender")).toMatchObject({
+      expect(
+        result.current.hosts.find((h) => h.id === "remote:bender"),
+      ).toMatchObject({
         paired: true,
         connected: false,
+        discovered: true,
         candidates: ["bender.local:4242", "192.168.1.44:4242"],
+        lastSeen: 3,
       });
     });
     act(() => {
       fireEvent("host-removed", { id: "remote:bender" });
     });
     await waitFor(() => {
-      expect(result.current.hosts.find((h) => h.id === "remote:bender")).toMatchObject({
+      expect(
+        result.current.hosts.find((h) => h.id === "remote:bender"),
+      ).toMatchObject({
         paired: true,
         connected: false,
+        discovered: false,
       });
     });
     act(() => {
@@ -266,7 +339,9 @@ describe("useHostInfo", () => {
       });
     });
     await waitFor(() => {
-      expect(result.current.hosts.find((h) => h.id === "remote:bender")).toMatchObject({
+      expect(
+        result.current.hosts.find((h) => h.id === "remote:bender"),
+      ).toMatchObject({
         paired: true,
         connected: true,
       });

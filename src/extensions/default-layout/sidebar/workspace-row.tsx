@@ -50,6 +50,9 @@ async function liveBranchStillMatches(
 export interface WorkspaceSidebarItem {
   id: string;
   projectId?: string;
+  projectLabel?: string;
+  projectPath?: string;
+  projectIconUrl?: string;
   hostId?: string;
   remoteId?: string;
   remoteProjectId?: string;
@@ -373,9 +376,14 @@ export function WorkspaceRow({
             sectionId,
             workspaceId: item.id,
             projectId: item.projectId,
+            projectLabel: item.projectLabel,
+            projectPath: item.projectPath,
+            iconUrl: item.projectIconUrl,
             hostId: item.hostId,
             remoteId: item.remoteId,
             remoteProjectId: item.remoteProjectId,
+            path: item.path,
+            label: item.label,
           },
           item.id,
         );
@@ -390,9 +398,14 @@ export function WorkspaceRow({
             sectionId,
             workspaceId: item.id,
             projectId: item.projectId,
+            projectLabel: item.projectLabel,
+            projectPath: item.projectPath,
+            iconUrl: item.projectIconUrl,
             hostId: item.hostId,
             remoteId: item.remoteId,
             remoteProjectId: item.remoteProjectId,
+            path: item.path,
+            label: item.label,
           },
           item.id,
         );

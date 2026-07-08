@@ -23,6 +23,7 @@ export interface RemoteWorkspaceMirror {
   remoteId: string;
   projectId: string;
   remoteProjectId: string;
+  hostId: string;
   label: string;
   branch?: string | null;
   path: string;
@@ -45,6 +46,12 @@ export interface RemoteProjectMirror {
   workspaces: RemoteWorkspaceMirror[];
 }
 
+export interface RemoteProjectStatus {
+  state: "syncing" | "ready" | "error";
+  error?: string;
+  updatedAt: number;
+}
+
 export interface UseHostInfo {
   hosts: Host[];
   mobileDevices: Host[];
@@ -54,6 +61,7 @@ export interface UseHostInfo {
   setActiveHost: (id: string | null) => void;
   localHostId: string | null;
   remoteProjectsByHost: Record<string, RemoteProjectMirror[]>;
+  remoteProjectStatusByHost: Record<string, RemoteProjectStatus>;
 }
 
 export function useHostInfo(): UseHostInfo {
@@ -67,6 +75,9 @@ export function useHostInfo(): UseHostInfo {
   const [devices, setDevices] = useState<Host[]>([]);
   const [remoteProjectsByHost, setRemoteProjectsByHost] = useState<
     Record<string, RemoteProjectMirror[]>
+  >({});
+  const [remoteProjectStatusByHost, setRemoteProjectStatusByHost] = useState<
+    Record<string, RemoteProjectStatus>
   >({});
   const [activeHostId, setActiveHostState] = useState<string | null>(null);
 
@@ -84,6 +95,10 @@ export function useHostInfo(): UseHostInfo {
 
   function pairedHost(remote: RemoteHost): Host {
     const previous = pairedHostsRef.current.get(remote.id);
+    const previousLastSeen =
+      typeof previous?.lastSeen === "number" ? previous.lastSeen : 0;
+    const remoteLastSeen =
+      typeof remote.lastSeenAt === "number" ? remote.lastSeenAt : 0;
     return {
       id: remote.id,
       hostId: remote.hostId,
@@ -92,16 +107,21 @@ export function useHostInfo(): UseHostInfo {
       isLocal: false,
       fingerprint: remote.fingerprint,
       fingerprintPrefix: remote.fingerprint,
-      candidates: remote.candidates,
+      candidates:
+        previous?.discovered === true && previous.candidates?.length
+          ? previous.candidates
+          : remote.candidates,
       paired: true,
       connected: previous?.connected === true,
+      discovered: previous?.discovered === true,
       createdAt: remote.createdAt,
-      lastSeen: remote.lastSeenAt,
+      lastSeen: Math.max(previousLastSeen, remoteLastSeen) || undefined,
     };
   }
 
   function deviceHost(device: RemoteDevice): Host | null {
-    if (!device.id || device.revoked || device.platform === "desktop") return null;
+    if (!device.id || device.revoked || device.platform === "desktop")
+      return null;
     const platform = device.platform || "mobile";
     return {
       id: `device:${device.id}`,
@@ -162,38 +182,51 @@ export function useHostInfo(): UseHostInfo {
         const offDiscovered = await listen<Host>("host-discovered", (event) => {
           const host = event.payload;
           if (!host?.id) return;
+          const candidates =
+            Array.isArray(host.candidates) && host.candidates.length > 0
+              ? host.candidates
+              : host.port
+                ? [`${host.hostname}:${host.port}`]
+                : undefined;
           remotesRef.current.set(host.id, {
             ...host,
             isLocal: false,
             discovered: true,
             connected: false,
-            candidates:
-              Array.isArray(host.candidates) && host.candidates.length > 0
-                ? host.candidates
-                : host.port
-                  ? [`${host.hostname}:${host.port}`]
-                  : undefined,
+            candidates,
           });
           const paired = pairedHostsRef.current.get(host.id);
           if (paired) {
             pairedHostsRef.current.set(host.id, {
               ...paired,
               hostname: host.hostname,
-              candidates: host.candidates ?? paired.candidates,
+              candidates: candidates ?? paired.candidates,
               connected: paired.connected === true,
+              discovered: true,
               lastSeen: host.lastSeen ?? paired.lastSeen,
             });
             emitPairedHosts();
           }
           emitRemotes();
         });
-        const offRemoved = await listen<{ id: string }>("host-removed", (event) => {
-          const id = event.payload?.id;
-          if (!id) return;
-          if (remotesRef.current.delete(id)) {
-            emitRemotes();
-          }
-        });
+        const offRemoved = await listen<{ id: string }>(
+          "host-removed",
+          (event) => {
+            const id = event.payload?.id;
+            if (!id) return;
+            if (remotesRef.current.delete(id)) {
+              emitRemotes();
+            }
+            const paired = pairedHostsRef.current.get(id);
+            if (paired?.discovered === true) {
+              pairedHostsRef.current.set(id, {
+                ...paired,
+                discovered: false,
+              });
+              emitPairedHosts();
+            }
+          },
+        );
         const offStatus = await listen<{ id?: string; connected?: boolean }>(
           "remote-host-status-changed",
           (event) => {
@@ -240,39 +273,88 @@ export function useHostInfo(): UseHostInfo {
           next.set(remote.id, pairedHost(remote));
         }
         const nextHosts = Array.from(next.values());
-        if (!hostsEqual(Array.from(pairedHostsRef.current.values()), nextHosts)) {
+        if (
+          !hostsEqual(Array.from(pairedHostsRef.current.values()), nextHosts)
+        ) {
           pairedHostsRef.current = next;
           emitPairedHosts();
         }
-        for (const hostId of next.keys()) {
+        const hostIds = Array.from(next.keys());
+        setRemoteProjectsByHost((prev) =>
+          Object.fromEntries(
+            Object.entries(prev).filter(([hostId]) => next.has(hostId)),
+          ),
+        );
+        setRemoteProjectStatusByHost((prev) =>
+          Object.fromEntries(
+            Object.entries(prev).filter(([hostId]) => next.has(hostId)),
+          ),
+        );
+        for (const hostId of hostIds) {
           if (eventStreamsRef.current.has(hostId)) continue;
           eventStreamsRef.current.add(hostId);
           void remoteHostReconnect(hostId).catch(() => {
             eventStreamsRef.current.delete(hostId);
           });
         }
-        void refreshRemoteProjectSnapshots(Array.from(next.keys()));
+        void refreshRemoteProjectSnapshots(hostIds);
       } catch {
         // A fresh install or tests may not have the command available yet.
       }
     }
 
-    async function refreshRemoteProjectSnapshots(hostIds: string[]): Promise<void> {
+    async function refreshRemoteProjectSnapshots(
+      hostIds: string[],
+    ): Promise<void> {
+      const startedAt = Date.now();
+      setRemoteProjectStatusByHost((prev) => ({
+        ...prev,
+        ...Object.fromEntries(
+          hostIds.map((hostId) => [
+            hostId,
+            { state: "syncing" as const, updatedAt: startedAt },
+          ]),
+        ),
+      }));
       const entries = await Promise.all(
         hostIds.map(async (hostId) => {
           try {
             const snapshot = await remoteHostProjectSnapshot(hostId);
             return [
               hostId,
-              projectMirrorsFromSnapshot(hostId, snapshot.projects, snapshot.icons),
+              projectMirrorsFromSnapshot(
+                hostId,
+                snapshot.projects,
+                snapshot.icons,
+              ),
+              { state: "ready" as const, updatedAt: Date.now() },
             ] as const;
-          } catch {
-            return [hostId, []] as const;
+          } catch (err) {
+            return [
+              hostId,
+              [] as RemoteProjectMirror[],
+              {
+                state: "error" as const,
+                error: String(err),
+                updatedAt: Date.now(),
+              },
+            ] as const;
           }
         }),
       );
       if (cancelled) return;
-      setRemoteProjectsByHost(Object.fromEntries(entries));
+      setRemoteProjectsByHost((prev) => ({
+        ...prev,
+        ...Object.fromEntries(
+          entries.map(([hostId, projects]) => [hostId, projects]),
+        ),
+      }));
+      setRemoteProjectStatusByHost((prev) => ({
+        ...prev,
+        ...Object.fromEntries(
+          entries.map(([hostId, , status]) => [hostId, status]),
+        ),
+      }));
     }
 
     void refreshRemoteHosts();
@@ -355,6 +437,7 @@ export function useHostInfo(): UseHostInfo {
     setActiveHost,
     localHostId: localHost?.id ?? null,
     remoteProjectsByHost,
+    remoteProjectStatusByHost,
   };
 }
 
@@ -393,7 +476,9 @@ function projectMirrorsFromSnapshot(
         : {};
   return projects
     .filter(
-      (p): p is {
+      (
+        p,
+      ): p is {
         id: string;
         label: string;
         path: string;
@@ -416,7 +501,9 @@ function projectMirrorsFromSnapshot(
         : [];
       const workspaces = rawWorkspaces
         .filter(
-          (w): w is {
+          (
+            w,
+          ): w is {
             id: string;
             path: string;
             label?: string;
