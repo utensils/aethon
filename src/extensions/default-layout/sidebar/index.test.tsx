@@ -756,6 +756,108 @@ describe("Sidebar host groups", () => {
     expect(screen.getByText("nix")).toBeTruthy();
   });
 
+  it("routes clicks on rendered remote workspace rows", () => {
+    const component = sidebarComponent({
+      hostGroups: true,
+      hosts: { $ref: "/sidebar/hosts" },
+      sections: [
+        {
+          id: "projects",
+          title: "projects",
+          items: { $ref: "/sidebar/projects" },
+        },
+      ],
+    });
+    const onEvent = vi.fn<SidebarOnEvent>();
+    render(
+      <Sidebar
+        component={component}
+        state={{
+          project: null,
+          sidebar: {
+            hosts: [
+              {
+                id: "remote:bender",
+                label: "bender",
+                hint: "connected",
+                paired: true,
+                active: true,
+              },
+            ],
+            projects: [
+              {
+                id: "remote:bender::project::urandom",
+                remoteId: "urandom",
+                hostId: "remote:bender",
+                label: "urandom.io",
+                expanded: true,
+                workspaces: [
+                  {
+                    id: "remote:bender::workspace::james-brink/fix-direnv",
+                    remoteId: "james-brink/fix-direnv",
+                    remoteProjectId: "urandom",
+                    projectId: "remote:bender::project::urandom",
+                    hostId: "remote:bender",
+                    label: "james-brink/fix-direnv",
+                    branch: "james-brink/fix-direnv",
+                    path: "/remote/urandom-fix-direnv",
+                    active: false,
+                    isMain: false,
+                  },
+                ],
+              },
+            ],
+            projectsByHost: {
+              "remote:bender": [
+                {
+                  id: "remote:bender::project::urandom",
+                  remoteId: "urandom",
+                  hostId: "remote:bender",
+                  label: "urandom.io",
+                  expanded: true,
+                  workspaces: [
+                    {
+                      id: "remote:bender::workspace::james-brink/fix-direnv",
+                      remoteId: "james-brink/fix-direnv",
+                      remoteProjectId: "urandom",
+                      projectId: "remote:bender::project::urandom",
+                      hostId: "remote:bender",
+                      label: "james-brink/fix-direnv",
+                      branch: "james-brink/fix-direnv",
+                      path: "/remote/urandom-fix-direnv",
+                      active: false,
+                      isMain: false,
+                    },
+                  ],
+                },
+              ],
+            },
+          },
+        }}
+        onEvent={onEvent}
+        renderChildWithState={() => null}
+      />,
+    );
+
+    fireEvent.click(screen.getByText("james-brink/fix-direnv"));
+
+    expect(onEvent).toHaveBeenCalledWith(
+      "switch-workspace",
+      expect.objectContaining({
+        sectionId: "projects",
+        workspaceId: "remote:bender::workspace::james-brink/fix-direnv",
+        projectId: "remote:bender::project::urandom",
+        projectLabel: "urandom.io",
+        hostId: "remote:bender",
+        remoteId: "james-brink/fix-direnv",
+        remoteProjectId: "urandom",
+        path: "/remote/urandom-fix-direnv",
+        label: "james-brink/fix-direnv",
+      }),
+      "remote:bender::workspace::james-brink/fix-direnv",
+    );
+  });
+
   it("offers pairing directly on visible discovered desktop hosts", () => {
     const { onEvent } = renderWithHost({
       hosts: [

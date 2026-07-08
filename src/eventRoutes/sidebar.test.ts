@@ -768,6 +768,101 @@ describe("handleSidebarSwitchWorkspace", () => {
     });
   });
 
+  it("routes remote workspace rows from their click payload when derived mirrors are absent", async () => {
+    const { ctx, mocks, applySetState } = buildRouteFixture({
+      state: {
+        activeHostId: "remote:3eb",
+        sidebar: {
+          projects: [],
+        },
+      },
+    });
+
+    const handled = await handleSidebarSwitchWorkspace(
+      {
+        component: { id: "sidebar" },
+        eventType: "switch-workspace",
+        data: {
+          workspaceId: "remote:3eb::workspace::james-brink/fix-direnv",
+          projectId: "remote:3eb::project::urandom",
+          projectLabel: "urandom.io",
+          projectPath: "/remote/urandom",
+          hostId: "remote:3eb",
+          remoteId: "james-brink/fix-direnv",
+          remoteProjectId: "urandom",
+          label: "james-brink/fix-direnv",
+          path: "/remote/urandom-fix-direnv",
+        },
+      },
+      ctx,
+    );
+
+    expect(handled).toBe(true);
+    expect(mocks.activateWorkspace).not.toHaveBeenCalled();
+    expect(ctx.setActiveHost).toHaveBeenCalledWith("remote:3eb");
+    const next = applySetState();
+    expect(next.activeHostId).toBe("remote:3eb");
+    expect(next.activeProjectId).toBe("remote:3eb::project::urandom");
+    expect(next.activeWorkspaceId).toBe(
+      "remote:3eb::workspace::james-brink/fix-direnv",
+    );
+    expect(next.project).toMatchObject({
+      id: "remote:3eb::project::urandom",
+      remoteId: "urandom",
+      hostId: "remote:3eb",
+      label: "urandom.io",
+      path: "/remote/urandom",
+    });
+    expect(next.landing).toMatchObject({
+      kind: "workspace",
+      hostId: "remote:3eb",
+      projectId: "remote:3eb::project::urandom",
+      projectLabel: "urandom.io",
+      workspaceId: "remote:3eb::workspace::james-brink/fix-direnv",
+      workspaceLabel: "james-brink/fix-direnv",
+      path: "/remote/urandom-fix-direnv",
+    });
+  });
+
+  it("derives raw remote project ids from qualified synthetic payloads", async () => {
+    const { ctx, applySetState } = buildRouteFixture({
+      state: {
+        activeHostId: "remote:3eb",
+        sidebar: { projects: [] },
+      },
+    });
+
+    const handled = await handleSidebarSwitchWorkspace(
+      {
+        component: { id: "sidebar" },
+        eventType: "switch-workspace",
+        data: {
+          workspaceId: "remote:3eb::workspace::james-brink/fix-direnv",
+          projectId: "remote:3eb::project::urandom",
+          projectLabel: "urandom.io",
+          hostId: "remote:3eb",
+          remoteId: "james-brink/fix-direnv",
+          label: "james-brink/fix-direnv",
+          path: "/remote/urandom-fix-direnv",
+        },
+      },
+      ctx,
+    );
+
+    expect(handled).toBe(true);
+    const next = applySetState();
+    expect(next.project).toMatchObject({
+      id: "remote:3eb::project::urandom",
+      remoteId: "urandom",
+      label: "urandom.io",
+    });
+    expect(next.landing).toMatchObject({
+      projectId: "remote:3eb::project::urandom",
+      projectLabel: "urandom.io",
+      workspaceId: "remote:3eb::workspace::james-brink/fix-direnv",
+    });
+  });
+
   it("opens visible remote workspaces in new tabs with host context", async () => {
     const { ctx, mocks, applySetState } = buildRouteFixture({
       state: {
@@ -819,6 +914,36 @@ describe("handleSidebarSwitchWorkspace", () => {
       hostId: "remote:bender",
     });
     expect(applySetState().landing).toBeNull();
+  });
+
+  it("does not open a remote tab without a cwd from synthetic payloads", async () => {
+    const { ctx, mocks, applySetState } = buildRouteFixture({
+      state: {
+        activeHostId: "remote:3eb",
+        sidebar: { projects: [] },
+      },
+    });
+
+    const handled = await handleSidebarOpenWorkspaceInNewTab(
+      {
+        component: { id: "sidebar" },
+        eventType: "open-workspace-in-new-tab",
+        data: {
+          workspaceId: "remote:3eb::workspace::feature",
+          projectId: "remote:3eb::project::urandom",
+          hostId: "remote:3eb",
+          remoteId: "feature",
+          label: "feature",
+        },
+      },
+      ctx,
+    );
+
+    expect(handled).toBe(true);
+    expect(mocks.newTab).not.toHaveBeenCalled();
+    const next = applySetState();
+    expect(next.activeWorkspaceId).toBe("remote:3eb::workspace::feature");
+    expect(next.landing).toBeNull();
   });
 
   it("starts remote workspace landing sessions with host context", async () => {

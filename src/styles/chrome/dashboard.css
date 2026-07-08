@@ -81,6 +81,176 @@
   font-size: var(--text-xs);
 }
 
+.a2ui-host-details {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  text-align: left;
+}
+
+.a2ui-host-details-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.a2ui-host-details-head h2 {
+  margin: 0;
+  color: var(--text);
+  font-size: var(--text-md);
+  font-weight: 600;
+}
+
+.a2ui-host-details-head p {
+  margin: var(--space-1) 0 0;
+  color: var(--text-dim);
+  font-size: var(--text-sm);
+}
+
+.a2ui-host-details-status {
+  flex: 0 0 auto;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-dim);
+  font-size: var(--text-xs);
+  font-weight: 600;
+}
+
+.a2ui-host-details-status--reachable {
+  color: var(--accent);
+  border-color: color-mix(in oklab, var(--accent) 34%, var(--border));
+}
+
+.a2ui-host-details-status--connected {
+  color: var(--success);
+  border-color: color-mix(in oklab, var(--success) 34%, var(--border));
+}
+
+.a2ui-host-details-status--error {
+  color: var(--error);
+  border-color: color-mix(in oklab, var(--error) 34%, var(--border));
+}
+
+.a2ui-host-details-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+  margin: 0;
+}
+
+.a2ui-host-details-grid > div {
+  min-width: 0;
+}
+
+.a2ui-host-details-wide {
+  grid-column: 1 / -1;
+}
+
+.a2ui-host-details dt {
+  margin: 0 0 var(--space-1);
+  color: var(--text-dim);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.a2ui-host-details dd {
+  margin: 0;
+  color: var(--text);
+  font-size: var(--text-sm);
+  overflow-wrap: anywhere;
+}
+
+.a2ui-host-details code {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+}
+
+.a2ui-host-details-muted {
+  color: var(--text-dim);
+}
+
+.a2ui-host-candidates {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 220px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.a2ui-host-candidates--primary {
+  max-height: none;
+  overflow: visible;
+}
+
+.a2ui-host-candidates li {
+  min-width: 0;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.a2ui-host-candidate-copy {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  max-width: 100%;
+  padding: 4px 8px;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font: inherit;
+}
+
+.a2ui-host-candidate-copy:hover {
+  background: var(--bg-hover);
+}
+
+.a2ui-host-candidate-copy:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.a2ui-host-candidate-copy code {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.a2ui-host-candidate-copied {
+  flex: 0 0 auto;
+  color: var(--accent);
+  font-size: var(--text-xs);
+  font-weight: 600;
+}
+
+.a2ui-host-candidates-raw {
+  margin-top: var(--space-3);
+}
+
+.a2ui-host-candidates-raw summary {
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: var(--text-xs);
+}
+
+.a2ui-host-candidates-raw[open] summary {
+  margin-bottom: var(--space-2);
+}
+
 /* Project-card icon — 20px square before the label. The
    --initial modifier renders a deterministic letter tile for projects
    without a discovered logo. */
@@ -190,6 +360,13 @@ span.a2ui-project-card-icon--initial {
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--text-dim);
+}
+
+.a2ui-remote-projects-empty p {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: var(--text-sm);
+  line-height: 1.45;
 }
 
 .a2ui-projects-dashboard-grid {
@@ -558,10 +735,10 @@ button.a2ui-gh-stat:hover {
   border-color: var(--accent);
 }
 .a2ui-project-dashboard-startup-policy {
-  flex-direction: row;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-2) var(--space-3);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-1);
   margin-top: calc(var(--space-1) * -1);
   color: var(--text-dim);
   font-size: var(--chrome-text-compact);
@@ -570,6 +747,8 @@ button.a2ui-gh-stat:hover {
   display: inline-flex;
   align-items: center;
   gap: var(--space-2);
+  min-width: 0;
+  width: 100%;
   color: var(--text);
   cursor: pointer;
   user-select: none;
@@ -587,11 +766,18 @@ button.a2ui-gh-stat:hover {
   opacity: 0.56;
 }
 .a2ui-project-dashboard-startup-label {
+  min-width: 0;
   font-weight: 500;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
 }
 .a2ui-project-dashboard-startup-hint {
-  min-width: min(100%, 22rem);
+  display: block;
+  min-width: 0;
+  max-width: 100%;
   color: var(--text-dim);
+  font-size: var(--text-xs);
+  line-height: 1.35;
 }
 
 .a2ui-project-dashboard-workspaces {

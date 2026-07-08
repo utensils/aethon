@@ -768,7 +768,24 @@ function SidebarSectionBlock({
                   ? extraWorkspaces.map((wt) => (
                       <WorkspaceRow
                         key={wt.id}
-                        item={wt}
+                        item={{
+                          ...wt,
+                          projectLabel:
+                            typeof item.label === "string"
+                              ? item.label
+                              : undefined,
+                          projectPath:
+                            typeof item.tooltip === "string"
+                              ? item.tooltip
+                              : typeof (item as { path?: unknown }).path ===
+                                  "string"
+                                ? ((item as { path?: string }).path ?? undefined)
+                                : undefined,
+                          projectIconUrl:
+                            typeof item.iconUrl === "string"
+                              ? item.iconUrl
+                              : undefined,
+                        }}
                         sectionId={section.id}
                         onEvent={onEvent}
                         onItemContextMenu={openWorkspaceContextMenu}

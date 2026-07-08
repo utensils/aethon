@@ -16,10 +16,11 @@
  *   - "select-project-card" (forwarded from project-card) → activates.
  *   - "restore-session" — reuses tabStrip route too.
  */
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { BuiltinComponentProps } from "../../../components/A2UIRenderer";
 import { resolvePointer } from "../../../utils/jsonPointer";
+import { formatRelativeTime } from "../../../utils/time";
 import { AeMarkInline } from "../layout";
 import { RegistryComponent } from "../../../components/A2UIRenderer";
 import { DashboardSessionRow } from "./session-row";
@@ -43,9 +44,23 @@ interface ProjectListItem {
 
 interface HostBannerInfo {
   id: string;
+  hostId?: string;
   hostname: string;
   displayName: string;
   isLocal: boolean;
+  fingerprint?: string;
+  candidates?: string[];
+  paired?: boolean;
+  connected?: boolean;
+  discovered?: boolean;
+  createdAt?: number;
+  lastSeen?: number;
+  port?: number;
+  projectStatus?: {
+    state?: "syncing" | "ready" | "error";
+    error?: string;
+    updatedAt?: number;
+  };
 }
 
 function resolveOptional<T>(
@@ -97,6 +112,265 @@ function resolveArray<T>(v: unknown, state: Record<string, unknown>): T[] {
     return Array.isArray(r) ? (r as T[]) : [];
   }
   return Array.isArray(v) ? (v as T[]) : [];
+}
+
+function formatDateTime(ms?: number): string | null {
+  if (!ms) return null;
+  return new Date(ms).toLocaleString(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  });
+}
+
+function statusText(host: HostBannerInfo): string {
+  if (host.projectStatus?.state === "syncing") return "Syncing";
+  if (host.projectStatus?.state === "error") return "Sync failed";
+  if (host.connected) return "Connected";
+  if (host.paired) return "Paired";
+  if (host.discovered) return "Available on LAN";
+  return "Remote";
+}
+
+function recentlySeen(host: HostBannerInfo): boolean {
+  return Boolean(host.lastSeen && Date.now() - host.lastSeen < 120_000);
+}
+
+function reachabilityText(host: HostBannerInfo): string {
+  if (host.projectStatus?.state === "syncing") return "Loading remote projects";
+  if (host.projectStatus?.state === "error")
+    return "Remote project sync failed";
+  if (host.connected) return "Event stream connected";
+  if (host.discovered) return "Reachable on LAN";
+  if (recentlySeen(host)) return "Recently seen on LAN";
+  if (host.paired) return "Not currently advertised";
+  return "Discovered";
+}
+
+function remoteProjectsEmptyState(host: HostBannerInfo): {
+  title: string;
+  body: string;
+} {
+  if (host.projectStatus?.state === "syncing") {
+    return {
+      title: "Syncing remote projects",
+      body: "Waiting for the paired host to return its project snapshot.",
+    };
+  }
+  if (host.projectStatus?.state === "error") {
+    return {
+      title: "Remote projects unavailable",
+      body:
+        host.projectStatus.error ||
+        "Aethon could not fetch the project snapshot from this host.",
+    };
+  }
+  return {
+    title: "No remote projects",
+    body: "This host returned an empty project snapshot.",
+  };
+}
+
+function candidateKey(candidate: string): string {
+  const trimmed = candidate.trim();
+  if (trimmed.startsWith("[")) {
+    const end = trimmed.indexOf("]");
+    return end > 0 ? trimmed.slice(0, end + 1) : trimmed;
+  }
+  const [host] = trimmed.split(":");
+  return host || trimmed;
+}
+
+function isNoisyCandidate(candidate: string): boolean {
+  return candidate.trim().startsWith("[");
+}
+
+function primaryCandidates(candidates: string[]): string[] {
+  const latestByHost = new Map<string, string>();
+  for (const candidate of candidates) {
+    if (isNoisyCandidate(candidate)) continue;
+    latestByHost.set(candidateKey(candidate), candidate);
+  }
+  return Array.from(latestByHost.values()).slice(0, 8);
+}
+
+function CandidateList({
+  candidates,
+  copiedCandidate,
+  onCopy,
+  primary = false,
+}: {
+  candidates: string[];
+  copiedCandidate: string | null;
+  onCopy: (candidate: string) => void;
+  primary?: boolean;
+}) {
+  return (
+    <ul
+      className={[
+        "a2ui-host-candidates",
+        primary ? "a2ui-host-candidates--primary" : "",
+      ]
+        .filter(Boolean)
+        .join(" ")}
+    >
+      {candidates.map((candidate, index) => (
+        <li key={`${candidate}-${index}`}>
+          <button
+            type="button"
+            className="a2ui-host-candidate-copy"
+            onClick={() => onCopy(candidate)}
+            title="Copy address"
+          >
+            <code>{candidate}</code>
+            {copiedCandidate === candidate && (
+              <span className="a2ui-host-candidate-copied">Copied</span>
+            )}
+          </button>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function RemoteHostDetails({ host }: { host: HostBannerInfo }) {
+  const [copiedCandidate, setCopiedCandidate] = useState<string | null>(null);
+  const copiedResetTimerRef = useRef<number | null>(null);
+  const candidates = Array.isArray(host.candidates) ? host.candidates : [];
+  const primary = primaryCandidates(candidates);
+  const primarySet = new Set(primary);
+  const rawCandidates = candidates.filter(
+    (candidate) => !primarySet.has(candidate),
+  );
+  const pairedAt = formatDateTime(host.createdAt);
+  const lastSeenAt = formatDateTime(host.lastSeen);
+
+  useEffect(() => {
+    return () => {
+      if (copiedResetTimerRef.current !== null) {
+        window.clearTimeout(copiedResetTimerRef.current);
+        copiedResetTimerRef.current = null;
+      }
+    };
+  }, []);
+
+  const copyCandidate = async (candidate: string) => {
+    try {
+      if (!navigator.clipboard) return;
+      await navigator.clipboard.writeText(candidate);
+      setCopiedCandidate(candidate);
+      if (copiedResetTimerRef.current !== null) {
+        window.clearTimeout(copiedResetTimerRef.current);
+        copiedResetTimerRef.current = null;
+      }
+      copiedResetTimerRef.current = window.setTimeout(() => {
+        copiedResetTimerRef.current = null;
+        setCopiedCandidate((current) =>
+          current === candidate ? null : current,
+        );
+      }, 1200);
+    } catch {
+      // Clipboard permission can be denied; keep the address visible
+      // without claiming it was copied.
+    }
+  };
+  return (
+    <section className="a2ui-host-details" aria-label="Remote host details">
+      <div className="a2ui-host-details-head">
+        <div>
+          <h2>Remote host</h2>
+          <p>{reachabilityText(host)}</p>
+        </div>
+        <span
+          className={[
+            "a2ui-host-details-status",
+            host.connected
+              ? "a2ui-host-details-status--connected"
+              : host.projectStatus?.state === "error"
+                ? "a2ui-host-details-status--error"
+                : host.discovered
+                  ? "a2ui-host-details-status--reachable"
+                  : "",
+          ]
+            .filter(Boolean)
+            .join(" ")}
+        >
+          {statusText(host)}
+        </span>
+      </div>
+      <dl className="a2ui-host-details-grid">
+        <div>
+          <dt>Hostname</dt>
+          <dd>{host.hostname}</dd>
+        </div>
+        {host.hostId && (
+          <div>
+            <dt>Host ID</dt>
+            <dd>{host.hostId}</dd>
+          </div>
+        )}
+        {pairedAt && (
+          <div>
+            <dt>Paired on</dt>
+            <dd>{pairedAt}</dd>
+          </div>
+        )}
+        {lastSeenAt && (
+          <div>
+            <dt>Last seen</dt>
+            <dd>
+              {lastSeenAt}
+              <span className="a2ui-host-details-muted">
+                {" "}
+                ({formatRelativeTime(host.lastSeen ?? 0)})
+              </span>
+            </dd>
+          </div>
+        )}
+        {host.port && (
+          <div>
+            <dt>Advertised port</dt>
+            <dd>{host.port}</dd>
+          </div>
+        )}
+        {host.fingerprint && (
+          <div className="a2ui-host-details-wide">
+            <dt>Fingerprint</dt>
+            <dd>
+              <code>{host.fingerprint}</code>
+            </dd>
+          </div>
+        )}
+        {candidates.length > 0 && (
+          <div className="a2ui-host-details-wide">
+            <dt>Primary connection candidates</dt>
+            <dd>
+              <CandidateList
+                candidates={
+                  primary.length > 0 ? primary : candidates.slice(0, 8)
+                }
+                copiedCandidate={copiedCandidate}
+                onCopy={copyCandidate}
+                primary
+              />
+              {rawCandidates.length > 0 && (
+                <details className="a2ui-host-candidates-raw">
+                  <summary>
+                    Show {rawCandidates.length} raw alternate candidate
+                    {rawCandidates.length === 1 ? "" : "s"}
+                  </summary>
+                  <CandidateList
+                    candidates={rawCandidates}
+                    copiedCandidate={copiedCandidate}
+                    onCopy={copyCandidate}
+                  />
+                </details>
+              )}
+            </dd>
+          </div>
+        )}
+      </dl>
+    </section>
+  );
 }
 
 export function ProjectsDashboard({
@@ -154,6 +428,10 @@ export function ProjectsDashboard({
   const showOpenProject = host?.isLocal !== false;
   const remoteHostOverview = host?.isLocal === false;
   const visibleRecentSessions = remoteHostOverview ? [] : recentSessions;
+  const remoteEmptyState =
+    remoteHostOverview && host && projects.length === 0
+      ? remoteProjectsEmptyState(host)
+      : null;
 
   useEffect(() => {
     if (!showHostStartupPolicy) {
@@ -209,6 +487,7 @@ export function ProjectsDashboard({
             </span>
           </div>
         )}
+        {remoteHostOverview && host && <RemoteHostDetails host={host} />}
         <div className="a2ui-projects-dashboard-hero" aria-hidden="true">
           <AeMarkInline size={56} radius={12} />
         </div>
@@ -255,6 +534,12 @@ export function ProjectsDashboard({
                   "Start a task on this host… choose a project, use @<subagent> or @path",
               }}
             />
+          </section>
+        )}
+        {remoteEmptyState && (
+          <section className="a2ui-projects-dashboard-section a2ui-remote-projects-empty">
+            <h2>{remoteEmptyState.title}</h2>
+            <p>{remoteEmptyState.body}</p>
           </section>
         )}
         {showHostStartupPolicy && (
