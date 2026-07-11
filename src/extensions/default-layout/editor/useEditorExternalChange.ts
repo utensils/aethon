@@ -14,6 +14,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
+import { safeUnlisten } from "../../../utils/safeUnlisten";
 
 import { invokeForHost, isRemoteHostId } from "../../../remoteInvoke";
 import { decideExternalChange, payloadAffectsFile } from "./externalChange";
@@ -157,14 +158,14 @@ export function useEditorExternalChange({
       checkNow();
     }).then((fn) => {
       if (disposed) {
-        fn();
+        safeUnlisten(fn);
         return;
       }
       unlisten = fn;
     });
     return () => {
       disposed = true;
-      unlisten?.();
+      if (unlisten) safeUnlisten(unlisten);
     };
   }, [checkNow, hostId]);
 

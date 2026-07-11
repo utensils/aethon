@@ -103,10 +103,9 @@ fn boot_prespawn_agent_enabled(app: &tauri::AppHandle) -> bool {
     let Ok(home) = app.path().home_dir() else {
         return true;
     };
-    let user_dir =
-        helpers::aethon_dir(Some(home.clone())).unwrap_or_else(|| home.join(".aethon"));
-    let raw = std::fs::read_to_string(user_dir.join("config.toml")).unwrap_or_default();
-    boot_prespawn_agent_from_config_text(&raw)
+    let user_dir = helpers::aethon_dir(Some(home.clone())).unwrap_or_else(|| home.join(".aethon"));
+    let snapshot = helpers::read_config_snapshot(&user_dir.join("config.toml"));
+    boot_prespawn_agent_from_config_text(&snapshot.raw)
 }
 
 /// Time a boot-phase step and emit it on the `aethon::boot` target so the
@@ -126,6 +125,10 @@ fn boot_span<T>(phase: &str, f: impl FnOnce() -> T) -> T {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // reqwest 0.13 uses the process-wide rustls provider. Install ring
+    // explicitly so networking keeps the existing small, audited crypto
+    // backend instead of pulling in the aws-lc native build closure.
+    let _ = rustls::crypto::ring::default_provider().install_default();
     prefer_stable_linux_webview_backend();
 
     // Boot-rollback helper sub-invocation: when the post-update
@@ -186,6 +189,7 @@ pub fn run() {
     let control_state = Arc::new(control::ControlState::default());
     let builder = builder
         .manage(agent_process::AgentProcesses::new())
+        .manage(agent_process::IdleSweepState::default())
         .manage(Arc::clone(&control_state))
         .manage(shell::ShellRegistry::new())
         .manage(commands::fs::FsWatchState::default())
@@ -438,7 +442,9 @@ pub fn run() {
             // keyboard shortcuts always do the same thing. Predefined
             // macOS items (Quit / Hide / Cut / Copy / Minimize / etc.)
             // get native NS actions for free, no event handler needed.
-            boot_span("menu", || commands::extensions::install_app_menu(app.handle(), &[]))?;
+            boot_span("menu", || {
+                commands::extensions::install_app_menu(app.handle(), &[])
+            })?;
             // Register the menu-click → "menu" event forwarder ONCE here.
             // install_app_menu rebuilds and re-attaches the NSMenu whenever
             // extension menu items change, but Tauri's `on_menu_event`
@@ -527,7 +533,8 @@ pub fn run() {
             // Idle per-tab agent worker retirement (#159): a background sweep
             // retires `tab:<id>` workers that have sat idle past the configured
             // TTL; they respawn lazily from their session on next use.
-            agent_process::spawn_idle_sweep(app.handle().clone());
+            let idle_sweep = app.state::<agent_process::IdleSweepState>();
+            agent_process::spawn_idle_sweep(app.handle().clone(), &idle_sweep);
             commands::scheduler::boot(app.handle().clone());
 
             // Release app launches can start with a skeletal PATH. Warm
@@ -579,6 +586,11 @@ pub fn run() {
                 }
             }
             tauri::RunEvent::Exit => {
+                let server = app_handle.state::<Arc<server::ServerState>>().inner().clone();
+                tauri::async_runtime::block_on(server.shutdown());
+                app_handle
+                    .state::<agent_process::IdleSweepState>()
+                    .stop();
                 let state = app_handle.state::<agent_process::AgentProcesses>();
                 agent_process::shutdown_all_agents(&state, "app exit");
             }
@@ -748,7 +760,9 @@ mod tests {
         let cleanup_pos = src
             .find("spawn_blocking(agent_process::cleanup_orphaned_dev_agents)")
             .unwrap();
-        let prespawn_pos = src.find("boot_prespawn_agent_enabled(app.handle())").unwrap();
+        let prespawn_pos = src
+            .find("boot_prespawn_agent_enabled(app.handle())")
+            .unwrap();
         assert!(
             restore_pos < cleanup_pos && restore_pos < prespawn_pos,
             "orphan cleanup and agent pre-spawn must not block window visibility",

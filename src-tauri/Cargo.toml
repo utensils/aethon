@@ -78,8 +78,8 @@ chrono = { version = "0.4", default-features = false, features = [
   "serde",
 ] }
 url = "2"
-reqwest = { version = "0.12", default-features = false, features = [
-  "rustls-tls",
+reqwest = { version = "0.13", default-features = false, features = [
+  "rustls-no-provider",
   "json",
   "stream",
 ] }

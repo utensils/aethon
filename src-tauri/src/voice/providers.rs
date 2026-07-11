@@ -139,7 +139,7 @@ impl VoiceProvider for PlatformVoiceProvider {
                 None,
             )
         } else {
-            platform_status_from_availability(registry.platform_speech.availability())
+            platform_status_from_availability(registry.platform_speech_engine().availability())
         };
         #[cfg(not(any(target_os = "macos", windows)))]
         let (status, status_label, setup_required, error) = if enabled {
@@ -182,7 +182,7 @@ impl VoiceProvider for PlatformVoiceProvider {
         // can substitute a fake engine. Linux has no engine here.
         #[cfg(any(target_os = "macos", windows))]
         {
-            let _ = registry.platform_speech.prepare();
+            let _ = registry.platform_speech_engine().prepare();
         }
         let db = VoiceSettings::open(db_path).map_err(|e| e.to_string())?;
         Ok(self.status(registry, &db))
@@ -306,7 +306,7 @@ impl VoiceProvider for DistilWhisperCandleProvider {
             .get_app_setting(&model_status_key(self.id()))
             .ok()
             .flatten();
-        let downloading = registry.active_downloads.lock().contains(self.id());
+        let downloading = registry.active_downloads().lock().contains(self.id());
         let installed = distil_model_ready(&cache_path);
         let backend_status = registry.ensure_candle_backend_ready();
 
@@ -380,7 +380,7 @@ impl VoiceProvider for DistilWhisperCandleProvider {
             .await
             .map_err(|e| format!("Failed to create model cache: {e}"))?;
         {
-            let mut active_downloads = registry.active_downloads.lock();
+            let mut active_downloads = registry.active_downloads().lock();
             if !active_downloads.insert(self.id().to_string()) {
                 let db = VoiceSettings::open(db_path).map_err(|e| e.to_string())?;
                 return Ok(self.status(registry, &db));
@@ -478,8 +478,8 @@ impl VoiceProvider for Lfm2AudioProvider {
 
         let cache_path = registry.lfm2_cache_path();
         let installed = lfm2_model_ready(&cache_path);
-        let downloading = registry.active_downloads.lock().contains(self.id());
-        let binary_available = registry.lfm2.binary_available();
+        let downloading = registry.active_downloads().lock().contains(self.id());
+        let binary_available = registry.lfm2_backend().binary_available();
         let model_status = db
             .get_app_setting(&model_status_key(self.id()))
             .ok()
@@ -551,7 +551,7 @@ impl VoiceProvider for Lfm2AudioProvider {
             .await
             .map_err(|e| format!("Failed to create model cache: {e}"))?;
         {
-            let mut active_downloads = registry.active_downloads.lock();
+            let mut active_downloads = registry.active_downloads().lock();
             if !active_downloads.insert(self.id().to_string()) {
                 let db = VoiceSettings::open(db_path).map_err(|e| e.to_string())?;
                 return Ok(self.status(registry, &db));
@@ -602,7 +602,7 @@ pub(super) struct ActiveDownloadGuard<'a> {
 impl Drop for ActiveDownloadGuard<'_> {
     fn drop(&mut self) {
         self.registry
-            .active_downloads
+            .active_downloads()
             .lock()
             .remove(self.provider_id);
     }

@@ -1,10 +1,6 @@
 import type { Api, Model } from "@mariozechner/pi-ai";
 import type { AethonAgentState } from "./state";
-
-const CODEX_FAST_MODE_MODELS = new Set([
-  "openai-codex/gpt-5.5",
-  "openai-codex/gpt-5.4",
-]);
+import { modelSupportsPriorityServiceTier } from "./model-capabilities";
 
 const patchedAgents = new WeakSet<object>();
 
@@ -23,9 +19,7 @@ type AgentLike = {
 };
 
 export function supportsCodexFastMode(model: Model<Api> | undefined): boolean {
-  return model
-    ? CODEX_FAST_MODE_MODELS.has(`${model.provider}/${model.id}`)
-    : false;
+  return modelSupportsPriorityServiceTier(model);
 }
 
 export function applyCodexFastModeToPayload(

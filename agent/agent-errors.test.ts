@@ -3,6 +3,7 @@ import {
   extractAgentEndError,
   formatAgentErrorMessage,
   isContextLengthExceededError,
+  isModelUnavailableError,
   isRetryableAgentEndError,
   isUsageLimitError,
 } from "./agent-errors";
@@ -108,6 +109,16 @@ describe("isContextLengthExceededError", () => {
   });
 });
 
+describe("isModelUnavailableError", () => {
+  it("detects OpenAI model entitlement errors", () => {
+    expect(
+      isModelUnavailableError(
+        '{"error":{"code":"model_not_found","message":"The model gpt-5.6 does not exist or you do not have access to it."}}',
+      ),
+    ).toBe(true);
+  });
+});
+
 describe("isUsageLimitError", () => {
   it("detects the Codex usage_limit_reached payload", () => {
     expect(isUsageLimitError(CODEX_USAGE_LIMIT_RAW)).toBe(true);
@@ -146,6 +157,14 @@ describe("formatAgentErrorMessage", () => {
   it("passes unrelated non-usage-limit errors through unchanged", () => {
     const raw = "Your credit balance is too low to access the Anthropic API.";
     expect(formatAgentErrorMessage(raw)).toBe(raw);
+  });
+
+  it("turns preview entitlement failures into actionable guidance", () => {
+    const out = formatAgentErrorMessage(
+      "The model gpt-5.6-terra is not available for this account",
+    );
+    expect(out).toContain("current account");
+    expect(out).toContain("preview models");
   });
 
   it("omits the reset clause when resets_in_seconds is absent", () => {

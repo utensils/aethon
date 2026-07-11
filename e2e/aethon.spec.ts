@@ -138,17 +138,17 @@ test("boots the real app shell through mocked Tauri IPC", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "aethon" })).toBeVisible();
   await expect(page.locator(".ae-file-tree")).toContainText("package.json");
 
-  const calls = await getInvokeCalls(page);
-  expect(calls.map((c) => c.cmd)).toEqual(
-    expect.arrayContaining([
-      "agent_command",
-      "read_config",
-      "read_state",
-      "host_info",
-      "fs_list_dir",
-      "fs_watch_dirs",
-    ]),
-  );
+  const expectedBootCalls = [
+    "agent_command",
+    "read_config",
+    "read_state",
+    "host_info",
+    "fs_list_dir",
+    "fs_watch_dirs",
+  ];
+  await expect
+    .poll(async () => (await getInvokeCalls(page)).map((call) => call.cmd))
+    .toEqual(expect.arrayContaining(expectedBootCalls));
 });
 
 test("chat canvas contains wide content without horizontal scrolling", async ({
@@ -264,19 +264,21 @@ test("chat canvas contains wide content without horizontal scrolling", async ({
     });
   }).toPass({ timeout: 15000 });
 
-  const containment = await page.locator(".ae-tool-card").evaluate((card) => {
-    const code = card.querySelector(".a2ui-code");
-    if (!code) throw new Error("expected open tool card code block");
-    const scroller = document.querySelector(".a2ui-canvas-scroller");
-    const codeRect = code.getBoundingClientRect();
-    const scrollerRect = scroller?.getBoundingClientRect();
-    return {
-      canvasClientWidth: scroller?.clientWidth ?? 0,
-      canvasScrollWidth: scroller?.scrollWidth ?? 0,
-      codeRight: codeRect.right,
-      scrollerRight: scrollerRect?.right ?? 0,
-    };
-  });
+  const containment = await page
+    .locator(".ae-tool-card .a2ui-code")
+    .evaluate((code) => {
+      const card = code.closest(".ae-tool-card");
+      if (!card) throw new Error("expected code block inside tool card");
+      const scroller = document.querySelector(".a2ui-canvas-scroller");
+      const codeRect = code.getBoundingClientRect();
+      const scrollerRect = scroller?.getBoundingClientRect();
+      return {
+        canvasClientWidth: scroller?.clientWidth ?? 0,
+        canvasScrollWidth: scroller?.scrollWidth ?? 0,
+        codeRight: codeRect.right,
+        scrollerRight: scrollerRect?.right ?? 0,
+      };
+    });
   expect(containment.codeRight).toBeLessThanOrEqual(
     containment.scrollerRight + 1,
   );

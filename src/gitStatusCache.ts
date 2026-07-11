@@ -12,8 +12,13 @@
  * Writes are debounced so a burst of refreshes across 16 projects
  * collapses into a single disk write at the tail of the batch.
  */
-import { readState, writeState } from "./persist";
 import type { GitStatus } from "./hooks/useProjects";
+import {
+  createDebouncedMapWriter,
+  readVersionedMap,
+  writeVersionedMap,
+  type VersionedMapStore,
+} from "./versionedMapPersistence";
 
 const CACHE_FILE = "git-status.json";
 const SCHEMA_VERSION = 1;
@@ -27,51 +32,32 @@ interface CachedEntry extends GitStatus {
   updatedAt: string;
 }
 
-interface CacheFile {
-  schemaVersion: number;
-  entries: Record<string, CachedEntry>;
-}
-
-function emptyCache(): CacheFile {
-  return { schemaVersion: SCHEMA_VERSION, entries: {} };
-}
-
-function parseCache(raw: string): CacheFile {
-  if (!raw) return emptyCache();
-  try {
-    const parsed = JSON.parse(raw) as unknown;
-    if (!parsed || typeof parsed !== "object") return emptyCache();
-    const obj = parsed as { schemaVersion?: number; entries?: unknown };
-    if (obj.schemaVersion !== SCHEMA_VERSION) return emptyCache();
-    if (!obj.entries || typeof obj.entries !== "object") return emptyCache();
-    const entries: Record<string, CachedEntry> = {};
-    for (const [path, value] of Object.entries(obj.entries)) {
-      if (!value || typeof value !== "object") continue;
-      const e = value as Partial<CachedEntry>;
-      if (typeof e.updatedAt !== "string") continue;
-      entries[path] = {
-        branch: typeof e.branch === "string" ? e.branch : undefined,
-        dirty: typeof e.dirty === "boolean" ? e.dirty : undefined,
-        ahead: typeof e.ahead === "number" ? e.ahead : undefined,
-        behind: typeof e.behind === "number" ? e.behind : undefined,
-        updatedAt: e.updatedAt,
-      };
-    }
-    return { schemaVersion: SCHEMA_VERSION, entries };
-  } catch {
-    return emptyCache();
-  }
-}
+const store: VersionedMapStore<CachedEntry> = {
+  file: CACHE_FILE,
+  schemaVersion: SCHEMA_VERSION,
+  decodeEntry: (_path, value) => {
+    if (!value || typeof value !== "object") return undefined;
+    const entry = value as Partial<CachedEntry>;
+    if (typeof entry.updatedAt !== "string") return undefined;
+    return {
+      branch: typeof entry.branch === "string" ? entry.branch : undefined,
+      dirty: typeof entry.dirty === "boolean" ? entry.dirty : undefined,
+      ahead: typeof entry.ahead === "number" ? entry.ahead : undefined,
+      behind: typeof entry.behind === "number" ? entry.behind : undefined,
+      updatedAt: entry.updatedAt,
+    };
+  },
+  encodeEntry: (_path, entry) => entry,
+};
 
 /** Read + parse the on-disk cache. Drops entries older than the
  *  staleness window so callers never have to think about it. Returns
  *  a plain Map keyed by absolute project path. */
 export async function loadCachedStatuses(): Promise<Map<string, GitStatus>> {
-  const raw = await readState(CACHE_FILE);
-  const cache = parseCache(raw);
+  const cache = await readVersionedMap(store);
   const cutoff = Date.now() - STALE_AFTER_MS;
   const out = new Map<string, GitStatus>();
-  for (const [path, entry] of Object.entries(cache.entries)) {
+  for (const [path, entry] of cache) {
     const ts = Date.parse(entry.updatedAt);
     if (Number.isFinite(ts) && ts >= cutoff) {
       out.set(path, {
@@ -85,8 +71,10 @@ export async function loadCachedStatuses(): Promise<Map<string, GitStatus>> {
   return out;
 }
 
-let pendingWriteTimer: ReturnType<typeof setTimeout> | null = null;
-let pendingWriteSnapshot: Map<string, GitStatus> | null = null;
+const writer = createDebouncedMapWriter<GitStatus>({
+  delayMs: WRITE_DEBOUNCE_MS,
+  write: writeStatusesNow,
+});
 
 /** Schedule a debounced write of the current cache snapshot. Multiple
  *  calls within WRITE_DEBOUNCE_MS collapse into one disk write of the
@@ -95,41 +83,29 @@ export function persistStatusesDebounced(statuses: Map<string, GitStatus>): void
   // Clone synchronously — the caller's Map may keep mutating before
   // the debounce timer fires, and we want the snapshot frozen at the
   // moment persistence was requested.
-  pendingWriteSnapshot = new Map(statuses);
-  if (pendingWriteTimer) clearTimeout(pendingWriteTimer);
-  pendingWriteTimer = setTimeout(() => {
-    pendingWriteTimer = null;
-    const snap = pendingWriteSnapshot;
-    pendingWriteSnapshot = null;
-    if (!snap) return;
-    void writeStatusesNow(snap);
-  }, WRITE_DEBOUNCE_MS);
+  writer.schedule(statuses);
 }
 
-async function writeStatusesNow(statuses: Map<string, GitStatus>): Promise<void> {
+async function writeStatusesNow(
+  statuses: ReadonlyMap<string, GitStatus>,
+): Promise<void> {
   const now = new Date().toISOString();
-  const cache: CacheFile = { schemaVersion: SCHEMA_VERSION, entries: {} };
+  const entries = new Map<string, CachedEntry>();
   for (const [path, status] of statuses) {
-    cache.entries[path] = {
+    entries.set(path, {
       branch: status.branch,
       dirty: status.dirty,
       ahead: status.ahead,
       behind: status.behind,
       updatedAt: now,
-    };
+    });
   }
-  await writeState(CACHE_FILE, JSON.stringify(cache));
+  await writeVersionedMap(store, entries);
 }
 
 /** Exposed for tests — flush any pending write immediately. */
 export async function flushPendingWriteForTesting(): Promise<void> {
-  if (pendingWriteTimer) {
-    clearTimeout(pendingWriteTimer);
-    pendingWriteTimer = null;
-  }
-  const snap = pendingWriteSnapshot;
-  pendingWriteSnapshot = null;
-  if (snap) await writeStatusesNow(snap);
+  await writer.flush();
 }
 
 /** Exposed for tests — internal constants. */

@@ -10,7 +10,7 @@ import {
 } from "./extensions/default-layout";
 import { releaseLazySurfaceBootDeferral } from "./extensions/default-layout/lazySurface";
 import { mobileLayoutExtension } from "./mobile/mobileLayoutExtension";
-import { AppRoot } from "./app/AppRoot";
+import { ConnectedAppRoot } from "./app/ConnectedAppRoot";
 import { BOOT_LAYOUT, hangWarnNotifId } from "./app/bootConstants";
 import { useAppForwardRefs } from "./app/useAppForwardRefs";
 import { useAppInteractions } from "./app/useAppInteractions";
@@ -49,7 +49,6 @@ import {
   buildInitialAppStore,
   useSessionPersistence,
 } from "./hooks/useSessionPersistence";
-import { useDerivedRenderState } from "./hooks/useDerivedRenderState";
 import { useTabBucketHydration } from "./hooks/useTabBucketHydration";
 import { useTaskLauncher } from "./hooks/useTaskLauncher";
 import { useRoutedTabHelpers } from "./hooks/useRoutedTabHelpers";
@@ -73,6 +72,22 @@ import {
 import { useAppState } from "./state/appStore";
 import { activeWorkspaceCwd } from "./utils/activeWorkspaceRoot";
 import pkg from "../package.json" with { type: "json" };
+
+function appCoordinatorStateEqual(
+  previous: Record<string, unknown>,
+  next: Record<string, unknown>,
+): boolean {
+  if (previous === next) return true;
+  const keys = new Set([...Object.keys(previous), ...Object.keys(next)]);
+  for (const key of keys) {
+    // Draft is a renderer-owned, high-frequency controlled-input slice. All
+    // imperative consumers read appStore.stateRef, so typing need not rerun
+    // the coordinator hook graph.
+    if (key === "draft") continue;
+    if (!Object.is(previous[key], next[key])) return false;
+  }
+  return true;
+}
 // Vite resolves `?url` imports to a hashed asset URL at build time. Injecting
 // the URL into layout state lets the header bind via `{"$ref": "/logoUrl"}`
 // instead of hardcoding a path that might 404 in a production bundle.
@@ -121,7 +136,7 @@ export default function App() {
     [],
   );
   const { appStore, hasSyncSessionSnapshot } = initialApp;
-  const state = useAppState(appStore, (s) => s);
+  const state = useAppState(appStore, (s) => s, appCoordinatorStateEqual);
   const setState = appStore.setState;
   const nativeWindowsRef = useRef<Map<string, NativeCanvasWindowRecord>>(
     new Map(),
@@ -1018,15 +1033,6 @@ export default function App() {
     checkForUpdates,
   });
 
-  const {
-    renderState,
-    notificationsOpen,
-    paletteOpen,
-    settingsOpen,
-    searchOpen,
-    authProfilesOpen,
-    scheduledTasksOpen,
-  } = useDerivedRenderState({ state, buildSidebarHistory, hostInfo });
   const chromeReady = bootConfigReady && startupChromeReady;
 
   // First activation of a restored background tab opens it in the
@@ -1070,19 +1076,14 @@ export default function App() {
   }, [chromeReady]);
 
   return (
-    <AppRoot
+    <ConnectedAppRoot
+      appStore={appStore}
+      buildSidebarHistory={buildSidebarHistory}
+      hostInfo={hostInfo}
       registry={registry}
       layout={layout}
-      renderState={renderState}
       setState={setState}
       onEvent={onEvent}
-      activeTabId={state.activeTabId as string | undefined}
-      notificationsOpen={notificationsOpen}
-      paletteOpen={paletteOpen}
-      settingsOpen={settingsOpen}
-      searchOpen={searchOpen}
-      authProfilesOpen={authProfilesOpen}
-      scheduledTasksOpen={scheduledTasksOpen}
       chromeReady={chromeReady}
       startupLogoUrl={logoUrl}
       workspaceStartup={workspaceStartupView}

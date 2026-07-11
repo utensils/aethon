@@ -18,7 +18,7 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
 use tauri::{AppHandle, State};
-use tokio::time::sleep;
+use tokio::sync::Notify;
 
 use super::sidecar::project_root;
 use super::spawn::{SpawnShared, ensure_agent_spawned};
@@ -76,8 +76,13 @@ pub(crate) fn prompt_wedged(meta: &WorkerMeta, now: Instant) -> bool {
         && now.duration_since(meta.last_activity) >= WEDGED_PROMPT_CAP
 }
 
+pub(super) type WorkerLifecycleGates = Arc<Mutex<HashMap<String, Arc<Mutex<()>>>>>;
+
 pub(crate) struct AgentProcesses {
-    pub(crate) children: Mutex<HashMap<String, Arc<Mutex<Child>>>>,
+    pub(crate) children: Arc<Mutex<HashMap<String, Arc<Mutex<Child>>>>>,
+    /// Narrow per-key lifecycle gates keep same-worker spawn/respawn ordered
+    /// without holding the global child registry while a process is created.
+    pub(crate) lifecycle: WorkerLifecycleGates,
     pub(crate) mutation_routes: Arc<Mutex<HashMap<String, String>>>,
     pub(crate) intentional_exits: Arc<Mutex<HashSet<String>>>,
     /// Keys the file-watcher has asked to reload gracefully. Consumed at
@@ -86,16 +91,19 @@ pub(crate) struct AgentProcesses {
     /// `agent-reloaded` — instead of popping a phantom crash toast.
     pub(crate) pending_reloads: Arc<Mutex<HashSet<String>>>,
     pub(crate) meta: Arc<Mutex<HashMap<String, WorkerMeta>>>,
+    pub(crate) readiness: Arc<Mutex<HashMap<String, Arc<Notify>>>>,
 }
 
 impl AgentProcesses {
     pub(crate) fn new() -> Self {
         Self {
-            children: Mutex::new(HashMap::new()),
+            children: Arc::new(Mutex::new(HashMap::new())),
+            lifecycle: Arc::new(Mutex::new(HashMap::new())),
             mutation_routes: Arc::new(Mutex::new(HashMap::new())),
             intentional_exits: Arc::new(Mutex::new(HashSet::new())),
             pending_reloads: Arc::new(Mutex::new(HashSet::new())),
             meta: Arc::new(Mutex::new(HashMap::new())),
+            readiness: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -107,8 +115,16 @@ impl AgentProcesses {
             intentional_exits: Arc::clone(&self.intentional_exits),
             pending_reloads: Arc::clone(&self.pending_reloads),
             meta: Arc::clone(&self.meta),
+            readiness: Arc::clone(&self.readiness),
         }
     }
+}
+
+pub(crate) fn lifecycle_gate(lifecycle: &WorkerLifecycleGates, key: &str) -> Arc<Mutex<()>> {
+    lock_recover(lifecycle, "agent lifecycle gates")
+        .entry(key.to_string())
+        .or_insert_with(|| Arc::new(Mutex::new(())))
+        .clone()
 }
 
 /// Whether an outbound payload begins a real agent turn — used to flip
@@ -145,7 +161,11 @@ pub(crate) fn touch_worker_activity(
     }
 }
 
-pub(crate) fn mark_worker_ready(meta: &Arc<Mutex<HashMap<String, WorkerMeta>>>, key: &str) {
+pub(crate) fn mark_worker_ready(
+    meta: &Arc<Mutex<HashMap<String, WorkerMeta>>>,
+    readiness: &Arc<Mutex<HashMap<String, Arc<Notify>>>>,
+    key: &str,
+) {
     let mut map = lock_recover(meta, "worker meta (ready)");
     if let Some(entry) = map.get_mut(key) {
         entry.last_activity = Instant::now();
@@ -160,6 +180,10 @@ pub(crate) fn mark_worker_ready(meta: &Arc<Mutex<HashMap<String, WorkerMeta>>>, 
                 "bridge ready"
             );
         }
+    }
+    drop(map);
+    if let Some(signal) = lock_recover(readiness, "worker readiness (notify)").get(key) {
+        signal.notify_waiters();
     }
 }
 
@@ -194,37 +218,43 @@ fn worker_ready(meta: &Arc<Mutex<HashMap<String, WorkerMeta>>>, key: &str) -> bo
 async fn wait_for_worker_ready(
     child: &Arc<Mutex<Child>>,
     meta: &Arc<Mutex<HashMap<String, WorkerMeta>>>,
+    readiness: &Arc<Mutex<HashMap<String, Arc<Notify>>>>,
     key: &str,
     timeout: Duration,
 ) -> Result<(), String> {
     if key == GLOBAL_AGENT_KEY || worker_ready(meta, key) {
         return Ok(());
     }
-    let start = Instant::now();
-    while start.elapsed() < timeout {
-        if worker_ready(meta, key) {
-            // This wait is the hidden stall between "user acted" and the
-            // fresh worker accepting its first payload — surface it.
-            tracing::info!(
-                target: "aethon::boot",
-                key,
-                waited_ms = start.elapsed().as_millis() as u64,
-                "waited for worker ready"
-            );
-            return Ok(());
-        }
-        if let Some(status) = lock_recover(child, "agent child (ready wait)")
-            .try_wait()
-            .ok()
-            .flatten()
-        {
-            return Err(format!("agent worker exited before ready: {status:?}"));
-        }
-        sleep(Duration::from_millis(25)).await;
+    let signal = lock_recover(readiness, "worker readiness (subscribe)")
+        .entry(key.to_string())
+        .or_insert_with(|| Arc::new(Notify::new()))
+        .clone();
+    let mut notified = Box::pin(signal.notified());
+    notified.as_mut().enable();
+    if worker_ready(meta, key) {
+        return Ok(());
     }
-    Err(format!(
-        "agent worker did not become ready within {timeout:?}"
-    ))
+    let start = Instant::now();
+    tokio::time::timeout(timeout, notified)
+        .await
+        .map_err(|_| format!("agent worker did not become ready within {timeout:?}"))?;
+    if worker_ready(meta, key) {
+        tracing::info!(
+            target: "aethon::boot",
+            key,
+            waited_ms = start.elapsed().as_millis() as u64,
+            "waited for worker ready"
+        );
+        return Ok(());
+    }
+    if let Some(status) = lock_recover(child, "agent child (ready wait)")
+        .try_wait()
+        .ok()
+        .flatten()
+    {
+        return Err(format!("agent worker exited before ready: {status:?}"));
+    }
+    Err("agent worker readiness signal arrived without ready state".to_string())
 }
 
 /// Should this worker be retired by the idle sweep? Pure so the policy is
@@ -318,20 +348,43 @@ pub(crate) async fn write_agent_payload(
     // re-ensure and retry once.
     for _attempt in 0..2 {
         let child = {
-            let mut guard = lock_recover(&state.children, "agent children (write)");
-            ensure_agent_spawned(
-                &mut guard,
-                &key,
-                app,
-                state.spawn_shared(),
-                worker.as_ref(),
-                true,
-            )?;
-            guard.get(&key).cloned().ok_or("agent not running")?
+            let children = Arc::clone(&state.children);
+            let lifecycle = Arc::clone(&state.lifecycle);
+            let spawn_app = app.clone();
+            let shared = state.spawn_shared();
+            let spawn_key = key.clone();
+            let spawn_worker = worker.as_ref().map(|worker| AgentWorker {
+                tab_id: worker.tab_id.clone(),
+                cwd: worker.cwd.clone(),
+            });
+            tokio::task::spawn_blocking(move || {
+                ensure_agent_spawned(
+                    &children,
+                    &lifecycle,
+                    &spawn_key,
+                    &spawn_app,
+                    shared,
+                    spawn_worker.as_ref(),
+                    true,
+                )
+            })
+            .await
+            .map_err(|e| format!("agent spawn task failed: {e}"))??;
+            lock_recover(&state.children, "agent children (write)")
+                .get(&key)
+                .cloned()
+                .ok_or("agent not running")?
         };
 
         if prompt_starts {
-            wait_for_worker_ready(&child, &state.meta, &key, Duration::from_secs(20)).await?;
+            wait_for_worker_ready(
+                &child,
+                &state.meta,
+                &state.readiness,
+                &key,
+                Duration::from_secs(20),
+            )
+            .await?;
         }
 
         let still_current = {
@@ -345,10 +398,14 @@ pub(crate) async fn write_agent_payload(
             continue;
         }
 
-        let write_result = {
-            let mut child = lock_recover(&child, "agent child (write)");
-            write_payload_line(&mut child, &payload)
-        };
+        let write_child = Arc::clone(&child);
+        let write_payload = payload.clone();
+        let write_result = tokio::task::spawn_blocking(move || {
+            let mut child = lock_recover(&write_child, "agent child (write)");
+            write_payload_line(&mut child, &write_payload)
+        })
+        .await
+        .map_err(|e| format!("agent writer task failed: {e}"))?;
         match write_result {
             Ok(()) => {
                 // Inbound traffic counts as activity; a forwarded prompt also
@@ -401,9 +458,9 @@ fn ensure_global_agent_with_handshake(
     app: &AppHandle,
     inject_handshake: bool,
 ) -> Result<(), String> {
-    let mut guard = lock_recover(&state.children, "agent children (ensure global)");
     ensure_agent_spawned(
-        &mut guard,
+        &state.children,
+        &state.lifecycle,
         GLOBAL_AGENT_KEY,
         app,
         state.spawn_shared(),
@@ -413,11 +470,14 @@ fn ensure_global_agent_with_handshake(
 }
 
 pub(crate) fn retire_agent_key(state: &State<'_, AgentProcesses>, key: &str) -> Result<(), String> {
+    let lifecycle_gate = lifecycle_gate(&state.lifecycle, key);
+    let _lifecycle_guard = lock_recover(&lifecycle_gate, "agent lifecycle gate (retire)");
     let child = {
         let mut guard = lock_recover(&state.children, "agent children (retire)");
         guard.remove(key)
     };
     lock_recover(&state.meta, "worker meta (retire)").remove(key);
+    lock_recover(&state.readiness, "worker readiness (retire)").remove(key);
     purge_routes_for_key(&state.mutation_routes, key);
     let Some(child) = child else {
         return Ok(());
@@ -453,6 +513,8 @@ pub(crate) fn shutdown_all_agents(state: &AgentProcesses, reason: &str) {
     }
     lock_recover(&state.mutation_routes, "mutation routes (shutdown)").clear();
     lock_recover(&state.meta, "worker meta (shutdown)").clear();
+    lock_recover(&state.readiness, "worker readiness (shutdown)").clear();
+    lock_recover(&state.lifecycle, "agent lifecycle gates (shutdown)").clear();
 }
 
 pub(crate) fn cleanup_orphaned_dev_agents() {
@@ -935,5 +997,73 @@ mod tests {
         let map = routes.lock().unwrap();
         assert_eq!(map.len(), 1);
         assert_eq!(map.get("m3"), Some(&"tab:live".to_string()));
+    }
+
+    #[tokio::test]
+    async fn ready_transition_wakes_registered_waiter() {
+        use super::mark_worker_ready;
+        use tokio::sync::Notify;
+
+        let key = "tab:ready";
+        let meta = Arc::new(Mutex::new(HashMap::from([(
+            key.to_string(),
+            worker(false, Duration::ZERO),
+        )])));
+        meta.lock().unwrap().get_mut(key).unwrap().bridge_ready = false;
+        let signal = Arc::new(Notify::new());
+        let readiness = Arc::new(Mutex::new(HashMap::from([(
+            key.to_string(),
+            Arc::clone(&signal),
+        )])));
+        let mut waiter = Box::pin(signal.notified());
+        waiter.as_mut().enable();
+
+        mark_worker_ready(&meta, &readiness, key);
+
+        tokio::time::timeout(Duration::from_millis(100), waiter)
+            .await
+            .expect("ready waiter should be notified");
+        assert!(meta.lock().unwrap().get(key).unwrap().bridge_ready);
+    }
+
+    #[test]
+    fn ready_transition_does_not_allocate_signal_without_waiters() {
+        use super::mark_worker_ready;
+
+        let key = "tab:ready";
+        let meta = Arc::new(Mutex::new(HashMap::from([(
+            key.to_string(),
+            worker(false, Duration::ZERO),
+        )])));
+        meta.lock().unwrap().get_mut(key).unwrap().bridge_ready = false;
+        let readiness = Arc::new(Mutex::new(HashMap::new()));
+
+        mark_worker_ready(&meta, &readiness, key);
+
+        assert!(readiness.lock().unwrap().is_empty());
+        assert!(meta.lock().unwrap().get(key).unwrap().bridge_ready);
+    }
+
+    #[test]
+    fn lifecycle_gates_serialize_same_key_but_not_distinct_workers() {
+        use super::lifecycle_gate;
+
+        let lifecycle = Arc::new(Mutex::new(HashMap::new()));
+        let first = lifecycle_gate(&lifecycle, "tab:first");
+        let same = lifecycle_gate(&lifecycle, "tab:first");
+        let second = lifecycle_gate(&lifecycle, "tab:second");
+
+        assert!(Arc::ptr_eq(&first, &same));
+        assert!(!Arc::ptr_eq(&first, &second));
+
+        let _first_guard = first.lock().unwrap();
+        assert!(
+            second.try_lock().is_ok(),
+            "an unrelated worker lifecycle must remain independently writable"
+        );
+        assert!(
+            same.try_lock().is_err(),
+            "the same worker lifecycle must collapse concurrent spawn attempts"
+        );
     }
 }

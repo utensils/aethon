@@ -11,6 +11,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { useDismissibleLayer } from "./use-dismissible-layer";
 import type { BooleanValue, StringValue } from "../../types/a2ui";
 import { resolveBoolean, resolveString } from "../../utils/dataBinding";
 import { resolvePointer } from "../../utils/jsonPointer";
@@ -157,27 +158,13 @@ export function DropdownPickerCore({
     setOpen(true);
   };
 
-  useEffect(() => {
-    if (!open) return;
-    const onDoc = (e: MouseEvent) => {
-      const target = e.target as Node;
-      if (rootRef.current?.contains(target)) return;
-      if (panelRef.current?.contains(target)) return;
-      close();
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") close();
-    };
-    const onResize = () => close();
-    document.addEventListener("mousedown", onDoc);
-    document.addEventListener("keydown", onKey);
-    window.addEventListener("resize", onResize);
-    return () => {
-      document.removeEventListener("mousedown", onDoc);
-      document.removeEventListener("keydown", onKey);
-      window.removeEventListener("resize", onResize);
-    };
-  }, [open]);
+  useDismissibleLayer({
+    active: open,
+    onDismiss: close,
+    insideRefs: [rootRef, panelRef],
+    dismissOnPointerOutside: true,
+    dismissOnResize: true,
+  });
 
   useEffect(() => {
     if (!open) return;

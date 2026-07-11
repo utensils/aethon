@@ -47,6 +47,8 @@ export default defineConfig({
         "**/target/**",
         "**/src-tauri/target/**",
         "**/node_modules/**",
+        "**/playwright-report/**",
+        "**/test-results/**",
       ],
     },
   },

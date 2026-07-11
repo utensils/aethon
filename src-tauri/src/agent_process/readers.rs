@@ -19,6 +19,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::io::{BufRead, BufReader};
 use std::process::{ChildStderr, ChildStdout};
 use std::sync::{Arc, Mutex};
+use tokio::sync::Notify;
 
 use tauri::{AppHandle, Emitter};
 
@@ -34,6 +35,7 @@ use super::process::{
 /// respawned worker's state.
 fn cleanup_after_stdout_eof(
     meta: &Arc<Mutex<HashMap<String, WorkerMeta>>>,
+    readiness: &Arc<Mutex<HashMap<String, Arc<Notify>>>>,
     mutation_routes: &Arc<Mutex<HashMap<String, String>>>,
     key: &str,
     pid: u32,
@@ -43,6 +45,9 @@ fn cleanup_after_stdout_eof(
         .is_some_and(|m| m.pid != pid);
     if !owned_by_other {
         purge_routes_for_key(mutation_routes, key);
+        if let Some(signal) = lock_recover(readiness, "worker readiness (eof)").remove(key) {
+            signal.notify_waiters();
+        }
     }
     clear_worker_meta_for_pid(meta, key, pid);
 }
@@ -62,6 +67,7 @@ pub(super) struct StdoutReaderCtx {
     pub(super) intentional_exits: Arc<Mutex<HashSet<String>>>,
     pub(super) pending_reloads: Arc<Mutex<HashSet<String>>>,
     pub(super) meta: Arc<Mutex<HashMap<String, WorkerMeta>>>,
+    pub(super) readiness: Arc<Mutex<HashMap<String, Arc<Notify>>>>,
     pub(super) stderr_tail: Arc<Mutex<VecDeque<String>>>,
 }
 
@@ -76,6 +82,7 @@ pub(super) fn spawn_stdout_reader(ctx: StdoutReaderCtx) {
         intentional_exits,
         pending_reloads,
         meta,
+        readiness,
         stderr_tail,
     } = ctx;
     std::thread::spawn(move || {
@@ -102,11 +109,11 @@ pub(super) fn spawn_stdout_reader(ctx: StdoutReaderCtx) {
                         }
                         prompt_flag = match value.get("type").and_then(|v| v.as_str()) {
                             Some("worker_ready") => {
-                                mark_worker_ready(&meta, &key);
+                                mark_worker_ready(&meta, &readiness, &key);
                                 None
                             }
                             Some("ready") | Some("tab_ready") => {
-                                mark_worker_ready(&meta, &key);
+                                mark_worker_ready(&meta, &readiness, &key);
                                 None
                             }
                             Some("prompt_started") => Some(true),
@@ -134,7 +141,7 @@ pub(super) fn spawn_stdout_reader(ctx: StdoutReaderCtx) {
             lock_recover(&intentional_exits, "intentional exits (eof)").remove(&key);
         let reload_was_asked = lock_recover(&pending_reloads, "pending reloads (eof)").remove(&key);
         if intentional_exit || saw_reload_done {
-            cleanup_after_stdout_eof(&meta, &mutation_routes, &key, pid);
+            cleanup_after_stdout_eof(&meta, &readiness, &mutation_routes, &key, pid);
             return;
         }
         // The watcher asked this child to reload but the `_reload_done`
@@ -148,7 +155,7 @@ pub(super) fn spawn_stdout_reader(ctx: StdoutReaderCtx) {
                 "reload-asked pid={pid} closed stdout without sentinel; treating as reload"
             );
             let _ = app.emit("agent-reloaded", "");
-            cleanup_after_stdout_eof(&meta, &mutation_routes, &key, pid);
+            cleanup_after_stdout_eof(&meta, &readiness, &mutation_routes, &key, pid);
             return;
         }
         let mut tail: Vec<String> = lock_recover(&stderr_tail, "stderr tail (eof)")
@@ -161,7 +168,7 @@ pub(super) fn spawn_stdout_reader(ctx: StdoutReaderCtx) {
                 key = key,
                 "global agent stdout closed without stderr; waiting for the next global request"
             );
-            cleanup_after_stdout_eof(&meta, &mutation_routes, &key, pid);
+            cleanup_after_stdout_eof(&meta, &readiness, &mutation_routes, &key, pid);
             return;
         }
         fill_empty_stdout_tail(&mut tail, &key, pid);
@@ -174,7 +181,7 @@ pub(super) fn spawn_stdout_reader(ctx: StdoutReaderCtx) {
                 "stderrTail": tail,
             }),
         );
-        cleanup_after_stdout_eof(&meta, &mutation_routes, &key, pid);
+        cleanup_after_stdout_eof(&meta, &readiness, &mutation_routes, &key, pid);
     });
 }
 

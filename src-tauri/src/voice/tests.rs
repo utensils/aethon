@@ -214,6 +214,25 @@ fn distil_provider_skips_backend_probe_when_disabled() {
 }
 
 #[test]
+fn runtime_resources_are_lazy_and_operation_state_starts_idle() {
+    let model_dir = tempdir().expect("model dir");
+    let checker = Arc::new(CountingBackendChecker::new());
+    let registry = VoiceProviderRegistry::with_runtime_and_backend(
+        model_dir.path().to_path_buf(),
+        Arc::new(FakeRecorder::new(vec![0.1])),
+        Arc::new(FakeTranscriber::ok("ignored")),
+        checker.clone(),
+    );
+
+    assert!(!registry.recording_active());
+    assert_eq!(
+        checker.call_count(),
+        0,
+        "constructing runtime resources must not initialize a model backend"
+    );
+}
+
+#[test]
 #[ignore = "requires local Distil-Whisper cache and AETHON_VOICE_SAMPLE_WAV"]
 fn ignored_real_model_probe_transcribes_fixture_wav() {
     let cache_path = std::env::var_os("AETHON_VOICE_MODEL_CACHE")
@@ -743,6 +762,10 @@ async fn start_distil_recording_rejects_already_active_recording() {
         .start_recording(&db_path, DISTIL_ID, None)
         .await
         .expect("first recording starts");
+    assert!(
+        registry.recording_active(),
+        "operation state must reserve microphone ownership"
+    );
     let err = registry
         .start_recording(&db_path, DISTIL_ID, None)
         .await
@@ -750,6 +773,11 @@ async fn start_distil_recording_rejects_already_active_recording() {
 
     assert!(err.contains("already active"));
     assert_eq!(recorder.starts.load(Ordering::Relaxed), 1);
+    registry
+        .cancel_recording(DISTIL_ID)
+        .await
+        .expect("cancel releases recording");
+    assert!(!registry.recording_active());
 }
 
 #[cfg(any(target_os = "macos", windows))]
@@ -1255,7 +1283,7 @@ fn active_download_state_is_runtime_only() {
     let db = open_test_db(&db_path);
     let registry = VoiceProviderRegistry::new(model_dir.path().to_path_buf());
     registry
-        .active_downloads
+        .active_downloads()
         .lock()
         .insert(DISTIL_ID.to_string());
 

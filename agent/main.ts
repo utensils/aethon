@@ -55,6 +55,7 @@ import {
 } from "@mariozechner/pi-coding-agent";
 
 import { logger } from "./logger";
+import { registerOpenAIPreviewModels } from "./openai-preview-models";
 import {
   applyProviderTimeoutOverride,
   runtimeConfigFromEnv,
@@ -153,6 +154,7 @@ async function main(): Promise<void> {
   const endServicesInit = bootTrace.span("services-init");
   state.authStorage = AuthStorage.create();
   state.modelRegistry = ModelRegistry.create(state.authStorage);
+  registerOpenAIPreviewModels(state.modelRegistry);
   state.settingsManager = SettingsManager.create(process.cwd());
   applyProviderTimeoutOverride(state);
   state.authProfiles = loadAuthProfiles(state.userDir);

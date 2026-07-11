@@ -7,6 +7,7 @@ import {
 } from "@mariozechner/pi-coding-agent";
 import type { Api, Model } from "@mariozechner/pi-ai";
 import type { AethonAgentState } from "../state";
+import { registerOpenAIPreviewModels } from "../openai-preview-models";
 import { authProfileAuthPath, isSafeProfileId } from "./store";
 import { findProfile } from "./profile-state";
 import type { AuthProfileProvider, AuthProfileServices } from "./types";
@@ -196,6 +197,7 @@ function servicesForProfileWithStatus(
   mkdirSync(dirname(authPath), { recursive: true });
   const authStorage = AuthStorage.create(authPath);
   const modelRegistry = ModelRegistry.create(authStorage);
+  registerOpenAIPreviewModels(modelRegistry);
   const services = {
     authStorage,
     modelRegistry,

@@ -15,6 +15,7 @@
 //!   by the credential stores (control socket, remote gateway).
 
 pub mod config;
+mod config_snapshot;
 pub mod names;
 pub mod paths;
 pub mod secure_files;
@@ -32,5 +33,6 @@ pub use config::{
     normalize_tool_visibility, normalize_update_channel, normalize_visibility, parse_config_toml,
     parse_host_startup_auto_approve,
 };
+pub use config_snapshot::{ConfigSnapshot, invalidate_config_snapshot, read_config_snapshot};
 pub use names::{sanitize_filename_segment, validate_state_name};
 pub use paths::{aethon_dir, resolve_inside_root};

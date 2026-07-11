@@ -122,6 +122,49 @@ struct Slot {
     notify: Arc<Notify>,
 }
 
+struct RootInspection {
+    root: PathBuf,
+    kind: Option<DevshellKind>,
+    fingerprint: Option<String>,
+    disk_snapshot: Option<ResolvedEnv>,
+}
+
+/// Canonicalization, devshell detection, fingerprinting, and snapshot reads
+/// all touch the filesystem. Keep that work off Tokio's async worker threads;
+/// slow network mounts and cold Nix stores must not stall unrelated IPC.
+async fn inspect_root(
+    root: PathBuf,
+    mode: DetectMode,
+    disk_root: Option<PathBuf>,
+) -> RootInspection {
+    let fallback_root = root.clone();
+    tokio::task::spawn_blocking(move || {
+        let root = canonicalize_key(&root);
+        let kind = detect_with(&root, mode, &RealProbe);
+        let fingerprint = kind.map(|_| fingerprint_inputs(&root));
+        let disk_snapshot = disk_root
+            .as_ref()
+            .zip(fingerprint.as_deref())
+            .and_then(|(disk, fingerprint)| load_disk_snapshot(disk, fingerprint));
+        RootInspection {
+            root,
+            kind,
+            fingerprint,
+            disk_snapshot,
+        }
+    })
+    .await
+    .unwrap_or_else(|error| {
+        tracing::warn!(target: "aethon::devshell", "filesystem inspection task failed: {error}");
+        RootInspection {
+            root: fallback_root,
+            kind: None,
+            fingerprint: None,
+            disk_snapshot: None,
+        }
+    })
+}
+
 /// Process-wide cache. The slots map is held in its own Arc so the
 /// spawned resolver task can write back to the same map the calling
 /// thread reads from, without unsafe and without forcing every
@@ -169,7 +212,12 @@ impl DevshellCache {
     /// `devshell_status` IPC. Never spawns a resolver — the badge
     /// would otherwise warm the cache implicitly on every render.
     pub async fn status(&self, root: &Path) -> StatusSnapshot {
-        let root = canonicalize_key(root);
+        let root = tokio::task::spawn_blocking({
+            let root = root.to_path_buf();
+            move || canonicalize_key(&root)
+        })
+        .await
+        .unwrap_or_else(|_| root.to_path_buf());
         let guard = self.slots.read().await;
         match guard.get(&root).map(|s| &s.state) {
             None => StatusSnapshot::None,
@@ -217,15 +265,17 @@ impl DevshellCache {
         root: &Path,
         mode: DetectMode,
     ) -> EnvForPath {
-        let root = canonicalize_key(root);
-        let Some(kind) = detect_with(&root, mode, &RealProbe) else {
+        let disk_root = self.disk_root.read().await.clone();
+        let inspected = inspect_root(root.to_path_buf(), mode, disk_root).await;
+        let root = inspected.root;
+        let Some(kind) = inspected.kind else {
             return EnvForPath {
                 kind: None,
                 stale: false,
                 env: BTreeMap::new(),
             };
         };
-        let fingerprint = fingerprint_inputs(&root);
+        let fingerprint = inspected.fingerprint.expect("kind has fingerprint");
 
         // Cold-start disk pre-warm: no in-memory slot for this root
         // AND a snapshot on disk matches the current fingerprint?
@@ -234,23 +284,18 @@ impl DevshellCache {
         // boot when nothing has changed since the previous session.
         {
             let already_warm = self.slots.read().await.contains_key(&root);
-            if !already_warm {
-                let disk_root = self.disk_root.read().await.clone();
-                if let Some(disk) = disk_root
-                    && let Some(snap) = load_disk_snapshot(&disk, &fingerprint)
-                {
-                    let mut guard = self.slots.write().await;
-                    guard.entry(root.clone()).or_insert_with(|| Slot {
-                        state: ResolverState::Ready {
-                            kind,
-                            env: snap.env,
-                            resolved_at: SystemTime::now(),
-                            duration_ms: snap.duration_ms,
-                            fingerprint: fingerprint.clone(),
-                        },
-                        notify: Arc::new(Notify::new()),
-                    });
-                }
+            if !already_warm && let Some(snap) = inspected.disk_snapshot {
+                let mut guard = self.slots.write().await;
+                guard.entry(root.clone()).or_insert_with(|| Slot {
+                    state: ResolverState::Ready {
+                        kind,
+                        env: snap.env,
+                        resolved_at: SystemTime::now(),
+                        duration_ms: snap.duration_ms,
+                        fingerprint: fingerprint.clone(),
+                    },
+                    notify: Arc::new(Notify::new()),
+                });
             }
         }
 
@@ -305,8 +350,10 @@ impl DevshellCache {
         root: &Path,
         mode: DetectMode,
     ) -> Result<PreparedEnv, String> {
-        let root = canonicalize_key(root);
-        let Some(kind) = detect_with(&root, mode, &RealProbe) else {
+        let disk_root = self.disk_root.read().await.clone();
+        let inspected = inspect_root(root.to_path_buf(), mode, disk_root).await;
+        let root = inspected.root;
+        let Some(kind) = inspected.kind else {
             return Ok(PreparedEnv {
                 kind: None,
                 stale: false,
@@ -314,8 +361,8 @@ impl DevshellCache {
                 duration_ms: None,
             });
         };
-        let fingerprint = fingerprint_inputs(&root);
-        self.hydrate_from_disk_if_available(&root, kind, &fingerprint)
+        let fingerprint = inspected.fingerprint.expect("kind has fingerprint");
+        self.hydrate_from_snapshot_if_available(&root, kind, &fingerprint, inspected.disk_snapshot)
             .await;
 
         if let Some(ready) = self
@@ -406,31 +453,29 @@ impl DevshellCache {
         root: &Path,
         mode: DetectMode,
     ) -> Result<(), String> {
-        let root = canonicalize_key(root);
-        let Some(kind) = detect_with(&root, mode, &RealProbe) else {
+        let inspected = inspect_root(root.to_path_buf(), mode, None).await;
+        let root = inspected.root;
+        let Some(kind) = inspected.kind else {
             return Err(format!("no devshell detected at {}", root.display()));
         };
-        let fingerprint = fingerprint_inputs(&root);
+        let fingerprint = inspected.fingerprint.expect("kind has fingerprint");
         self.kick_resolve(emitter, root, kind, fingerprint, true)
             .await;
         Ok(())
     }
 
-    async fn hydrate_from_disk_if_available(
+    async fn hydrate_from_snapshot_if_available(
         &self,
         root: &Path,
         kind: DevshellKind,
         fingerprint: &str,
+        snapshot: Option<ResolvedEnv>,
     ) {
         let already_warm = self.slots.read().await.contains_key(root);
         if already_warm {
             return;
         }
-        let disk_root = self.disk_root.read().await.clone();
-        let Some(disk) = disk_root else {
-            return;
-        };
-        let Some(snap) = load_disk_snapshot(&disk, fingerprint) else {
+        let Some(snap) = snapshot else {
             return;
         };
         let mut guard = self.slots.write().await;
@@ -578,16 +623,33 @@ impl DevshellCache {
             let now = SystemTime::now();
             let new_state = match outcome {
                 Ok(resolved) => {
-                    if let Some(disk) = disk_root.as_ref()
-                        && let Err(e) =
-                            write_disk_snapshot(disk, &root, kind, &fingerprint_owned, &resolved)
-                    {
-                        tracing::warn!(
-                            target: "aethon::devshell",
-                            "snapshot write for {}: {}",
-                            root.display(),
-                            e
-                        );
+                    if let Some(disk) = disk_root {
+                        let write_root = root.clone();
+                        let write_fingerprint = fingerprint_owned.clone();
+                        let snapshot = resolved.clone();
+                        let write_result = tokio::task::spawn_blocking(move || {
+                            write_disk_snapshot(
+                                &disk,
+                                &write_root,
+                                kind,
+                                &write_fingerprint,
+                                &snapshot,
+                            )
+                        })
+                        .await
+                        .unwrap_or_else(|error| {
+                            Err(std::io::Error::other(format!(
+                                "snapshot writer task failed: {error}"
+                            )))
+                        });
+                        if let Err(e) = write_result {
+                            tracing::warn!(
+                                target: "aethon::devshell",
+                                "snapshot write for {}: {}",
+                                root.display(),
+                                e
+                            );
+                        }
                     }
                     ResolverState::Ready {
                         kind,
@@ -972,6 +1034,40 @@ mod tests {
 
         // Mismatched fingerprint returns None.
         assert!(load_disk_snapshot(td.path(), "deadbeef").is_none());
+    }
+
+    #[tokio::test]
+    async fn async_root_inspection_hydrates_matching_disk_snapshot() {
+        let project = tempfile::tempdir().unwrap();
+        let disk = tempfile::tempdir().unwrap();
+        std::fs::write(project.path().join("flake.nix"), "{}").unwrap();
+        let fingerprint = fingerprint_inputs(project.path());
+        let resolved = ResolvedEnv {
+            env: BTreeMap::from([("FROM_DISK".into(), "1".into())]),
+            duration_ms: 42,
+        };
+        write_disk_snapshot(
+            disk.path(),
+            project.path(),
+            DevshellKind::Flake,
+            &fingerprint,
+            &resolved,
+        )
+        .unwrap();
+
+        let inspected = inspect_root(
+            project.path().to_path_buf(),
+            DetectMode::Auto,
+            Some(disk.path().to_path_buf()),
+        )
+        .await;
+
+        assert_eq!(inspected.kind, Some(DevshellKind::Flake));
+        assert_eq!(inspected.fingerprint.as_deref(), Some(fingerprint.as_str()));
+        assert_eq!(
+            inspected.disk_snapshot.unwrap().env.get("FROM_DISK"),
+            Some(&"1".to_string())
+        );
     }
 
     #[test]

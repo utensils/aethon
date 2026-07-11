@@ -107,26 +107,46 @@ const SubagentsConfig = lazySurface("subagents-config", () =>
   })),
 );
 
-/** Warm every lazy surface chunk. Called from App on the first idle
- *  after chrome-ready so first-open latency is ~zero. */
+const preloadTiers = [
+  // Small, commonly keyboard-invoked overlays first.
+  [CommandPalette, SearchPanel, SettingsPanel],
+  // Secondary management surfaces next.
+  [AuthProfilePanel, ScheduledTasksPanel, SourceControlPanel, SubagentsConfig],
+  // Media and interactive runtimes last: Monaco and xterm have the largest
+  // parse/evaluation and memory costs.
+  [MarkdownPreview, ImageViewer, TerminalPanel, Terminal, ShellCanvas],
+  [EditorCanvas, DiffCanvas],
+] as const;
+
+type IdleWindow = Window & {
+  requestIdleCallback?: (
+    callback: () => void,
+    options?: { timeout: number },
+  ) => number;
+};
+
+function scheduleNextPreload(callback: () => void): void {
+  const idleWindow = window as IdleWindow;
+  if (idleWindow.requestIdleCallback) {
+    idleWindow.requestIdleCallback(callback, { timeout: 5_000 });
+  } else {
+    window.setTimeout(callback, 1_000);
+  }
+}
+
+/** Warm lazy chunks gradually after chrome-ready. Only one chunk begins in an
+ * idle turn, ordered by likelihood and cost, so WebKit never receives the old
+ * all-at-once Monaco/xterm/overlay parse burst. A real mount still loads its
+ * surface immediately through `lazySurface`. */
 export function preloadDefaultLayoutSurfaces(): void {
-  for (const surface of [
-    EditorCanvas,
-    DiffCanvas,
-    ImageViewer,
-    MarkdownPreview,
-    ShellCanvas,
-    TerminalPanel,
-    Terminal,
-    SettingsPanel,
-    AuthProfilePanel,
-    SearchPanel,
-    ScheduledTasksPanel,
-    CommandPalette,
-    SourceControlPanel,
-    SubagentsConfig,
-  ]) {
-    void surface.preload();
+  const queue = preloadTiers.flatMap((tier) => [...tier]);
+  const preloadNext = () => {
+    const surface = queue.shift();
+    if (!surface) return;
+    void surface.preload().finally(() => scheduleNextPreload(preloadNext));
+  };
+  if (queue.length > 0) {
+    scheduleNextPreload(preloadNext);
   }
 }
 

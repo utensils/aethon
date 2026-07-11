@@ -1,6 +1,7 @@
 import { useEffect, useRef, type MutableRefObject } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { safeUnlisten } from "../utils/safeUnlisten";
 import {
   switchAccountForTab,
   type AccountSwitchTarget,
@@ -87,7 +88,7 @@ export function useControlRequests(ctx: UseControlRequestsContext): void {
     );
     return () => {
       disposed = true;
-      unlisten.then((fn) => fn());
+      void unlisten.then(safeUnlisten).catch(() => {});
     };
   }, []);
 }

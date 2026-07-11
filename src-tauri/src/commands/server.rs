@@ -18,8 +18,7 @@ pub struct ServerStatus {
 
 #[tauri::command]
 pub async fn server_status(state: State<'_, Arc<ServerState>>) -> Result<ServerStatus, String> {
-    let running = state.is_running().await;
-    let port = state.port().await;
+    let (running, port) = state.status().await;
     Ok(ServerStatus { running, port })
 }
 

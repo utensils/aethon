@@ -21,6 +21,7 @@
 import { useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { safeUnlisten } from "../utils/safeUnlisten";
 
 export interface DevshellEntry {
   kind: string | null;
@@ -207,15 +208,6 @@ export function useDevshell(opts: UseDevshellOptions): void {
       for (const fn of unlisteners) safeUnlisten(fn);
     };
   }, []);
-}
-
-function safeUnlisten(fn: UnlistenFn): void {
-  try {
-    fn();
-  } catch {
-    // Tauri can already have dropped listener ids during webview reload or
-    // app shutdown. Cleanup is best-effort; avoid surfacing teardown noise.
-  }
 }
 
 function entryFromStatus(s: StatusResponse): DevshellEntry | null {

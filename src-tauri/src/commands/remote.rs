@@ -31,9 +31,10 @@ pub async fn remote_status(
     remote: State<'_, Arc<RemoteState>>,
 ) -> Result<RemoteStatus, String> {
     let identity = crate::server::tls::identity();
+    let (running, port) = server.status().await;
     Ok(RemoteStatus {
-        running: server.is_running().await,
-        port: server.port().await,
+        running,
+        port,
         tls_active: identity.is_some(),
         fingerprint: identity.map(|i| i.fingerprint.clone()),
         pairing_active: remote.pairing.lock().map_err(|e| e.to_string())?.is_some(),

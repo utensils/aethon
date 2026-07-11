@@ -141,7 +141,7 @@ export function useDerivedRenderState({
   buildSidebarHistory,
   hostInfo,
 }: UseDerivedRenderStateOptions): DerivedRenderStateResult {
-  const renderState = useMemo(() => {
+  const derivedOverrides = useMemo(() => {
     const tabs = (state.tabs as Tab[] | undefined) ?? [];
     const recentSessions =
       (state.recentSessions as RecentSessionItem[] | undefined) ?? [];
@@ -436,7 +436,6 @@ export function useDerivedRenderState({
     }
 
     return {
-      ...state,
       projects: activeHostProjects,
       activeTabId: effectiveActiveTabId,
       hasTabs,
@@ -468,6 +467,9 @@ export function useDerivedRenderState({
       activeHostId,
       host: activeHostDetails,
     };
+    // State is intentionally decomposed below: unrelated high-frequency root
+    // slices must not invalidate the expensive sidebar/project derivation.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     buildSidebarHistory,
     hostInfo.activeHostId,
@@ -476,8 +478,32 @@ export function useDerivedRenderState({
     hostInfo.mobileDevices,
     hostInfo.remoteProjectsByHost,
     hostInfo.remoteProjectStatusByHost,
-    state,
+    state.activeHostId,
+    state.activeProjectId,
+    state.activeTabId,
+    state.activeWorkspaceId,
+    state.agentAttentionTabs,
+    state.agentRunningTabs,
+    state.landing,
+    state.persistedTabBuckets,
+    state.project,
+    state.projectDashboard,
+    state.projects,
+    state.projectsDashboard,
+    state.recentSessions,
+    state.sidebar,
+    state.tabs,
   ]);
+
+  // High-frequency slices such as draft text, streamed messages, terminal
+  // output, and transient status still need to reach the renderer, but they
+  // do not affect the expensive project/sidebar/landing derivation above.
+  // Merge them into a fresh root while preserving every derived subtree by
+  // reference until one of its actual inputs changes.
+  const renderState = useMemo(
+    () => ({ ...state, ...derivedOverrides }),
+    [derivedOverrides, state],
+  );
 
   const renderRecord = renderState as Record<string, unknown>;
   const notificationsOpen =

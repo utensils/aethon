@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { safeUnlisten } from "../utils/safeUnlisten";
 import type { ScheduledTaskRecord } from "../scheduledTasks";
 import type { Tab } from "../types/tab";
 
@@ -28,48 +29,59 @@ export function useFrontendStateMirror(
   ctx: UseFrontendStateMirrorContext,
 ): void {
   const { state } = ctx;
+  const stateRef = useRef(state);
   const lastFrontendStateRef = useRef<Record<string, string>>({});
   const lastControlSnapshotRef = useRef<string>("");
   const frontendPatchTimerRef = useRef<number | null>(null);
+  const mountedRef = useRef(true);
+  const retryAttemptsRef = useRef<Record<string, number>>({});
+  const retryValuesRef = useRef<Record<string, string>>({});
+  const flushRef = useRef<() => void>(() => {});
+  const scheduleFlushRef = useRef<(delay?: number) => void>(() => {});
 
   useEffect(() => {
-    const unlisten = listen<string>("agent-reloaded", () => {
-      // The fresh bridge lost its in-memory frontendState mirror. Clear
-      // the local diff cache so the next state tick resends every watched
-      // slice, even if the React value itself did not change.
-      lastFrontendStateRef.current = {};
-    });
-    return () => {
-      unlisten.then((fn) => fn());
+    stateRef.current = state;
+  }, [state]);
+
+  useEffect(() => {
+    scheduleFlushRef.current = (delay = 16) => {
+      if (!mountedRef.current) return;
+      if (frontendPatchTimerRef.current !== null) {
+        window.clearTimeout(frontendPatchTimerRef.current);
+      }
+      frontendPatchTimerRef.current = window.setTimeout(() => {
+        frontendPatchTimerRef.current = null;
+        flushRef.current();
+      }, delay);
     };
-  }, []);
 
-  useEffect(() => {
-    if (frontendPatchTimerRef.current !== null) {
-      window.clearTimeout(frontendPatchTimerRef.current);
-    }
-    frontendPatchTimerRef.current = window.setTimeout(() => {
-      frontendPatchTimerRef.current = null;
+    flushRef.current = () => {
+      const currentState = stateRef.current;
       // Snapshot the watched slices. Each entry maps a JSON-Pointer-like
       // path the bridge will store under to a value the frontend computes
       // from current state.
       const sidebar =
-        (state.sidebar as Record<string, unknown> | undefined) ?? {};
-      const tabs = (state.tabs as Tab[] | undefined) ?? [];
-      const messagesCount = ((state.messages as unknown[] | undefined) ?? [])
-        .length;
+        (currentState.sidebar as Record<string, unknown> | undefined) ?? {};
+      const tabs = (currentState.tabs as Tab[] | undefined) ?? [];
+      const messagesCount = (
+        (currentState.messages as unknown[] | undefined) ?? []
+      ).length;
       const scheduledTasks =
-        (state.scheduledTasks as { tasks?: ScheduledTaskRecord[] } | undefined)
-          ?.tasks ?? [];
+        (
+          currentState.scheduledTasks as
+            | { tasks?: ScheduledTaskRecord[] }
+            | undefined
+        )?.tasks ?? [];
       const slices: Record<string, unknown> = {
         "/sidebar/models": sidebar.models ?? [],
         "/sidebar/themes": sidebar.themes ?? [],
-        "/connection": state.connection ?? "disconnected",
-        "/status": state.status ?? "",
-        "/draft": state.draft ?? "",
+        "/connection": currentState.connection ?? "disconnected",
+        "/status": currentState.status ?? "",
+        "/draft": currentState.draft ?? "",
         "/messagesCount": messagesCount,
-        "/nativeWindows": state.nativeWindows ?? [],
-        "/extensionFrontendModules": state.extensionFrontendModules ?? [],
+        "/nativeWindows": currentState.nativeWindows ?? [],
+        "/extensionFrontendModules":
+          currentState.extensionFrontendModules ?? [],
         "/scheduledTasks": scheduledTasks.map((task) => ({
           id: task.id,
           label: task.label,
@@ -91,67 +103,102 @@ export function useFrontendStateMirror(
           model: t.model ?? "",
           waiting: t.waiting === true,
           authProfileId: t.authProfileId,
-          active: t.id === (state.activeTabId as string | undefined),
+          active: t.id === (currentState.activeTabId as string | undefined),
         })),
       };
-      // Mirror the control snapshot, but only when it actually changed.
-      // Without this diff-gate every state tick (composer keystroke, streaming
-      // delta) would re-push an identical full snapshot — the same churn the
-      // per-slice patches below take pains to avoid.
       const controlSnapshot = {
         location: typeof window !== "undefined" ? window.location.href : null,
-        status: state.status ?? "",
-        connection: state.connection ?? "disconnected",
-        waiting: state.waiting === true,
+        status: currentState.status ?? "",
+        connection: currentState.connection ?? "disconnected",
+        waiting: currentState.waiting === true,
         theme:
           typeof document !== "undefined"
-            ? document.documentElement.dataset.theme ?? ""
+            ? (document.documentElement.dataset.theme ?? "")
             : "",
-        model: state.model ?? "",
-        activeTabId: state.activeTabId ?? null,
-        authProfiles: state.authProfiles ?? { profiles: [] },
+        model: currentState.model ?? "",
+        activeTabId: currentState.activeTabId ?? null,
+        authProfiles: currentState.authProfiles ?? { profiles: [] },
         models: sidebar.models ?? [],
         tabs: slices["/tabs"],
       };
       const controlSerialized = JSON.stringify(controlSnapshot);
       if (controlSerialized !== lastControlSnapshotRef.current) {
-        lastControlSnapshotRef.current = controlSerialized;
-        invoke("control_update_state", { snapshot: controlSnapshot }).catch(
-          () => {
-            // Older app builds or early boot before the command is registered;
-            // reset so the next change re-pushes.
-            lastControlSnapshotRef.current = "";
-          },
-        );
+        invoke("control_update_state", { snapshot: controlSnapshot })
+          .then(() => {
+            // A newer snapshot may have been sent while this request was in
+            // flight. Only cache the value if it is still the desired one.
+            const latest = stateRef.current;
+            if (latest === currentState) {
+              lastControlSnapshotRef.current = controlSerialized;
+            }
+          })
+          .catch(() => scheduleFlushRef.current(100));
       }
-      const last = lastFrontendStateRef.current;
-      const next: Record<string, string> = { ...last };
-      let changed = false;
       for (const [path, value] of Object.entries(slices)) {
         const serialized = JSON.stringify(value);
-        if (last[path] === serialized) continue;
-        next[path] = serialized;
-        changed = true;
-        // Fire-and-forget — bridge processes the patch and updates its
-        // frontendState map. No ack needed; this is one-way mirroring.
+        if (lastFrontendStateRef.current[path] === serialized) continue;
+        if (retryValuesRef.current[path] !== serialized) {
+          retryValuesRef.current[path] = serialized;
+          retryAttemptsRef.current[path] = 0;
+        }
         invoke("agent_command", {
           payload: JSON.stringify({
             type: "frontend_state_patch",
             path,
             value,
           }),
-        }).catch(() => {
-          // Bridge gone or webview reloaded mid-flight — fine, the next
-          // patch will retry, and the bridge sees these as best-effort.
-        });
+        })
+          .then(() => {
+            if (retryValuesRef.current[path] !== serialized) return;
+            lastFrontendStateRef.current[path] = serialized;
+            retryAttemptsRef.current[path] = 0;
+          })
+          .catch(() => {
+            if (retryValuesRef.current[path] !== serialized) return;
+            const attempts = (retryAttemptsRef.current[path] ?? 0) + 1;
+            retryAttemptsRef.current[path] = attempts;
+            if (attempts <= 3) {
+              scheduleFlushRef.current(100 * 2 ** (attempts - 1));
+            }
+          });
       }
-      if (changed) lastFrontendStateRef.current = next;
-    }, 16);
+    };
+  }, []);
+
+  useEffect(() => {
+    const unlisten = listen<string>("agent-reloaded", () => {
+      // The fresh bridge lost its in-memory frontendState mirror. Clear
+      // the local diff cache so the next state tick resends every watched
+      // slice, even if the React value itself did not change.
+      lastFrontendStateRef.current = {};
+      lastControlSnapshotRef.current = "";
+      retryAttemptsRef.current = {};
+      retryValuesRef.current = {};
+      // Reload is itself the state transition. React may not render again,
+      // so actively restore the fresh bridge's mirror from the latest state.
+      if (frontendPatchTimerRef.current !== null) {
+        window.clearTimeout(frontendPatchTimerRef.current);
+        frontendPatchTimerRef.current = null;
+      }
+      flushRef.current();
+    });
     return () => {
+      void unlisten.then(safeUnlisten).catch(() => {});
+    };
+  }, []);
+
+  useEffect(() => {
+    scheduleFlushRef.current();
+  }, [state]);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
       if (frontendPatchTimerRef.current !== null) {
         window.clearTimeout(frontendPatchTimerRef.current);
         frontendPatchTimerRef.current = null;
       }
     };
-  }, [state]);
+  }, []);
 }

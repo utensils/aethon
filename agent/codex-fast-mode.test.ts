@@ -15,6 +15,9 @@ describe("Codex Fast mode", () => {
   it("is only supported for documented Codex models", () => {
     expect(supportsCodexFastMode(model("openai-codex", "gpt-5.5"))).toBe(true);
     expect(supportsCodexFastMode(model("openai-codex", "gpt-5.4"))).toBe(true);
+    expect(supportsCodexFastMode(model("openai-codex", "gpt-5.6-sol"))).toBe(
+      true,
+    );
     expect(supportsCodexFastMode(model("openai-codex", "gpt-5.3-codex"))).toBe(
       false,
     );
