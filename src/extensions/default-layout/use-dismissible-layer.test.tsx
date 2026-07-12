@@ -40,4 +40,18 @@ describe("useDismissibleLayer", () => {
     fireEvent.keyDown(document, { key: "Escape" });
     expect(onDismiss).not.toHaveBeenCalled();
   });
+
+  it("dismisses when a nested scroll container scrolls", () => {
+    const onDismiss = vi.fn();
+    const scroller = document.createElement("div");
+    document.body.append(scroller);
+    renderHook(() =>
+      useDismissibleLayer({ active: true, onDismiss, dismissOnScroll: true }),
+    );
+
+    fireEvent.scroll(scroller);
+
+    expect(onDismiss).toHaveBeenCalledOnce();
+    scroller.remove();
+  });
 });

@@ -44,7 +44,9 @@ export function useDismissibleLayer({
       document.addEventListener("mousedown", onPointer, capture);
     }
     if (dismissOnResize) window.addEventListener("resize", dismiss);
-    if (dismissOnScroll) document.addEventListener("scroll", dismiss, capture);
+    // Scroll does not bubble, so capture is required to observe scrolling in
+    // nested containers regardless of the pointer-listener capture setting.
+    if (dismissOnScroll) document.addEventListener("scroll", dismiss, true);
     return () => {
       document.removeEventListener("keydown", onKeyDown);
       if (dismissOnPointerOutside) {
@@ -52,7 +54,7 @@ export function useDismissibleLayer({
       }
       if (dismissOnResize) window.removeEventListener("resize", dismiss);
       if (dismissOnScroll) {
-        document.removeEventListener("scroll", dismiss, capture);
+        document.removeEventListener("scroll", dismiss, true);
       }
     };
   }, [

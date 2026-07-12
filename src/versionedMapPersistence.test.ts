@@ -70,4 +70,19 @@ describe("versioned map persistence", () => {
     expect(write.mock.calls[0][0]).toEqual(new Map([["a", 2]]));
     vi.useRealTimers();
   });
+
+  it("contains scheduled write failures while explicit flush reports them", async () => {
+    vi.useFakeTimers();
+    const failure = new Error("disk unavailable");
+    const write = vi.fn().mockRejectedValue(failure);
+    const writer = createDebouncedMapWriter({ delayMs: 20, write });
+
+    writer.schedule(new Map([["a", 1]]));
+    await vi.advanceTimersByTimeAsync(20);
+    expect(write).toHaveBeenCalledOnce();
+
+    writer.schedule(new Map([["b", 2]]));
+    await expect(writer.flush()).rejects.toBe(failure);
+    vi.useRealTimers();
+  });
 });

@@ -78,13 +78,16 @@ function appCoordinatorStateEqual(
   next: Record<string, unknown>,
 ): boolean {
   if (previous === next) return true;
-  const keys = new Set([...Object.keys(previous), ...Object.keys(next)]);
-  for (const key of keys) {
+  for (const key of Object.keys(previous)) {
     // Draft is a renderer-owned, high-frequency controlled-input slice. All
     // imperative consumers read appStore.stateRef, so typing need not rerun
     // the coordinator hook graph.
     if (key === "draft") continue;
     if (!Object.is(previous[key], next[key])) return false;
+  }
+  for (const key of Object.keys(next)) {
+    if (key === "draft" || Object.hasOwn(previous, key)) continue;
+    return false;
   }
   return true;
 }

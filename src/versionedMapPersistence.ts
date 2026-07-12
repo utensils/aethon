@@ -72,7 +72,12 @@ export function createDebouncedMapWriter<T>(options: {
     schedule(entries: ReadonlyMap<string, T>): void {
       snapshot = new Map(entries);
       if (timer) clearTimeout(timer);
-      timer = setTimeout(() => void flush(), options.delayMs);
+      timer = setTimeout(() => {
+        void flush().catch(() => {
+          // Scheduled persistence is best-effort; explicit flush() callers
+          // still receive failures when they need to surface them.
+        });
+      }, options.delayMs);
     },
     flush,
     cancel(): void {
