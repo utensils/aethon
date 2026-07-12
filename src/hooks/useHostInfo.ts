@@ -8,6 +8,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { safeUnlisten } from "../utils/safeUnlisten";
 import { getLocalHost, type Host } from "../hosts";
 import {
   remoteDevicesList,
@@ -244,9 +245,9 @@ export function useHostInfo(): UseHostInfo {
           },
         );
         if (cancelled) {
-          offDiscovered();
-          offRemoved();
-          offStatus();
+          safeUnlisten(offDiscovered);
+          safeUnlisten(offRemoved);
+          safeUnlisten(offStatus);
           return;
         }
         off = [offDiscovered, offRemoved, offStatus];

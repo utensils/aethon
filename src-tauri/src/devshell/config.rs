@@ -6,19 +6,16 @@
 //! `<project>/.aethon/devshell.toml` override. Keep that merge in one
 //! non-IPC helper so command status/prepare and shell opens cannot drift.
 
-use std::io::Read;
 use std::path::Path;
 
 use tauri::{AppHandle, Manager, Runtime};
 
 use crate::helpers::config::{
-    normalize_devshell_enabled, normalize_devshell_mode, parse_config_toml,
-    parse_project_devshell_override,
+    normalize_devshell_enabled, normalize_devshell_mode, parse_project_devshell_override,
 };
 
 use super::DetectMode;
 
-const CONFIG_READ_LIMIT_BYTES: u64 = 64 * 1024;
 const PROJECT_OVERRIDE_READ_LIMIT_BYTES: usize = 64 * 1024;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -70,7 +67,10 @@ fn effective_config_from_paths(
     global_config_path: Option<&Path>,
     root: &Path,
 ) -> EffectiveDevshellConfig {
-    let global = parse_config_toml(&read_global_config(global_config_path));
+    let global = global_config_path
+        .map(crate::helpers::read_config_snapshot)
+        .map(|snapshot| snapshot.parsed)
+        .unwrap_or_else(|| crate::helpers::parse_config_toml(""));
     let mut enabled = global["devshell"]["enabled"]
         .as_str()
         .unwrap_or("auto")
@@ -96,17 +96,6 @@ fn effective_config_from_paths(
     }
 
     EffectiveDevshellConfig::new(enabled, DetectMode::from_str(&mode))
-}
-
-fn read_global_config(global_config_path: Option<&Path>) -> String {
-    let Some(path) = global_config_path else {
-        return String::new();
-    };
-    let mut buf = String::new();
-    if let Ok(file) = std::fs::File::open(path) {
-        let _ = file.take(CONFIG_READ_LIMIT_BYTES).read_to_string(&mut buf);
-    }
-    buf
 }
 
 #[cfg(test)]

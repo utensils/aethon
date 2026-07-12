@@ -1,18 +1,67 @@
 use super::*;
 
 pub struct VoiceProviderRegistry {
+    runtime: VoiceRuntimeResources,
+    operations: VoiceOperationState,
+}
+
+/// Long-lived, lazily-used provider resources. Constructing the registry only
+/// wires handles; model weights and subprocesses remain initialized on demand.
+struct VoiceRuntimeResources {
     model_root: PathBuf,
-    active_recording: Mutex<Option<RecordingSession>>,
     recorder: Arc<dyn AudioRecorder>,
     transcriber: Arc<dyn VoiceTranscriber>,
     pub(super) platform_speech: Arc<dyn PlatformSpeechEngine>,
     pub(super) lfm2: Arc<dyn Lfm2Backend>,
     backend_checker: Arc<dyn CandleBackendChecker>,
     transcription_timeout: Duration,
+}
+
+/// Short-lived ownership and cooperative-cancellation state. Keeping these
+/// locks together makes the dictation/synthesis lifecycle independent of the
+/// heavyweight provider resources above.
+struct VoiceOperationState {
+    active_recording: Mutex<Option<RecordingSession>>,
     active_distil_cancel: Mutex<Option<Arc<AtomicBool>>>,
     active_lfm2_cancel: Mutex<Option<Arc<AtomicBool>>>,
     active_tts_cancel: Mutex<Option<Arc<AtomicBool>>>,
     pub(super) active_downloads: Mutex<std::collections::HashSet<String>>,
+}
+
+impl VoiceOperationState {
+    fn new() -> Self {
+        Self {
+            active_recording: Mutex::new(None),
+            active_distil_cancel: Mutex::new(None),
+            active_lfm2_cancel: Mutex::new(None),
+            active_tts_cancel: Mutex::new(None),
+            active_downloads: Mutex::new(std::collections::HashSet::new()),
+        }
+    }
+
+    fn recording_active(&self) -> bool {
+        self.active_recording.lock().is_some()
+    }
+
+    fn start_recording(
+        &self,
+        recorder: &dyn AudioRecorder,
+        app: Option<AppHandle>,
+    ) -> Result<u128, String> {
+        let mut active = self.active_recording.lock();
+        if active.is_some() {
+            return Err("Voice recording is already active".to_string());
+        }
+        let started = Instant::now();
+        let mut session = recorder.start()?;
+        let stream_open_ms = started.elapsed().as_millis();
+        if let Some(app) = app {
+            let abort = spawn_level_emitter(app, Arc::clone(&session.samples));
+            session._level_task = Some(LevelTask(abort));
+        }
+        *active = Some(session);
+        Ok(stream_open_ms)
+    }
 }
 
 impl VoiceProviderRegistry {
@@ -20,7 +69,7 @@ impl VoiceProviderRegistry {
     /// conversation engine checks this before opening its streaming mic (and
     /// vice versa) so the two capture paths never contend for the device.
     pub(crate) fn recording_active(&self) -> bool {
-        self.active_recording.lock().is_some()
+        self.operations.recording_active()
     }
 
     // Component accessors for the conversation engine's local providers —
@@ -29,15 +78,24 @@ impl VoiceProviderRegistry {
     // objects are voice-internal; commands go through the connectors'
     // `from_registry` constructors.
     pub(super) fn model_root(&self) -> &Path {
-        &self.model_root
+        &self.runtime.model_root
     }
 
     pub(super) fn whisper_transcriber(&self) -> Arc<dyn VoiceTranscriber> {
-        Arc::clone(&self.transcriber)
+        Arc::clone(&self.runtime.transcriber)
     }
 
     pub(super) fn lfm2_backend(&self) -> Arc<dyn Lfm2Backend> {
-        Arc::clone(&self.lfm2)
+        Arc::clone(&self.runtime.lfm2)
+    }
+
+    #[cfg(any(target_os = "macos", windows))]
+    pub(super) fn platform_speech_engine(&self) -> &dyn PlatformSpeechEngine {
+        self.runtime.platform_speech.as_ref()
+    }
+
+    pub(super) fn active_downloads(&self) -> &Mutex<std::collections::HashSet<String>> {
+        &self.operations.active_downloads
     }
 
     pub fn new(model_root: PathBuf) -> Self {
@@ -124,18 +182,16 @@ impl VoiceProviderRegistry {
     ) -> Self {
         let lfm2: Arc<dyn Lfm2Backend> = Arc::new(Lfm2CliBackend::new(model_root.clone()));
         Self {
-            model_root,
-            active_recording: Mutex::new(None),
-            recorder,
-            transcriber,
-            platform_speech,
-            lfm2,
-            backend_checker,
-            transcription_timeout,
-            active_distil_cancel: Mutex::new(None),
-            active_lfm2_cancel: Mutex::new(None),
-            active_tts_cancel: Mutex::new(None),
-            active_downloads: Mutex::new(std::collections::HashSet::new()),
+            runtime: VoiceRuntimeResources {
+                model_root,
+                recorder,
+                transcriber,
+                platform_speech,
+                lfm2,
+                backend_checker,
+                transcription_timeout,
+            },
+            operations: VoiceOperationState::new(),
         }
     }
 
@@ -143,7 +199,7 @@ impl VoiceProviderRegistry {
     /// intact. Mirrors the recorder/transcriber substitution helpers above.
     #[cfg(test)]
     pub(super) fn with_lfm2_backend(mut self, lfm2: Arc<dyn Lfm2Backend>) -> Self {
-        self.lfm2 = lfm2;
+        self.runtime.lfm2 = lfm2;
         self
     }
 
@@ -158,11 +214,11 @@ impl VoiceProviderRegistry {
     }
 
     pub fn distil_cache_path(&self) -> PathBuf {
-        self.model_root.join(DISTIL_CACHE_DIR)
+        self.runtime.model_root.join(DISTIL_CACHE_DIR)
     }
 
     pub fn lfm2_cache_path(&self) -> PathBuf {
-        self.model_root.join(LFM2_CACHE_DIR)
+        self.runtime.model_root.join(LFM2_CACHE_DIR)
     }
 
     pub fn list_providers(&self, db: &VoiceSettings) -> Vec<VoiceProviderInfo> {
@@ -302,7 +358,7 @@ impl VoiceProviderRegistry {
             if !self.enabled(&db, PLATFORM_ID) {
                 return Err("System dictation is disabled".to_string());
             }
-            let platform_speech = Arc::clone(&self.platform_speech);
+            let platform_speech = Arc::clone(&self.runtime.platform_speech);
             let availability = tokio::task::spawn_blocking(move || platform_speech.prepare())
                 .await
                 .map_err(|e| format!("System dictation permission task failed: {e}"))?;
@@ -311,23 +367,13 @@ impl VoiceProviderRegistry {
             }
         }
 
-        let mut active = self.active_recording.lock();
-        if active.is_some() {
-            return Err("Voice recording is already active".to_string());
-        }
-        let t_stream = Instant::now();
-        let mut session = self.recorder.start()?;
-        let stream_open_ms = t_stream.elapsed().as_millis();
-        if let Some(app) = app {
-            let abort = spawn_level_emitter(app, Arc::clone(&session.samples));
-            session._level_task = Some(LevelTask(abort));
-        }
-        *active = Some(session);
-        Ok(stream_open_ms)
+        self.operations
+            .start_recording(self.runtime.recorder.as_ref(), app)
     }
 
     async fn stop_platform_recording(&self) -> Result<String, String> {
         let session = self
+            .operations
             .active_recording
             .lock()
             .take()
@@ -338,8 +384,8 @@ impl VoiceProviderRegistry {
         }
         validate_captured_audio(&audio)?;
 
-        let platform_speech = Arc::clone(&self.platform_speech);
-        let timeout = self.transcription_timeout;
+        let platform_speech = Arc::clone(&self.runtime.platform_speech);
+        let timeout = self.runtime.transcription_timeout;
         let task = tokio::task::spawn_blocking(move || platform_speech.transcribe(audio));
         let transcript = tokio::time::timeout(timeout, task)
             .await
@@ -360,7 +406,7 @@ impl VoiceProviderRegistry {
     }
 
     async fn cancel_platform_recording(&self) -> Result<(), String> {
-        let _ = self.active_recording.lock().take();
+        let _ = self.operations.active_recording.lock().take();
         // Each platform with a real engine bridge gets a chance to drop any
         // in-flight recognition request. macOS forwards to the Speech
         // framework's `taskHint` cancel API; the Windows bridge has no
@@ -389,23 +435,13 @@ impl VoiceProviderRegistry {
             self.ensure_candle_backend_ready()?;
         }
 
-        let mut active = self.active_recording.lock();
-        if active.is_some() {
-            return Err("Voice recording is already active".to_string());
-        }
-        let t_stream = Instant::now();
-        let mut session = self.recorder.start()?;
-        let stream_open_ms = t_stream.elapsed().as_millis();
-        if let Some(app) = app {
-            let abort = spawn_level_emitter(app, Arc::clone(&session.samples));
-            session._level_task = Some(LevelTask(abort));
-        }
-        *active = Some(session);
-        Ok(stream_open_ms)
+        self.operations
+            .start_recording(self.runtime.recorder.as_ref(), app)
     }
 
     async fn stop_distil_recording(&self) -> Result<String, String> {
         let session = self
+            .operations
             .active_recording
             .lock()
             .take()
@@ -417,11 +453,11 @@ impl VoiceProviderRegistry {
         validate_captured_audio(&audio)?;
 
         let cancel = Arc::new(AtomicBool::new(false));
-        *self.active_distil_cancel.lock() = Some(Arc::clone(&cancel));
+        *self.operations.active_distil_cancel.lock() = Some(Arc::clone(&cancel));
 
         let cache_path = self.distil_cache_path();
-        let transcriber = Arc::clone(&self.transcriber);
-        let timeout = self.transcription_timeout;
+        let transcriber = Arc::clone(&self.runtime.transcriber);
+        let timeout = self.runtime.transcription_timeout;
         let cancel_for_task = Arc::clone(&cancel);
         let task = tokio::task::spawn_blocking(move || {
             transcriber.transcribe(&cache_path, audio, &cancel_for_task)
@@ -437,7 +473,7 @@ impl VoiceProviderRegistry {
         // Vacate our slot in the registry, but only if a newer transcription
         // hasn't already replaced it.
         {
-            let mut active = self.active_distil_cancel.lock();
+            let mut active = self.operations.active_distil_cancel.lock();
             if active.as_ref().is_some_and(|a| Arc::ptr_eq(a, &cancel)) {
                 *active = None;
             }
@@ -456,10 +492,10 @@ impl VoiceProviderRegistry {
     }
 
     async fn cancel_distil_recording(&self) -> Result<(), String> {
-        if let Some(cancel) = self.active_distil_cancel.lock().clone() {
+        if let Some(cancel) = self.operations.active_distil_cancel.lock().clone() {
             cancel.store(true, Ordering::Relaxed);
         }
-        let _ = self.active_recording.lock().take();
+        let _ = self.operations.active_recording.lock().take();
         Ok(())
     }
 
@@ -476,28 +512,18 @@ impl VoiceProviderRegistry {
             if !lfm2_model_ready(&self.lfm2_cache_path()) {
                 return Err("Download the LFM2-Audio model before recording".to_string());
             }
-            if !self.lfm2.binary_available() {
+            if !self.runtime.lfm2.binary_available() {
                 return Err(LFM2_BINARY_MISSING.to_string());
             }
         }
 
-        let mut active = self.active_recording.lock();
-        if active.is_some() {
-            return Err("Voice recording is already active".to_string());
-        }
-        let t_stream = Instant::now();
-        let mut session = self.recorder.start()?;
-        let stream_open_ms = t_stream.elapsed().as_millis();
-        if let Some(app) = app {
-            let abort = spawn_level_emitter(app, Arc::clone(&session.samples));
-            session._level_task = Some(LevelTask(abort));
-        }
-        *active = Some(session);
-        Ok(stream_open_ms)
+        self.operations
+            .start_recording(self.runtime.recorder.as_ref(), app)
     }
 
     async fn stop_lfm2_recording(&self) -> Result<String, String> {
         let session = self
+            .operations
             .active_recording
             .lock()
             .take()
@@ -509,10 +535,10 @@ impl VoiceProviderRegistry {
         validate_captured_audio(&audio)?;
 
         let cancel = Arc::new(AtomicBool::new(false));
-        *self.active_lfm2_cancel.lock() = Some(Arc::clone(&cancel));
+        *self.operations.active_lfm2_cancel.lock() = Some(Arc::clone(&cancel));
 
-        let timeout = self.transcription_timeout;
-        let lfm2 = Arc::clone(&self.lfm2);
+        let timeout = self.runtime.transcription_timeout;
+        let lfm2 = Arc::clone(&self.runtime.lfm2);
         let cancel_for_task = Arc::clone(&cancel);
         // The runner is a subprocess, so the work is naturally async (no
         // blocking pool needed). On timeout we both drop the future
@@ -523,7 +549,7 @@ impl VoiceProviderRegistry {
         }
 
         {
-            let mut active = self.active_lfm2_cancel.lock();
+            let mut active = self.operations.active_lfm2_cancel.lock();
             if active.as_ref().is_some_and(|a| Arc::ptr_eq(a, &cancel)) {
                 *active = None;
             }
@@ -540,10 +566,10 @@ impl VoiceProviderRegistry {
     }
 
     async fn cancel_lfm2_recording(&self) -> Result<(), String> {
-        if let Some(cancel) = self.active_lfm2_cancel.lock().clone() {
+        if let Some(cancel) = self.operations.active_lfm2_cancel.lock().clone() {
             cancel.store(true, Ordering::Relaxed);
         }
-        let _ = self.active_recording.lock().take();
+        let _ = self.operations.active_recording.lock().take();
         Ok(())
     }
 
@@ -565,23 +591,13 @@ impl VoiceProviderRegistry {
             }
         }
 
-        let mut active = self.active_recording.lock();
-        if active.is_some() {
-            return Err("Voice recording is already active".to_string());
-        }
-        let t_stream = Instant::now();
-        let mut session = self.recorder.start()?;
-        let stream_open_ms = t_stream.elapsed().as_millis();
-        if let Some(app) = app {
-            let abort = spawn_level_emitter(app, Arc::clone(&session.samples));
-            session._level_task = Some(LevelTask(abort));
-        }
-        *active = Some(session);
-        Ok(stream_open_ms)
+        self.operations
+            .start_recording(self.runtime.recorder.as_ref(), app)
     }
 
     async fn stop_deepgram_recording(&self) -> Result<String, String> {
         let session = self
+            .operations
             .active_recording
             .lock()
             .take()
@@ -605,7 +621,7 @@ impl VoiceProviderRegistry {
     }
 
     async fn cancel_deepgram_recording(&self) -> Result<(), String> {
-        let _ = self.active_recording.lock().take();
+        let _ = self.operations.active_recording.lock().take();
         Ok(())
     }
 
@@ -632,7 +648,7 @@ impl VoiceProviderRegistry {
         if !lfm2_model_ready(&self.lfm2_cache_path()) {
             return Err("Download the LFM2-Audio model before using text-to-speech".to_string());
         }
-        if !self.lfm2.binary_available() {
+        if !self.runtime.lfm2.binary_available() {
             return Err(LFM2_BINARY_MISSING.to_string());
         }
 
@@ -641,14 +657,14 @@ impl VoiceProviderRegistry {
             // A newer request supersedes any in-flight synthesis: cancel the
             // previous one so its runner process can't finish and start
             // playback after the user moved on (or hit stop).
-            let mut slot = self.active_tts_cancel.lock();
+            let mut slot = self.operations.active_tts_cancel.lock();
             if let Some(previous) = slot.replace(Arc::clone(&cancel)) {
                 previous.store(true, Ordering::Relaxed);
             }
         }
 
-        let timeout = self.transcription_timeout;
-        let lfm2 = Arc::clone(&self.lfm2);
+        let timeout = self.runtime.transcription_timeout;
+        let lfm2 = Arc::clone(&self.runtime.lfm2);
         let cancel_for_task = Arc::clone(&cancel);
         let result = tokio::time::timeout(timeout, lfm2.tts(text, cancel_for_task)).await;
         if result.is_err() {
@@ -656,7 +672,7 @@ impl VoiceProviderRegistry {
         }
 
         {
-            let mut active = self.active_tts_cancel.lock();
+            let mut active = self.operations.active_tts_cancel.lock();
             if active.as_ref().is_some_and(|a| Arc::ptr_eq(a, &cancel)) {
                 *active = None;
             }
@@ -667,7 +683,7 @@ impl VoiceProviderRegistry {
 
     /// Signal any in-flight speech synthesis to abort.
     pub fn cancel_speech(&self) {
-        if let Some(cancel) = self.active_tts_cancel.lock().clone() {
+        if let Some(cancel) = self.operations.active_tts_cancel.lock().clone() {
             cancel.store(true, Ordering::Relaxed);
         }
     }
@@ -700,7 +716,7 @@ impl VoiceProviderRegistry {
     }
 
     pub(super) fn ensure_candle_backend_ready(&self) -> Result<CandleBackend, String> {
-        self.backend_checker.ready_backend()
+        self.runtime.backend_checker.ready_backend()
     }
 
     pub(crate) fn resolve_provider_id(

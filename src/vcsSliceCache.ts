@@ -16,8 +16,13 @@
  * the CI check-run details are dropped (counts + conclusion stay); both
  * re-materialize on the first live tick.
  */
-import { readState, writeState } from "./persist";
 import type { VcsSlice } from "./hooks/useVcsStatus";
+import {
+  createDebouncedMapWriter,
+  readVersionedMap,
+  writeVersionedMap,
+  type VersionedMapStore,
+} from "./versionedMapPersistence";
 
 const CACHE_FILE = "vcs-status.json";
 const SCHEMA_VERSION = 1;
@@ -54,16 +59,6 @@ export function putCachedVcsSlice(root: string, slice: VcsSlice): void {
   persistDebounced();
 }
 
-interface PersistedEntry {
-  updatedAt: string;
-  slice: VcsSlice;
-}
-
-interface CacheFile {
-  schemaVersion: number;
-  entries: Record<string, PersistedEntry>;
-}
-
 function slimForPersist(slice: VcsSlice): VcsSlice {
   return {
     ...slice,
@@ -76,23 +71,35 @@ function slimForPersist(slice: VcsSlice): VcsSlice {
   };
 }
 
-let writeTimer: ReturnType<typeof setTimeout> | null = null;
+const store: VersionedMapStore<VcsSlice> = {
+  file: CACHE_FILE,
+  schemaVersion: SCHEMA_VERSION,
+  decodeEntry: (root, value) => {
+    if (!value || typeof value !== "object") return undefined;
+    const entry = value as { updatedAt?: unknown; slice?: unknown };
+    const ts =
+      typeof entry.updatedAt === "string" ? Date.parse(entry.updatedAt) : NaN;
+    if (!Number.isFinite(ts) || ts < Date.now() - STALE_AFTER_MS) {
+      return undefined;
+    }
+    const slice = entry.slice;
+    if (!slice || typeof slice !== "object") return undefined;
+    const typedSlice = slice as VcsSlice;
+    return typedSlice.root === root ? typedSlice : undefined;
+  },
+  encodeEntry: (_root, slice) => ({
+    updatedAt: new Date().toISOString(),
+    slice: slimForPersist(slice),
+  }),
+};
+
+const writer = createDebouncedMapWriter<VcsSlice>({
+  delayMs: WRITE_DEBOUNCE_MS,
+  write: (snapshot) => writeVersionedMap(store, snapshot),
+});
 
 function persistDebounced(): void {
-  if (writeTimer) clearTimeout(writeTimer);
-  writeTimer = setTimeout(() => {
-    writeTimer = null;
-    void writeNow();
-  }, WRITE_DEBOUNCE_MS);
-}
-
-async function writeNow(): Promise<void> {
-  const now = new Date().toISOString();
-  const cache: CacheFile = { schemaVersion: SCHEMA_VERSION, entries: {} };
-  for (const [root, slice] of memory) {
-    cache.entries[root] = { updatedAt: now, slice: slimForPersist(slice) };
-  }
-  await writeState(CACHE_FILE, JSON.stringify(cache));
+  writer.schedule(memory);
 }
 
 let hydrated: Promise<void> | null = null;
@@ -101,27 +108,9 @@ let hydrated: Promise<void> | null = null;
  *  live in-memory entry (the live one is fresher by construction). */
 export function hydrateVcsSliceCache(): Promise<void> {
   hydrated ??= (async () => {
-    const raw = await readState(CACHE_FILE);
-    if (!raw) return;
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(raw);
-    } catch {
-      return;
-    }
-    if (!parsed || typeof parsed !== "object") return;
-    const obj = parsed as { schemaVersion?: number; entries?: unknown };
-    if (obj.schemaVersion !== SCHEMA_VERSION) return;
-    if (!obj.entries || typeof obj.entries !== "object") return;
-    const cutoff = Date.now() - STALE_AFTER_MS;
-    for (const [root, value] of Object.entries(obj.entries)) {
+    const persisted = await readVersionedMap(store);
+    for (const [root, slice] of persisted) {
       if (memory.has(root)) continue;
-      if (!value || typeof value !== "object") continue;
-      const entry = value as Partial<PersistedEntry>;
-      const ts = typeof entry.updatedAt === "string" ? Date.parse(entry.updatedAt) : NaN;
-      if (!Number.isFinite(ts) || ts < cutoff) continue;
-      const slice = entry.slice;
-      if (!slice || typeof slice !== "object" || slice.root !== root) continue;
       memory.set(root, slice);
     }
     // A hand-edited / corrupted / pre-cap cache file must not blow past
@@ -142,16 +131,9 @@ export const __TEST__ = {
   reset(): void {
     memory.clear();
     hydrated = null;
-    if (writeTimer) {
-      clearTimeout(writeTimer);
-      writeTimer = null;
-    }
+    writer.cancel();
   },
   async flush(): Promise<void> {
-    if (writeTimer) {
-      clearTimeout(writeTimer);
-      writeTimer = null;
-    }
-    await writeNow();
+    await writer.flush();
   },
 };

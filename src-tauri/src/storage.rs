@@ -6,7 +6,7 @@
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
-use std::sync::{Mutex, MutexGuard, OnceLock};
+use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 
 use rusqlite::{Connection, OptionalExtension, params};
 use tauri::{AppHandle, Manager};
@@ -16,9 +16,13 @@ use crate::helpers::{sanitize_filename_segment, validate_state_name};
 const DB_RELATIVE_DIR: &str = "state";
 const DB_FILE: &str = "aethon.sqlite3";
 const KV_NAMESPACE_STATE: &str = "state";
+const KV_NAMESPACE_MIGRATIONS: &str = "internal-migrations";
+const LEGACY_IMPORT_MIGRATION: &str = "legacy-state-and-project-dirs-v1";
 const CURRENT_SCHEMA: i64 = 1;
 
 static MIGRATED_DB_PATHS: OnceLock<Mutex<HashSet<PathBuf>>> = OnceLock::new();
+static CONNECTIONS: OnceLock<Mutex<std::collections::HashMap<PathBuf, Arc<Mutex<Connection>>>>> =
+    OnceLock::new();
 
 const FILE_BACKED_STATE_NAMES: &[&str] = &[
     "config.toml",
@@ -148,6 +152,45 @@ pub(crate) fn connect(app: &AppHandle) -> Result<Connection, String> {
     connect_path(&db_path(app)?)
 }
 
+fn shared_connection(app: &AppHandle) -> Result<Arc<Mutex<Connection>>, String> {
+    let path = db_path(app)?;
+    shared_connection_path(&path)
+}
+
+fn shared_connection_path(path: &Path) -> Result<Arc<Mutex<Connection>>, String> {
+    let connections = CONNECTIONS.get_or_init(|| Mutex::new(std::collections::HashMap::new()));
+    {
+        let map = connections
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if let Some(connection) = map.get(path) {
+            return Ok(Arc::clone(connection));
+        }
+    }
+
+    // Opening/migrating can touch disk; do it outside the map lock so the
+    // first access to one database never stalls lookups for another.
+    let opened = Arc::new(Mutex::new(connect_path(path)?));
+    let mut map = connections
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    Ok(Arc::clone(
+        map.entry(path.to_path_buf())
+            .or_insert_with(|| Arc::clone(&opened)),
+    ))
+}
+
+fn with_shared_connection<T>(
+    app: &AppHandle,
+    operation: impl FnOnce(&mut Connection) -> Result<T, String>,
+) -> Result<T, String> {
+    let connection = shared_connection(app)?;
+    let mut guard = connection
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    operation(&mut guard)
+}
+
 pub(crate) fn initialize(app: &AppHandle) -> Result<(), String> {
     let dir = aethon_dir(app)?;
     initialize_dir(&dir)
@@ -162,8 +205,24 @@ fn initialize_dir(dir: &Path) -> Result<(), String> {
         )
     })?;
     let conn = connect_path(&db_path_from_aethon_dir(dir))?;
-    import_legacy_state_files_from_dir(dir, &conn)?;
-    migrate_project_data_dirs_from_dir(dir, &conn)?;
+    let legacy_import_done: Option<i64> = conn
+        .query_row(
+            "SELECT 1 FROM kv_store WHERE namespace = ?1 AND key = ?2",
+            params![KV_NAMESPACE_MIGRATIONS, LEGACY_IMPORT_MIGRATION],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|e| format!("sqlite check legacy import migration: {e}"))?;
+    if legacy_import_done.is_none() {
+        import_legacy_state_files_from_dir(dir, &conn)?;
+        migrate_project_data_dirs_from_dir(dir, &conn)?;
+        write_kv_conn(
+            &conn,
+            KV_NAMESPACE_MIGRATIONS,
+            LEGACY_IMPORT_MIGRATION,
+            "complete",
+        )?;
+    }
     Ok(())
 }
 
@@ -312,14 +371,15 @@ pub(crate) fn read_kv(
     namespace: &str,
     key: &str,
 ) -> Result<Option<String>, String> {
-    let conn = connect(app)?;
-    conn.query_row(
-        "SELECT value FROM kv_store WHERE namespace = ?1 AND key = ?2",
-        params![namespace, key],
-        |row| row.get(0),
-    )
-    .optional()
-    .map_err(|e| format!("sqlite read kv {namespace}/{key}: {e}"))
+    with_shared_connection(app, |conn| {
+        conn.query_row(
+            "SELECT value FROM kv_store WHERE namespace = ?1 AND key = ?2",
+            params![namespace, key],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|e| format!("sqlite read kv {namespace}/{key}: {e}"))
+    })
 }
 
 pub(crate) fn write_kv(
@@ -328,8 +388,7 @@ pub(crate) fn write_kv(
     key: &str,
     value: &str,
 ) -> Result<(), String> {
-    let conn = connect(app)?;
-    write_kv_conn(&conn, namespace, key, value)
+    with_shared_connection(app, |conn| write_kv_conn(conn, namespace, key, value))
 }
 
 fn write_kv_conn(conn: &Connection, namespace: &str, key: &str, value: &str) -> Result<(), String> {
@@ -627,6 +686,36 @@ mod tests {
     }
 
     #[test]
+    fn shared_connection_reuses_one_initialized_handle_per_database() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("state").join("aethon.sqlite3");
+        let first = shared_connection_path(&path).unwrap();
+        let second = shared_connection_path(&path).unwrap();
+
+        assert!(Arc::ptr_eq(&first, &second));
+        write_kv_conn(
+            &first
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner()),
+            "state",
+            "theme",
+            "dark",
+        )
+        .unwrap();
+        let value: Option<String> = second
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .query_row(
+                "SELECT value FROM kv_store WHERE namespace='state' AND key='theme'",
+                [],
+                |row| row.get(0),
+            )
+            .optional()
+            .unwrap();
+        assert_eq!(value.as_deref(), Some("dark"));
+    }
+
+    #[test]
     fn cached_path_is_remigrated_when_database_is_recreated() {
         let temp = tempfile::tempdir().unwrap();
         let path = temp.path().join("state").join("aethon.sqlite3");
@@ -706,6 +795,30 @@ mod tests {
                 .is_file()
         );
         assert!(!legacy_project_dir.exists());
+    }
+
+    #[test]
+    fn warm_initialize_does_not_rescan_legacy_state_files() {
+        let temp = tempfile::tempdir().unwrap();
+        let aethon_dir = temp.path().join(".aethon");
+
+        initialize_dir(&aethon_dir).unwrap();
+        // A legacy file appearing after the one-shot migration must not be
+        // inspected on every warm launch. Runtime read_state_value still has
+        // its targeted compatibility fallback for an explicitly-read key.
+        std::fs::write(aethon_dir.join("theme"), "late-legacy-theme").unwrap();
+        initialize_dir(&aethon_dir).unwrap();
+
+        let db = connect_path(&db_path_from_aethon_dir(&aethon_dir)).unwrap();
+        let imported: Option<String> = db
+            .query_row(
+                "SELECT value FROM kv_store WHERE namespace = 'state' AND key = 'theme'",
+                [],
+                |row| row.get(0),
+            )
+            .optional()
+            .unwrap();
+        assert_eq!(imported, None);
     }
 
     #[test]

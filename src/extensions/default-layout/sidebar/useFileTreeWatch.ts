@@ -1,6 +1,7 @@
 import { useEffect, useRef, type RefObject } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { safeUnlisten } from "../../../utils/safeUnlisten";
 
 import { isRemoteHostId } from "../../../remoteInvoke";
 import {
@@ -111,7 +112,7 @@ function useFileTreeWatch({
       handlePayload(event.payload as FsTreeChangedPayload);
     }).then((fn) => {
       if (disposed) {
-        fn();
+        safeUnlisten(fn);
         return;
       }
       unlisten = fn;
@@ -123,7 +124,7 @@ function useFileTreeWatch({
         refreshDebounceRef.current = null;
       }
       pendingRefreshDirs.clear();
-      unlisten?.();
+      if (unlisten) safeUnlisten(unlisten);
     };
   }, [hostId, projectPath, projectPathRef, refreshFolder, watchedDirs]);
 

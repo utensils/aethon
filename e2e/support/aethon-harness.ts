@@ -525,7 +525,15 @@ export async function waitForAethonReady(page: Page): Promise<void> {
   await page.goto("/");
   await page.waitForFunction(() => {
     const state = window.__AETHON_STATE__?.();
-    return state?.connection === "connected" && state?.status === "ready";
+    const bridgeHandshakeObserved =
+      window.__AETHON_E2E__
+        ?.getCalls()
+        .some((call) => call.cmd === "agent_command") ?? false;
+    return (
+      state?.connection === "connected" &&
+      state?.status === "ready" &&
+      bridgeHandshakeObserved
+    );
   });
 }
 

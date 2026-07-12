@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { getConfig } from "../config";
 import { bootMark } from "../utils/bootTrace";
+import { safeUnlisten } from "../utils/safeUnlisten";
 
 /// Background auto-update poll interval. 30 minutes matches Claudette and
 /// is well below GitHub's anonymous-API rate limits even with several
@@ -408,7 +409,7 @@ export function useUpdater(ctx: UseUpdaterContext): {
       update({ progress: event.payload });
     })
       .then((fn) => {
-        if (cancelled) fn();
+        if (cancelled) safeUnlisten(fn);
         else unlistenProgress = fn;
       })
       .catch(() => {});
@@ -417,14 +418,14 @@ export function useUpdater(ctx: UseUpdaterContext): {
       update({ preparing: phase });
     })
       .then((fn) => {
-        if (cancelled) fn();
+        if (cancelled) safeUnlisten(fn);
         else unlistenPreparing = fn;
       })
       .catch(() => {});
     return () => {
       cancelled = true;
-      unlistenProgress?.();
-      unlistenPreparing?.();
+      if (unlistenProgress) safeUnlisten(unlistenProgress);
+      if (unlistenPreparing) safeUnlisten(unlistenPreparing);
     };
   }, [update]);
 

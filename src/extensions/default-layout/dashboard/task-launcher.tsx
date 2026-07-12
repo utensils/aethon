@@ -35,6 +35,7 @@ import { SlashPicker } from "../slash-picker";
 import { useAtMentionTextarea } from "../use-at-mention-textarea";
 import { useTextareaVoiceInput } from "../use-textarea-voice-input";
 import { VoiceInputButton, VoiceStatus } from "../voice-controls";
+import { Chevron } from "../sidebar/chevron";
 import {
   type ArgMatch,
   type CommandMatch,
@@ -816,6 +817,8 @@ function ChipMenu({
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const wrapRef = useRef<HTMLSpanElement | null>(null);
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return items;
@@ -824,22 +827,37 @@ function ChipMenu({
         it.label.toLowerCase().includes(q) || it.id.toLowerCase().includes(q),
     );
   }, [items, query]);
+  const close = useCallback((restoreFocus = false) => {
+    setOpen(false);
+    if (restoreFocus) triggerRef.current?.focus();
+  }, []);
+  useEffect(() => {
+    if (!open || searchable) return;
+    const first =
+      menuRef.current?.querySelector<HTMLButtonElement>(
+        ".a2ui-task-launcher-chip-menu-item.is-current",
+      ) ??
+      menuRef.current?.querySelector<HTMLButtonElement>(
+        ".a2ui-task-launcher-chip-menu-item",
+      );
+    first?.focus();
+  }, [open, searchable]);
   useEffect(() => {
     if (!open) return;
     const closeOnOutsidePointer = (e: MouseEvent) => {
       const target = e.target as Node | null;
       if (target && wrapRef.current?.contains(target)) return;
-      setOpen(false);
+      close();
     };
     const closeOnFocusOut = (e: FocusEvent) => {
       const target = e.target as Node | null;
       if (target && wrapRef.current?.contains(target)) return;
-      setOpen(false);
+      close();
     };
     const closeOnEsc = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         e.preventDefault();
-        setOpen(false);
+        close(true);
       }
     };
     document.addEventListener("mousedown", closeOnOutsidePointer, true);
@@ -850,10 +868,39 @@ function ChipMenu({
       document.removeEventListener("focusin", closeOnFocusOut, true);
       document.removeEventListener("keydown", closeOnEsc);
     };
-  }, [open]);
+  }, [close, open]);
+  const onMenuKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      event.stopPropagation();
+      close(true);
+      return;
+    }
+    if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
+      return;
+    }
+    const choices = Array.from(
+      menuRef.current?.querySelectorAll<HTMLButtonElement>(
+        ".a2ui-task-launcher-chip-menu-item",
+      ) ?? [],
+    );
+    if (choices.length === 0) return;
+    event.preventDefault();
+    const current = choices.indexOf(document.activeElement as HTMLButtonElement);
+    const next =
+      event.key === "Home"
+        ? 0
+        : event.key === "End"
+          ? choices.length - 1
+          : event.key === "ArrowDown"
+            ? (current + 1 + choices.length) % choices.length
+            : (current - 1 + choices.length) % choices.length;
+    choices[next]?.focus();
+  };
   return (
     <span className="a2ui-task-launcher-chip-wrap" ref={wrapRef}>
       <button
+        ref={triggerRef}
         type="button"
         className="a2ui-task-launcher-chip"
         onClick={() => {
@@ -861,6 +908,7 @@ function ChipMenu({
           setOpen((v) => !v);
         }}
         aria-label={ariaLabel}
+        aria-haspopup="menu"
         aria-expanded={open}
       >
         {icon && (
@@ -870,11 +918,16 @@ function ChipMenu({
         )}
         <span className="a2ui-task-launcher-chip-label">{label}</span>
         <span className="a2ui-task-launcher-chip-caret" aria-hidden="true">
-          ▾
+          <Chevron expanded={open} size={12} />
         </span>
       </button>
       {open && (
-        <div className="a2ui-task-launcher-chip-menu" role="menu">
+        <div
+          ref={menuRef}
+          className="a2ui-task-launcher-chip-menu"
+          role="menu"
+          onKeyDown={onMenuKeyDown}
+        >
           {searchable && (
             <input
               type="text"
@@ -901,7 +954,7 @@ function ChipMenu({
                 }
                 onClick={() => {
                   onSelect(item.id);
-                  setOpen(false);
+                  close(true);
                 }}
               >
                 {item.label}

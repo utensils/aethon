@@ -13,9 +13,7 @@ use std::path::PathBuf;
 
 use tauri::{AppHandle, Manager};
 
-use crate::helpers::{
-    self, FONT_SIZE_MAX, FONT_SIZE_MIN, clamp_font_size, parse_config_toml, validate_state_name,
-};
+use crate::helpers::{self, FONT_SIZE_MAX, FONT_SIZE_MIN, clamp_font_size, validate_state_name};
 
 /// Resolve `<home>/.aethon/<name>` after rejecting path-traversal segments.
 /// The parent directory is created on demand. Uses Tauri's cross-platform
@@ -50,7 +48,11 @@ pub fn write_state(name: String, content: String, app: AppHandle) -> Result<(), 
         return crate::storage::write_state_value(&app, &name, &content);
     }
     let path = aethon_state_path(&app, &name)?;
-    std::fs::write(&path, content).map_err(|e| format!("write {}: {e}", path.display()))
+    std::fs::write(&path, content).map_err(|e| format!("write {}: {e}", path.display()))?;
+    if name == "config.toml" {
+        crate::helpers::invalidate_config_snapshot(&path);
+    }
+    Ok(())
 }
 
 /// Read `~/.aethon/config.toml` and return its parsed contents as JSON. Missing
@@ -63,22 +65,7 @@ pub fn write_state(name: String, content: String, app: AppHandle) -> Result<(), 
 #[tauri::command]
 pub fn read_config(app: AppHandle) -> Result<serde_json::Value, String> {
     let path = aethon_state_path(&app, "config.toml")?;
-    const MAX_BYTES: u64 = 64 * 1024;
-    let mut buf = String::new();
-    match std::fs::File::open(&path) {
-        Ok(file) => {
-            // Cap the read so a runaway config can't pull a huge file into memory.
-            if let Err(e) = file.take(MAX_BYTES).read_to_string(&mut buf) {
-                tracing::warn!(target: "aethon::config", "read {}: {e}; using defaults", path.display());
-                buf.clear();
-            }
-        }
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => { /* defaults */ }
-        Err(e) => {
-            tracing::warn!(target: "aethon::config", "open {}: {e}; using defaults", path.display());
-        }
-    }
-    let mut value = parse_config_toml(&buf);
+    let mut value = crate::helpers::read_config_snapshot(&path).parsed;
     // Clamp font_size in-place so the JSON the frontend reads is already
     // safe — keeps the clamp policy in one place (helpers) and out of the
     // CSS rule.
@@ -729,6 +716,7 @@ pub fn write_config(config: serde_json::Value, app: AppHandle) -> Result<(), Str
     let tmp = path.with_extension("toml.tmp");
     std::fs::write(&tmp, serialised).map_err(|e| format!("write {}: {e}", tmp.display()))?;
     std::fs::rename(&tmp, &path).map_err(|e| format!("rename {}: {e}", path.display()))?;
+    crate::helpers::invalidate_config_snapshot(&path);
     Ok(())
 }
 

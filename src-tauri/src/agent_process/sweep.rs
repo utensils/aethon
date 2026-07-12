@@ -14,11 +14,13 @@
 //! disables the sweep.
 
 use std::path::PathBuf;
-use std::time::{Duration, Instant, SystemTime};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Condvar, Mutex};
+use std::time::{Duration, Instant};
 
 use tauri::{AppHandle, Manager};
 
-use crate::helpers::{self, parse_config_toml};
+use crate::helpers;
 
 use super::process::{AgentProcesses, idle_keys_to_retire, lock_recover, retire_agent_key};
 
@@ -26,22 +28,91 @@ use super::process::{AgentProcesses, idle_keys_to_retire, lock_recover, retire_a
 /// a latency-sensitive path, and a 60s cadence keeps the wakeup cost trivial.
 const SWEEP_INTERVAL: Duration = Duration::from_secs(60);
 
+struct IdleSweepWorker {
+    cancelled: Arc<AtomicBool>,
+    wake: Arc<(Mutex<()>, Condvar)>,
+    thread: Option<std::thread::JoinHandle<()>>,
+}
+
+impl IdleSweepWorker {
+    fn stop(mut self) {
+        self.cancelled.store(true, Ordering::Release);
+        self.wake.1.notify_all();
+        if let Some(thread) = self.thread.take() {
+            let _ = thread.join();
+        }
+    }
+}
+
+#[derive(Default)]
+pub(crate) struct IdleSweepState {
+    worker: Mutex<Option<IdleSweepWorker>>,
+}
+
+impl IdleSweepState {
+    pub(crate) fn start(&self, app: AppHandle) {
+        let mut worker = self
+            .worker
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if worker.is_some() {
+            return;
+        }
+        *worker = Some(spawn_worker(SWEEP_INTERVAL, move || {
+            let Some(ttl) = resolve_ttl(&app) else {
+                return;
+            };
+            sweep_once(&app, ttl);
+        }));
+    }
+
+    pub(crate) fn stop(&self) {
+        let worker = self
+            .worker
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .take();
+        if let Some(worker) = worker {
+            worker.stop();
+        }
+    }
+}
+
+fn spawn_worker(interval: Duration, mut tick: impl FnMut() + Send + 'static) -> IdleSweepWorker {
+    let cancelled = Arc::new(AtomicBool::new(false));
+    let wake = Arc::new((Mutex::new(()), Condvar::new()));
+    let thread_cancelled = Arc::clone(&cancelled);
+    let thread_wake = Arc::clone(&wake);
+    let thread = std::thread::spawn(move || {
+        while !thread_cancelled.load(Ordering::Acquire) {
+            let guard = thread_wake
+                .0
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            let _ = thread_wake
+                .1
+                .wait_timeout_while(guard, interval, |_| {
+                    !thread_cancelled.load(Ordering::Acquire)
+                })
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            if thread_cancelled.load(Ordering::Acquire) {
+                break;
+            }
+            tick();
+        }
+    });
+    IdleSweepWorker {
+        cancelled,
+        wake,
+        thread: Some(thread),
+    }
+}
+
 /// Spawn the idle-retirement sweep. Plain OS thread (no async needed): it
 /// sleeps, then reaches managed state via the cloned `AppHandle` — the same
 /// pattern the extension-reload debounce worker uses.
-pub(crate) fn spawn_idle_sweep(app: AppHandle) {
-    std::thread::spawn(move || {
-        // (config mtime seen, resolved ttl) — avoids re-reading + re-parsing
-        // config.toml every tick; only re-parse when the file actually changes.
-        let mut ttl_cache: Option<(SystemTime, Option<Duration>)> = None;
-        loop {
-            std::thread::sleep(SWEEP_INTERVAL);
-            let Some(ttl) = resolve_ttl_cached(&app, &mut ttl_cache) else {
-                continue;
-            };
-            sweep_once(&app, ttl);
-        }
-    });
+pub(crate) fn spawn_idle_sweep(app: AppHandle, state: &IdleSweepState) {
+    state.start(app);
 }
 
 fn config_path(app: &AppHandle) -> Option<PathBuf> {
@@ -50,30 +121,15 @@ fn config_path(app: &AppHandle) -> Option<PathBuf> {
     Some(user_dir.join("config.toml"))
 }
 
-/// Resolve the configured idle TTL (`None` = retirement disabled). Re-reads +
-/// re-parses `config.toml` only when its mtime differs from the cached one;
-/// otherwise returns the cached value. A missing file (no mtime) falls back to
-/// reading (cheap — yields the default) without caching.
-fn resolve_ttl_cached(
-    app: &AppHandle,
-    cache: &mut Option<(SystemTime, Option<Duration>)>,
-) -> Option<Duration> {
+/// Resolve the configured idle TTL (`None` = retirement disabled). The shared
+/// config snapshot avoids disk I/O and parsing unless the file fingerprint
+/// changed, while still observing Settings and external-editor updates.
+fn resolve_ttl(app: &AppHandle) -> Option<Duration> {
     let path = config_path(app)?;
-    let mtime = std::fs::metadata(&path).and_then(|m| m.modified()).ok();
-    if let (Some(mtime), Some((cached_mtime, cached_ttl))) = (mtime, cache.as_ref())
-        && mtime == *cached_mtime
-    {
-        return *cached_ttl;
-    }
-    let raw = std::fs::read_to_string(&path).unwrap_or_default();
-    let minutes = parse_config_toml(&raw)["agent"]["idleRetireMinutes"]
+    let minutes = helpers::read_config_snapshot(&path).parsed["agent"]["idleRetireMinutes"]
         .as_u64()
         .unwrap_or(15);
-    let ttl = (minutes > 0).then(|| Duration::from_secs(minutes * 60));
-    if let Some(mtime) = mtime {
-        *cache = Some((mtime, ttl));
-    }
-    ttl
+    (minutes > 0).then(|| Duration::from_secs(minutes * 60))
 }
 
 fn sweep_once(app: &AppHandle, ttl: Duration) {
@@ -119,4 +175,25 @@ fn reap_meta_less_children(state: &AgentProcesses) {
             _ => true,
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::AtomicUsize;
+
+    #[test]
+    fn owned_worker_cancels_without_waiting_for_next_interval() {
+        let ticks = Arc::new(AtomicUsize::new(0));
+        let worker_ticks = Arc::clone(&ticks);
+        let started = Instant::now();
+        let worker = spawn_worker(Duration::from_secs(60), move || {
+            worker_ticks.fetch_add(1, Ordering::SeqCst);
+        });
+
+        worker.stop();
+
+        assert!(started.elapsed() < Duration::from_secs(1));
+        assert_eq!(ticks.load(Ordering::SeqCst), 0);
+    }
 }

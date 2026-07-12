@@ -15,7 +15,9 @@ use std::time::Duration;
 
 use mdns_sd::{ServiceDaemon, ServiceEvent, ServiceInfo};
 use serde::Serialize;
+use tauri::async_runtime::JoinHandle;
 use tauri::{AppHandle, Emitter, Manager};
+use tokio::sync::watch;
 
 const SERVICE_TYPE: &str = "_aethon._tcp.local.";
 const DEBOUNCE: Duration = Duration::from_millis(250);
@@ -38,6 +40,18 @@ pub struct DiscoveredHost {
 #[derive(Debug, Serialize, Clone)]
 struct HostRemoved {
     id: String,
+}
+
+pub(crate) struct BrowserHandle {
+    cancel: watch::Sender<bool>,
+    task: JoinHandle<()>,
+}
+
+impl BrowserHandle {
+    pub(crate) async fn stop(self) {
+        let _ = self.cancel.send(true);
+        let _ = self.task.await;
+    }
 }
 
 /// Advertise this Aethon instance. Drop the returned `ServiceDaemon` to
@@ -142,7 +156,7 @@ fn system_local_hostname() -> Option<String> {
 
 /// Start the LAN browser. Resolution events are debounced before they
 /// fan out as Tauri events so the frontend never has to dedupe.
-pub fn start_browser(app: AppHandle) -> Result<(), String> {
+pub(crate) fn start_browser(app: AppHandle) -> Result<BrowserHandle, String> {
     // Compare by fingerprint, NOT by id — the browser builds remote ids
     // as `remote:<fingerprint>` while host_info returns `local:<short>`.
     // A pure-id check would never match and we'd surface ourselves as
@@ -152,7 +166,8 @@ pub fn start_browser(app: AppHandle) -> Result<(), String> {
     let receiver = mdns
         .browse(SERVICE_TYPE)
         .map_err(|e| format!("browse: {e}"))?;
-    tauri::async_runtime::spawn(async move {
+    let (cancel, mut cancelled) = watch::channel(false);
+    let task = tauri::async_runtime::spawn(async move {
         // `mdns` is owned by this task so the daemon stays alive for the
         // browser lifetime; ServiceFound below also uses it to force
         // resolution when the cache only has a PTR record.
@@ -164,6 +179,12 @@ pub fn start_browser(app: AppHandle) -> Result<(), String> {
             // Either receive an event or wake up to flush the debounce buffer.
             let event = if let Some(deadline) = next_flush {
                 tokio::select! {
+                    changed = cancelled.changed() => {
+                        if changed.is_err() || *cancelled.borrow() {
+                            break;
+                        }
+                        continue;
+                    }
                     _ = tokio::time::sleep_until(deadline) => {
                         flush(&app, &mut pending);
                         next_flush = None;
@@ -172,7 +193,15 @@ pub fn start_browser(app: AppHandle) -> Result<(), String> {
                     ev = receiver.recv_async() => ev,
                 }
             } else {
-                receiver.recv_async().await
+                tokio::select! {
+                    changed = cancelled.changed() => {
+                        if changed.is_err() || *cancelled.borrow() {
+                            break;
+                        }
+                        continue;
+                    }
+                    event = receiver.recv_async() => event,
+                }
             };
             let Ok(event) = event else {
                 break;
@@ -246,7 +275,7 @@ pub fn start_browser(app: AppHandle) -> Result<(), String> {
             }
         }
     });
-    Ok(())
+    Ok(BrowserHandle { cancel, task })
 }
 
 fn discovered_host_from_service_info(info: &ServiceInfo) -> Option<DiscoveredHost> {
@@ -393,5 +422,18 @@ mod tests {
         .unwrap();
 
         assert!(discovered_host_from_service_info(&info).is_none());
+    }
+
+    #[tokio::test]
+    async fn browser_handle_owns_prompt_task_cancellation() {
+        let (cancel, mut cancelled) = watch::channel(false);
+        let task = tauri::async_runtime::spawn(async move {
+            let _ = cancelled.changed().await;
+        });
+        let handle = BrowserHandle { cancel, task };
+
+        tokio::time::timeout(Duration::from_secs(1), handle.stop())
+            .await
+            .expect("browser task should stop promptly");
     }
 }

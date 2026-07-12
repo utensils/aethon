@@ -24,6 +24,56 @@ const hostInfo: UseHostInfo = {
 };
 
 describe("useDerivedRenderState", () => {
+  it("preserves expensive derived subtrees for unrelated state updates", () => {
+    const tab = makeEmptyTab("tab-1", "Tab 1");
+    const tabs = [tab];
+    const sidebar = { projects: [] };
+    const buildSidebarHistory = vi.fn(() => [
+      { id: "tab-1", label: "Tab 1" },
+    ]);
+    const initialState: Record<string, unknown> = {
+      tabs,
+      activeTabId: "tab-1",
+      sidebar,
+      draft: "",
+      messages: [],
+    };
+    const { result, rerender } = renderHook(
+      ({ state }: { state: Record<string, unknown> }) =>
+        useDerivedRenderState({ state, buildSidebarHistory, hostInfo }),
+      { initialProps: { state: initialState } },
+    );
+    const firstRoot = result.current.renderState;
+    const firstSidebar = firstRoot.sidebar;
+    const firstProjectDashboard = firstRoot.projectDashboard;
+
+    rerender({
+      state: {
+        ...initialState,
+        draft: "stream-safe typing",
+        messages: [{ id: "m1", role: "agent", text: "chunk" }],
+      },
+    });
+
+    expect(result.current.renderState).not.toBe(firstRoot);
+    expect(result.current.renderState.draft).toBe("stream-safe typing");
+    expect(result.current.renderState.sidebar).toBe(firstSidebar);
+    expect(result.current.renderState.projectDashboard).toBe(
+      firstProjectDashboard,
+    );
+    expect(buildSidebarHistory).toHaveBeenCalledTimes(1);
+
+    rerender({
+      state: {
+        ...initialState,
+        tabs: [...tabs, makeEmptyTab("tab-2", "Tab 2")],
+      },
+    });
+
+    expect(result.current.renderState.sidebar).not.toBe(firstSidebar);
+    expect(buildSidebarHistory).toHaveBeenCalledTimes(2);
+  });
+
   it("derives tab visibility gates from the active tab kind", () => {
     const active = makeEmptyTab("tab-1", "Tab 1");
     const buildSidebarHistory = vi.fn(() => [{ id: "tab-1", label: "Tab 1" }]);

@@ -52,6 +52,12 @@ export function isContextLengthExceededError(message: string): boolean {
   );
 }
 
+export function isModelUnavailableError(message: string): boolean {
+  return /model_not_found|model[^\n]*(?:does not exist|not available|do not have access|not found)/i.test(
+    message,
+  );
+}
+
 export function isRetryableAgentEndError(message: string): boolean {
   // Usage-limit 429s carry "429" so they'd otherwise look retryable; bail
   // first so we don't waste the retry budget on an unrecoverable quota hit.
@@ -70,6 +76,9 @@ export function isRetryableAgentEndError(message: string): boolean {
 export function formatAgentErrorMessage(raw: string): string {
   if (isContextLengthExceededError(raw)) {
     return "Context window exceeded. Compacting context and resuming automatically.";
+  }
+  if (isModelUnavailableError(raw)) {
+    return "This model is not available for the current account. Check the provider login and model entitlement; preview models such as GPT-5.6 may require explicit access.";
   }
   if (!isUsageLimitError(raw)) return raw;
   const resetsInSeconds = readNumericField(raw, "resets_in_seconds");

@@ -11,15 +11,18 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Mutex};
+use tokio::sync::Notify;
 
 use tauri::{AppHandle, Manager};
 
-use crate::helpers::parse_config_toml;
 use crate::{env, helpers};
 
 use std::time::Instant;
 
-use super::process::{AgentWorker, WorkerMeta, lock_recover, purge_routes_for_key};
+use super::process::{
+    AgentWorker, WorkerLifecycleGates, WorkerMeta, lifecycle_gate, lock_recover,
+    purge_routes_for_key,
+};
 use super::readers::{
     STDERR_TAIL_CAP, StderrReaderCtx, StdoutReaderCtx, spawn_stderr_reader, spawn_stdout_reader,
 };
@@ -32,42 +35,61 @@ pub(super) struct SpawnShared {
     pub(super) intentional_exits: Arc<Mutex<HashSet<String>>>,
     pub(super) pending_reloads: Arc<Mutex<HashSet<String>>>,
     pub(super) meta: Arc<Mutex<HashMap<String, WorkerMeta>>>,
+    pub(super) readiness: Arc<Mutex<HashMap<String, Arc<Notify>>>>,
 }
 
-/// Spawn the agent if no live child is held. Idempotent. Callers own the
-/// mutex around this. In dev (`debug_assertions`) we run `bun run
+/// Spawn the agent if no live child is held. Idempotent. A per-key lifecycle
+/// gate collapses same-worker attempts while the global registry is held only
+/// for lookup/removal and insertion; unrelated workers can perform the slow
+/// process creation concurrently. In dev (`debug_assertions`) we run `bun run
 /// agent/main.ts` from the project root. In release we run the bundled
 /// `aethon-agent` sidecar and enrich its env with docs, layout, user-state,
 /// and PATH information.
 pub(super) fn ensure_agent_spawned(
-    guard: &mut HashMap<String, Arc<Mutex<Child>>>,
+    children: &Mutex<HashMap<String, Arc<Mutex<Child>>>>,
+    lifecycle: &WorkerLifecycleGates,
     key: &str,
     app: &AppHandle,
     shared: SpawnShared,
     worker: Option<&AgentWorker>,
     inject_handshake: bool,
 ) -> Result<(), String> {
+    let lifecycle_gate = lifecycle_gate(lifecycle, key);
+    let _lifecycle_guard = lock_recover(&lifecycle_gate, "agent lifecycle gate");
     let SpawnShared {
         mutation_routes,
         intentional_exits,
         pending_reloads,
         meta,
+        readiness,
     } = shared;
-    let exited_status = guard.get(key).and_then(|child| {
-        lock_recover(child, "agent child (exit check)")
-            .try_wait()
-            .ok()
-            .flatten()
-    });
+    let (exited_status, cwd_child) = {
+        let mut guard = lock_recover(children, "agent children (spawn check)");
+        let exited_status = guard.get(key).and_then(|child| {
+            lock_recover(child, "agent child (exit check)")
+                .try_wait()
+                .ok()
+                .flatten()
+        });
+        if exited_status.is_some() {
+            guard.remove(key);
+        }
+        let cwd_child = if should_respawn_for_worker_cwd(key, &meta, worker) {
+            guard.remove(key)
+        } else {
+            None
+        };
+        if guard.contains_key(key) {
+            return Ok(());
+        }
+        (exited_status, cwd_child)
+    };
     if let Some(status) = exited_status {
         tracing::info!(target: "aethon::agent", key = key, "previous child exited with {status:?}; respawning");
-        guard.remove(key);
         purge_routes_for_key(&mutation_routes, key);
     }
 
-    if should_respawn_for_worker_cwd(key, &meta, worker)
-        && let Some(child) = guard.remove(key)
-    {
+    if let Some(child) = cwd_child {
         tracing::info!(
             target: "aethon::agent",
             key = key,
@@ -81,10 +103,6 @@ pub(super) fn ensure_agent_spawned(
         }
         lock_recover(&meta, "worker meta (cwd respawn)").remove(key);
         purge_routes_for_key(&mutation_routes, key);
-    }
-
-    if guard.contains_key(key) {
-        return Ok(());
     }
 
     let mut command = build_command(app)?;
@@ -111,30 +129,9 @@ pub(super) fn ensure_agent_spawned(
     let stderr_tail: Arc<Mutex<VecDeque<String>>> =
         Arc::new(Mutex::new(VecDeque::with_capacity(STDERR_TAIL_CAP)));
 
-    let stdout = child.stdout.take().ok_or("no stdout on spawned agent")?;
-    spawn_stdout_reader(StdoutReaderCtx {
-        stdout,
-        app: app.clone(),
-        pid,
-        key: key.to_string(),
-        tab_id: worker.map(|w| w.tab_id.clone()),
-        mutation_routes,
-        intentional_exits,
-        pending_reloads,
-        meta: Arc::clone(&meta),
-        stderr_tail: Arc::clone(&stderr_tail),
-    });
-
-    let stderr = child.stderr.take().ok_or("no stderr on spawned agent")?;
-    spawn_stderr_reader(StderrReaderCtx {
-        stderr,
-        app: app.clone(),
-        pid,
-        key: key.to_string(),
-        stderr_tail,
-        meta: Arc::clone(&meta),
-    });
-
+    // Register metadata before reader threads start. A fast bridge can emit
+    // `worker_ready` immediately; registering afterward loses that edge and
+    // leaves the first prompt waiting until timeout.
     {
         let now = Instant::now();
         let (tab_id, cwd) = worker
@@ -154,6 +151,31 @@ pub(super) fn ensure_agent_spawned(
             },
         );
     }
+
+    let stdout = child.stdout.take().ok_or("no stdout on spawned agent")?;
+    spawn_stdout_reader(StdoutReaderCtx {
+        stdout,
+        app: app.clone(),
+        pid,
+        key: key.to_string(),
+        tab_id: worker.map(|w| w.tab_id.clone()),
+        mutation_routes,
+        intentional_exits,
+        pending_reloads,
+        meta: Arc::clone(&meta),
+        readiness,
+        stderr_tail: Arc::clone(&stderr_tail),
+    });
+
+    let stderr = child.stderr.take().ok_or("no stderr on spawned agent")?;
+    spawn_stderr_reader(StderrReaderCtx {
+        stderr,
+        app: app.clone(),
+        pid,
+        key: key.to_string(),
+        stderr_tail,
+        meta: Arc::clone(&meta),
+    });
 
     // Bridge processes start with `frontendReady = false` and only
     // flip it when the dispatcher receives `{"type":"report"}`. The
@@ -179,7 +201,8 @@ pub(super) fn ensure_agent_spawned(
         );
     }
 
-    guard.insert(key.to_string(), Arc::new(Mutex::new(child)));
+    lock_recover(children, "agent children (spawn insert)")
+        .insert(key.to_string(), Arc::new(Mutex::new(child)));
     Ok(())
 }
 
@@ -252,8 +275,8 @@ fn apply_user_env(app: &AppHandle, command: &mut Command) {
     command.env("AETHON_PROJECTS_DIR", &projects_dir);
 
     let cfg_path = user_dir.join("config.toml");
-    let raw = std::fs::read_to_string(&cfg_path).unwrap_or_default();
-    let cfg_json = parse_config_toml(&raw);
+    let snapshot = helpers::read_config_snapshot(&cfg_path);
+    let cfg_json = snapshot.parsed;
     let warn_kb = cfg_json["extensions"]["stateWarnKb"].as_u64().unwrap_or(64);
     let hard_kb = cfg_json["extensions"]["stateHardKb"]
         .as_u64()

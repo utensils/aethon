@@ -1,8 +1,6 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { invoke } from "@tauri-apps/api/core";
-import App from "./App.tsx";
-import NativeCanvasWindowApp from "./NativeCanvasWindowApp";
 import { prewarmHighlighter } from "./utils/highlight";
 // NOTE: monaco's bootstrap (worker factories + loader binding) moved to
 // the top of editor/canvas.tsx + diff-canvas.tsx — the chunks that
@@ -48,13 +46,32 @@ const params = new URLSearchParams(window.location.search);
 const surface = params.get("surface");
 const canvasWindowId = params.get("id") ?? "";
 
-bootMark("render-start");
-createRoot(document.getElementById("root")!).render(
-  <StrictMode>
-    {surface === "canvas-window" ? (
-      <NativeCanvasWindowApp id={canvasWindowId} />
-    ) : (
+// Route before importing either application graph. Native canvas windows do
+// not need the full workstation orchestration, and the main window does not
+// need native-canvas state or listeners. Keeping these as separate chunks
+// reduces parse/evaluation work for both surfaces.
+async function renderSurface(): Promise<void> {
+  const root = createRoot(document.getElementById("root")!);
+  if (surface === "canvas-window") {
+    const { default: NativeCanvasWindowApp } = await import(
+      "./NativeCanvasWindowApp"
+    );
+    bootMark("render-start");
+    root.render(
+      <StrictMode>
+        <NativeCanvasWindowApp id={canvasWindowId} />
+      </StrictMode>,
+    );
+    return;
+  }
+
+  const { default: App } = await import("./App.tsx");
+  bootMark("render-start");
+  root.render(
+    <StrictMode>
       <App />
-    )}
-  </StrictMode>,
-);
+    </StrictMode>,
+  );
+}
+
+void renderSurface();

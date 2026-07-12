@@ -34,7 +34,12 @@ import { perfEnabled, perfMark } from "./perfMarks";
 type Phase = "connecting" | "connected" | "need-config";
 
 let appModulePromise: Promise<{ default: ComponentType }> | null = null;
-const loadApp = () => (appModulePromise ??= import("../App"));
+const loadApp = (): Promise<{ default: ComponentType }> => {
+  appModulePromise ??= import("../App").then(({ default: component }) => ({
+    default: component as ComponentType,
+  }));
+  return appModulePromise;
+};
 const App = lazy(loadApp);
 
 interface ConnectingScreenProps {

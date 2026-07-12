@@ -1,4 +1,3 @@
-// @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   __testing,
@@ -10,6 +9,21 @@ import {
 } from "./chromeBootSnapshot";
 
 const KEY = __testing.STORAGE_KEY;
+const values = new Map<string, string>();
+const storage: Storage = {
+  get length() {
+    return values.size;
+  },
+  clear: () => values.clear(),
+  getItem: (key) => values.get(key) ?? null,
+  key: (index) => [...values.keys()][index] ?? null,
+  removeItem: (key) => {
+    values.delete(key);
+  },
+  setItem: (key, value) => {
+    values.set(key, value);
+  },
+};
 
 const builtinsOnly: ChromeBootSnapshot = {
   customLayout: false,
@@ -19,10 +33,11 @@ const builtinsOnly: ChromeBootSnapshot = {
 
 describe("chromeBootSnapshot", () => {
   beforeEach(() => {
-    localStorage.clear();
+    storage.clear();
+    __testing.setStorage(storage);
   });
   afterEach(() => {
-    localStorage.clear();
+    storage.clear();
     __testing.reset();
   });
 
@@ -62,13 +77,13 @@ describe("chromeBootSnapshot", () => {
   });
 
   it("treats malformed JSON as absent", () => {
-    localStorage.setItem(KEY, "{ not valid json");
+    storage.setItem(KEY, "{ not valid json");
     expect(readChromeBootSnapshot()).toBeNull();
     expect(shouldPaintChromeOptimistically()).toBe(false);
   });
 
   it("treats a wrong-shaped record as absent", () => {
-    localStorage.setItem(KEY, JSON.stringify({ customLayout: "yes" }));
+    storage.setItem(KEY, JSON.stringify({ customLayout: "yes" }));
     expect(readChromeBootSnapshot()).toBeNull();
     expect(shouldPaintChromeOptimistically()).toBe(false);
   });

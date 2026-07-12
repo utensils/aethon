@@ -654,6 +654,34 @@ describe("TaskLauncher", () => {
     expect(screen.queryByRole("menu")).toBeNull();
   });
 
+  it("exposes chip menus and supports keyboard navigation with focus restore", () => {
+    render(
+      <TaskLauncher
+        component={launcher({
+          project: { id: "p1", label: "aethon", path: "/a" },
+          workspaces: [{ id: "wt-1", label: "main", path: "/a-wt" }],
+        })}
+        state={{}}
+        onEvent={() => {}}
+      />,
+    );
+
+    const trigger = screen.getByRole("button", { name: "Workspace" });
+    expect(trigger.getAttribute("aria-haspopup")).toBe("menu");
+    fireEvent.click(trigger);
+
+    const items = screen.getAllByRole("menuitem");
+    expect(document.activeElement).toBe(items[0]);
+    fireEvent.keyDown(items[0], { key: "ArrowDown" });
+    expect(document.activeElement).toBe(items[1]);
+    fireEvent.keyDown(items[1], { key: "Escape" });
+    expect(screen.queryByRole("menu")).toBeNull();
+    expect(document.activeElement).toBe(trigger);
+    expect(
+      trigger.querySelector(".a2ui-task-launcher-chip-caret svg"),
+    ).toBeTruthy();
+  });
+
   it("pastes image attachments into the task launcher and submits them", async () => {
     invoke.mockResolvedValue("/tmp/aethon-pastes/pasted.png");
     const onEvent = vi.fn();

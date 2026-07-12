@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import type { BuiltinComponentProps } from "../../components/A2UIRenderer";
 import { resolveVisibility } from "../../utils/visibilityResolver";
 import type { ToolCallsMode, VisibilityMode } from "../../config";
 import type { Tab } from "../../types/tab";
 import { readUiScale } from "./layout";
+import { useDismissibleLayer } from "./use-dismissible-layer";
 
 /**
  * Composer-bar visibility pills (chrome composite). Two pills — Thinking and
@@ -114,19 +115,11 @@ export function ComposerVisibilityPills({
     setMenuOpen(true);
   }, []);
 
-  useEffect(() => {
-    if (!menuOpen) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") close();
-    };
-    const onResize = () => close();
-    document.addEventListener("keydown", onKey);
-    window.addEventListener("resize", onResize);
-    return () => {
-      document.removeEventListener("keydown", onKey);
-      window.removeEventListener("resize", onResize);
-    };
-  }, [menuOpen, close]);
+  useDismissibleLayer({
+    active: menuOpen,
+    onDismiss: close,
+    dismissOnResize: true,
+  });
 
   const pill = (category: "thinking" | "toolCalls", label: string) => {
     const mode = visibility[category];

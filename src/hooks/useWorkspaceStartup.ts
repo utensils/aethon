@@ -9,6 +9,7 @@ import {
 } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { safeUnlisten } from "../utils/safeUnlisten";
 import { TERMINAL_REPLAY_MAX } from "./tabOps/constants";
 
 export interface WorkspaceStartupTask {
@@ -461,12 +462,4 @@ function isUnderRoot(cwd: string, root: string): boolean {
   if (cwd === root) return true;
   const prefix = root.endsWith("/") ? root : `${root}/`;
   return cwd.startsWith(prefix);
-}
-
-function safeUnlisten(fn: UnlistenFn): void {
-  try {
-    fn();
-  } catch {
-    // Best-effort during reload/shutdown.
-  }
 }
