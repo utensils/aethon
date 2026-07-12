@@ -89,6 +89,7 @@ impl VoiceProviderRegistry {
         Arc::clone(&self.runtime.lfm2)
     }
 
+    #[cfg(any(target_os = "macos", windows))]
     pub(super) fn platform_speech_engine(&self) -> &dyn PlatformSpeechEngine {
         self.runtime.platform_speech.as_ref()
     }
