@@ -28,7 +28,7 @@ use sha1::{Digest, Sha1};
 use tokio::sync::{Notify, RwLock};
 use tokio::time::timeout;
 
-use super::detect::{DetectMode, DevshellKind, RealProbe, detect_with};
+use super::detect::{BinProbe, DetectMode, DevshellKind, RealProbe, detect_with};
 use super::resolve::{ResolveProgress, ResolveProgressSender, ResolvedEnv, resolve};
 
 /// How long we wait before retrying a `Failed` resolve. Without this
@@ -137,10 +137,22 @@ async fn inspect_root(
     mode: DetectMode,
     disk_root: Option<PathBuf>,
 ) -> RootInspection {
+    inspect_root_with_probe(root, mode, disk_root, RealProbe).await
+}
+
+async fn inspect_root_with_probe<P>(
+    root: PathBuf,
+    mode: DetectMode,
+    disk_root: Option<PathBuf>,
+    probe: P,
+) -> RootInspection
+where
+    P: BinProbe + Send + 'static,
+{
     let fallback_root = root.clone();
     tokio::task::spawn_blocking(move || {
         let root = canonicalize_key(&root);
-        let kind = detect_with(&root, mode, &RealProbe);
+        let kind = detect_with(&root, mode, &probe);
         let fingerprint = kind.map(|_| fingerprint_inputs(&root));
         let disk_snapshot = disk_root
             .as_ref()
@@ -1038,6 +1050,17 @@ mod tests {
 
     #[tokio::test]
     async fn async_root_inspection_hydrates_matching_disk_snapshot() {
+        struct NixAvailable;
+        impl BinProbe for NixAvailable {
+            fn has_direnv(&self) -> bool {
+                false
+            }
+
+            fn has_nix(&self) -> bool {
+                true
+            }
+        }
+
         let project = tempfile::tempdir().unwrap();
         let disk = tempfile::tempdir().unwrap();
         std::fs::write(project.path().join("flake.nix"), "{}").unwrap();
@@ -1055,10 +1078,11 @@ mod tests {
         )
         .unwrap();
 
-        let inspected = inspect_root(
+        let inspected = inspect_root_with_probe(
             project.path().to_path_buf(),
             DetectMode::Auto,
             Some(disk.path().to_path_buf()),
+            NixAvailable,
         )
         .await;
 
