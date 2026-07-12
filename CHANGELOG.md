@@ -4,6 +4,62 @@ All notable changes to Aethon. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 [SemVer](https://semver.org/).
 
+## [0.12.0](https://github.com/utensils/aethon/compare/v0.11.2...v0.12.0) (2026-07-12)
+
+
+### Features
+
+* **core:** modernize runtime and GPT-5.6 model support ([#490](https://github.com/utensils/aethon/issues/490)) ([79da6a2](https://github.com/utensils/aethon/commit/79da6a22bd7efc73540ad87fe16497fd8c8f3aa7))
+* **ios:** automate TestFlight uploads ([1e09ac1](https://github.com/utensils/aethon/commit/1e09ac192b8778a84a0f36c543eb8757891920d0))
+* **mobile:** iOS companion scaffold + IPC shim (Phase 2) ([#455](https://github.com/utensils/aethon/issues/455)) ([ab08721](https://github.com/utensils/aethon/commit/ab087217ef3c5cbcec34971a8103037e2953d585))
+* **mobile:** parity tail + iOS build — keep-alive, settings, file viewer, rate limit (Phase 5) ([#458](https://github.com/utensils/aethon/issues/458)) ([9b9a12f](https://github.com/utensils/aethon/commit/9b9a12f28e9c0a8cbdefafe89e32cd35f023fecf))
+* **mobile:** QR + mDNS pairing UX and signed iPhone deploys ([#460](https://github.com/utensils/aethon/issues/460)) ([214d5be](https://github.com/utensils/aethon/commit/214d5be9bd26dfe30346791c153eef08a72ace0a))
+* **mobile:** terminal, files, git — both sides (Phase 4) ([#457](https://github.com/utensils/aethon/issues/457)) ([ac67f44](https://github.com/utensils/aethon/commit/ac67f44bcf62792b46661882f9a582d334374b52))
+* **mobile:** touch-first chat + sessions layout (Phase 3) ([#456](https://github.com/utensils/aethon/issues/456)) ([59c7ded](https://github.com/utensils/aethon/commit/59c7ded039fb78df46b472cfe6229c0def0d3f4f))
+* **perf:** boot-phase instrumentation across agent, shell, desktop, and mobile ([#464](https://github.com/utensils/aethon/issues/464)) ([84fee71](https://github.com/utensils/aethon/commit/84fee718f1d0ca0e4a577d8bec5985101c2a3a9a))
+* **remote:** finish desktop host mesh support ([#474](https://github.com/utensils/aethon/issues/474)) ([8e534db](https://github.com/utensils/aethon/commit/8e534db1b95763aea73dc063f5eba38fcd2b81f3))
+* **remote:** iOS companion gateway (Phase 1 — desktop remote gateway) ([#454](https://github.com/utensils/aethon/issues/454)) ([44c8539](https://github.com/utensils/aethon/commit/44c8539aaf35466294068b139b025ba19636883b))
+* **state:** persist app state in sqlite ([#444](https://github.com/utensils/aethon/issues/444)) ([3b66d3c](https://github.com/utensils/aethon/commit/3b66d3c6d884c115763cdd89c2c8c71a0a4abc1d))
+* **tray:** show active sessions in status menu ([#447](https://github.com/utensils/aethon/issues/447)) ([abca548](https://github.com/utensils/aethon/commit/abca548e01ac83f917c2821901bb86527456f755))
+* **voice:** cascade conversational voice agent ([#459](https://github.com/utensils/aethon/issues/459)) ([f800d89](https://github.com/utensils/aethon/commit/f800d898e4d461c70f90e410852b4cb809ba829e))
+
+
+### Bug Fixes
+
+* **ci:** tolerate nightly asset propagation ([5a110b3](https://github.com/utensils/aethon/commit/5a110b3c5c21135fc348f96147dbb0d6c27b444d))
+* **ios:** archive before TestFlight export ([#483](https://github.com/utensils/aethon/issues/483)) ([ee66255](https://github.com/utensils/aethon/commit/ee66255b87a8548691f5c6fb2c21f126b8e1bd68))
+* **ios:** continue after Tauri archive export ([#485](https://github.com/utensils/aethon/issues/485)) ([990ecb6](https://github.com/utensils/aethon/commit/990ecb6841626b67d34c2c6eb0ba6676544bef76))
+* **ios:** expose Rust iOS target to archive builds ([da28af6](https://github.com/utensils/aethon/commit/da28af69f31ef93b059f8360d0315f5fb71ec240))
+* **ios:** keep TestFlight build numbers in range ([2160015](https://github.com/utensils/aethon/commit/2160015bd6415d93cc43cbb63461ae5aac63eae3))
+* **ios:** make Rust toolchain default for TestFlight archives ([#480](https://github.com/utensils/aethon/issues/480)) ([cbaa7ca](https://github.com/utensils/aethon/commit/cbaa7ca6d7d708997cd3f126d505bd7ff5577f90))
+* **ios:** match Tauri TestFlight build versions ([#488](https://github.com/utensils/aethon/issues/488)) ([73668a8](https://github.com/utensils/aethon/commit/73668a84ed8a015f8e7ab6c53b6c8cf524f3e989))
+* **ios:** parse provisioning profile from file ([751b256](https://github.com/utensils/aethon/commit/751b256ec50e9958c86dc0092f05acad496c527c))
+* **ios:** pass signing env to Tauri export ([#484](https://github.com/utensils/aethon/issues/484)) ([55a065c](https://github.com/utensils/aethon/commit/55a065cc88a19afa82cd16c665bb08824f82e51a))
+* **ios:** preserve rustup env in Xcode script ([#481](https://github.com/utensils/aethon/issues/481)) ([6baebbc](https://github.com/utensils/aethon/commit/6baebbc26fd5f661166f6e28028867eb67f9a752))
+* **ios:** satisfy TestFlight validation ([#486](https://github.com/utensils/aethon/issues/486)) ([e5c8a89](https://github.com/utensils/aethon/commit/e5c8a8969986bc09b72c57ec804c4948ad028dec))
+* **ios:** stop bundling Rust archive as resource ([#482](https://github.com/utensils/aethon/issues/482)) ([46e1ffa](https://github.com/utensils/aethon/commit/46e1ffaf1609c696e3b78ecb27b206115f0adfb4))
+* **ios:** tolerate keychain ACL rewrite failures ([f80a824](https://github.com/utensils/aethon/commit/f80a8249c62193e46cb8e6cfafa47ce4b78ad56d))
+* **ios:** use default Swift toolchain paths ([#487](https://github.com/utensils/aethon/issues/487)) ([b1bfce0](https://github.com/utensils/aethon/commit/b1bfce08e360a88ad935b0b5db419d29ed2d6c44))
+* **mobile:** iOS companion layout, project flows, device management, and theme sync ([#461](https://github.com/utensils/aethon/issues/461)) ([61349bd](https://github.com/utensils/aethon/commit/61349bde8ec4008d1111fdb07421580a9a3747ea))
+* **projects:** sync active VCS branch labels ([f9b18ab](https://github.com/utensils/aethon/commit/f9b18aba134efe05bd390b04a9a0d7ffb2d6c496))
+* **remote:** stabilize host overview and workspace selection ([1fe15a1](https://github.com/utensils/aethon/commit/1fe15a1862041d5401ea95992d208b928fbe1c40))
+* **remote:** stop companion reconnect storm and duplicated stream text ([#463](https://github.com/utensils/aethon/issues/463)) ([4c0d32d](https://github.com/utensils/aethon/commit/4c0d32d316ddf0e114ddb65640b0b4211caa459b))
+* **sessions:** stop auto-opening discovered history ([#448](https://github.com/utensils/aethon/issues/448)) ([8697221](https://github.com/utensils/aethon/commit/8697221e605131ec9fd51bd6c0ff0a1d24a19dcf))
+* **state:** ignore legacy Aethon session roots ([#446](https://github.com/utensils/aethon/issues/446)) ([1b517d4](https://github.com/utensils/aethon/commit/1b517d4261591112fcb5e96959862e3990624177))
+* **transcript:** suppress hidden live activity flashes ([48e80c4](https://github.com/utensils/aethon/commit/48e80c47eca4a3781d231443e34ab6f604fab501))
+
+
+### Performance Improvements
+
+* **agent:** single resource reload + orchestrated boot sequence + overlapped default-tab startup ([#465](https://github.com/utensils/aethon/issues/465)) ([1adf5ab](https://github.com/utensils/aethon/commit/1adf5abd4e350639b3d489bd45b329021d621417))
+* **boot:** defer orphan cleanup off-thread + pre-spawn the global bridge post-show ([#468](https://github.com/utensils/aethon/issues/468)) ([2f5af5d](https://github.com/utensils/aethon/commit/2f5af5db8211f40d8b4575ced049ca010f94d630))
+* **boot:** optimistic chrome for built-ins-only sessions (cached snapshot gate + kill-switch) ([#472](https://github.com/utensils/aethon/issues/472)) ([9a9702f](https://github.com/utensils/aethon/commit/9a9702fa8d9c6f2c29aeb932ab06178f8d8b5421))
+* **desktop:** monaco/shiki out of the boot path + lazy chrome surfaces ([#467](https://github.com/utensils/aethon/issues/467)) ([e9d7279](https://github.com/utensils/aethon/commit/e9d72796b6783793190ea047d60c42f09549264e))
+* **mobile:** paint the gate before the App chunk + drop monaco from the IPA ([#471](https://github.com/utensils/aethon/issues/471)) ([9820258](https://github.com/utensils/aethon/commit/982025874df79918b531675b5cb23ec2d75d030e))
+* **mobile:** self-hosted fonts, invoke pacing + rate-limit retry, watcher stubs, boot trimming ([#469](https://github.com/utensils/aethon/issues/469)) ([30b1880](https://github.com/utensils/aethon/commit/30b188033dd90e503533af4264d69255970048d4))
+* **toggle:** in-process extension hot toggle with respawn fallback + kill-switch ([#470](https://github.com/utensils/aethon/issues/470)) ([68d3e9d](https://github.com/utensils/aethon/commit/68d3e9d4eb0c75a51529facbd45a53c1fc798865))
+* **toggle:** parallel bridge kills + lazy replay of background restored tabs ([#466](https://github.com/utensils/aethon/issues/466)) ([8aa6228](https://github.com/utensils/aethon/commit/8aa6228b455379d71b6c950ba93789c64e686334))
+
 ## [0.11.2](https://github.com/utensils/aethon/compare/v0.11.1...v0.11.2) (2026-06-28)
 
 
