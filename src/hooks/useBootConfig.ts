@@ -85,6 +85,7 @@ export interface UseBootConfigActions {
  */
 export function useBootConfig(ctx: UseBootConfigContext): UseBootConfigActions {
   const { setState, piDefaultModelRef } = ctx;
+  const mobileSurface = import.meta.env.VITE_AETHON_SURFACE === "mobile";
 
   const defaultShareModeRef = useRef<ShellMeta["shareMode"]>("private");
   const notifyOnCompletionRef = useRef<boolean>(true);
@@ -276,18 +277,21 @@ export function useBootConfig(ctx: UseBootConfigContext): UseBootConfigActions {
             defaultModel: config.agent.model!,
           }));
         }
-        // Restore saved UI zoom (Cmd+/-). Stored as a string number on
-        // disk; clamp to a sensible range so a stale value can't make
-        // the UI unusable. applyUiScale writes both CSS zoom and the
-        // --app-ui-scale token that viewport-sized containers use to
-        // compensate, so zooming does not push chrome outside the window.
-        const savedZoom = (
-          await readStateWithLocalStorageFallback("ui_zoom", "")
-        ).trim();
-        if (cancelled) return;
-        const z = parseFloat(savedZoom);
-        if (Number.isFinite(z) && z >= 0.7 && z <= 1.6) {
-          applyUiScale(z);
+        // UI zoom belongs to the desktop window. On mobile `read_state`
+        // crosses the gateway to the paired desktop, so restoring ui_zoom
+        // here would apply the desktop's scale to the iPhone WKWebView and
+        // shift its document away from the device viewport.
+        if (!mobileSurface) {
+          // Stored as a string number; clamp to a sensible range so stale
+          // data cannot make the desktop UI unusable.
+          const savedZoom = (
+            await readStateWithLocalStorageFallback("ui_zoom", "")
+          ).trim();
+          if (cancelled) return;
+          const z = parseFloat(savedZoom);
+          if (Number.isFinite(z) && z >= 0.7 && z <= 1.6) {
+            applyUiScale(z);
+          }
         }
         ctx.onBootConfig?.(config);
       } finally {

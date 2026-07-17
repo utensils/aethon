@@ -11,6 +11,8 @@ describe("useZoomAndTheme", () => {
   beforeEach(() => {
     harness = installTauriMocks();
     document.documentElement.dataset.theme = "ember";
+    document.documentElement.style.zoom = "";
+    document.documentElement.style.removeProperty("--app-ui-scale");
     document.body.innerHTML = "";
   });
 
@@ -58,5 +60,29 @@ describe("useZoomAndTheme", () => {
     expect(document.documentElement.dataset.theme).toBe("brink");
     expect(harness.invoke).not.toHaveBeenCalledWith("set_theme", expect.anything());
     expect(harness.emit).not.toHaveBeenCalledWith("theme-changed", expect.anything());
+  });
+
+  it("keeps mobile at the native viewport scale", async () => {
+    vi.stubEnv("VITE_AETHON_SURFACE", "mobile");
+    document.documentElement.style.zoom = "1.2";
+    document.documentElement.style.setProperty("--app-ui-scale", "1.2");
+    const { result } = renderHook(() =>
+      useZoomAndTheme({
+        setState: vi.fn(),
+        pushNotification: vi.fn(),
+      }),
+    );
+
+    await waitFor(() => expect(document.documentElement.style.zoom).toBe(""));
+    act(() => result.current.applyZoom(1.3));
+
+    expect(document.documentElement.style.zoom).toBe("");
+    expect(
+      document.documentElement.style.getPropertyValue("--app-ui-scale"),
+    ).toBe("");
+    expect(harness.invoke).not.toHaveBeenCalledWith(
+      "write_state",
+      expect.objectContaining({ name: "ui_zoom" }),
+    );
   });
 });

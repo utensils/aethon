@@ -71,6 +71,16 @@ export function applyUiScale(scale: number) {
   }
 }
 
+/** Return the document to the browser/WebView's native scale. Mobile owns
+ * its viewport through device CSS pixels and safe-area insets, so desktop
+ * CSS zoom must never survive a remount or hot reload there. */
+export function resetUiScale() {
+  const root = document.documentElement;
+  root.style.removeProperty("--app-ui-scale");
+  root.style.zoom = "";
+  writeUiViewportVars(1);
+}
+
 export function readZoom(): number {
   const cur = parseFloat(
     document.documentElement.style.getPropertyValue("--app-ui-scale") ||

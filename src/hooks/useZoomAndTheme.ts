@@ -2,7 +2,12 @@ import { useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { emit, listen } from "@tauri-apps/api/event";
 import { writeState } from "../persist";
-import { applyUiScale, readZoom, writeUiViewportVars } from "../utils/viewport";
+import {
+  applyUiScale,
+  readZoom,
+  resetUiScale,
+  writeUiViewportVars,
+} from "../utils/viewport";
 import { mirrorBootTheme, normalizeThemeId } from "../themeBootstrap";
 
 export const ZOOM_MIN = 0.7;
@@ -48,11 +53,12 @@ export function useZoomAndTheme(
   const mobileSurface = import.meta.env.VITE_AETHON_SURFACE === "mobile";
 
   useEffect(() => {
+    if (mobileSurface) resetUiScale();
     const onResize = () => writeUiViewportVars(readZoom());
     onResize();
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
-  }, []);
+  }, [mobileSurface]);
 
   useEffect(() => {
     if (!mobileSurface) return;
@@ -74,6 +80,10 @@ export function useZoomAndTheme(
   }, [mobileSurface, setState]);
 
   function applyZoom(next: number) {
+    // CSS zoom is a desktop-window preference. Applying it to WKWebView
+    // changes the document coordinate space and can shift the whole app
+    // away from the physical iPhone viewport.
+    if (mobileSurface) return;
     const clamped = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, next));
     const rounded = Math.round(clamped * 100) / 100;
     applyUiScale(rounded);
