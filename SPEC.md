@@ -439,7 +439,8 @@ surface.
 - [x] **Enforced plan mode + reasoning controls** (`929c9cc`, `#319`,
       `8eaab89`) — `/plan` / `Shift+Tab` planning-only mode the agent
       enforces, a compact plan-mode toggle, and Codex reasoning-effort
-      controls (`[agent] thinking_level`).
+      controls (`[agent] thinking_level`), including model-specific GPT-5.6
+      Sol/Terra/Luna effort sets, Max, and Ultra delegation.
 - [x] **Memory** (`#270`) — `/memory`; per-user and resolved-project memory
       the agent can read and write.
 - [x] **Editor + dashboards** (`#71`, `db89c19`) — Monaco editor, file tree,
@@ -696,7 +697,7 @@ font_size = 14           # clamps to 10-24 and writes --app-font-size
 
 [agent]
 model = "anthropic/claude-sonnet-4-6"   # seeds the picker/default display
-thinking_level = "medium"               # off|minimal|low|medium|high|xhigh
+thinking_level = "medium"               # off|minimal|low|medium|high|xhigh|max|ultra
 # codex_fast_mode, provider/bash/subagent timeouts, idle_retire_minutes
 
 [mcp]

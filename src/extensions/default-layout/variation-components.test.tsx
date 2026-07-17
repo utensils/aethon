@@ -157,6 +157,46 @@ describe("ModelPicker", () => {
     expect(onEvent).toHaveBeenCalledWith("codex-fast-mode", { enabled: true });
   });
 
+  it("renders the complete Sol effort set including Max and Ultra", () => {
+    render(
+      <ModelPicker
+        component={{ id: "model-picker", type: "model-picker", props: {} }}
+        state={{
+          model: "openai-codex/gpt-5.6-sol",
+          thinkingLevel: "max",
+          sidebar: {
+            models: [
+              {
+                id: "openai-codex/gpt-5.6-sol",
+                label: "GPT-5.6 Sol",
+                thinkingLevels: [
+                  "low",
+                  "medium",
+                  "high",
+                  "xhigh",
+                  "max",
+                  "ultra",
+                ],
+              },
+            ],
+          },
+        }}
+        onEvent={vi.fn()}
+      />,
+    );
+
+    const select: HTMLSelectElement = screen.getByLabelText("Reasoning level");
+    expect(select.value).toBe("max");
+    expect([...select.options].map((option) => option.value)).toEqual([
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max",
+      "ultra",
+    ]);
+  });
+
   it("clamps stale reasoning state to the active model's supported levels", () => {
     render(
       <ModelPicker

@@ -477,7 +477,9 @@ function normalizeThinkingLevel(value: unknown): string | null {
     value === "low" ||
     value === "medium" ||
     value === "high" ||
-    value === "xhigh"
+    value === "xhigh" ||
+    value === "max" ||
+    value === "ultra"
     ? value
     : null;
 }

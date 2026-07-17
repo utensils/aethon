@@ -107,6 +107,10 @@ describe("chat model selection helpers", () => {
       modelId: "openai-codex/gpt-5.5",
       thinkingLevel: "high",
     });
+    expect(parseModelIdWithThinking("openai-codex/gpt-5.6-sol:ultra")).toEqual({
+      modelId: "openai-codex/gpt-5.6-sol",
+      thinkingLevel: "ultra",
+    });
     expect(parseModelIdWithThinking("ollama/foo:high")).toEqual({
       modelId: "ollama/foo:high",
     });

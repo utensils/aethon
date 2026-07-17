@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { Model } from "@mariozechner/pi-ai";
 import type { AethonAgentState } from "./state";
 import {
+  applyCodexModeToPayload,
   applyCodexFastModeToPayload,
   installCodexFastModePayloadHook,
   supportsCodexFastMode,
@@ -72,5 +73,28 @@ describe("Codex Fast mode", () => {
     expect(
       applyCodexFastModeToPayload(payload, true, model("openai", "gpt-5.5")),
     ).toBe(payload);
+  });
+
+  it("sends GPT-5.6 Max and Ultra as distinct Codex efforts", () => {
+    const sol = model("openai-codex", "gpt-5.6-sol");
+    expect(applyCodexModeToPayload({}, false, "max", sol)).toEqual({
+      reasoning: { effort: "max" },
+    });
+    expect(
+      applyCodexModeToPayload(
+        { reasoning: { effort: "xhigh", summary: "auto" } },
+        false,
+        "ultra",
+        sol,
+      ),
+    ).toEqual({ reasoning: { effort: "ultra", summary: "auto" } });
+    expect(
+      applyCodexModeToPayload(
+        {},
+        false,
+        "ultra",
+        model("openai-codex", "gpt-5.5"),
+      ),
+    ).toEqual({});
   });
 });

@@ -272,6 +272,13 @@ async function main(): Promise<void> {
       const subagents = getSubagentsForCwd(state, resolvedCwd).byName;
       const advert = buildSubagentsSection([...subagents.values()]);
       if (advert) systemPrompt += `\n\n${advert}`;
+      if (
+        tabId &&
+        state.tabs.get(tabId)?.codexExtendedReasoningEffort === "ultra"
+      ) {
+        systemPrompt +=
+          "\n\nUltra reasoning mode is active. Proactively delegate independent, meaningful parts of complex work to the available subagents, run suitable work in parallel, and consolidate their results. Keep simple or tightly coupled work in the primary agent.";
+      }
       // Explicit @name invocation: consume the one-shot steer for this tab
       // (clearing it prevents the subagent's own turn from re-triggering it).
       if (tabId) {

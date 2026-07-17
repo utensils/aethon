@@ -21,6 +21,10 @@
 
 import { supportsCodexFastMode } from "../codex-fast-mode";
 import {
+  codexReasoningLevels,
+  selectedThinkingLevel,
+} from "../codex-reasoning";
+import {
   clearLiveContextUsageEstimate,
   emitContextUsage,
 } from "../context-usage";
@@ -89,8 +93,10 @@ export function handleSessionEvent(
         type: "thinking_level_changed",
         tabId,
         model: rec.session.model ? modelKey(rec.session.model) : "",
-        thinkingLevel: rec.session.thinkingLevel,
-        thinkingLevels: rec.session.getAvailableThinkingLevels(),
+        thinkingLevel: selectedThinkingLevel(rec),
+        thinkingLevels:
+          codexReasoningLevels(rec.session.model ?? undefined) ??
+          rec.session.getAvailableThinkingLevels(),
         codexFastMode: state.codexFastMode,
         codexFastModeSupported: supportsCodexFastMode(rec.session.model),
       });

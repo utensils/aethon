@@ -43,7 +43,7 @@ pub struct UiConfig {
 pub struct AgentConfig {
     pub model: Option<String>,
     /// Default reasoning effort for new sessions on models that expose it.
-    /// Allowed: off/minimal/low/medium/high/xhigh. Unknown values are ignored.
+    /// Allowed: off/minimal/low/medium/high/xhigh/max/ultra. Unknown values are ignored.
     pub thinking_level: Option<String>,
     /// Optional Aethon-owned override for the provider/SDK request timeout,
     /// in seconds. Omitted leaves pi's own `retry.provider.timeoutMs` behavior
@@ -437,7 +437,7 @@ pub fn normalize_timeout_seconds(value: Option<u32>) -> u32 {
 
 pub fn normalize_thinking_level(value: Option<&str>) -> Option<&str> {
     match value {
-        Some("off" | "minimal" | "low" | "medium" | "high" | "xhigh") => value,
+        Some("off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra") => value,
         _ => None,
     }
 }
@@ -693,6 +693,14 @@ mod tests {
     fn parse_config_toml_ignores_unknown_thinking_level() {
         let v = parse_config_toml("[agent]\nthinking_level = \"turbo\"\n");
         assert_eq!(v["agent"]["thinkingLevel"], serde_json::Value::Null);
+    }
+
+    #[test]
+    fn parse_config_toml_accepts_codex_extended_thinking_levels() {
+        for level in ["max", "ultra"] {
+            let v = parse_config_toml(&format!("[agent]\nthinking_level = \"{level}\"\n"));
+            assert_eq!(v["agent"]["thinkingLevel"], level);
+        }
     }
 
     #[test]
