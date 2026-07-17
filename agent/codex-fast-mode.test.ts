@@ -54,6 +54,31 @@ describe("Codex Fast mode", () => {
     );
   });
 
+  it("reads an extended effort from the matching tab session", async () => {
+    const codexModel = model("openai-codex", "gpt-5.6-sol");
+    const session = {
+      model: codexModel,
+      agent: {
+        onPayload: vi.fn((payload: unknown) => Promise.resolve(payload)),
+      },
+    };
+    const state = {
+      codexFastMode: false,
+      tabs: new Map([
+        [
+          "tab-1",
+          { session, codexExtendedReasoningEffort: "ultra" as const },
+        ],
+      ]),
+    } as unknown as AethonAgentState;
+
+    installCodexFastModePayloadHook(state, session);
+
+    await expect(session.agent.onPayload({})).resolves.toEqual({
+      reasoning: { effort: "ultra" },
+    });
+  });
+
   it("adds priority service_tier only when enabled and supported", () => {
     const payload = { model: "gpt-5.5", input: [] };
     expect(

@@ -81,10 +81,13 @@ export function installCodexFastModePayloadHook(
     const next = originalOnPayload
       ? await originalOnPayload(payload, model)
       : payload;
-    const effort = state.tabs
-      ? [...state.tabs.values()].find((tab) => tab.session === session)
-          ?.codexExtendedReasoningEffort
-      : undefined;
+    let effort: CodexExtendedReasoningEffort | undefined;
+    for (const tab of state.tabs?.values() ?? []) {
+      if (tab.session === session) {
+        effort = tab.codexExtendedReasoningEffort;
+        break;
+      }
+    }
     return applyCodexModeToPayload(
       next,
       state.codexFastMode,
