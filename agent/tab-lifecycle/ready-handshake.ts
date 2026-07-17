@@ -18,6 +18,10 @@ import { refreshPiSlashCommands } from "./slash-commands";
 import type { TabLifecycleDeps } from "./utils";
 import { modelKey } from "./utils";
 import { supportsCodexFastMode } from "../codex-fast-mode";
+import {
+  codexReasoningLevels,
+  selectedThinkingLevel,
+} from "../codex-reasoning";
 
 export function emitReady(
   state: AethonAgentState,
@@ -31,7 +35,9 @@ export function emitReady(
   deps.send({
     type: "ready",
     model: defaultModelKey(state),
-    thinkingLevel: commandSourceTab?.session.thinkingLevel,
+    thinkingLevel: commandSourceTab
+      ? selectedThinkingLevel(commandSourceTab)
+      : undefined,
     codexFastMode: state.codexFastMode,
     projectRoot: state.projectRoot,
     currentProjectCwd: state.currentProjectCwd,
@@ -41,11 +47,13 @@ export function emitReady(
     tabs: [...state.tabs.values()].map((t) => ({
       id: t.id,
       model: t.session.model ? modelKey(t.session.model) : "",
-      thinkingLevel: t.session.thinkingLevel,
+      thinkingLevel: selectedThinkingLevel(t),
       thinkingLevels:
+        codexReasoningLevels(t.session.model ?? undefined) ??
         (
           t.session as { getAvailableThinkingLevels?: () => string[] }
-        ).getAvailableThinkingLevels?.() ?? [],
+        ).getAvailableThinkingLevels?.() ??
+        [],
       codexFastModeSupported: supportsCodexFastMode(t.session.model),
       cwd: state.tabProjectCwds.get(t.id),
       authProfileId: state.tabAuthProfileIds.get(t.id),

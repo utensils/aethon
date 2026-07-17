@@ -84,6 +84,32 @@ describe("modelKey + modelDescriptor", () => {
       provider: "anthropic",
     });
   });
+
+  it("exposes model-specific GPT-5.6 effort sets", () => {
+    const sol = {
+      id: "gpt-5.6-sol",
+      provider: "openai-codex",
+      name: "GPT-5.6 Sol",
+      reasoning: true,
+    };
+    const luna = { ...sol, id: "gpt-5.6-luna", name: "GPT-5.6 Luna" };
+
+    expect(modelDescriptor(sol as never).thinkingLevels).toEqual([
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max",
+      "ultra",
+    ]);
+    expect(modelDescriptor(luna as never).thinkingLevels).toEqual([
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max",
+    ]);
+  });
 });
 
 describe("ensurePickerHasModel", () => {
@@ -717,6 +743,34 @@ describe("emitReady", () => {
           id: "tab-1",
           model: "anthropic/claude-x",
           cwd: "/repo/a",
+        },
+      ],
+    });
+  });
+
+  it("preserves an Ultra selection and Sol's complete effort set", () => {
+    const f = makeFixture();
+    const rec = fakeRec("openai-codex/gpt-5.6-sol");
+    rec.id = "tab-1";
+    rec.codexExtendedReasoningEffort = "ultra";
+    f.state.tabs.set("tab-1", rec);
+
+    emitReady(f.state, f.deps);
+
+    expect(f.sent[0]).toMatchObject({
+      thinkingLevel: "ultra",
+      tabs: [
+        {
+          id: "tab-1",
+          thinkingLevel: "ultra",
+          thinkingLevels: [
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max",
+            "ultra",
+          ],
         },
       ],
     });

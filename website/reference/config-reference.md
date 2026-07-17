@@ -64,7 +64,7 @@ idle_retire_minutes = 15
 | Key | Type | Default | Notes |
 |---|---|---|---|
 | `model` | string | provider default | The default model for new agent tabs. Format depends on the provider: `anthropic/claude-sonnet-4-6`, `openai/gpt-4o`, etc. The `/model` slash command updates *the active tab's* model and persists the choice for new tabs. |
-| `thinking_level` | `"off" \| "minimal" \| "low" \| "medium" \| "high" \| "xhigh"` | unset | Default reasoning effort for new agent sessions on models that expose it. Unknown values are ignored (treated as unset). Per-session overridable via the model-picker reasoning selector. |
+| `thinking_level` | `"off" \| "minimal" \| "low" \| "medium" \| "high" \| "xhigh" \| "max" \| "ultra"` | unset | Default reasoning effort for new agent sessions on models that expose it. Options are model-specific: GPT-5.6 Sol/Terra support through Ultra, Luna through Max, and older models retain their existing sets. Unknown values are ignored (treated as unset). Per-session overridable via the model-picker reasoning selector. |
 | `codex_fast_mode` | boolean | `false` | Request Codex Fast mode (priority service tier) for supported `openai-codex` models. Wired through `AETHON_CODEX_FAST_MODE`. |
 | `provider_timeout_seconds` | integer | unset | Aethon-owned override for the provider/SDK request timeout, in seconds. Omit (or set `0`) to leave pi's own `retry.provider.timeoutMs` behavior unchanged. Clamped to 1-86400. Wired through `AETHON_PROVIDER_TIMEOUT_SECONDS`. |
 | `bash_timeout_floor_seconds` | integer | `300` | Floor applied to model-supplied bash tool timeouts, in seconds. A missing or invalid (`0`) value uses the historical 5-minute default. Clamped to 1-86400. Wired through `AETHON_BASH_TIMEOUT_FLOOR_SECONDS`. |

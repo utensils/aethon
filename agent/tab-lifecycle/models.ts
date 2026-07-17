@@ -10,6 +10,7 @@ import type { Api, Model } from "@mariozechner/pi-ai";
 import type { AethonAgentState } from "../state";
 import { compilePattern, modelDescriptor, modelKey } from "./utils";
 import type { TabLifecycleDeps } from "./utils";
+import { registerOpenAIPreviewModels } from "../openai-preview-models";
 
 function uniqueModels(models: Model<Api>[]): Model<Api>[] {
   const seen = new Set<string>();
@@ -92,6 +93,7 @@ export async function refreshCachedModels(
   }
   try {
     state.modelRegistry.refresh();
+    registerOpenAIPreviewModels(state.modelRegistry);
   } catch (err) {
     logger
       .scope("picker")
@@ -101,6 +103,7 @@ export async function refreshCachedModels(
     try {
       services.authStorage.reload();
       services.modelRegistry.refresh();
+      registerOpenAIPreviewModels(services.modelRegistry);
     } catch (err) {
       logger
         .scope("picker")

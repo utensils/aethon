@@ -12,6 +12,7 @@ import {
 } from "@mariozechner/pi-ai";
 import type { AethonAgentState, ModelDescriptor } from "../state";
 import { supportsCodexFastMode } from "../codex-fast-mode";
+import { codexReasoningLevels } from "../codex-reasoning";
 
 export interface TabLifecycleDeps {
   send: (obj: Record<string, unknown>) => void;
@@ -22,7 +23,8 @@ export function modelKey(m: Model<Api>): string {
 }
 
 export function modelDescriptor(m: Model<Api>): ModelDescriptor {
-  const supportedThinkingLevels = getSupportedThinkingLevels(m);
+  const supportedThinkingLevels =
+    codexReasoningLevels(m) ?? getSupportedThinkingLevels(m);
   const thinkingLevels =
     supportedThinkingLevels.length === 1 && supportedThinkingLevels[0] === "off"
       ? []

@@ -331,6 +331,9 @@ export interface TabRecord {
   contextUsageTransientTokens?: number;
   contextUsageLastEmitMs?: number;
   contextUsageEmitTimer?: ReturnType<typeof setTimeout>;
+  /** Aethon-level Codex 5.6 effort layered over Pi's xhigh transport until
+   *  Pi natively models Max and Ultra. */
+  codexExtendedReasoningEffort?: "max" | "ultra";
 }
 
 export interface ProjectBaselineSnapshot {

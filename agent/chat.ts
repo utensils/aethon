@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto";
 import type { Api, ImageContent, Model } from "@mariozechner/pi-ai";
-import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
 import type { AethonAgentState, TabRecord } from "./state";
 import type { DispatcherDeps, InboundMessage } from "./dispatcherTypes";
 import { maybeExitForReload } from "./dispatcherTypes";
@@ -31,6 +30,15 @@ import {
 import { emitSessionEvent } from "./aethon-api-sessions";
 import { logger } from "./logger";
 import { isUnderlyingSessionBusy } from "./session-busy";
+import {
+  codexReasoningLevels,
+  isCodexExtendedReasoningEffort,
+  normalizeAethonThinkingLevel,
+  piThinkingLevel,
+  selectedThinkingLevel,
+  setTabThinkingLevel,
+  type AethonThinkingLevel,
+} from "./codex-reasoning";
 
 const chatLog = logger.scope("chat");
 
@@ -126,7 +134,15 @@ export async function handleChat(
       ? {
           cwdOverride,
           initialModel,
-          thinkingLevel: requestedModel.thinkingLevel,
+          thinkingLevel: requestedModel.thinkingLevel
+            ? piThinkingLevel(requestedModel.thinkingLevel)
+            : undefined,
+          ...(requestedModel.thinkingLevel &&
+          isCodexExtendedReasoningEffort(requestedModel.thinkingLevel)
+            ? {
+                codexExtendedReasoningEffort: requestedModel.thinkingLevel,
+              }
+            : {}),
         }
       : {},
   );
@@ -138,7 +154,9 @@ export async function handleChat(
     refreshTabSessionModelFromAuthServices(state, tabId);
   }
   if (requestedModel.thinkingLevel) {
-    tab.session.setThinkingLevel(requestedModel.thinkingLevel);
+    setTabThinkingLevel(tab, requestedModel.thinkingLevel, {
+      clampUnsupportedExtended: true,
+    });
   }
   const planMode = state.tabPlanMode.get(tabId) === true;
   const wantsSteer = msg.mode === "steer";
@@ -407,7 +425,9 @@ export async function handleSetModel(
   try {
     await tab.session.setModel(next);
     if (requestedModel.thinkingLevel) {
-      tab.session.setThinkingLevel(requestedModel.thinkingLevel);
+      setTabThinkingLevel(tab, requestedModel.thinkingLevel);
+    } else {
+      tab.codexExtendedReasoningEffort = undefined;
     }
     await state.resourceLoader.reload();
   } catch (err) {
@@ -431,7 +451,7 @@ export async function handleSetThinkingLevel(
   msg: InboundMessage,
 ): Promise<void> {
   const tabId = msg.tabId ?? "default";
-  const level = normalizeThinkingLevel(msg.thinkingLevel ?? msg.value);
+  const level = normalizeAethonThinkingLevel(msg.thinkingLevel ?? msg.value);
   if (!level) {
     deps.send({
       type: "error",
@@ -451,8 +471,10 @@ export async function handleSetThinkingLevel(
     return;
   }
   try {
-    tab.session.setThinkingLevel(level);
-    state.settingsManager.setDefaultThinkingLevel(level);
+    setTabThinkingLevel(tab, level);
+    if (!isCodexExtendedReasoningEffort(level)) {
+      state.settingsManager.setDefaultThinkingLevel(level);
+    }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     deps.send({
@@ -495,34 +517,21 @@ export function modelStatePayload(
     model:
       modelOverride ??
       (session.model ? `${session.model.provider}/${session.model.id}` : ""),
-    thinkingLevel: session.thinkingLevel,
-    thinkingLevels: session.getAvailableThinkingLevels?.() ?? [],
+    thinkingLevel: selectedThinkingLevel(tab),
+    thinkingLevels:
+      codexReasoningLevels(session.model ?? undefined) ??
+      session.getAvailableThinkingLevels?.() ??
+      [],
     codexFastMode: state.codexFastMode,
     codexFastModeSupported: supportsCodexFastMode(session.model),
   };
 }
 
-const THINKING_LEVELS = new Set<ThinkingLevel>([
-  "off",
-  "minimal",
-  "low",
-  "medium",
-  "high",
-  "xhigh",
-]);
-
-function normalizeThinkingLevel(value: unknown): ThinkingLevel | undefined {
-  return typeof value === "string" &&
-    THINKING_LEVELS.has(value as ThinkingLevel)
-    ? (value as ThinkingLevel)
-    : undefined;
-}
-
 function parseModelAndThinking(
   rawModel: string | undefined,
   rawLevel: unknown,
-): { modelId?: string; thinkingLevel?: ThinkingLevel } {
-  const explicitLevel = normalizeThinkingLevel(rawLevel);
+): { modelId?: string; thinkingLevel?: AethonThinkingLevel } {
+  const explicitLevel = normalizeAethonThinkingLevel(rawLevel);
   if (!rawModel) return explicitLevel ? { thinkingLevel: explicitLevel } : {};
   const idx = rawModel.lastIndexOf(":");
   if (idx <= 0)
@@ -531,7 +540,7 @@ function parseModelAndThinking(
       ...(explicitLevel ? { thinkingLevel: explicitLevel } : {}),
     };
   const modelId = rawModel.slice(0, idx);
-  const suffix = normalizeThinkingLevel(rawModel.slice(idx + 1));
+  const suffix = normalizeAethonThinkingLevel(rawModel.slice(idx + 1));
   if (!modelId.startsWith("openai-codex/") || !suffix)
     return {
       modelId: rawModel,

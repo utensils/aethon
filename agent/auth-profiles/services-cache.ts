@@ -122,6 +122,7 @@ export function refreshGlobalAuthServicesIfChanged(
   if (refreshed) {
     state.authStorage.reload();
     state.modelRegistry.refresh();
+    registerOpenAIPreviewModels(state.modelRegistry);
     globalAuthMtimes.set(state, authMtimeMs);
   }
   return refreshed;
@@ -211,6 +212,7 @@ function servicesForProfileWithStatus(
 function refreshServicePair(services: AuthProfileServices): void {
   services.authStorage.reload();
   services.modelRegistry.refresh();
+  registerOpenAIPreviewModels(services.modelRegistry);
 }
 
 function fileMtimeMs(path: string): number | undefined {

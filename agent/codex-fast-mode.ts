@@ -1,6 +1,7 @@
 import type { Api, Model } from "@mariozechner/pi-ai";
 import type { AethonAgentState } from "./state";
 import { modelSupportsPriorityServiceTier } from "./model-capabilities";
+import type { CodexExtendedReasoningEffort } from "./codex-reasoning";
 
 const patchedAgents = new WeakSet<object>();
 
@@ -33,6 +34,29 @@ export function applyCodexFastModeToPayload(
   return { ...payload, service_tier: "priority" } satisfies ProviderPayload;
 }
 
+export function applyCodexModeToPayload(
+  payload: unknown,
+  fastModeEnabled: boolean,
+  extendedEffort: CodexExtendedReasoningEffort | undefined,
+  model: Model<Api> | undefined,
+): unknown {
+  let next = applyCodexFastModeToPayload(payload, fastModeEnabled, model);
+  if (
+    !extendedEffort ||
+    model?.provider !== "openai-codex" ||
+    !/^gpt-5\.6-(?:sol|terra|luna)$/.test(model.id) ||
+    !isRecord(next)
+  ) {
+    return next;
+  }
+  const currentReasoning = isRecord(next.reasoning) ? next.reasoning : {};
+  next = {
+    ...next,
+    reasoning: { ...currentReasoning, effort: extendedEffort },
+  };
+  return next;
+}
+
 /**
  * Pi exposes request-body mutation through Agent.onPayload, while Codex usage
  * accounting reads the requested service tier from stream options. Patch both
@@ -57,9 +81,17 @@ export function installCodexFastModePayloadHook(
     const next = originalOnPayload
       ? await originalOnPayload(payload, model)
       : payload;
-    return applyCodexFastModeToPayload(
+    let effort: CodexExtendedReasoningEffort | undefined;
+    for (const tab of state.tabs?.values() ?? []) {
+      if (tab.session === session) {
+        effort = tab.codexExtendedReasoningEffort;
+        break;
+      }
+    }
+    return applyCodexModeToPayload(
       next,
       state.codexFastMode,
+      effort,
       model ?? session.model,
     );
   };

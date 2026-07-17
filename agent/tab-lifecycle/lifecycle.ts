@@ -44,6 +44,11 @@ import type { BootTrace } from "../boot-trace";
 import { authProfileServicesForTab } from "../auth-profiles";
 import { emitGlobalReady } from "../dispatcherTypes";
 import type { AethonAgentState, TabRecord } from "../state";
+import type { CodexExtendedReasoningEffort } from "../codex-reasoning";
+import {
+  codexReasoningLevels,
+  selectedThinkingLevel,
+} from "../codex-reasoning";
 import { contextUsageSnapshot, emitContextUsage } from "../context-usage";
 import { createSqliteBackedSessionManager } from "../session-sqlite";
 import { handleSessionEvent } from "./events";
@@ -56,6 +61,7 @@ import type { TabLifecycleDeps } from "./utils";
 export interface EnsureTabOptions {
   initialModel?: Model<Api>;
   thinkingLevel?: ThinkingLevel;
+  codexExtendedReasoningEffort?: CodexExtendedReasoningEffort;
   cwdOverride?: string;
   /** Boot-phase trace (main.ts startup only) — records tab sub-spans. */
   trace?: BootTrace;
@@ -307,6 +313,9 @@ export async function ensureTab(
     queuedCount: 0,
     toolCardSeq: 0,
     responseMessageSeq: 0,
+    ...(options.codexExtendedReasoningEffort
+      ? { codexExtendedReasoningEffort: options.codexExtendedReasoningEffort }
+      : {}),
   };
   state.tabs.set(tabId, rec);
   refreshPiSlashCommands(state, session);
@@ -330,8 +339,10 @@ export async function ensureTab(
     type: "tab_ready",
     tabId,
     model: session.model ? modelKey(session.model) : "",
-    thinkingLevel: session.thinkingLevel,
-    thinkingLevels: session.getAvailableThinkingLevels(),
+    thinkingLevel: selectedThinkingLevel(rec),
+    thinkingLevels:
+      codexReasoningLevels(session.model ?? undefined) ??
+      session.getAvailableThinkingLevels(),
     codexFastMode: state.codexFastMode,
     codexFastModeSupported: supportsCodexFastMode(session.model),
     contextUsage: contextUsageSnapshot(state, tabId, rec),

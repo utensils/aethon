@@ -83,13 +83,20 @@ in `~/.aethon/config.toml`:
 
 ```toml
 [agent]
-thinking_level = "medium"   # off | minimal | low | medium | high | xhigh
+thinking_level = "medium"   # off | minimal | low | medium | high | xhigh | max | ultra
 ```
 
 Leave it unset to use each provider's own default. Codex-family models also
 honour `[agent] codex_fast_mode` (trade reasoning depth for a faster, higher
 service tier). See
 [config.toml reference](/reference/config-reference) for both fields.
+
+For Codex GPT-5.6, Aethon ships Sol, Terra, and Luna under ChatGPT auth with
+their 272,000-token context window. Sol and Terra offer Light through Ultra;
+Luna offers Light through Max. The selector remains model-specific, so older
+Codex models keep their existing effort vocabulary instead of inheriting 5.6
+options they do not support. Auto-compaction still reserves the configured pi
+token margin below the model window.
 
 ## Plan mode
 
