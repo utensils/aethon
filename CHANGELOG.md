@@ -4,6 +4,19 @@ All notable changes to Aethon. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 [SemVer](https://semver.org/).
 
+## [0.13.0](https://github.com/utensils/aethon/compare/v0.12.0...v0.13.0) (2026-07-21)
+
+
+### Features
+
+* **models:** support Codex 5.6 models and efforts ([#491](https://github.com/utensils/aethon/issues/491)) ([2cd7d85](https://github.com/utensils/aethon/commit/2cd7d85b04a16b567fe17d80ad7e3ac47df409a3))
+
+
+### Bug Fixes
+
+* **mobile:** keep iPhone layout at native scale ([#493](https://github.com/utensils/aethon/issues/493)) ([864224c](https://github.com/utensils/aethon/commit/864224cf8058f0a5da6373cbf2b27786fde322db))
+* **workspaces:** allow clearing stale worktree locks ([#495](https://github.com/utensils/aethon/issues/495)) ([f54c68d](https://github.com/utensils/aethon/commit/f54c68dfa142ec049f5ddb8256e6c0030a13f7be))
+
 ## [0.12.0](https://github.com/utensils/aethon/compare/v0.11.2...v0.12.0) (2026-07-12)
 
 
