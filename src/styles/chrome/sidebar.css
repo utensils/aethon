@@ -1489,10 +1489,29 @@ body.ae-resizing-sidebar .a2ui-layout {
   border-color: color-mix(in oklab, var(--error) 52%, var(--border));
 }
 .ae-workspace-lock {
+  display: inline-grid;
+  place-items: center;
   flex-shrink: 0;
+  width: 28px;
+  height: 28px;
   font-size: var(--chrome-text-muted);
   color: var(--warn);
   margin-left: var(--space-1);
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  cursor: pointer;
+  line-height: 1;
+}
+.ae-workspace-lock:hover {
+  color: color-mix(in oklab, var(--warn) 75%, var(--text));
+  background: color-mix(in oklab, var(--warn) 10%, transparent);
+  border-color: color-mix(in oklab, var(--warn) 28%, transparent);
+}
+.ae-workspace-lock:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
 }
 
 .a2ui-sidebar-empty {

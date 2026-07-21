@@ -67,9 +67,10 @@ describe("mobile command policy", () => {
       "gh_repo_overview",
       "fs_read_file",
       "fs_list_dir",
-      // Workspace mutation forwards so mobile issue dispatch and the
+      // Workspace mutations forward so mobile issue dispatch and the
       // New-workspace button work end-to-end (root-checked desktop-side).
       "git_worktree_add",
+      "git_worktree_unlock",
       "git_worktree_remove",
       "git_worktree_remove_orphan",
       "read_issue_templates",

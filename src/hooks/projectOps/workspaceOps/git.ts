@@ -10,6 +10,7 @@ import { pickWorkspaceName } from "../../../workspaceNames";
 import {
   gitBranchList,
   gitWorktreeAdd,
+  gitWorktreeUnlock,
   gitWorktrees,
   newPendingWorkspace,
   reconcileWorkspaces,
@@ -211,6 +212,33 @@ export async function refreshProjectWorkspaces(
     void deps.persistProjects();
   } catch {
     // Project may not be a git repo; keep the prior list intact.
+  }
+}
+
+export async function unlockWorkspaceById(
+  deps: Pick<
+    GitDeps,
+    | "projectsRef"
+    | "lookups"
+    | "syncProjectsToState"
+    | "persistProjects"
+    | "tabCleanup"
+  > & { notifyFailure: (message: string) => void },
+  workspaceId: string,
+): Promise<void> {
+  const found = deps.lookups.findProjectOfWorkspace(workspaceId);
+  if (!found || !found.workspace.locked) return;
+  try {
+    await gitWorktreeUnlock({
+      projectPath: found.project.path,
+      workspacePath: found.workspace.path,
+      hostId: found.project.hostId,
+    });
+    await refreshProjectWorkspaces(deps, found.project.id);
+  } catch (error) {
+    deps.notifyFailure(
+      error instanceof Error ? error.message : String(error),
+    );
   }
 }
 

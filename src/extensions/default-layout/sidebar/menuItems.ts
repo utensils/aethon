@@ -89,6 +89,14 @@ export function canRemoveWorkspace(
   return !pending || pending === "succeeded";
 }
 
+export function canUnlockWorkspace(
+  item: WorkspaceSidebarItem | undefined,
+): boolean {
+  if (!item?.locked || isRemoteWorkspace(item)) return false;
+  const pending = item.pendingState;
+  return !pending || pending === "succeeded";
+}
+
 export interface SidebarMenuHandlers {
   // Project actions — clicking a row switches; menu only surfaces
   // verbs that aren't reachable from a plain click.
@@ -114,6 +122,7 @@ export interface SidebarMenuHandlers {
   openContextWorkspaceInFinder: () => void;
   copyContextWorkspacePath: () => void;
   renameContextWorkspace: () => void;
+  unlockContextWorkspace: () => void;
   removeContextWorkspace: () => void;
   // Session + extension (unchanged)
   closeContextMenu: () => void;
@@ -353,6 +362,15 @@ export function buildSidebarMenuItems(
           disabled: !canRenameWorkspace(state.workspace),
           onSelect: h.renameContextWorkspace,
         },
+        ...(canUnlockWorkspace(state.workspace)
+          ? [
+              {
+                id: "unlock-workspace",
+                label: "Unlock workspace",
+                onSelect: h.unlockContextWorkspace,
+              } satisfies ContextMenuItem,
+            ]
+          : []),
         { type: "separator" },
         {
           id: "remove-workspace",

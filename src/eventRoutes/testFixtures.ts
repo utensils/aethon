@@ -246,6 +246,7 @@ export function buildRouteFixture(
     startTaskInProject: vi.fn(() => Promise.resolve({ tabId: "tab-task" })),
     clearClosedIssueLinksForProject,
     removeWorkspaceById: vi.fn(() => Promise.resolve()),
+    unlockWorkspaceById: vi.fn(() => Promise.resolve()),
     dismissPendingWorkspace: vi.fn(),
     retryPendingWorkspace: vi.fn(() => Promise.resolve()),
     renameWorkspace: vi.fn(),

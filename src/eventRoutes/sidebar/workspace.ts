@@ -444,6 +444,17 @@ export const handleSidebarRemoveWorkspace: EventRouteHandler = (
   return true;
 };
 
+export const handleSidebarUnlockWorkspace: EventRouteHandler = (
+  { eventType, data },
+  ctx,
+) => {
+  if (eventType !== "unlock-workspace") return false;
+  const workspaceId = (data as { workspaceId?: string } | undefined)
+    ?.workspaceId;
+  if (workspaceId) void ctx.unlockWorkspaceById(workspaceId);
+  return true;
+};
+
 export const handleSidebarCancelPendingWorkspace: EventRouteHandler = (
   { eventType, data },
   ctx,

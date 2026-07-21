@@ -154,6 +154,19 @@ describe("WorkspaceRow", () => {
     );
   });
 
+  it("unlocks a locked workspace without switching rows", () => {
+    const { onEvent } = harness(wt({ locked: true }));
+
+    fireEvent.click(screen.getByRole("button", { name: "Unlock feature-x" }));
+
+    expect(onEvent).toHaveBeenCalledTimes(1);
+    expect(onEvent).toHaveBeenCalledWith(
+      "unlock-workspace",
+      expect.objectContaining({ workspaceId: "wt-1", sectionId: "projects" }),
+      "wt-1",
+    );
+  });
+
   it("renders needs-attention agent activity as an attention dot", () => {
     harness(
       wt({
@@ -550,6 +563,16 @@ describe("WorkspaceRow", () => {
     harness(wt({ hostId: "remote:bender", remoteId: "feature" }));
     expect(
       screen.queryByRole("button", { name: "Remove feature-x" }),
+    ).toBeNull();
+  });
+
+  it("does not offer local unlock for remote workspace mirrors", () => {
+    harness(
+      wt({ locked: true, hostId: "remote:bender", remoteId: "feature-x" }),
+    );
+
+    expect(
+      screen.queryByRole("button", { name: "Unlock feature-x" }),
     ).toBeNull();
   });
 

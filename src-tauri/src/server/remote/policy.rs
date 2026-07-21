@@ -138,7 +138,7 @@ pub const COMMAND_POLICIES: &[(&str, RemotePolicy)] = &[
     ("fs_open_in_file_manager", Deny(DESKTOP_ONLY)),
     ("fs_open_in_default_app", Deny(DESKTOP_ONLY)),
     // git + gh — read surfaces scoped to a validated root. Worktree
-    // add/remove mutate the repo layout but are root-checked against a
+    // add/unlock/remove mutate repo metadata but are root-checked against a
     // known project and are what the companion's issue-dispatch /
     // new-workspace flows run; a paired device already holds shell
     // access to these roots, so this is not an escalation.
@@ -156,6 +156,7 @@ pub const COMMAND_POLICIES: &[(&str, RemotePolicy)] = &[
     ("git_diff_stat", DirectRootChecked),
     ("git_worktrees", DirectRootChecked),
     ("git_worktree_add", DirectRootChecked),
+    ("git_worktree_unlock", DirectRootChecked),
     ("git_worktree_remove", DirectRootChecked),
     ("git_worktree_remove_orphan", DirectRootChecked),
     ("git_branch_list", DirectRootChecked),
@@ -311,6 +312,7 @@ pub fn root_arg_value(cmd: &str, args: &serde_json::Value) -> Option<String> {
         "git_working_context" => "cwd",
         "git_worktrees"
         | "git_worktree_add"
+        | "git_worktree_unlock"
         | "git_worktree_remove"
         | "git_worktree_remove_orphan"
         | "git_branch_list"
@@ -475,6 +477,7 @@ mod tests {
         assert_eq!(policy_for("fs_read_file"), DirectRootChecked);
         assert_eq!(policy_for("git_status"), DirectRootChecked);
         assert_eq!(policy_for("git_worktree_add"), DirectRootChecked);
+        assert_eq!(policy_for("git_worktree_unlock"), DirectRootChecked);
         assert_eq!(policy_for("git_worktree_remove"), DirectRootChecked);
         assert_eq!(policy_for("read_issue_templates"), DirectRootChecked);
         assert_eq!(policy_for("devshell_env_for_path"), DirectRootChecked);

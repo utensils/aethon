@@ -331,6 +331,41 @@ fn nearest_existing_ancestor(path: &Path) -> Option<PathBuf> {
     }
 }
 
+/// Clear a Git worktree lock after confirming the target belongs to the project.
+#[tauri::command]
+pub async fn git_worktree_unlock(
+    project_path: String,
+    worktree_path: String,
+) -> Result<(), String> {
+    let dir = PathBuf::from(&project_path);
+    if !dir.is_dir() {
+        return Err(format!("not a directory: {project_path}"));
+    }
+    let list = git_worktrees(project_path).await?;
+    let canonical = std::fs::canonicalize(&worktree_path)
+        .ok()
+        .map(|p| p.to_string_lossy().to_string());
+    let target = list
+        .iter()
+        .find(|w| w.path == worktree_path || canonical.as_deref().is_some_and(|c| c == w.path))
+        .ok_or_else(|| format!("worktree not tracked: {worktree_path}"))?;
+    if !target.locked {
+        return Ok(());
+    }
+
+    let output = env::command("git")
+        .arg("-C")
+        .arg(&dir)
+        .args(["worktree", "unlock"])
+        .arg(&target.path)
+        .output()
+        .map_err(|e| format!("git worktree unlock: {e}"))?;
+    if !output.status.success() {
+        return Err(String::from_utf8_lossy(&output.stderr).trim().to_string());
+    }
+    Ok(())
+}
+
 /// Remove a git worktree. Refuses to remove the main worktree.
 #[tauri::command]
 pub async fn git_worktree_remove(
@@ -657,6 +692,77 @@ mod tests {
             .expect("worktree remove");
         let after = git_worktrees(project_path).await.expect("list after");
         assert_eq!(after.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn unlock_worktree_round_trip() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        init_repo(dir.path());
+        let project_path = dir.path().to_string_lossy().to_string();
+        let target = dir
+            .path()
+            .join(".aethon")
+            .join("worktrees")
+            .join("locked-feature");
+        let target_str = target.to_string_lossy().to_string();
+        git_worktree_add(
+            project_path.clone(),
+            target_str.clone(),
+            "locked-feature".to_string(),
+            None,
+        )
+        .await
+        .expect("worktree add");
+        let tracked_target = std::fs::canonicalize(&target)
+            .expect("canonical worktree path")
+            .to_string_lossy()
+            .to_string();
+        let status = env::command("git")
+            .arg("-C")
+            .arg(dir.path())
+            .args(["worktree", "lock", "--reason", "stale manager lock"])
+            .arg(&target)
+            .status()
+            .expect("git worktree lock");
+        assert!(status.success());
+        assert!(
+            git_worktrees(project_path.clone())
+                .await
+                .expect("locked listing")
+                .iter()
+                .any(|worktree| worktree.path == tracked_target && worktree.locked)
+        );
+
+        git_worktree_unlock(project_path.clone(), target_str.clone())
+            .await
+            .expect("worktree unlock");
+
+        assert!(
+            git_worktrees(project_path.clone())
+                .await
+                .expect("unlocked listing")
+                .iter()
+                .any(|worktree| worktree.path == tracked_target && !worktree.locked)
+        );
+        git_worktree_remove(project_path, target_str, false)
+            .await
+            .expect("worktree remove");
+    }
+
+    #[tokio::test]
+    async fn unlock_worktree_rejects_untracked_path() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let outside = tempfile::tempdir().expect("tempdir");
+        init_repo(dir.path());
+
+        let err = git_worktree_unlock(
+            dir.path().to_string_lossy().to_string(),
+            outside.path().to_string_lossy().to_string(),
+        )
+        .await
+        .expect_err("untracked worktree must be rejected");
+
+        assert!(err.contains("worktree not tracked"), "got: {err}");
     }
 
     #[tokio::test]

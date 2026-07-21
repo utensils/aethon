@@ -138,6 +138,75 @@ function renderProjectOps(
   };
 }
 
+describe("workspace lock removal", () => {
+  it("unlocks the tracked worktree and refreshes the persisted workspace state", async () => {
+    const harness = installTauriMocks();
+    harness.invoke.mockImplementation((cmd: string) => {
+      if (cmd === "git_worktree_unlock") return Promise.resolve(undefined);
+      if (cmd === "git_worktrees") {
+        return Promise.resolve([
+          {
+            path: "/projects/aethon",
+            branch: "main",
+            head: "abc123",
+            isMain: true,
+            locked: false,
+          },
+          {
+            path: "/projects/aethon-fix-lock",
+            branch: "fix/lock",
+            head: "def456",
+            isMain: false,
+            locked: false,
+          },
+        ]);
+      }
+      return Promise.resolve(undefined);
+    });
+    const initial = makeProjectsState({
+      activeId: "project-1",
+      activeWorkspaceId: "wt-locked",
+      workspacesByProject: {
+        "project-1": [
+          {
+            id: "wt-main",
+            projectId: "project-1",
+            path: "/projects/aethon",
+            branch: "main",
+            isMain: true,
+          },
+          {
+            id: "wt-locked",
+            projectId: "project-1",
+            path: "/projects/aethon-fix-lock",
+            branch: "fix/lock",
+            isMain: false,
+            locked: true,
+          },
+        ],
+      },
+    });
+    const { result, projectsRef } = renderProjectOps(initial);
+
+    await act(async () => {
+      await result.current.unlockWorkspaceById("wt-locked");
+    });
+
+    expect(harness.invoke).toHaveBeenCalledWith("git_worktree_unlock", {
+      projectPath: "/projects/aethon",
+      worktreePath: "/projects/aethon-fix-lock",
+    });
+    expect(harness.invoke).toHaveBeenCalledWith("git_worktrees", {
+      projectPath: "/projects/aethon",
+    });
+    expect(
+      projectsRef.current.workspacesByProject["project-1"]?.find(
+        (workspace) => workspace.id === "wt-locked",
+      )?.locked,
+    ).toBeUndefined();
+  });
+});
+
 describe("projectIdFromBucketKey", () => {
   it("maps the no-project bucket back to null", () => {
     expect(projectIdFromBucketKey(NO_PROJECT_KEY)).toBeNull();

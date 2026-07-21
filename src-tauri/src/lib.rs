@@ -304,6 +304,7 @@ pub fn run() {
             commands::git::diff::git_diff_stat,
             commands::git::worktrees::git_worktrees,
             commands::git::worktrees::git_worktree_add,
+            commands::git::worktrees::git_worktree_unlock,
             commands::git::worktrees::git_worktree_remove,
             commands::git::worktrees::git_worktree_remove_orphan,
             commands::git::worktrees::git_branch_list,

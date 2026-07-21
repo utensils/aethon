@@ -550,14 +550,23 @@ export function WorkspaceRow({
           </button>
         </span>
       ) : null}
-      {item.locked ? (
-        <span
+      {item.locked && !isRemote ? (
+        <button
+          type="button"
           className="ae-workspace-lock"
-          aria-label="Locked"
-          title="Workspace is locked"
+          aria-label={`Unlock ${displayLabel}`}
+          title="Unlock workspace"
+          onClick={(e) => {
+            e.stopPropagation();
+            onEvent(
+              "unlock-workspace",
+              { sectionId, workspaceId: item.id },
+              item.id,
+            );
+          }}
         >
           ◆
-        </span>
+        </button>
       ) : null}
       {canRemoveInline ? (
         <span className="ae-workspace-remove-slot">

@@ -4,6 +4,7 @@ import {
   fetchBranches,
   refreshProjectWorkspaces,
   retryPendingWorkspace,
+  unlockWorkspaceById,
 } from "./workspaceOps/git";
 import { makeProjectLookups } from "./workspaceOps/lookups";
 import { removeWorkspaceById } from "./workspaceOps/remove";
@@ -127,6 +128,14 @@ export function useWorkspaceOperations(
         },
         workspaceId,
         opts,
+      ),
+    unlockWorkspaceById: (workspaceId) =>
+      unlockWorkspaceById(
+        {
+          ...refreshDeps,
+          notifyFailure: deps.workspacePrompts.notifyFailure,
+        },
+        workspaceId,
       ),
     dismissPendingWorkspace: dismissPendingWorkspaceBound,
     retryPendingWorkspace: (workspaceId) =>
