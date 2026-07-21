@@ -11,7 +11,19 @@
  *   worker is terminated. The next call rebuilds it.
  */
 
-import HighlightWorker from "../workers/highlight.worker?worker";
+/**
+ * Spawn via the standard `new Worker(new URL(...))` pattern (Vite bundles
+ * the worker chunk for it, same as the old `?worker` default-import) so
+ * plain esbuild consumers — e.g. the /design-sync bundle that ships the
+ * `code` primitive to claude.ai/design — can compile this module. Where
+ * workers can't spawn (no bundler URL, jsdom), the throw is caught in
+ * `getWorker` and every highlight resolves null → plain-text fallback.
+ */
+function createHighlightWorker(): Worker {
+  return new Worker(new URL("../workers/highlight.worker.ts", import.meta.url), {
+    type: "module",
+  });
+}
 
 const CACHE_LIMIT = 500;
 
@@ -45,9 +57,16 @@ function failAllPending(): void {
   pending.clear();
 }
 
-function getWorker(): Worker {
+function getWorker(): Worker | null {
   if (worker) return worker;
-  const w = new HighlightWorker();
+  let w: Worker;
+  try {
+    w = createHighlightWorker();
+  } catch {
+    // No worker support in this host (static bundle, jsdom) — callers
+    // resolve null and render the plain-text fallback.
+    return null;
+  }
   w.addEventListener(
     "message",
     (e: MessageEvent<{ id: number; html: string | null }>) => {
@@ -111,7 +130,13 @@ export function highlightCode(
       if (html != null) bumpLru(key, html);
       resolve(html);
     });
-    getWorker().postMessage({ id, code: trimmed, lang });
+    const w = getWorker();
+    if (!w) {
+      pending.delete(id);
+      resolve(null);
+      return;
+    }
+    w.postMessage({ id, code: trimmed, lang });
   });
 }
 
@@ -159,7 +184,7 @@ export function registerGrammar(lang: string, grammar: unknown): void {
   for (const key of [...cache.keys()]) {
     if (key.startsWith(prefix)) cache.delete(key);
   }
-  getWorker().postMessage({ type: "register-grammar", lang, grammar });
+  getWorker()?.postMessage({ type: "register-grammar", lang, grammar });
 }
 
 // Reset module state when Vite hot-reloads this file in dev so we don't leak
