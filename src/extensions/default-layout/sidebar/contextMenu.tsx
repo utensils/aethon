@@ -388,6 +388,16 @@ export function useSidebarContextMenu(
     });
     close();
   };
+  const unlockContextWorkspace = () => {
+    if (!contextMenu?.workspace) return;
+    onEvent("unlock-workspace", {
+      sectionId: contextMenu.sectionId,
+      itemId: contextMenu.itemId,
+      workspaceId: contextMenu.workspace.id,
+      path: contextMenu.workspace.path,
+    });
+    close();
+  };
   const unpairContextMobileDevice = () => {
     if (!contextMenu) return;
     onEvent("unpair-mobile-device", {
@@ -451,6 +461,7 @@ export function useSidebarContextMenu(
       openContextWorkspaceInFinder,
       copyContextWorkspacePath,
       renameContextWorkspace,
+      unlockContextWorkspace,
       removeContextWorkspace,
       renameContextMobileDevice,
       confirmContextMobileDeviceUnpair,

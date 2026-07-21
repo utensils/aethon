@@ -141,6 +141,7 @@ export interface UseProjectOpsActions {
     workspaceId: string,
     opts?: { confirmed?: boolean },
   ) => Promise<void>;
+  unlockWorkspaceById: (workspaceId: string) => Promise<void>;
   dismissPendingWorkspace: (workspaceId: string) => void;
   retryPendingWorkspace: (workspaceId: string) => Promise<void>;
   renameWorkspace: (workspaceId: string, label: string) => void;

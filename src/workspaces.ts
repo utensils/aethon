@@ -287,6 +287,17 @@ export async function gitWorktreeRemove(args: {
   });
 }
 
+export async function gitWorktreeUnlock(args: {
+  projectPath: string;
+  workspacePath: string;
+  hostId?: string | null;
+}): Promise<void> {
+  await invokeForHost(args.hostId, "git_worktree_unlock", {
+    projectPath: args.projectPath,
+    worktreePath: args.workspacePath,
+  });
+}
+
 /** Recovery path for a workspace git no longer tracks. The Rust command
  *  guards the path (must be a `.git`-marker file pointing into this
  *  project's `.git/worktrees/`) before trashing. */

@@ -1493,6 +1493,14 @@ body.ae-resizing-sidebar .a2ui-layout {
   font-size: var(--chrome-text-muted);
   color: var(--warn);
   margin-left: var(--space-1);
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  line-height: 1;
+}
+.ae-workspace-lock:hover {
+  color: color-mix(in oklab, var(--warn) 75%, var(--text));
 }
 
 .a2ui-sidebar-empty {

@@ -3,6 +3,7 @@ import {
   buildSidebarMenuItems,
   canRemoveWorkspace,
   canRenameWorkspace,
+  canUnlockWorkspace,
   isRemoteWorkspace,
   type SidebarMenuHandlers,
 } from "./menuItems";
@@ -76,6 +77,19 @@ describe("isRemoteWorkspace", () => {
   });
 });
 
+describe("canUnlockWorkspace", () => {
+  it("allows only live locked local workspaces", () => {
+    expect(canUnlockWorkspace(wt({ locked: true }))).toBe(true);
+    expect(canUnlockWorkspace(wt())).toBe(false);
+    expect(canUnlockWorkspace(wt({ locked: true, pendingState: "removing" }))).toBe(false);
+    expect(
+      canUnlockWorkspace(
+        wt({ locked: true, hostId: "remote:bender", remoteId: "feature" }),
+      ),
+    ).toBe(false);
+  });
+});
+
 describe("buildSidebarMenuItems workspace", () => {
   const noop = () => {};
   const handlers = new Proxy(
@@ -103,5 +117,39 @@ describe("buildSidebarMenuItems workspace", () => {
       type: "note",
       label: "Remote workspace actions run on that host.",
     });
+  });
+
+  it("offers unlock only for a locked local workspace", () => {
+    const lockedItems = buildSidebarMenuItems(
+      {
+        x: 0,
+        y: 0,
+        sectionId: "projects",
+        itemId: "wt-1",
+        label: "feature-x",
+        kind: "workspace",
+        workspace: wt({ locked: true }),
+      },
+      handlers,
+    );
+    const unlockedItems = buildSidebarMenuItems(
+      {
+        x: 0,
+        y: 0,
+        sectionId: "projects",
+        itemId: "wt-1",
+        label: "feature-x",
+        kind: "workspace",
+        workspace: wt(),
+      },
+      handlers,
+    );
+
+    expect(lockedItems).toContainEqual(
+      expect.objectContaining({ id: "unlock-workspace", label: "Unlock workspace" }),
+    );
+    expect(unlockedItems).not.toContainEqual(
+      expect.objectContaining({ id: "unlock-workspace" }),
+    );
   });
 });

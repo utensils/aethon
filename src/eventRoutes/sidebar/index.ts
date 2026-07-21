@@ -1,5 +1,5 @@
 /**
- * Sidebar event-route handlers. The 22-handler surface previously lived
+ * Sidebar event-route handlers. The 23-handler surface previously lived
  * in `sidebar.ts`; submodules under this directory carry per-domain
  * implementations:
  *
@@ -9,12 +9,12 @@
  *  - session.ts   — delete-session / rename-session (with consent prompt)
  *  - workspace.ts  — create / switch / open-in-new-tab / start-session /
  *                   remove / cancel-pending / retry-pending / rename /
- *                   open-finder / copy-path (10 workspace handlers)
+ *                   unlock / open-finder / copy-path (11 workspace handlers)
  *  - extension.ts — toggle-extension (bridge command)
  *  - chrome.ts    — handleSectionedSelect (sidebar + model-picker +
  *                   appearance-menu select dispatch by sectionId)
  *
- * The eventRoutes/index.ts barrel imports all 22 handlers from "./sidebar"
+ * The eventRoutes/index.ts barrel imports all 23 handlers from "./sidebar"
  * which resolves to this directory's index.ts — caller untouched.
  */
 
@@ -40,6 +40,7 @@ export {
   handleSidebarOpenWorkspaceInNewTab,
   handleSidebarStartSession,
   handleSidebarRemoveWorkspace,
+  handleSidebarUnlockWorkspace,
   handleSidebarCancelPendingWorkspace,
   handleSidebarRetryPendingWorkspace,
   handleSidebarStopWorkspaceAgent,

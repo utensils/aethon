@@ -142,6 +142,7 @@ pub const DISPATCHABLE: &[&str] = &[
     "git_diff_stat",
     "git_worktrees",
     "git_worktree_add",
+    "git_worktree_unlock",
     "git_worktree_remove",
     "git_worktree_remove_orphan",
     "git_branch_list",
@@ -560,6 +561,13 @@ impl TauriRelay {
                     arg(&args, "targetPath")?,
                     arg(&args, "branch")?,
                     arg::<Option<String>>(&args, "base")?,
+                )
+                .await?,
+            ),
+            "git_worktree_unlock" => to_value(
+                crate::commands::git::worktrees::git_worktree_unlock(
+                    arg(&args, "projectPath")?,
+                    arg(&args, "worktreePath")?,
                 )
                 .await?,
             ),

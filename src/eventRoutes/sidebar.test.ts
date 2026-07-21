@@ -4,6 +4,7 @@ import {
   handleSidebarResizeEnd,
   handleSidebarRemoveProject,
   handleSidebarRemoveWorkspace,
+  handleSidebarUnlockWorkspace,
   handleSidebarReorderWorkspace,
   handleSidebarSortProjectWorkspaces,
   handleSidebarDeleteSession,
@@ -257,6 +258,24 @@ describe("handleSidebarRemoveWorkspace", () => {
     expect(ctx.removeWorkspaceById).toHaveBeenCalledWith("wt-1", {
       confirmed: true,
     });
+  });
+});
+
+describe("handleSidebarUnlockWorkspace", () => {
+  it("delegates stale lock removal to the project operation", async () => {
+    const { ctx } = buildRouteFixture();
+
+    const handled = await handleSidebarUnlockWorkspace(
+      {
+        component: { id: "sidebar" },
+        eventType: "unlock-workspace",
+        data: { workspaceId: "wt-1" },
+      },
+      ctx,
+    );
+
+    expect(handled).toBe(true);
+    expect(ctx.unlockWorkspaceById).toHaveBeenCalledWith("wt-1");
   });
 });
 
