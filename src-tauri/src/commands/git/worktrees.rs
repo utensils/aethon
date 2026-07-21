@@ -357,7 +357,7 @@ pub async fn git_worktree_unlock(
         .arg("-C")
         .arg(&dir)
         .args(["worktree", "unlock"])
-        .arg(&worktree_path)
+        .arg(&target.path)
         .output()
         .map_err(|e| format!("git worktree unlock: {e}"))?;
     if !output.status.success() {
