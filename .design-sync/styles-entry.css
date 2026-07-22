@@ -1,0 +1,12 @@
+/* design-sync stylesheet entry — flattened by esbuild before each
+ * package-build run (see .design-sync/NOTES.md):
+ *
+ *   npx esbuild .design-sync/styles-entry.css --bundle \
+ *     --outfile=.design-sync/.cache/styles-flat.css
+ *
+ * cfg.cssEntry points at the flattened output. Order mirrors
+ * src/mainApp.tsx: tokens → themes → chrome. */
+
+@import "../src/styles/tokens.css";
+@import "../src/styles/themes.css";
+@import "../src/styles/chrome.css";
