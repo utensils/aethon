@@ -148,7 +148,11 @@ export interface BuiltinComponentProps {
   // matchers can target a specific row. The renderer rewrites the
   // outbound componentId to `<componentId>__tpl__<descendantId>` so the
   // bridge's existing __tpl__ separator parsing produces that descendantId.
-  onEvent: (eventType: string, data?: unknown, descendantId?: string) => void;
+  onEvent: (
+    eventType: string,
+    data?: unknown,
+    descendantId?: string,
+  ) => void | boolean | Promise<void> | Promise<boolean>;
   renderChildren?: () => React.ReactNode;
   renderChild?: (child: A2UIComponent) => React.ReactNode;
   // Composites that want to expand a registered template per-row (sidebar

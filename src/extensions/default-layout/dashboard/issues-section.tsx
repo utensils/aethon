@@ -345,7 +345,7 @@ export function IssuesSection({
         // Route through the dashboard's start-task event so the
         // launcher + start-task path stays the single source of
         // truth (UI / pi tool parity).
-        onEvent(
+        await onEvent(
           "start-task",
           {
             projectId: project.id,

@@ -1,5 +1,6 @@
 import {
   useCallback,
+  useRef,
   type Dispatch,
   type MutableRefObject,
   type SetStateAction,
@@ -136,7 +137,10 @@ export function useTaskLauncher({
   piDefaultModelRef,
   prepareWorkspaceStartup,
 }: UseTaskLauncherOptions): (opts: StartTaskOptions) => Promise<StartTaskResult | void> {
-  return useCallback(
+  const inFlightIssueLaunchesRef = useRef<
+    Map<string, Promise<StartTaskResult | void>>
+  >(new Map());
+  const launchTask = useCallback(
     async (opts: StartTaskOptions): Promise<StartTaskResult | void> => {
       const project = projectsRef.current.projects.find(
         (p) => p.id === opts.projectId,
@@ -380,5 +384,25 @@ export function useTaskLauncher({
       stateRef,
       tabBucketsRef,
     ],
+  );
+
+  return useCallback(
+    (opts: StartTaskOptions): Promise<StartTaskResult | void> => {
+      const sourceIssue = opts.sourceIssue;
+      if (!sourceIssue) return launchTask(opts);
+
+      const issueKey = `${sourceIssue.projectId}:${sourceIssue.number}`;
+      const existing = inFlightIssueLaunchesRef.current.get(issueKey);
+      if (existing) return existing;
+
+      const tracked = launchTask(opts).finally(() => {
+        if (inFlightIssueLaunchesRef.current.get(issueKey) === tracked) {
+          inFlightIssueLaunchesRef.current.delete(issueKey);
+        }
+      });
+      inFlightIssueLaunchesRef.current.set(issueKey, tracked);
+      return tracked;
+    },
+    [launchTask],
   );
 }
