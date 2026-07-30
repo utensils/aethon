@@ -399,6 +399,37 @@ describe("IssuesSection", () => {
     );
   });
 
+  it("keeps an issue launch disabled until the routed task finishes", async () => {
+    let finishLaunch!: () => void;
+    const launchPending = new Promise<void>((resolve) => {
+      finishLaunch = resolve;
+    });
+    const onEvent = vi.fn((eventType: string) =>
+      eventType === "start-task" ? launchPending : undefined,
+    );
+    renderIssues(onEvent);
+
+    await screen.findByText(issue.title);
+    const send = screen.getByRole("button", { name: /send issue #85/i });
+    fireEvent.click(send);
+
+    await waitFor(() =>
+      expect(
+        onEvent.mock.calls.filter(([eventType]) => eventType === "start-task"),
+      ).toHaveLength(1),
+    );
+    expect((send as HTMLButtonElement).disabled).toBe(true);
+    (send as HTMLButtonElement).click();
+    expect(
+      onEvent.mock.calls.filter(([eventType]) => eventType === "start-task"),
+    ).toHaveLength(1);
+
+    finishLaunch();
+    await waitFor(() =>
+      expect((send as HTMLButtonElement).disabled).toBe(false),
+    );
+  });
+
   it("shows linked issue-session status and opens it instead of dispatching", async () => {
     const linked = {
       ...makeEmptyTab("issue-tab", "Issue #85", "p1"),

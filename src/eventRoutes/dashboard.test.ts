@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   handleGhStatsStrip,
   handleProjectDashboard,
@@ -540,6 +540,40 @@ describe("handleTaskLauncher", () => {
       baseBranch: "main",
       workspaceId: undefined,
     });
+  });
+
+  it("keeps the start-task route pending until task launch completes", async () => {
+    const { ctx } = buildRouteFixture();
+    let finishLaunch!: () => void;
+    const launchPending = new Promise<void>((resolve) => {
+      finishLaunch = resolve;
+    });
+    ctx.startTaskInProject = vi.fn(() => launchPending);
+    let settled = false;
+
+    const handled = Promise.resolve(
+      handleTaskLauncher(
+        {
+          component: { id: "x", type: "task-launcher" },
+          eventType: "start-task",
+          data: {
+            projectId: "p1",
+            prompt: "fix the bug",
+            newWorkspace: true,
+          },
+        },
+        ctx,
+      ),
+    ).then((value) => {
+      settled = true;
+      return value;
+    });
+    await Promise.resolve();
+
+    expect(ctx.startTaskInProject).toHaveBeenCalledTimes(1);
+    expect(settled).toBe(false);
+    finishLaunch();
+    await expect(handled).resolves.toBe(true);
   });
 
   it("start-task defaults new workspaces to the project base branch", async () => {

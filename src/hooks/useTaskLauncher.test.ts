@@ -176,6 +176,69 @@ describe("useTaskLauncher", () => {
     });
   });
 
+  it("coalesces duplicate in-flight launches for the same GitHub issue", async () => {
+    const projects = makeProjects();
+    projects.workspacesByProject.p1 = [
+      {
+        id: "wt-85",
+        projectId: "p1",
+        path: "/repo/aethon-issue-85",
+        branch: "fix/issue-85-existing",
+        isMain: false,
+      },
+    ];
+    const projectsRef = ref(projects);
+    let finishWorkspace!: (path: string) => void;
+    const workspacePending = new Promise<string>((resolve) => {
+      finishWorkspace = resolve;
+    });
+    const createWorkspaceWithParams = vi.fn(() => workspacePending);
+    const newTab = vi.fn();
+    const sendChat = vi.fn(() => Promise.resolve());
+    const { result } = renderHook(() =>
+      useTaskLauncher({
+        projectsRef,
+        pushNotificationRef: ref((_: NotificationInput) => {}),
+        setActiveProjectById: vi.fn(() => true),
+        createWorkspaceWithParams,
+        activateWorkspace: vi.fn(),
+        newTab,
+        pendingTabOpens: ref(new Map()),
+        sendChat,
+      }),
+    );
+    const opts = {
+      projectId: "p1",
+      prompt: "fix issue",
+      newWorkspace: true,
+      branch: "fix/issue-85-existing",
+      sourceIssue: {
+        kind: "github-issue" as const,
+        projectId: "p1",
+        number: 85,
+        url: "https://github.com/utensils/aethon/issues/85",
+        title: "Cannot rename session tab while agent is running",
+        createdAt: 1,
+      },
+    };
+
+    let first!: ReturnType<typeof result.current>;
+    let second!: ReturnType<typeof result.current>;
+    await act(async () => {
+      first = result.current(opts);
+      second = result.current(opts);
+      await Promise.resolve();
+    });
+
+    expect(createWorkspaceWithParams).toHaveBeenCalledTimes(1);
+    finishWorkspace("/repo/aethon-issue-85");
+    await act(async () => {
+      await Promise.all([first, second]);
+    });
+    expect(newTab).toHaveBeenCalledTimes(1);
+    expect(sendChat).toHaveBeenCalledTimes(1);
+  });
+
   it("threads the per-launch model through to the new tab", async () => {
     const projectsRef = ref(makeProjects());
     const newTab = vi.fn();

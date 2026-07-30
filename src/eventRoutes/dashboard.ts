@@ -431,8 +431,7 @@ export const handleTaskLauncher: EventRouteHandler = (
     return true;
   }
   if (eventType === "start-task") {
-    void launchStartTask(data, ctx);
-    return true;
+    return launchStartTask(data, ctx).then(() => true);
   }
   // The launcher also emits select-project-card when the project chip
   // is changed — re-dispatch to the dashboard handler.
