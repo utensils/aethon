@@ -1,0 +1,41 @@
+/* Alias family "Geist" onto the bundled @fontsource Geist Sans woff2s.
+ *
+ * tokens.css lists "Geist" (system-installed) ahead of "Geist Sans"
+ * (the family @fontsource registers) in --font-ui. The synced design
+ * system has no system fonts, so without this alias every design falls
+ * through to "Geist Sans" — same glyphs, but the DS pane flags the
+ * unshipped "Geist" family. Shipping the alias makes the stack's first
+ * choice resolve identically everywhere. Consumed via cfg.extraFonts. */
+
+@font-face {
+  font-family: "Geist";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 400;
+  src: url("../node_modules/@fontsource/geist-sans/files/geist-sans-latin-400-normal.woff2")
+    format("woff2");
+}
+@font-face {
+  font-family: "Geist";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 500;
+  src: url("../node_modules/@fontsource/geist-sans/files/geist-sans-latin-500-normal.woff2")
+    format("woff2");
+}
+@font-face {
+  font-family: "Geist";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 600;
+  src: url("../node_modules/@fontsource/geist-sans/files/geist-sans-latin-600-normal.woff2")
+    format("woff2");
+}
+@font-face {
+  font-family: "Geist";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 700;
+  src: url("../node_modules/@fontsource/geist-sans/files/geist-sans-latin-700-normal.woff2")
+    format("woff2");
+}

@@ -1,16 +1,17 @@
-// Vitest stubs the worker import via vi.mock — Vite's `?worker` query is
-// not resolvable in node-mode tests. The mock returns a no-op constructor;
-// tests exercise only the cache + LRU + reset paths, never round-trip the
-// worker. Live highlighting is verified manually in the running app via
-// the aethon-debug skill.
+// highlight.ts spawns via `new Worker(new URL(...))`, which node-mode
+// tests can't construct — stub the global Worker class instead. The stub
+// is a no-op constructor; tests exercise only the cache + LRU + reset
+// paths, never round-trip the worker. Live highlighting is verified
+// manually in the running app via the aethon-debug skill.
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 // Track every postMessage so the registerGrammar test can assert the
 // payload reached the worker even though we stub the actual Worker class.
 const workerPostMessages: unknown[] = [];
 
-vi.mock("../workers/highlight.worker?worker", () => ({
-  default: class {
+vi.stubGlobal(
+  "Worker",
+  class {
     postMessage(msg: unknown): void {
       workerPostMessages.push(msg);
     }
@@ -18,7 +19,7 @@ vi.mock("../workers/highlight.worker?worker", () => ({
     removeEventListener(): void {}
     terminate(): void {}
   },
-}));
+);
 
 import {
   __testing,
