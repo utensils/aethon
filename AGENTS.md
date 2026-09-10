@@ -945,16 +945,16 @@ produced.
 
 ## Test coverage + linting
 
-| Tool                         | Scope                                                                                                                               | Devshell command |
-| ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
-| `cargo clippy -D warnings`   | Rust shell + helpers                                                                                                                | `check`          |
-| `cargo test --lib`           | Rust unit tests (`mod tests` across `src-tauri/src/`)                                                                               | `test`           |
-| `bunx tsc -b --noEmit`       | TypeScript types (frontend + agent)                                                                                                 | `check`          |
-| `bunx eslint .`              | TS + React lint, type-aware via tsconfig                                                                                            | `lint`           |
-| `bunx vitest run`            | TS unit tests (`src/**/*.test.ts` + `agent/**/*.test.ts`)                                                                           | `test`           |
-| `bunx vitest run --coverage` | TS coverage report (v8)                                                                                                             | `coverage`       |
-| `bun run test:e2e`           | Playwright E2E (`e2e/aethon.spec.ts`); webview is mocked, tests run serial against a shared Vite dev server                         | —                |
-| `bun run version:check`      | Fail if `package.json` / `Cargo.toml` / `tauri.conf.json` drift (auto-runs before `bun run build`); fix with `bun run version:sync` | —                |
+| Tool                         | Scope                                                                                                                                                                                                   | Devshell command |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
+| `cargo clippy -D warnings`   | Rust shell + helpers                                                                                                                                                                                    | `check`          |
+| `cargo test --lib`           | Rust unit tests (`mod tests` across `src-tauri/src/`)                                                                                                                                                   | `test`           |
+| `bunx tsc -b --noEmit`       | TypeScript types for `src/`, `cli/`, `e2e/`, and the Vite configs. **`agent/` is not in any tsconfig** — bridge type breakage only surfaces via vitest, ESLint, or the bun sidecar build in `build.rs`. | `check`          |
+| `bunx eslint .`              | TS + React lint, type-aware via tsconfig                                                                                                                                                                | `lint`           |
+| `bunx vitest run`            | TS unit tests (`src/**/*.test.ts` + `agent/**/*.test.ts`)                                                                                                                                               | `test`           |
+| `bunx vitest run --coverage` | TS coverage report (v8)                                                                                                                                                                                 | `coverage`       |
+| `bun run test:e2e`           | Playwright E2E (`e2e/aethon.spec.ts`); webview is mocked, tests run serial against a shared Vite dev server                                                                                             | —                |
+| `bun run version:check`      | Fail if `package.json` / `Cargo.toml` / `tauri.conf.json` drift (auto-runs before `bun run build`); fix with `bun run version:sync`                                                                     | —                |
 
 The `check` devshell command runs all of the above as a single CI gate.
 ESLint is configured for **0 errors and 0 warnings**. A handful of `react-hooks`
