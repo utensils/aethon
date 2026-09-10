@@ -160,9 +160,10 @@ pub(super) fn parse_cartesia_message(raw: &str) -> CartesiaMessage {
             };
             // Requested as raw pcm_s16le — the format every documented
             // Cartesia example uses — then widened to the engine's f32.
-            let samples = bytes
-                .chunks_exact(2)
-                .map(|b| f32::from(i16::from_le_bytes([b[0], b[1]])) / f32::from(i16::MAX))
+            let (pairs, _tail) = bytes.as_chunks::<2>();
+            let samples = pairs
+                .iter()
+                .map(|b| f32::from(i16::from_le_bytes(*b)) / f32::from(i16::MAX))
                 .collect();
             CartesiaMessage::Chunk(samples)
         }
