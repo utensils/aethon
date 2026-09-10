@@ -4,6 +4,22 @@ All notable changes to Aethon. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 [SemVer](https://semver.org/).
 
+## [0.13.0](https://github.com/utensils/aethon/compare/v0.12.0...v0.13.0) (2026-09-10)
+
+
+### Features
+
+* **agent:** migrate to [@earendil-works](https://github.com/earendil-works) pi SDK 0.85 (ModelRuntime) ([#498](https://github.com/utensils/aethon/issues/498)) ([2ba1a03](https://github.com/utensils/aethon/commit/2ba1a03ecd77d72305d91169351409e98f0447fa))
+* **models:** support Codex 5.6 models and efforts ([#491](https://github.com/utensils/aethon/issues/491)) ([2cd7d85](https://github.com/utensils/aethon/commit/2cd7d85b04a16b567fe17d80ad7e3ac47df409a3))
+
+
+### Bug Fixes
+
+* **mobile:** keep iPhone layout at native scale ([#493](https://github.com/utensils/aethon/issues/493)) ([864224c](https://github.com/utensils/aethon/commit/864224cf8058f0a5da6373cbf2b27786fde322db))
+* **monaco:** use monaco-editor 0.56 worker entry points ([#499](https://github.com/utensils/aethon/issues/499)) ([7e7c905](https://github.com/utensils/aethon/commit/7e7c905f20002b63aab33dc5289585d2f271939c))
+* **workspaces:** allow clearing stale worktree locks ([#495](https://github.com/utensils/aethon/issues/495)) ([f54c68d](https://github.com/utensils/aethon/commit/f54c68dfa142ec049f5ddb8256e6c0030a13f7be))
+* **workspaces:** dedupe issue task launches ([#496](https://github.com/utensils/aethon/issues/496)) ([12ffdc1](https://github.com/utensils/aethon/commit/12ffdc13eab49a987955ccc176b55eb65518d815))
+
 ## [0.12.0](https://github.com/utensils/aethon/compare/v0.11.2...v0.12.0) (2026-07-12)
 
 
