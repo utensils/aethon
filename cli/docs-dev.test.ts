@@ -52,6 +52,12 @@ describe("docs dev helper", () => {
 
     const server = await listenLoopback(0);
 
+    // Typed as `unknown` so the asymmetric matcher satisfies
+    // no-unsafe-assignment whether eslint resolves it as `any` or as the
+    // matcher type (local vs CI project-service resolution differ).
+    const shadowedListenerMatcher: unknown = expect.stringContaining(
+      "is shadowed by a loopback-only listener",
+    );
     try {
       await expect(
         execFileAsync("bash", ["scripts/docs-dev.sh"], {
@@ -61,11 +67,7 @@ describe("docs dev helper", () => {
             AETHON_DOCS_PRECHECK_ONLY: "1",
           },
         }),
-      ).rejects.toMatchObject({
-        stderr: expect.stringContaining(
-          "is shadowed by a loopback-only listener",
-        ),
-      });
+      ).rejects.toMatchObject({ stderr: shadowedListenerMatcher });
     } finally {
       await server.close();
     }
