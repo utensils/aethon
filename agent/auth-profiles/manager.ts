@@ -28,6 +28,8 @@ export { loadAuthProfiles, saveAuthProfiles } from "./profile-state";
 export {
   authProfileServicesForTab,
   defaultProfileIdForTab,
+  ensureProfileServices,
+  ensureTabAuthProfileServices,
   modelRegistryForModelId,
   refreshAuthServicesForTab,
   refreshGlobalAuthServicesIfChanged,

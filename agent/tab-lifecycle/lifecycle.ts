@@ -41,7 +41,10 @@ import {
 import { wrapWithSourceGuard } from "../source-guard";
 import { logger } from "../logger";
 import type { BootTrace } from "../boot-trace";
-import { authProfileServicesForTab } from "../auth-profiles";
+import {
+  authProfileServicesForTab,
+  ensureTabAuthProfileServices,
+} from "../auth-profiles";
 import { emitGlobalReady } from "../dispatcherTypes";
 import type { AethonAgentState, TabRecord } from "../state";
 import type { CodexExtendedReasoningEffort } from "../codex-reasoning";
@@ -148,7 +151,10 @@ export function extensionUiContextForTab(): ExtensionUIContext {
     theme: passthroughTheme,
     getAllThemes: () => [],
     getTheme: () => undefined,
-    setTheme: () => ({ success: false, error: "Aethon bridge UI is read-only" }),
+    setTheme: () => ({
+      success: false,
+      error: "Aethon bridge UI is read-only",
+    }),
     getToolsExpanded: () => false,
     setToolsExpanded: () => {},
   };
@@ -257,6 +263,9 @@ export async function ensureTab(
   const devshellBashTool = createAethonBashToolDefinition(state, resolvedCwd, {
     spawnHook: buildDevshellSpawnHook(state, deps),
   });
+  // Warm the profile runtime first: it may have been created by another
+  // bridge process after this one booted (see ensureTabAuthProfileServices).
+  await ensureTabAuthProfileServices(state, tabId, options.initialModel);
   const authServices = authProfileServicesForTab(
     state,
     tabId,

@@ -23,6 +23,8 @@ export {
   authProfilesSnapshot,
   defaultProfileIdForTab,
   emitAuthProfiles,
+  ensureProfileServices,
+  ensureTabAuthProfileServices,
   handleAuthProfileMessage,
   loadAuthProfiles,
   modelRegistryForModelId,

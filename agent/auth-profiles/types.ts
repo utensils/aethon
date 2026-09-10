@@ -1,4 +1,7 @@
-import type { ModelRegistry, ModelRuntime } from "@earendil-works/pi-coding-agent";
+import type {
+  ModelRegistry,
+  ModelRuntime,
+} from "@earendil-works/pi-coding-agent";
 import type { AuthProfileMeta } from "./store";
 
 /** A profile's pi model/auth pair. `modelRuntime` is the async facade

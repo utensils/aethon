@@ -143,8 +143,11 @@ function profileTokenProvider(
   providerId: string,
 ): TokenProvider {
   return async () =>
-    (await servicesForProfile(state, profileId).modelRuntime.getAuth(providerId))
-      ?.auth.apiKey;
+    (
+      await servicesForProfile(state, profileId).modelRuntime.getAuth(
+        providerId,
+      )
+    )?.auth.apiKey;
 }
 
 export function parseIdTokenEmail(idToken: string): string | undefined {

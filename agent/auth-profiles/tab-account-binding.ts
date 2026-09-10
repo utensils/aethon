@@ -5,7 +5,7 @@ import { emitGlobalReady } from "../dispatcherTypes";
 import { clearPendingContextUsageEmit } from "../context-usage";
 import { ensureTab } from "../tab-lifecycle";
 import { loadAuthProfilesState } from "./store";
-import { servicesForProfile } from "./services-cache";
+import { ensureProfileServices, servicesForProfile } from "./services-cache";
 import type { AuthProfileServices } from "./types";
 import { markProfileUsed, normalizedTabId, stringField } from "./profile-state";
 import { emitAuthProfiles } from "./snapshot";
@@ -66,6 +66,9 @@ async function recreateTabSession(
   tabId: string,
   profileId: string,
 ): Promise<void> {
+  // Warm before tearing the session down so an unwarmed profile can't strand
+  // the tab without a session.
+  await ensureProfileServices(state, profileId);
   const existing = state.tabs.get(tabId);
   const previousModel = existing?.session.model;
   const cwd = state.tabProjectCwds.get(tabId);
@@ -117,6 +120,7 @@ export async function handleUseForTab(
   // So only rebuild the session for the default tab; for worker tabs just
   // record the mapping and let the worker's apply handle the session.
   let changedModel = "";
+  await ensureProfileServices(state, profile.id);
   if (tabId === "default") {
     const previousModel = existing?.session.model;
     const cwd = state.tabProjectCwds.get(tabId);
@@ -178,6 +182,9 @@ export async function handleApplyForTab(
   state.authProfiles = loadAuthProfilesState(state.userDir);
   const profile = state.authProfiles.profiles.find((p) => p.id === profileId);
   if (!profile) return;
+  // Same reason: a profile created by the global bridge after this worker
+  // booted was never warmed here. Do it before the session is torn down.
+  await ensureProfileServices(state, profile.id);
   const existing = state.tabs.get(tabId);
   if (existing?.promptInFlight) {
     deps.send({
@@ -237,6 +244,9 @@ export function handleRecordForTab(
     if (!state.authProfiles.profiles.some((p) => p.id === profileId)) return;
   }
   state.tabAuthProfileIds.set(tabId, profileId);
+  // Emit-free by contract, so warm in the background; the next tab open
+  // awaits ensureTabAuthProfileServices anyway.
+  void ensureProfileServices(state, profileId).catch(() => {});
 }
 
 /** Resolve a `provider/id` model string (from an apply payload) against a

@@ -471,6 +471,48 @@ describe("auth profile manager", () => {
     );
   });
 
+  it("auth_profile_apply warms a profile persisted by another bridge process", async () => {
+    // The global bridge runs the login flow and persists the profile; a
+    // per-tab worker only reloads the list from disk, so its services cache
+    // has never seen the id. The apply path must warm it before it tears the
+    // tab session down (pi >= 0.80.8 makes runtime construction async).
+    const userDir = tempUserDir();
+    const state = withReadyState(await makeState(userDir));
+    const persisted = createProfileMeta(loadAuthProfilesState(userDir), {
+      providerId: "openai-codex",
+      label: "Codex Elsewhere",
+      kind: "oauth",
+      now: 1,
+    });
+    saveAuthProfilesState(
+      userDir,
+      upsertProfileMeta(loadAuthProfilesState(userDir), persisted),
+    );
+    expect(state.authProfileServices.has(persisted.id)).toBe(false);
+    state.tabs.set("tab-worker", fakeTab("openai-codex/gpt-5.5"));
+    const sent: Record<string, unknown>[] = [];
+    const deps = {
+      send: (m: Record<string, unknown>) => sent.push(m),
+    } as DispatcherDeps;
+
+    await handleAuthProfileMessage(state, deps, {
+      type: "auth_profile_apply",
+      tabId: "tab-worker",
+      profileId: persisted.id,
+    });
+
+    expect(state.authProfileServices.has(persisted.id)).toBe(true);
+    expect(state.tabAuthProfileIds.get("tab-worker")).toBe(persisted.id);
+    expect(sent).toContainEqual(
+      expect.objectContaining({
+        type: "auth_profile_changed",
+        tabId: "tab-worker",
+        profileId: persisted.id,
+      }),
+    );
+    expect(sent.some((m) => m.type === "error")).toBe(false);
+  });
+
   it("auth_profile_apply is a no-op for an unknown profile id", async () => {
     const state = await makeState();
     const deps = { send: vi.fn() } as unknown as DispatcherDeps;

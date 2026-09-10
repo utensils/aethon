@@ -137,9 +137,7 @@ export function parseCodexUsageBody(
     if (typeof rateLimit.plan_type === "string" && !result.planType) {
       result.planType = rateLimit.plan_type;
     }
-    const primary = windowFrom(
-      rateLimit.primary_window ?? rateLimit.primary,
-    );
+    const primary = windowFrom(rateLimit.primary_window ?? rateLimit.primary);
     if (primary) result.primary = primary;
     const secondary = windowFrom(
       rateLimit.secondary_window ?? rateLimit.secondary,

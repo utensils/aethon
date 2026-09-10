@@ -2,10 +2,7 @@ import type { AethonAgentState } from "../state";
 import type { DispatcherDeps, InboundMessage } from "../dispatcherTypes";
 import { emitGlobalReady } from "../dispatcherTypes";
 import { createProfileMeta } from "./store";
-import {
-  ensureProfileServices,
-  servicesForProfile,
-} from "./services-cache";
+import { ensureProfileServices, servicesForProfile } from "./services-cache";
 import { writeProfileApiKey } from "./credential-file";
 import {
   findProfile,

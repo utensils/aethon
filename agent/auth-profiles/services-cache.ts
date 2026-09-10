@@ -106,6 +106,24 @@ export function authProfileServicesForTab(
   return servicesForProfile(state, profile.id);
 }
 
+/** Async pre-flight for {@link authProfileServicesForTab}: resolves the tab's
+ *  profile the same way and warms its runtime. Needed because a profile can
+ *  be persisted by another bridge process (the global bridge runs the login
+ *  flow; a per-tab worker only reloads the list from disk), so this process
+ *  may never have warmed it at boot. */
+export async function ensureTabAuthProfileServices(
+  state: AethonAgentState,
+  tabId: string,
+  initialModel?: Model<Api>,
+): Promise<void> {
+  const profileId =
+    state.tabAuthProfileIds.get(tabId) ??
+    defaultProfileIdForTab(state, initialModel);
+  if (profileId && findProfile(state, profileId)) {
+    await ensureProfileServices(state, profileId);
+  }
+}
+
 function globalServices(state: AethonAgentState): AuthProfileServices {
   return {
     modelRuntime: state.modelRuntime,
