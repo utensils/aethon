@@ -17,7 +17,7 @@ by the agent.
 
 - **Backend**: Rust + Tauri 2, crate name `aethon`, lib name `aethon_lib`
 - **Frontend**: React 19, TypeScript, Vite, bun
-- **Agent**: TypeScript via `@mariozechner/pi-coding-agent`, run as a `bun`
+- **Agent**: TypeScript via `@earendil-works/pi-coding-agent`, run as a `bun`
   subprocess spawned from the Rust shell
 - **Dev env**: Nix flake (flake-parts + numtide/devshell + treefmt-nix +
   rust-overlay), Rust toolchain pinned at **1.92.0** in `flake.nix` (via

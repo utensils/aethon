@@ -585,6 +585,9 @@ project_configs = "require-approval"
         getAllTools: () => [],
         getFlag: () => undefined,
         on: () => {},
+        // pi-mcp-adapter >= 2.12 subscribes to runtime registration requests
+        // on the extension event bus.
+        events: { on: () => () => {}, emit: () => {} },
       });
     } finally {
       process.argv.splice(0, process.argv.length, ...previousArgv);
@@ -613,7 +616,7 @@ project_configs = "require-approval"
   it(
     "refreshes the pi adapter config for the executing session cwd",
     async () => {
-      vi.doMock("pi-mcp-adapter/index.ts", () => ({
+      vi.doMock("pi-mcp-adapter", () => ({
         default: (pi: { registerTool: (tool: Record<string, unknown>) => void }) => {
           pi.registerTool({
             name: "mcp",
@@ -709,14 +712,14 @@ project_configs = "auto-load"
           ),
         ).toEqual(["alpha"]);
       } finally {
-        vi.doUnmock("pi-mcp-adapter/index.ts");
+        vi.doUnmock("pi-mcp-adapter");
       }
     },
   );
 
   it("keeps MCP servers alive when the executing config is unchanged", async () => {
     let sessionStarts = 0;
-    vi.doMock("pi-mcp-adapter/index.ts", () => ({
+    vi.doMock("pi-mcp-adapter", () => ({
       default: (pi: {
         on: (
           event: string,
@@ -801,7 +804,7 @@ project_configs = "auto-load"
 
       expect(sessionStarts).toBe(2);
     } finally {
-      vi.doUnmock("pi-mcp-adapter/index.ts");
+      vi.doUnmock("pi-mcp-adapter");
     }
   });
 });

@@ -1,5 +1,5 @@
 import { isAbsolute, join, resolve, sep } from "node:path";
-import type { Agent } from "@mariozechner/pi-agent-core";
+import type { Agent } from "@earendil-works/pi-agent-core";
 
 const GUARDED_TOOLS = new Set(["write", "edit"]);
 const PLAN_MODE_BLOCKED_TOOLS = new Set([

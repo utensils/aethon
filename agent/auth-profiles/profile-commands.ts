@@ -2,7 +2,11 @@ import type { AethonAgentState } from "../state";
 import type { DispatcherDeps, InboundMessage } from "../dispatcherTypes";
 import { emitGlobalReady } from "../dispatcherTypes";
 import { createProfileMeta } from "./store";
-import { servicesForProfile } from "./services-cache";
+import {
+  ensureProfileServices,
+  servicesForProfile,
+} from "./services-cache";
+import { writeProfileApiKey } from "./credential-file";
 import {
   findProfile,
   removeProfile,
@@ -45,8 +49,12 @@ export async function handleApiKeySave(
       label: stringField(msg.label) || providerId,
       kind: "api_key",
     });
-  const services = servicesForProfile(state, meta.id, { forceRefresh: true });
-  services.authStorage.set(providerId, { type: "api_key", key });
+  const services = await ensureProfileServices(state, meta.id);
+  // pi >= 0.80.8 no longer exposes a credential setter on the runtime; the
+  // profile's auth.json is Aethon-owned, so write pi's on-disk format and
+  // let the runtime's revision-aware store pick it up.
+  writeProfileApiKey(services.authPath, providerId, key);
+  servicesForProfile(state, meta.id, { forceRefresh: true });
   const now = Date.now();
   state.authProfiles = existing
     ? {

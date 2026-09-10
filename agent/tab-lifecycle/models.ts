@@ -6,11 +6,10 @@
  */
 
 import { logger } from "../logger";
-import type { Api, Model } from "@mariozechner/pi-ai";
+import type { Api, Model } from "@earendil-works/pi-ai";
 import type { AethonAgentState } from "../state";
 import { compilePattern, modelDescriptor, modelKey } from "./utils";
 import type { TabLifecycleDeps } from "./utils";
-import { registerOpenAIPreviewModels } from "../openai-preview-models";
 
 function uniqueModels(models: Model<Api>[]): Model<Api>[] {
   const seen = new Set<string>();
@@ -92,8 +91,9 @@ export async function refreshCachedModels(
       .warn(`settings reload failed: ${(err as Error).message}`);
   }
   try {
-    state.modelRegistry.refresh();
-    registerOpenAIPreviewModels(state.modelRegistry);
+    // Async in pi >= 0.80.8; awaited here so the picker reads a converged
+    // catalog (this function is already async).
+    await state.modelRegistry.refresh();
   } catch (err) {
     logger
       .scope("picker")
@@ -101,9 +101,7 @@ export async function refreshCachedModels(
   }
   for (const [profileId, services] of state.authProfileServices) {
     try {
-      services.authStorage.reload();
-      services.modelRegistry.refresh();
-      registerOpenAIPreviewModels(services.modelRegistry);
+      await services.modelRegistry.refresh();
     } catch (err) {
       logger
         .scope("picker")

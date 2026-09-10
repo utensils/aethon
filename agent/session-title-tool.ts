@@ -1,5 +1,5 @@
-import type { ToolDefinition } from "@mariozechner/pi-coding-agent";
-import { defineTool } from "@mariozechner/pi-coding-agent";
+import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
+import { defineTool } from "@earendil-works/pi-coding-agent";
 import { Type, type Static } from "typebox";
 import type { AethonAgentState } from "./state";
 import { setSessionLabelForTab } from "./session-label";

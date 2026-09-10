@@ -12,8 +12,8 @@
 // (share-mode gates + privacy floor) lives in shell.rs and is enforced
 // regardless of how the API is reached.
 
-import type { ToolDefinition } from "@mariozechner/pi-coding-agent";
-import { defineTool } from "@mariozechner/pi-coding-agent";
+import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
+import { defineTool } from "@earendil-works/pi-coding-agent";
 import { Type, type Static } from "typebox";
 
 interface ShellsApi {
@@ -37,7 +37,7 @@ function getShellsApi(): ShellsApi | null {
 /** Throw on tool failure so pi sets `toolResult.isError = true` and the
  *  provider adapter renders a tool error. Returning a normal result
  *  with `errorMessage` looks succeeded to downstream consumers (pi
- *  only marks isError on throw — see `@mariozechner/pi-coding-agent`). */
+ *  only marks isError on throw — see `@earendil-works/pi-coding-agent`). */
 function fail(message: string): never {
   throw new Error(message);
 }

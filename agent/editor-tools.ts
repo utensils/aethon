@@ -1,8 +1,8 @@
 // Pi tool definition wrapping `globalThis.aethon.editor.openFile` so the
 // model can open files in the Monaco editor through normal tool use.
 
-import type { ToolDefinition } from "@mariozechner/pi-coding-agent";
-import { defineTool } from "@mariozechner/pi-coding-agent";
+import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
+import { defineTool } from "@earendil-works/pi-coding-agent";
 import { Type, type Static } from "typebox";
 
 interface MutationResult {

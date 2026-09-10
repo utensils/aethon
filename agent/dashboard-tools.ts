@@ -13,8 +13,8 @@
 // create, tab spawn, gh shellout) happens frontend-side via the
 // dashboard_query bridge message.
 
-import type { ToolDefinition } from "@mariozechner/pi-coding-agent";
-import { defineTool } from "@mariozechner/pi-coding-agent";
+import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
+import { defineTool } from "@earendil-works/pi-coding-agent";
 import { Type, type Static } from "typebox";
 import type { AethonAgentState, ModelDescriptor } from "./state";
 

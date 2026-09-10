@@ -27,7 +27,7 @@ The name comes from Greek mythology: _Αἴθων_, one of the horses that pulle
   <img alt="Aethon workstation showing projects, the project dashboard, and file explorer" src="assets/brand/aethon-app-screenshot.png" width="920">
 </p>
 
-[pi]: https://github.com/mariozechner/pi-coding-agent
+[pi]: https://github.com/earendil-works/pi
 [a2ui]: https://github.com/google/a2ui
 
 ---

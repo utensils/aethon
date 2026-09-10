@@ -10,7 +10,7 @@
  * the devshell env.
  */
 
-import type { BashSpawnContext, BashSpawnHook } from "@mariozechner/pi-coding-agent";
+import type { BashSpawnContext, BashSpawnHook } from "@earendil-works/pi-coding-agent";
 import type { AethonAgentState } from "../state";
 import { getCachedEnv, maybeWarnColdRun, type DevshellClientDeps } from "./client";
 

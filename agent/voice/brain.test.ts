@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { AethonAgentState } from "../state";
 import { VoiceBrain, type BrainSession } from "./brain";
 import { VOICE_BRAIN_PREAMBLE } from "./prompt";
-import type { ToolDefinition } from "@mariozechner/pi-coding-agent";
+import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 
 type SentMessage = Record<string, unknown>;
 

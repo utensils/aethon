@@ -139,8 +139,8 @@ describe("expandFileReferencesInPrompt", () => {
 
   it("ignores missing package-style and punctuated @mentions", async () => {
     for (const prompt of [
-      "Use @mariozechner/pi-ai conventions",
-      "Use @mariozechner/pi-ai.",
+      "Use @earendil-works/pi-ai conventions",
+      "Use @earendil-works/pi-ai.",
       "Talk to @alice.",
     ]) {
       const out = await expandFileReferencesInPrompt(prompt, { cwd: root });

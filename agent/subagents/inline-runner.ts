@@ -1,8 +1,8 @@
 import {
   SessionManager,
   createAgentSession,
-} from "@mariozechner/pi-coding-agent";
-import type { Api, Model } from "@mariozechner/pi-ai";
+} from "@earendil-works/pi-coding-agent";
+import type { Api, Model } from "@earendil-works/pi-ai";
 import type { AethonAgentState } from "../state";
 import {
   authProfileServicesForTab,
@@ -32,7 +32,7 @@ import { waitForAbortCleanup, withTimeout } from "./timeout";
 
 interface ResolvedModelServices {
   model: Model<Api> | undefined;
-  authStorage: ReturnType<typeof servicesForProvider>["authStorage"];
+  modelRuntime: ReturnType<typeof servicesForProvider>["modelRuntime"];
   modelRegistry: ReturnType<typeof servicesForProvider>["modelRegistry"];
 }
 
@@ -52,7 +52,7 @@ export function resolveModelServices(
     if (!model) return null;
     return {
       model,
-      authStorage: services.authStorage,
+      modelRuntime: services.modelRuntime,
       modelRegistry: services.modelRegistry,
     };
   }
@@ -61,7 +61,7 @@ export function resolveModelServices(
   const services = authProfileServicesForTab(state, parentTabId);
   return {
     model: parent?.session.model ?? undefined,
-    authStorage: services.authStorage,
+    modelRuntime: services.modelRuntime,
     modelRegistry: services.modelRegistry,
   };
 }
@@ -84,7 +84,7 @@ export async function runInlineSubagent(
       `subagent "${sub.name}": model "${sub.model}" is not available — check that its provider is signed in.`,
     );
   }
-  const { model, authStorage, modelRegistry } = resolved;
+  const { model, modelRuntime } = resolved;
   const modelLabel = model
     ? `${model.provider}/${model.id}`
     : (sub.model ?? "inherited");
@@ -102,8 +102,7 @@ export async function runInlineSubagent(
 
   const { session } = await createAgentSession({
     ...(model ? { model } : {}),
-    authStorage,
-    modelRegistry,
+    modelRuntime,
     settingsManager: state.settingsManager,
     sessionManager: SessionManager.inMemory(),
     resourceLoader: state.resourceLoader,

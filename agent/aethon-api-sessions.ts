@@ -1,4 +1,4 @@
-import type { Api, Model } from "@mariozechner/pi-ai";
+import type { Api, Model } from "@earendil-works/pi-ai";
 import { stripExpandedFileReferences } from "./file-references";
 import type { AethonAgentState, TabRecord } from "./state";
 import {

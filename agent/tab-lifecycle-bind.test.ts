@@ -11,9 +11,9 @@ const mocks = vi.hoisted(() => {
   };
 });
 
-vi.mock("@mariozechner/pi-coding-agent", async (importOriginal) => {
+vi.mock("@earendil-works/pi-coding-agent", async (importOriginal) => {
   const actual =
-    await importOriginal<typeof import("@mariozechner/pi-coding-agent")>();
+    await importOriginal<typeof import("@earendil-works/pi-coding-agent")>();
   return {
     ...actual,
     createAgentSession: mocks.createAgentSession,

@@ -134,7 +134,7 @@ export async function tryAutoSwitchOnUsageLimit(
   return true;
 }
 
-/** A {@link TokenProvider} backed by a profile's pi AuthStorage, so OAuth
+/** A {@link TokenProvider} backed by a profile's pi ModelRuntime, so OAuth
  *  refresh + single-use refresh-token rotation go through pi's cross-process
  *  lock instead of an unsynchronised file read/write. */
 function profileTokenProvider(
@@ -142,8 +142,9 @@ function profileTokenProvider(
   profileId: string,
   providerId: string,
 ): TokenProvider {
-  return () =>
-    servicesForProfile(state, profileId).authStorage.getApiKey(providerId);
+  return async () =>
+    (await servicesForProfile(state, profileId).modelRuntime.getAuth(providerId))
+      ?.auth.apiKey;
 }
 
 export function parseIdTokenEmail(idToken: string): string | undefined {
