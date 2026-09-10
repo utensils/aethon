@@ -68,7 +68,7 @@
             # on Darwin — the toolchain can carry them but Xcode + a Mac
             # host are needed to actually link/run, so Linux builders skip
             # the extra download. See docs/mobile.md.
-            targets = lib.optionals pkgs.stdenv.isDarwin [
+            targets = lib.optionals pkgs.stdenv.hostPlatform.isDarwin [
               "aarch64-apple-ios"
               "aarch64-apple-ios-sim"
             ];
@@ -122,7 +122,7 @@
           # explicitly because numtide/devshell doesn't run nixpkgs'
           # pkg-config setup hook, so transitive .pc deps need to be on
           # PKG_CONFIG_PATH manually (see env block below).
-          linuxBuildInputs = lib.optionals pkgs.stdenv.isLinux [
+          linuxBuildInputs = lib.optionals pkgs.stdenv.hostPlatform.isLinux [
             pkgs.webkitgtk_4_1
             pkgs.gtk3
             pkgs.cairo
@@ -143,7 +143,7 @@
             pkgs.gsettings-desktop-schemas
           ];
 
-          linuxGSettingsSchemaDirs = lib.optionals pkgs.stdenv.isLinux [
+          linuxGSettingsSchemaDirs = lib.optionals pkgs.stdenv.hostPlatform.isLinux [
             "${pkgs.gtk3}/share/gsettings-schemas/${pkgs.gtk3.name}"
             "${pkgs.gsettings-desktop-schemas}/share/gsettings-schemas/${pkgs.gsettings-desktop-schemas.name}"
           ];
@@ -189,21 +189,21 @@
                 pkgs.nodejs
                 pkgs.npmHooks.npmConfigHook
               ]
-              ++ lib.optionals pkgs.stdenv.isLinux [
+              ++ lib.optionals pkgs.stdenv.hostPlatform.isLinux [
                 pkgs.pkg-config
                 pkgs.wrapGAppsHook3
               ]
-              ++ lib.optionals pkgs.stdenv.isDarwin [
+              ++ lib.optionals pkgs.stdenv.hostPlatform.isDarwin [
                 pkgs.makeBinaryWrapper
               ];
 
               buildInputs = linuxBuildInputs ++ darwinBuildInputs;
 
-              tauriBuildFlags = lib.optionals pkgs.stdenv.isDarwin [
+              tauriBuildFlags = lib.optionals pkgs.stdenv.hostPlatform.isDarwin [
                 "--no-sign"
               ];
 
-              postInstall = lib.optionalString pkgs.stdenv.isDarwin ''
+              postInstall = lib.optionalString pkgs.stdenv.hostPlatform.isDarwin ''
                 mkdir -p "$out/bin"
                 makeWrapper "$out/Applications/Aethon.app/Contents/MacOS/aethon" "$out/bin/aethon"
               '';
@@ -245,7 +245,7 @@
               # PATH, so without this the bare treefmt can't find its config.
               config.treefmt.build.wrapper
             ]
-            ++ lib.optionals pkgs.stdenv.isLinux [
+            ++ lib.optionals pkgs.stdenv.hostPlatform.isLinux [
               pkgs.stdenv.cc
             ]
             ++ linuxBuildInputs
@@ -257,7 +257,7 @@
                 value = "1";
               }
             ]
-            ++ lib.optionals pkgs.stdenv.isLinux [
+            ++ lib.optionals pkgs.stdenv.hostPlatform.isLinux [
               {
                 name = "PKG_CONFIG_PATH";
                 value = lib.concatStringsSep ":" [
@@ -316,7 +316,7 @@
                 value = "${pkgs.stdenv.cc}/bin/cc";
               }
             ]
-            ++ lib.optionals pkgs.stdenv.isDarwin [
+            ++ lib.optionals pkgs.stdenv.hostPlatform.isDarwin [
               {
                 # Use Apple's clang — Nix's CC wrapper has SDK version
                 # mismatches with current nixpkgs unstable. cc-rs (in

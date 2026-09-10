@@ -1,6 +1,8 @@
 # AGENTS.md
 
-This file provides guidance to OpenAI Codex when working with code in this repository.
+This file provides guidance to coding agents (Claude Code, OpenAI Codex, and
+others) when working with code in this repository. `CLAUDE.md` is a symlink
+to this file — edit `AGENTS.md`, never a copy.
 
 ## Project
 
@@ -51,18 +53,22 @@ are not app regressions.
 
 The devshell exposes these helpers (defined in `flake.nix`):
 
-| Command                | What it does                                                                                                                        |
-| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| `dev`                  | `scripts/dev.sh` → `cargo tauri dev` with port auto-increment                                                                       |
-| `docs`                 | `vitepress dev` from `website/` bound to `0.0.0.0` (LAN-reachable; :5173)                                                           |
-| `build-app`            | `cargo tauri build` — release bundle                                                                                                |
-| `understand-dashboard` | `scripts/understand-dashboard.sh` → Vite dashboard for `.understand-anything/knowledge-graph.json` (open the printed `?token=` URL) |
-| `check`                | Full CI gate: clippy + tsc + ESLint + cargo test + vitest                                                                           |
-| `lint`                 | ESLint frontend + agent (no auto-fix)                                                                                               |
-| `test`                 | Run Rust + TS tests (cargo test --lib + vitest run)                                                                                 |
-| `coverage`             | TS coverage report under `coverage/` (vitest v8)                                                                                    |
-| `fmt`                  | `treefmt` (rustfmt + nixfmt + prettier for JSON/MD/YAML/CSS + taplo for TOML)                                                       |
-| `clean`                | `scripts/dev.sh --clean` — wipe the `${TMPDIR}/aethon-dev/` sandbox                                                                 |
+| Command                | What it does                                                                                                                                                                                                                    |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `dev`                  | `scripts/dev.sh` → `cargo tauri dev` with port auto-increment. `dev --new` = sandbox launch with an empty `~/.aethon` under `${TMPDIR}/aethon-dev/new-<pid>/` (removed on exit); `dev --clean` = wipe that sandbox dir and exit |
+| `ios-dev`              | `scripts/ios.sh dev` → iOS companion in the Simulator (needs Xcode + CocoaPods outside Nix; `--host` = physical device over LAN; see `docs/mobile.md`)                                                                          |
+| `ios-build`            | `scripts/ios.sh build` — no args = unsigned simulator `.app`; `--target aarch64` = device build                                                                                                                                 |
+| `ios-run`              | Install + launch the last `ios-build` output in the Simulator (static bundle, no dev server)                                                                                                                                    |
+| `ios-device`           | Signed device build installed + launched on the connected iPhone via `devicectl` (`AETHON_IOS_UDID` overrides the pick)                                                                                                         |
+| `docs`                 | `vitepress dev` from `website/` bound to `0.0.0.0` (LAN-reachable; :5173)                                                                                                                                                       |
+| `build-app`            | `cargo tauri build` — release bundle                                                                                                                                                                                            |
+| `understand-dashboard` | `scripts/understand-dashboard.sh` → Vite dashboard for `.understand-anything/knowledge-graph.json` (open the printed `?token=` URL)                                                                                             |
+| `check`                | Full CI gate: version-sync check + clippy + tsc + ESLint + cargo test + vitest                                                                                                                                                  |
+| `lint`                 | ESLint frontend + agent (no auto-fix)                                                                                                                                                                                           |
+| `test`                 | Run Rust + TS tests (cargo test --lib + vitest run)                                                                                                                                                                             |
+| `coverage`             | TS coverage report under `coverage/` (vitest v8)                                                                                                                                                                                |
+| `fmt`                  | `treefmt` (rustfmt + nixfmt + prettier for JSON/MD/YAML/CSS + taplo for TOML)                                                                                                                                                   |
+| `clean`                | `cargo clean` for `src-tauri/target/` (the dev sandbox is wiped with `dev --clean`, not this)                                                                                                                                   |
 
 `bun tauri dev` and `bun tauri build` also work (they go through the JS-side
 `@tauri-apps/cli` wrapper). One-time after pulling: `bun install`.
@@ -118,14 +124,17 @@ for release testing; use the running dev app only.
    `spawn`/`readers`/`sidecar`); concern-grouped IPC commands live under
    `src-tauri/src/commands/`: `boot.rs`, `config.rs`, `devshell.rs`,
    `extensions/`, `fs/`, `git/`, `host.rs`, `mcp.rs`,
-   `native_windows.rs`, `scheduler/`, `server.rs`, `session.rs`,
-   `setup.rs`, `startup/`, `subagents.rs`, `updater.rs`, `voice.rs`,
-   `window.rs`; shell-tab PTY logic under `src-tauri/src/shell/`
+   `native_windows.rs`, `remote.rs`, `scheduler/`, `server.rs`,
+   `session.rs`, `setup.rs`, `startup/`, `subagents.rs`, `updater.rs`,
+   `voice.rs`, `voice_convo.rs`, `window.rs`; the core agent commands
+   (`send_message`, `dispatch_a2ui_event`) live in `agent_commands.rs`; shell-tab PTY logic under `src-tauri/src/shell/`
    (`lifecycle/`, `scrollback.rs`, `sharemode.rs`); native window
    geometry persistence in `window_state/` (`schema`, `restore`, `save`,
    `monitor_matching`, `migration`, `persistence`); pure helpers in
    `helpers/` (`paths`, `names`, `config`); HTTP + mDNS discovery in
-   `server/` (`http.rs`, `mdns.rs` — see "Networked discovery" below);
+   `server/` (`http.rs`, `mdns.rs`, `tls.rs`, `remote/` — see "Networked
+   discovery" and "Remote gateway" below); release-safe `aethonctl` socket
+   in `control.rs`; SQLite state in `storage.rs`;
    debug-only TCP eval server in `debug.rs` gated by
    `#[cfg(debug_assertions)]`)
    — owns the OS boundary. Core agent commands: `send_message`
@@ -141,7 +150,7 @@ for release testing; use the running dev app only.
    truncation/invalid split — don't replace this with per-chunk
    `from_utf8_lossy`, multi-byte sequences will corrupt.
 2. **Agent bridge** (`agent/main.ts` is a thin entry-point — env wiring
-   - boot order; the readline loop and 28-case dispatcher live in
+   - boot order; the readline loop and per-message-type dispatcher live in
      `agent/dispatcher.ts`) — JSON-lines over stdio. Reads
      `{type:"chat", content}` or `{type:"a2ui_event", event}`, replies
      with `{type:"response"|"a2ui"|"error", ...}`. Provider config comes
@@ -182,10 +191,12 @@ for release testing; use the running dev app only.
    * `canvas.ts` — helpers for building and patching A2UI canvas
      payloads.
    * `agent-errors.ts` — extracts structured error info from pi agent
-     end-of-run errors (wraps `AgentEndError` classification).
+     end-of-run errors (`extractAgentEndError` / `isRetryableAgentEndError`).
    * `shell-tools.ts` — pi tool implementations for
-     `listShells`/`readShell`/`writeShell` (bridge-side counterpart to
-     the Rust `shell_query` Tauri command).
+     `listShells`/`readShell`/`writeShell`. `shell_query` is a
+     bridge→frontend message over the mutation-ack channel; the Rust
+     commands behind it are `shell_list_shareable` /
+     `shell_read_scrollback` / `shell_write` (`shell/lifecycle/sharing.rs`).
 3. **React frontend** (`src/`) — `App.tsx` is a thin shell of `useX()`
    hooks (`src/hooks/`); event-routing logic lives in `src/eventRoutes/`
    (one file per prefix family, with sidebar subroutes under
@@ -228,8 +239,9 @@ Switching layouts (when more exist) is a sidebar/palette click that calls
 `window.aethon.activateLayout(id)`. Don't add static chrome in `App.tsx` —
 extend the layout JSON or register a new extension. Layouts must conform to
 the slot contract in `src/extensions/default-layout/slots.json` + `slots.ts`
-(canonical area names: `header`, `sidebar`, `canvas`, `composer`,
-`terminal`, `status`; non-canonical layouts declare a `slotMap`).
+(canonical area names: `header`, `sidebar`, `files-sidebar`, `tabs`,
+`canvas`, `terminal`, `composer`, `status`, `empty-state`; non-canonical
+layouts declare a `slotMap`).
 
 **2. Single state store, JSON Pointer addressed.** All app state lives in one
 object on `App` (`messages`, `draft`, `waiting`, `status`, `connection`,
@@ -249,9 +261,10 @@ hardcoded `PRIMITIVE_REGISTRY` of 19 input/layout primitives (`text`,
 `checkbox`, `slider`, `form`, `form-field`, `list`, `table`) — these
 can't be overridden. Default-layout extension components are split per
 family under `src/extensions/default-layout/` (`chat.tsx`, `terminal.tsx`,
-`command-palette.tsx`, `settings-panel.tsx`, `search-panel.tsx`,
+`command-palette.tsx`, `settings-panel/`, `search-panel.tsx`,
 `notifications.tsx`, `share-mode-badge.tsx`, `variation-components.tsx`,
-`markdown-adapter.tsx`, plus `shell/`, `sidebar/`, and `editor/`
+`markdown-adapter.tsx`, plus `shell/`, `sidebar/`, `editor/`,
+`dashboard/`, and `layout/`
 sub-directories); `components.tsx` itself is the registration
 aggregator only. Everything else (`layout`, `sidebar`,
 `chat-history`, `chat-input`, `status-bar`, `terminal-panel`, `main-canvas`,
@@ -282,6 +295,9 @@ console) can swap chrome at runtime:
   `layout`, also activate it
 - `window.aethon.listExtensions()` — names of currently registered extensions
 - `window.aethon.openProject(path)` — register/activate a project
+- plus tab / project / layout helpers (`newTab`, `closeTab`, `switchTab`,
+  `listTabs`, `listLayouts`, `getLayout`, `pickProject`, `setActiveProject`,
+  `listProjects`, `askUser`, …) — see `src/runtime/windowApi.ts`
 
 ### Keyboard shortcuts (current set)
 
@@ -307,6 +323,10 @@ console) can swap chrome at runtime:
 | `Cmd+Shift+0`                 | Reset zoom                                                                                                                                                                                                                    |
 | `Cmd+L`                       | Focus active tab's primary input (composer for agent tabs, terminal for shell tabs)                                                                                                                                           |
 | `Cmd+,`                       | Open Settings panel                                                                                                                                                                                                           |
+| `Cmd+J`                       | Toggle the sidebar's file-tree panel                                                                                                                                                                                          |
+| `Cmd+D`                       | Toggle the right-hand files sidebar                                                                                                                                                                                           |
+| `Cmd+Shift+V`                 | Toggle markdown preview on the active editor tab                                                                                                                                                                              |
+| `Cmd+Shift+A`                 | Toggle Accounts panel                                                                                                                                                                                                         |
 | `Cmd+Shift+F`                 | Cross-session search overlay                                                                                                                                                                                                  |
 | `Cmd+Shift+L`                 | Open Scheduled Tasks                                                                                                                                                                                                          |
 | `Cmd+Shift+S`                 | Export active chat as Markdown to `~/Downloads/` (agent tabs only)                                                                                                                                                            |
@@ -315,7 +335,8 @@ console) can swap chrome at runtime:
 | `Esc`                         | Close palette / settings / search overlay (when open)                                                                                                                                                                         |
 
 `metaKey || ctrlKey` for cross-platform — Linux/Windows users get the
-same set under Ctrl. Native menu accelerators in `src-tauri/src/lib.rs`
+same set under Ctrl. Native menu accelerators in
+`src-tauri/src/commands/extensions/app_menu.rs`
 mirror these. Extension `aethon.registerKeybinding` priority is
 unchanged: extensions run first and may override built-ins.
 
@@ -408,10 +429,11 @@ re-evaluated modules hot-swap their components; removed modules unregister
 theirs. The trust model is identical to bridge-side extension code (user
 installed it, no sandbox).
 
-`ExtensionRegistry` also has a `.registerTemplate(type, payload)` path for
-declarative A2UI subtree templates — used when an extension provides a
-component as an A2UI JSON fragment rather than a React function. The
-renderer prefers React components when both exist for the same type.
+`ExtensionRegistry` also carries declarative A2UI subtree templates
+(`setTemplates(record)` replaces the set wholesale; `resolveTemplate(type)`
+looks one up) — used when an extension provides a component as an A2UI JSON
+fragment rather than a React function. The renderer prefers React
+components when both exist for the same type.
 
 ### Command palette
 
@@ -462,7 +484,7 @@ per-tab cwd as immutable.
 
 The sidebar tree is **host → project → workspace**
 (`src/extensions/default-layout/sidebar/`). Tabs bucket per workspace
-(`src/projectOps/tabBuckets.ts`, key separator `"::workspace::"`; pre-rename
+(`src/hooks/projectOps/tabBuckets.ts`, key separator `"::workspace::"`; pre-rename
 `"::worktree::"` snapshot keys migrate on load). Git-status polling is
 tiered (`src/hooks/statusPollScheduler.ts`): hot = active workspace
 (20 s + `git-state-changed` events), warm = last 4 activated workspace roots
@@ -481,7 +503,7 @@ viewers) is implemented as a default-layout sub-extension under
 (`editor-buffers.ts` manages models per file, `setup.ts` configures
 workers + languages, `theme.ts` syncs to the active Aethon theme).
 File-system operations go through `src-tauri/src/commands/fs/`
-(`io`, `listing`, `open`, `security`, `trash`, `watch`) — a
+(`io`, `listing`, `open`, `security`, `trash`, `watch`, `icons`) — a
 thin set of read/write/list/move/delete commands scoped to the active
 project's `cwd`. Two security layers gate every path: a lexical check
 (`helpers::resolve_inside_root`) catches `..` traversal without
@@ -513,14 +535,14 @@ expose a stable identifier.
 
 ### Networked discovery (server/)
 
-`src-tauri/src/server/` is a Claudette-style scaffold daemon wired in
-`setup()` and torn down on exit. Two `mdns_sd::ServiceDaemon`s run side
+`src-tauri/src/server/` is the LAN daemon wired in `setup()` and torn
+down on exit. Two `mdns_sd::ServiceDaemon`s run side
 by side: one **advertises** `_aethon._tcp.local.` with the bound HTTP
 port in TXT, the other **browses** and emits Tauri events
 `host-discovered` / `host-removed`. An axum server binds `0.0.0.0:0`
-(OS picks the port) and exposes `GET /health` + `GET /status`. **No
-auth, no TLS** — this is explicit scaffolding for an upcoming pairing
-PR; do not lean on it for trusted IPC. `commands/server.rs` exposes
+(OS picks the port) and exposes `GET /health` + `GET /status` plus the
+paired-device surface (`POST /pair`, `GET /ws`, `GET /asset`) behind the
+TLS identity from `server/tls.rs`. `commands/server.rs` exposes
 `server_start` / `server_stop`; `commands/host.rs` surfaces discovered
 peers to the frontend. The boot-time HTTP listener and mDNS **advertiser**
 are gated on `[server] enabled` (default true) via `server_enabled()` in
@@ -529,6 +551,51 @@ listening/advertisement when it's `false`. The mDNS **browser** is NOT
 gated — it always runs, so peer discovery stays read-only and useful even
 with the local server off. An explicit `server_start` IPC always starts the
 listener and advertises regardless of the flag.
+
+### Remote gateway + iOS companion (server/remote/, apps/mobile/)
+
+`src-tauri/src/server/remote/` grows the scaffold into an authenticated
+transport for paired devices: `tls.rs` mints a self-signed identity
+(pinned by SHA-256 in the pairing QR), `pairing.rs` / `devices.rs` /
+`hosts.rs` own the pairing session + device and paired-host stores,
+`ws.rs` + `protocol.rs` speak the WebSocket protocol, `relay.rs` dispatches
+an allowlisted subset of the Tauri command surface, and `events.rs` fans
+Tauri events out to connected devices. `commands/remote.rs` is the IPC
+surface (Settings → Remote Devices). Plaintext `ws://` is honored only in
+debug desktop builds with `[server] allow_insecure_ws = true`.
+
+**Every Tauri command needs an explicit remote posture** in
+`server/remote/policy.rs` (`Direct` / `DirectRootChecked` /
+`DirectFiltered` / `ForwardToFrontend` / refused). A unit test parses
+`lib.rs` and fails when the two drift, so adding a command without deciding
+its posture fails CI. Root-bearing commands (fs/git/shell) are
+`DirectRootChecked`: the relay validates the root arg against the host's
+known project roots before the per-path fs jail applies. The desktop
+webview stays the sole `*_query` answerer and the single writer of
+persisted state. Exposing a command remotely means changing `policy.rs`,
+`relay.rs`, and the client-side `src/gateway/commandPolicy.ts`
+(`local` / `stub` / `gateway` buckets) together.
+
+The iOS companion (`apps/mobile/src-tauri/`, its own cargo workspace so the
+desktop's iOS-incompatible deps never enter the build) reuses the same
+React frontend: `src/gateway/` shims `@tauri-apps/api/{core,event}` over
+the WebSocket, `src/mobile/` is the entry + connect gate + mobile layout
+(`mobile.a2ui.json`), and `vite.mobile.config.ts` / `index.mobile.html`
+emit `dist-mobile/`. Browser dev loop: `bun run dev:mobile` against a
+desktop running with insecure ws enabled. See `docs/mobile.md` for
+toolchain, signing, and the one-`ios-dev`-at-a-time constraint.
+
+### aethonctl (release-safe control socket)
+
+`src-tauri/src/control.rs` runs a user-local Unix socket control service
+(token + socket path under `~/.aethon/control/`), deliberately separate from
+the debug eval server so it works in release builds. It exposes typed
+request methods only; UI-owned mutations are forwarded to the webview as
+`control-request` events. `cli/aethonctl.ts` (`bun run aethonctl …`, also a
+`bin` in `package.json`) is the client: `status`, `tabs`, `models`,
+`accounts`, `chat send [--wait]`, `agent stop`, `skills install`.
+`--transport debug` falls back to the TCP eval server for `state` /
+`invoke` / `eval`. `cli/aethonRemote.ts` drives pairing from the terminal.
 
 ### Voice-to-text input
 
@@ -552,6 +619,15 @@ download on demand), and `start_recording` / `stop_and_transcribe` /
 conversational keys `speak_agent_replies`, `speak_max_chars`, and
 `conversation_continuous`.
 
+A fourth path is the **cascade** conversation engine (`voice/convo/`,
+IPC in `commands/voice_convo.rs`): a long-lived duplex session — streaming
+mic → cloud STT with semantic turn detection (Deepgram, `voice/deepgram.rs`)
+→ turn events to the frontend, brain text back → streaming TTS (Cartesia)
+→ playback, half-duplex with barge-in. Cognition (the voice brain) lives in
+the agent bridge. Config keys: `conversation_engine`, `brain_model`,
+`stt_provider`, `tts_provider`, `tts_voice`, `deepgram_api_key`,
+`cartesia_api_key` (`VoiceConfig` in `helpers/config.rs`).
+
 ### Auth profiles (multi-account login)
 
 Per-tab login identities so different agent tabs can authenticate as
@@ -562,8 +638,9 @@ active profile and a per-provider default. Profile ids are sanitized
 sit under `authProfilesDir()` in `~/.aethon/`. Login streams an
 `AuthProfileLoginEvent` (`started → auth → progress → prompt → complete`)
 so the OAuth challenge surfaces in the UI. Frontend mirror is
-`src/auth-profiles/`; the active profile selects which model registry a tab
-sees (`modelRegistryForModelId`). Driven by `/login [list | use <account> |
+`src/auth-profiles/`; bridge-side, the active profile selects which model
+registry a tab sees (`modelRegistryForModelId` in `agent/auth-profiles/`,
+used by `agent/chat.ts` and `agent/tabs.ts`). Driven by `/login [list | use <account> |
 default <account>]`.
 
 ### Command PATH resolution (env.rs)
@@ -578,19 +655,22 @@ this helper, not bare `Command::new("git")`.
 
 The Tauri shell sets these env vars when spawning the bridge (`agent/main.ts`):
 
-| Env var                             | Purpose                                                                                                                                                                                                                                                      |
-| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `AETHON_DOCS_DIR`                   | Bundled docs dir (`docs/aethon-agent/` in dev, `<resource_dir>/docs/aethon-agent/` in release). Contains `README.md`, `api.md`, `components.md`, `extensions.md`. The system prompt points the model at these for the authoritative API/component reference. |
-| `AETHON_USER_DIR`                   | `~/.aethon/` — user extensions, config, logs, and the SQLite-backed app state directory.                                                                                                                                                                     |
-| `AETHON_DB_FILE`                    | `~/.aethon/state/aethon.sqlite3` — canonical Aethon app state, projects, sessions, search index, and small managed state slices.                                                                                                                             |
-| `AETHON_PROJECTS_DIR`               | `~/.aethon/projects/` — stable per-project generated data directories keyed by project id.                                                                                                                                                                   |
-| `AETHON_STATE_FILE`                 | `~/.aethon/state.json` — compatibility/debug JSON snapshot of loaded extensions, themes, custom components, layout summary, and tab list. Rewritten (debounced 200 ms) on every registration.                                                                |
-| `AETHON_SESSIONS_DIR`               | Legacy Aethon session-import location. New Aethon session state is SQLite-backed; pi still writes sidecar transcripts to pi's default session location for later pi pickup and analytics.                                                                    |
-| `AETHON_RELEASE_MODE`               | `"1"` in release, `"0"` in dev. The system prompt branches on this to (a) avoid telling the model to read source files that aren't there, (b) point at `~/.aethon/extensions/` for new extensions instead.                                                   |
-| `AETHON_PROJECT_ROOT`               | Source tree path (dev only). Lets the model reference `agent/main.ts` etc. by absolute path during dev work.                                                                                                                                                 |
-| `AETHON_PROVIDER_TIMEOUT_SECONDS`   | Optional Aethon-owned provider/SDK request timeout override from `[agent] provider_timeout_seconds`; omitted leaves pi's provider retry settings unchanged.                                                                                                  |
-| `AETHON_BASH_TIMEOUT_FLOOR_SECONDS` | Floor applied to model-supplied bash tool timeouts from `[agent] bash_timeout_floor_seconds`.                                                                                                                                                                |
-| `AETHON_SUBAGENT_TIMEOUT_SECONDS`   | Default inline subagent wall-clock ceiling from `[agent] subagent_timeout_seconds`; individual subagent frontmatter may override it with `timeout: <seconds>`.                                                                                               |
+| Env var                                                | Purpose                                                                                                                                                                                                                                                      |
+| ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `AETHON_DOCS_DIR`                                      | Bundled docs dir (`docs/aethon-agent/` in dev, `<resource_dir>/docs/aethon-agent/` in release). Contains `README.md`, `api.md`, `components.md`, `extensions.md`. The system prompt points the model at these for the authoritative API/component reference. |
+| `AETHON_USER_DIR`                                      | `~/.aethon/` — user extensions, config, logs, and the SQLite-backed app state directory.                                                                                                                                                                     |
+| `AETHON_DB_FILE`                                       | `~/.aethon/state/aethon.sqlite3` — canonical Aethon app state, projects, sessions, search index, and small managed state slices.                                                                                                                             |
+| `AETHON_PROJECTS_DIR`                                  | `~/.aethon/projects/` — stable per-project generated data directories keyed by project id.                                                                                                                                                                   |
+| `AETHON_STATE_FILE`                                    | `~/.aethon/state.json` — compatibility/debug JSON snapshot of loaded extensions, themes, custom components, layout summary, and tab list. Rewritten (debounced 200 ms) on every registration.                                                                |
+| `AETHON_SESSIONS_DIR`                                  | Legacy Aethon session-import location. New Aethon session state is SQLite-backed; pi still writes sidecar transcripts to pi's default session location for later pi pickup and analytics.                                                                    |
+| `AETHON_RELEASE_MODE`                                  | `"1"` in release, `"0"` in dev. The system prompt branches on this to (a) avoid telling the model to read source files that aren't there, (b) point at `~/.aethon/extensions/` for new extensions instead.                                                   |
+| `AETHON_PROJECT_ROOT`                                  | Source tree path (dev only). Lets the model reference `agent/main.ts` etc. by absolute path during dev work.                                                                                                                                                 |
+| `AETHON_PROVIDER_TIMEOUT_SECONDS`                      | Optional Aethon-owned provider/SDK request timeout override from `[agent] provider_timeout_seconds`; omitted leaves pi's provider retry settings unchanged.                                                                                                  |
+| `AETHON_BASH_TIMEOUT_FLOOR_SECONDS`                    | Floor applied to model-supplied bash tool timeouts from `[agent] bash_timeout_floor_seconds`.                                                                                                                                                                |
+| `AETHON_SUBAGENT_TIMEOUT_SECONDS`                      | Default inline subagent wall-clock ceiling from `[agent] subagent_timeout_seconds`; individual subagent frontmatter may override it with `timeout: <seconds>`.                                                                                               |
+| `AETHON_WORKER_TAB_ID` / `AETHON_WORKER_CWD`           | Set only on per-tab worker bridges (see "Agent process model"); absent on the global bridge. `AETHON_WORKER_DEVSHELL_{READY,ENV_KEYS,KIND}` carry the pre-resolved devshell env.                                                                             |
+| `AETHON_BOOT_LAYOUT_FILE` / `AETHON_LAYOUT_SLOTS_FILE` | Paths to the default layout payload + slot contract so the bridge can validate layouts without the frontend.                                                                                                                                                 |
+| `AETHON_STATE_WARN_KB` / `AETHON_STATE_HARD_KB`        | Size guard thresholds for extension `setState` payloads.                                                                                                                                                                                                     |
 
 Timeouts must be named config fields or constants, never inline numeric
 literals. Keep the Settings UI, `helpers::parse_config_toml`, bridge env
@@ -615,7 +695,8 @@ sees them.
 Mutation: `registerComponent`, `setState`, `setLayout`,
 `patchLayout(path, value)`, `registerSidebarSection`, `registerTheme`,
 `registerLayout`, `registerHighlightGrammar`, `onEvent`, `onUnload`,
-`notify`, `dismissNotification`. Subnamespaces:
+`registerKeybinding`, `notify`, `dismissNotification`. Subnamespaces:
+`editor.*`,
 `shells.{list, read, write, create}`, `tasks.{start, …}`, `dashboard.*`,
 `windows.*` (`openCanvas` / `openTerminal` / `list` / `get` / `focus` /
 `close` / `emitCanvas` …), `sessions.*`, and
@@ -644,11 +725,11 @@ matching key(s) in `BUILTIN_ROUTE_TABLE`.
 **Always key chrome-composite handlers by `type:<componentType>`, not
 `id:`** — that's how `aethon.registerComponent("<type>", custom)` and
 custom-layout payloads with renamed instances stay routable. Use
-`id:<…>` only for genuine instance-specific dispatch (none today). The
-12 chrome composites (sidebar, command-palette, settings-panel,
-search-panel, notification-stack, chat-input, empty-state,
-terminal-panel, tab-strip, model-picker, appearance-menu,
-share-mode-badge, shell-canvas) all dispatch by type.
+`id:<…>` only for genuine instance-specific dispatch (none today). All
+chrome composites (sidebar, command-palette, settings-panel, chat-input,
+terminal-panel, tab-strip, shell-canvas, editor-canvas, file-tree,
+source-control-panel, the dashboard family, the `mobile-*` family, …)
+dispatch by type — see the `type:` keys in `eventRoutes/index.ts`.
 
 ### Hot-reload doesn't kill in-flight prompts
 
@@ -684,9 +765,10 @@ coverage for the full transition and verify against the running dev app.
   and overrides Tauri's `devUrl` via `$TAURI_CONFIG`. `strictPort: true`
   stays on so Vite fails loudly if the wrapper hands it a busy port. The
   aethon-debug skill reads `dev-info.json` to follow the chosen port.
-- **No global state in the Rust shell** beyond what Tauri's `Manager` exposes
-  (currently just the `AgentProcess` mutex). Business logic belongs in the
-  agent, not the shell.
+- **No global state in the Rust shell** beyond Tauri managed state
+  registered in `lib.rs` (`AgentProcesses`, `ShellRegistry`, `RemoteState`,
+  `DevshellCache`, …) — no statics or lazy globals. Business logic belongs
+  in the agent, not the shell.
 - **No emojis in code or commits** unless the user explicitly asks.
 - **Disclosure affordances always use the shared `Chevron`**
   (`src/extensions/default-layout/sidebar/chevron.tsx`). Every
@@ -775,7 +857,9 @@ Files older than 7 days are pruned at app startup; rotation is per-day.
 Each line is `ISO_TS LEVEL scope: message` so `grep ext-loader …` works.
 
 Levels follow `AETHON_LOG` (preferred) or `RUST_LOG` / `LOG_LEVEL` env
-vars. Defaults are `info` in dev and `warn` in release. Examples:
+vars. Rust defaults to `info` in dev and `warn` in release; the bridge
+always defaults to `info`. `AETHON_LOG_DIR` overrides the bridge log
+directory. Examples:
 
 ```bash
 AETHON_LOG=debug bun tauri dev          # everything
@@ -815,7 +899,7 @@ The authoritative sources are `SPEC.md` (design vision + status checklist)
 and `CHANGELOG.md` (what actually shipped per version). Update those when
 capabilities land; treat this section as a snapshot, not the source of truth.
 
-**Quick highlights (version 0.10.2):** projects with multiple workspaces
+**Quick highlights (version 0.12.0):** projects with multiple workspaces
 (main checkout + git worktrees, each with its own tabs / sessions / git
 state / devshell), MCP server setup + config flows, multi-model subagents
 with parallel background delegation, scheduled tasks / loops, native A2UI
@@ -831,9 +915,11 @@ file tree + media viewers, tool execution as A2UI cards, command palette,
 slash-command picker, themes, system tray + native menu, and real
 `~/.aethon/config.toml`.
 
-Releases are macOS **Apple Silicon (aarch64) only**, cut via release-please
-(app + dmg + updater manifest). There are no Linux or Windows release
-artifacts today, even though the dev toolchain still builds on Linux.
+Desktop releases are macOS **Apple Silicon (aarch64) only**, cut via
+release-please (app + dmg + updater manifest), plus an iOS TestFlight
+upload and a crates.io publish of the `aethon` crate. There are no Linux or
+Windows release artifacts today, even though the dev toolchain still builds
+on Linux.
 
 ## State persistence
 
@@ -852,15 +938,17 @@ wiring the public key into `tauri.conf.json`, CI secrets, and the
 release-please flow. Summary: releases are driven by **release-please** on
 merge to `main` (not a `v*.*.*` tag push). Merging the "chore: release" PR
 triggers `.github/workflows/release-please.yml`, which builds the signed
-macOS **aarch64** app + dmg and uploads `latest.json` to feed the in-app
-updater. No Linux or Windows release artifacts are produced.
+macOS **aarch64** app + dmg, uploads `latest.json` to feed the in-app
+updater, runs the `testflight` job (iOS companion), and publishes the
+`aethon` crate (`publish-crate`). No Linux or Windows release artifacts are
+produced.
 
 ## Test coverage + linting
 
 | Tool                         | Scope                                                                                                                               | Devshell command |
 | ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
 | `cargo clippy -D warnings`   | Rust shell + helpers                                                                                                                | `check`          |
-| `cargo test --lib`           | Rust unit tests under `src-tauri/src/helpers/`                                                                                      | `test`           |
+| `cargo test --lib`           | Rust unit tests (`mod tests` across `src-tauri/src/`)                                                                               | `test`           |
 | `bunx tsc -b --noEmit`       | TypeScript types (frontend + agent)                                                                                                 | `check`          |
 | `bunx eslint .`              | TS + React lint, type-aware via tsconfig                                                                                            | `lint`           |
 | `bunx vitest run`            | TS unit tests (`src/**/*.test.ts` + `agent/**/*.test.ts`)                                                                           | `test`           |
@@ -876,6 +964,6 @@ audit them on touch, don't broaden them.
 
 ## Local-only files (gitignored)
 
-`run-phase*.sh` and `aethon-phase*.png` are ad-hoc test-harness artifacts —
+`run-phase*.sh` files are ad-hoc test-harness artifacts —
 phase scripts spawn the dev server and Playwright-MCP grabs screenshots.
 Don't commit them and don't rely on them being present.

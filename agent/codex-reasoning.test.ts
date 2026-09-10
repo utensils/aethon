@@ -33,6 +33,14 @@ function tab(
 
 describe("Codex 5.6 reasoning efforts", () => {
   it("keeps Sol and Terra Ultra-capable while Luna stops at Max", () => {
+    expect(codexReasoningLevels(model("gpt-6-astra"))).toEqual([
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max",
+      "ultra",
+    ]);
     expect(codexReasoningLevels(model("gpt-5.6-sol"))).toEqual([
       "low",
       "medium",
@@ -68,6 +76,14 @@ describe("Codex 5.6 reasoning efforts", () => {
     setTabThinkingLevel(record, "high");
     expect(record.thinkingLevelSpy).toHaveBeenLastCalledWith("high");
     expect(record.codexExtendedReasoningEffort).toBeUndefined();
+  });
+
+  it("sends Astra Ultra as a distinct effort on top of Pi xhigh", () => {
+    const astra = tab("gpt-6-astra");
+    setTabThinkingLevel(astra, "ultra");
+    expect(astra.thinkingLevelSpy).toHaveBeenCalledWith("xhigh");
+    expect(selectedThinkingLevel(astra)).toBe("ultra");
+    expect(astra.codexExtendedReasoningEffort).toBe("ultra");
   });
 
   it("rejects Ultra for Luna and older Codex models", () => {

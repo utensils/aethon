@@ -52,6 +52,12 @@ describe("docs dev helper", () => {
 
     const server = await listenLoopback(0);
 
+    // Typed as `unknown` so the asymmetric matcher satisfies
+    // no-unsafe-assignment whether eslint resolves it as `any` or as the
+    // matcher type (local vs CI project-service resolution differ).
+    const shadowedListenerMatcher: unknown = expect.stringContaining(
+      "is shadowed by a loopback-only listener",
+    );
     try {
       await expect(
         execFileAsync("bash", ["scripts/docs-dev.sh"], {
@@ -61,14 +67,7 @@ describe("docs dev helper", () => {
             AETHON_DOCS_PRECHECK_ONLY: "1",
           },
         }),
-      ).rejects.toMatchObject({
-        // `.rejects` is untyped (`any`), so the matcher's `any` return would
-        // trip @typescript-eslint/no-unsafe-assignment; type it as the string
-        // field it stands in for (runtime value is still the matcher).
-        stderr: expect.stringContaining(
-          "is shadowed by a loopback-only listener",
-        ) as unknown as string,
-      });
+      ).rejects.toMatchObject({ stderr: shadowedListenerMatcher });
     } finally {
       await server.close();
     }

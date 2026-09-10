@@ -70,3 +70,7 @@ test-results/
 website/.vitepress/cache/
 website/.vitepress/dist/
 website/node_modules/
+
+# Local sync/bundle artifacts
+.ds-sync/
+ds-bundle/
