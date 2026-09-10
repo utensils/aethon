@@ -21,7 +21,12 @@ describe("OpenAI preview model compatibility", () => {
     }
     expect(existingIds.every((id) => registry.find("openai", id))).toBe(true);
 
-    for (const id of ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"]) {
+    for (const id of [
+      "gpt-6-astra",
+      "gpt-5.6-sol",
+      "gpt-5.6-terra",
+      "gpt-5.6-luna",
+    ]) {
       expect(registry.find("openai-codex", id)).toMatchObject({
         id,
         provider: "openai-codex",

@@ -14,7 +14,15 @@ const BASE_LEVELS = new Set<ThinkingLevel>([
   "xhigh",
 ]);
 
-const SOL_TERRA_LEVELS = [
+/** Codex models exposing the full low → ultra effort ladder (Ultra is the
+ *  auto-delegating orchestration mode). Mirrors the upstream Codex model
+ *  catalog's `supported_reasoning_levels`. */
+const FULL_EFFORT_MODELS = new Set([
+  "gpt-6-astra",
+  "gpt-5.6-sol",
+  "gpt-5.6-terra",
+]);
+const FULL_EFFORT_LEVELS = [
   "low",
   "medium",
   "high",
@@ -38,9 +46,7 @@ export function codexReasoningLevels(
 ): readonly string[] | undefined {
   if (model?.provider !== "openai-codex") return undefined;
   if (model.id === "gpt-5.6-luna") return LUNA_LEVELS;
-  if (model.id === "gpt-5.6-sol" || model.id === "gpt-5.6-terra") {
-    return SOL_TERRA_LEVELS;
-  }
+  if (FULL_EFFORT_MODELS.has(model.id)) return FULL_EFFORT_LEVELS;
   return undefined;
 }
 

@@ -14,6 +14,10 @@ const GPT_5_6_MODELS: RegisteredModel[] = [
 ];
 
 const CODEX_GPT_5_6_MODELS: RegisteredModel[] = [
+  // GPT-6 Astra: 272k context, efforts low → ultra (see codex-reasoning.ts).
+  // Cost mirrors the Sol tier as a placeholder — Codex OAuth traffic is
+  // subscription-billed, so it only affects the in-app estimate.
+  codexModel("gpt-6-astra", "GPT-6 Astra", 5, 30),
   codexModel("gpt-5.6-sol", "GPT-5.6 Sol", 5, 30),
   codexModel("gpt-5.6-terra", "GPT-5.6 Terra", 2.5, 15),
   codexModel("gpt-5.6-luna", "GPT-5.6 Luna", 1, 6),

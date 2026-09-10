@@ -251,8 +251,8 @@ from the model picker's reasoning selector (see
 [Agents](/guide/agents#reasoning-effort)). `codex_fast_mode` only affects
 Codex-family models.
 
-GPT-5.6 Sol and Terra expose Light, Medium, High, Extra High, Max, and Ultra.
-Luna stops at Max. Ultra is an orchestration mode: Aethon sends the distinct
+GPT-6 Astra and GPT-5.6 Sol and Terra expose Light, Medium, High, Extra
+High, Max, and Ultra. Luna stops at Max. Ultra is an orchestration mode: Aethon sends the distinct
 Codex effort and proactively uses available subagents for meaningful parallel
 work. Older models retain their provider-defined effort sets, so existing
 `off`, `minimal`, and GPT-5.5 selections continue to work.
