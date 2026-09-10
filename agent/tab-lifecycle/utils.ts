@@ -9,7 +9,7 @@ import {
   getSupportedThinkingLevels,
   type Api,
   type Model,
-} from "@mariozechner/pi-ai";
+} from "@earendil-works/pi-ai";
 import type { AethonAgentState, ModelDescriptor } from "../state";
 import { supportsCodexFastMode } from "../codex-fast-mode";
 import { codexReasoningLevels } from "../codex-reasoning";

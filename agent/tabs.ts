@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { Api, Model } from "@mariozechner/pi-ai";
+import type { Api, Model } from "@earendil-works/pi-ai";
 import type { AethonAgentState, AethonExtensionApi } from "./state";
 import type { DispatcherDeps, InboundMessage } from "./dispatcherTypes";
 import { emitGlobalReady } from "./dispatcherTypes";

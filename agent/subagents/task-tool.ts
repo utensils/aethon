@@ -20,7 +20,7 @@
  * The subagent never receives the `task` tool itself, so it can't recurse.
  */
 
-import { defineTool, type ToolDefinition } from "@mariozechner/pi-coding-agent";
+import { defineTool, type ToolDefinition } from "@earendil-works/pi-coding-agent";
 import type { AethonAgentState } from "../state";
 import { runSubagentTaskBatch } from "./batch-runner";
 import { runSubagentTask } from "./task-runner";

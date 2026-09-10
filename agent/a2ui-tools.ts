@@ -1,8 +1,8 @@
 // Pi tool definitions wrapping the live Aethon A2UI runtime API so the
 // model can mutate the UI through the standard tool-use protocol.
 
-import type { ToolDefinition } from "@mariozechner/pi-coding-agent";
-import { defineTool } from "@mariozechner/pi-coding-agent";
+import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
+import { defineTool } from "@earendil-works/pi-coding-agent";
 import { Type, type Static } from "typebox";
 
 interface MutationResult {

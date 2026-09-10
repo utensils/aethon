@@ -28,6 +28,8 @@ export { loadAuthProfiles, saveAuthProfiles } from "./profile-state";
 export {
   authProfileServicesForTab,
   defaultProfileIdForTab,
+  ensureProfileServices,
+  ensureTabAuthProfileServices,
   modelRegistryForModelId,
   refreshAuthServicesForTab,
   refreshGlobalAuthServicesIfChanged,
@@ -54,7 +56,7 @@ export async function handleAuthProfileMessage(
       await handleApiKeySave(state, deps, msg);
       return true;
     case "auth_profile_login_start":
-      handleOAuthStart(state, deps, msg);
+      await handleOAuthStart(state, deps, msg);
       return true;
     case "auth_profile_oauth_input":
       handleOAuthInput(msg);

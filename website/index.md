@@ -42,7 +42,7 @@ features:
 
 <div style="max-width: 760px; margin: 4rem auto 0; text-align: center; color: var(--vp-c-text-2); font-size: 0.95rem;">
 
-Aethon embeds the <a href="https://github.com/mariozechner/pi-coding-agent">pi coding agent</a> inside a Tauri 2 desktop shell and renders its output as live, interactive UI via the <a href="https://github.com/google/a2ui">A2UI protocol</a>. The name comes from Greek mythology: <em>Αἴθων</em>, one of the horses that pulled Helios's sun chariot. The blazing one that shapes what you see.
+Aethon embeds the <a href="https://github.com/earendil-works/pi">pi coding agent</a> inside a Tauri 2 desktop shell and renders its output as live, interactive UI via the <a href="https://github.com/google/a2ui">A2UI protocol</a>. The name comes from Greek mythology: <em>Αἴθων</em>, one of the horses that pulled Helios's sun chariot. The blazing one that shapes what you see.
 
 </div>
 

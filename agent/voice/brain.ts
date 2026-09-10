@@ -15,7 +15,7 @@
 import {
   SessionManager,
   createAgentSession,
-} from "@mariozechner/pi-coding-agent";
+} from "@earendil-works/pi-coding-agent";
 import type { AethonAgentState } from "../state";
 import { extractAgentEndError } from "../agent-errors";
 import { logger } from "../logger";
@@ -331,8 +331,7 @@ export class VoiceBrain {
     }
     const { session } = await createAgentSession({
       ...(resolved.model ? { model: resolved.model } : {}),
-      authStorage: resolved.authStorage,
-      modelRegistry: resolved.modelRegistry,
+      modelRuntime: resolved.modelRuntime,
       settingsManager: this.state.settingsManager,
       sessionManager: SessionManager.inMemory(),
       resourceLoader: this.state.resourceLoader,

@@ -10,14 +10,14 @@
  * in tests.
  */
 
-import type { Api, Model } from "@mariozechner/pi-ai";
+import type { Api, Model } from "@earendil-works/pi-ai";
 import type {
-  AuthStorage,
   ModelRegistry,
+  ModelRuntime,
   SettingsManager,
   DefaultResourceLoader,
   createAgentSession,
-} from "@mariozechner/pi-coding-agent";
+} from "@earendil-works/pi-coding-agent";
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { BashTerminalStreamState } from "./terminal-stream";
 import type { AuthProfileServices, AuthProfilesState } from "./auth-profiles";
@@ -441,7 +441,7 @@ export class AethonAgentState {
   subagentTimeoutSeconds: number;
 
   // -- Service singletons (set by main() once pi is up) --------------------
-  authStorage!: AuthStorage;
+  modelRuntime!: ModelRuntime;
   modelRegistry!: ModelRegistry;
   settingsManager!: SettingsManager;
   resourceLoader!: DefaultResourceLoader;
@@ -718,7 +718,7 @@ export class AethonAgentState {
 /** Narrow service-shaped subset of {@link AethonAgentState} useful for
  *  helpers that only need the pi-coding-agent objects. */
 export interface PiServices {
-  authStorage: AuthStorage;
+  modelRuntime: ModelRuntime;
   modelRegistry: ModelRegistry;
   settingsManager: SettingsManager;
   resourceLoader: DefaultResourceLoader;
@@ -727,7 +727,7 @@ export interface PiServices {
 /** Helper to assemble a {@link PiServices} subset from a state instance. */
 export function piServicesOf(state: AethonAgentState): PiServices {
   return {
-    authStorage: state.authStorage,
+    modelRuntime: state.modelRuntime,
     modelRegistry: state.modelRegistry,
     settingsManager: state.settingsManager,
     resourceLoader: state.resourceLoader,

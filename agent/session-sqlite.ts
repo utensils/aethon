@@ -22,8 +22,8 @@ import {
   type SessionHeader,
   type SessionManager,
   type SessionTreeNode,
-} from "@mariozechner/pi-coding-agent";
-import type { Message } from "@mariozechner/pi-ai";
+} from "@earendil-works/pi-coding-agent";
+import type { Message } from "@earendil-works/pi-ai";
 import {
   MAX_CUSTOM_LABEL_CHARS,
   MAX_LABEL_CHARS,

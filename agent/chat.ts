@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { Api, ImageContent, Model } from "@mariozechner/pi-ai";
+import type { Api, ImageContent, Model } from "@earendil-works/pi-ai";
 import type { AethonAgentState, TabRecord } from "./state";
 import type { DispatcherDeps, InboundMessage } from "./dispatcherTypes";
 import { maybeExitForReload } from "./dispatcherTypes";

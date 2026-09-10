@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import type { Model } from "@mariozechner/pi-ai";
+import type { Model } from "@earendil-works/pi-ai";
 import type { AethonAgentState } from "./state";
 import {
   applyCodexModeToPayload,

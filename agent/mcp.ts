@@ -15,7 +15,7 @@ import {
 import { homedir } from "node:os";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import { parse as parseToml } from "smol-toml";
-import type { ExtensionFactory } from "@mariozechner/pi-coding-agent";
+import type { ExtensionFactory } from "@earendil-works/pi-coding-agent";
 
 type JsonObject = Record<string, unknown>;
 
@@ -942,7 +942,7 @@ export function buildAethonMcpExtension(state: {
     try {
       const imported = await withAdapterHome(
         adapterHome(state.userDir),
-        () => import("pi-mcp-adapter/index.ts"),
+        () => import("pi-mcp-adapter"),
       );
       imported.default?.(wrappedPi);
     } finally {

@@ -2,7 +2,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { ToolDefinition } from "@mariozechner/pi-coding-agent";
+import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import type { AethonAgentState } from "../state";
 import type { Subagent } from "./types";
 import { buildSubagentTaskBatchTool, buildSubagentTaskTool } from "./task-tool";
@@ -49,7 +49,7 @@ const h = vi.hoisted<MockHandle>(() => ({
   abortSpy: vi.fn(),
 }));
 
-vi.mock("@mariozechner/pi-coding-agent", () => {
+vi.mock("@earendil-works/pi-coding-agent", () => {
   const createAgentSession = vi.fn((config: Record<string, unknown>) => {
     const next = h.nextSessions.shift() ?? {};
     const handle: MockSessionHandle = {

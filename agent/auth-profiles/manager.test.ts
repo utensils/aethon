@@ -2,11 +2,16 @@ import { mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
-  AuthStorage,
   ModelRegistry,
+  ModelRuntime,
   SettingsManager,
-} from "@mariozechner/pi-coding-agent";
-import type { Api, Model } from "@mariozechner/pi-ai";
+} from "@earendil-works/pi-coding-agent";
+import {
+  InMemoryCredentialStore,
+  type Api,
+  type Credential,
+  type Model,
+} from "@earendil-works/pi-ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AethonAgentState, TabRecord } from "../state";
 import type { DispatcherDeps } from "../dispatcherTypes";
@@ -19,6 +24,7 @@ import {
   parseIdTokenEmail,
   refreshAuthServicesForTab,
 } from "./manager";
+import { ensureProfileServices } from "./services-cache";
 import {
   authProfileAuthPath,
   createProfileMeta,
@@ -42,12 +48,16 @@ function tempUserDir(): string {
   return dir;
 }
 
-function makeState(userDir = tempUserDir()): AethonAgentState {
-  const authStorage = AuthStorage.inMemory();
+async function makeState(userDir = tempUserDir()): Promise<AethonAgentState> {
+  const modelRuntime = await ModelRuntime.create({
+    credentials: new InMemoryCredentialStore(),
+    modelsPath: null,
+    modelsStorePath: join(userDir, "models-store.json"),
+  });
   return {
     userDir,
-    authStorage,
-    modelRegistry: ModelRegistry.inMemory(authStorage),
+    modelRuntime,
+    modelRegistry: new ModelRegistry(modelRuntime),
     settingsManager: SettingsManager.inMemory(),
     authProfiles: loadAuthProfilesState(userDir),
     authProfileServices: new Map(),
@@ -109,11 +119,11 @@ function fakeTab(model: string, promptInFlight = false): TabRecord {
   };
 }
 
-function addProfile(
+async function addProfile(
   state: AethonAgentState,
   providerId: string,
   label = providerId,
-): string {
+): Promise<string> {
   const profile = createProfileMeta(state.authProfiles, {
     providerId,
     label,
@@ -122,26 +132,28 @@ function addProfile(
   });
   state.authProfiles = upsertProfileMeta(state.authProfiles, profile);
   state.authProfiles.defaultByProvider[providerId] = profile.id;
+  // Mirrors boot: profile runtimes are warmed before synchronous lookups.
+  await ensureProfileServices(state, profile.id);
   return profile.id;
 }
 
 describe("auth profile manager", () => {
-  it("applies the default auth profile for tabs opened without an explicit model", () => {
-    const state = makeState();
-    const profileId = addProfile(state, "anthropic", "Claude Pro");
+  it("applies the default auth profile for tabs opened without an explicit model", async () => {
+    const state = await makeState();
+    const profileId = await addProfile(state, "anthropic", "Claude Pro");
     state.settingsManager.setDefaultProvider("anthropic");
 
     const services = authProfileServicesForTab(state, "default");
 
     expect(defaultProfileIdForTab(state)).toBe(profileId);
     expect(state.tabAuthProfileIds.get("default")).toBe(profileId);
-    expect(services.authStorage).not.toBe(state.authStorage);
+    expect(services.modelRuntime).not.toBe(state.modelRuntime);
     expect(services.modelRegistry).not.toBe(state.modelRegistry);
   });
 
-  it("uses the model provider default when a tab opens with an explicit model", () => {
-    const state = makeState();
-    const profileId = addProfile(state, "anthropic", "Claude Pro");
+  it("uses the model provider default when a tab opens with an explicit model", async () => {
+    const state = await makeState();
+    const profileId = await addProfile(state, "anthropic", "Claude Pro");
     const model = {
       provider: "anthropic",
       id: "claude-sonnet-4-5",
@@ -150,16 +162,16 @@ describe("auth profile manager", () => {
     expect(defaultProfileIdForTab(state, model)).toBe(profileId);
   });
 
-  it("uses the only configured default when startup has no model or settings provider yet", () => {
-    const state = makeState();
-    const profileId = addProfile(state, "anthropic", "Claude Pro");
+  it("uses the only configured default when startup has no model or settings provider yet", async () => {
+    const state = await makeState();
+    const profileId = await addProfile(state, "anthropic", "Claude Pro");
 
     expect(defaultProfileIdForTab(state)).toBe(profileId);
   });
 
   it("persists OAuth placeholder removal when login fails", async () => {
     const userDir = tempUserDir();
-    const state = makeState(userDir);
+    const state = await makeState(userDir);
     const sent: unknown[] = [];
     const deps = {
       send: (message: unknown) => sent.push(message),
@@ -188,18 +200,24 @@ describe("auth profile manager", () => {
 
   it("emits OAuth completion target without pre-recording worker tab state", async () => {
     const userDir = tempUserDir();
-    const state = withReadyState(makeState(userDir));
+    const state = withReadyState(await makeState(userDir));
     const sent: Record<string, unknown>[] = [];
     const deps = {
       send: (message: Record<string, unknown>) => sent.push(message),
     } as DispatcherDeps;
-    vi.spyOn(AuthStorage.prototype, "login").mockImplementation(
-      (_providerId, callbacks) => {
-        callbacks.onAuth?.({
+    vi.spyOn(ModelRuntime.prototype, "login").mockImplementation(
+      (_providerId, _type, interaction) => {
+        interaction.notify({
+          type: "auth_url",
           url: "https://github.com/login/device",
           instructions: "Enter code: 1A2B-3C4D",
         });
-        return Promise.resolve();
+        return Promise.resolve({
+          type: "oauth",
+          access: "token",
+          refresh: "refresh",
+          expires: Date.now() + 60_000,
+        } as Credential);
       },
     );
 
@@ -235,8 +253,8 @@ describe("auth profile manager", () => {
     );
   });
 
-  it("falls back to the global model registry for stale or unsafe profile ids", () => {
-    const state = makeState();
+  it("falls back to the global model registry for stale or unsafe profile ids", async () => {
+    const state = await makeState();
     state.tabAuthProfileIds.set("tab-1", "../escape");
     state.authProfiles.defaultByProvider.anthropic = "../escape";
 
@@ -245,14 +263,15 @@ describe("auth profile manager", () => {
     );
   });
 
-  it("reloads cached profile auth services when the profile auth file changes", () => {
+  it("reloads cached profile auth services when the profile auth file changes", async () => {
     const userDir = tempUserDir();
-    const state = makeState(userDir);
-    const profileId = addProfile(state, "openai-codex", "Codex Work");
+    const state = await makeState(userDir);
+    const profileId = await addProfile(state, "openai-codex", "Codex Work");
 
     const services = authProfileServicesForTab(state, "default");
-    const reload = vi.spyOn(services.authStorage, "reload");
-    const refresh = vi.spyOn(services.modelRegistry, "refresh");
+    const refresh = vi
+      .spyOn(services.modelRegistry, "refresh")
+      .mockResolvedValue({ aborted: false, errors: new Map() });
     const authPath = authProfileAuthPath(userDir, profileId);
     writeFileSync(
       authPath,
@@ -264,34 +283,34 @@ describe("auth profile manager", () => {
     const refreshed = refreshAuthServicesForTab(state, "default");
 
     expect(refreshed).toBe(true);
-    expect(reload).toHaveBeenCalledOnce();
     expect(refresh).toHaveBeenCalledOnce();
     expect(authProfileServicesForTab(state, "default")).toBe(services);
   });
 
-  it("force-refreshes profile services even when the auth file mtime is unchanged", () => {
-    const state = makeState();
-    addProfile(state, "openai-codex", "Codex Work");
+  it("force-refreshes profile services even when the auth file mtime is unchanged", async () => {
+    const state = await makeState();
+    await addProfile(state, "openai-codex", "Codex Work");
     const services = authProfileServicesForTab(state, "default");
-    const reload = vi.spyOn(services.authStorage, "reload");
-    const refresh = vi.spyOn(services.modelRegistry, "refresh");
+    const refresh = vi
+      .spyOn(services.modelRegistry, "refresh")
+      .mockResolvedValue({ aborted: false, errors: new Map() });
 
     const refreshed = refreshAuthServicesForTab(state, "default", {
       forceRefresh: true,
     });
 
     expect(refreshed).toBe(true);
-    expect(reload).toHaveBeenCalledOnce();
     expect(refresh).toHaveBeenCalledOnce();
   });
 
-  it("refreshes cached default profile services before a new tab uses that provider", () => {
+  it("refreshes cached default profile services before a new tab uses that provider", async () => {
     const userDir = tempUserDir();
-    const state = makeState(userDir);
-    const profileId = addProfile(state, "openai-codex", "Codex Work");
+    const state = await makeState(userDir);
+    const profileId = await addProfile(state, "openai-codex", "Codex Work");
     const services = authProfileServicesForTab(state, "existing-tab");
-    const reload = vi.spyOn(services.authStorage, "reload");
-    const refresh = vi.spyOn(services.modelRegistry, "refresh");
+    const refresh = vi
+      .spyOn(services.modelRegistry, "refresh")
+      .mockResolvedValue({ aborted: false, errors: new Map() });
     const authPath = authProfileAuthPath(userDir, profileId);
     writeFileSync(
       authPath,
@@ -306,12 +325,11 @@ describe("auth profile manager", () => {
 
     expect(state.tabAuthProfileIds.has("new-tab")).toBe(false);
     expect(refreshed).toBe(true);
-    expect(reload).toHaveBeenCalledOnce();
     expect(refresh).toHaveBeenCalledOnce();
   });
 
-  it("selects matching idle provider tabs for backend refresh after auth changes", () => {
-    const state = makeState();
+  it("selects matching idle provider tabs for backend refresh after auth changes", async () => {
+    const state = await makeState();
     state.tabs.set("active", fakeTab("openai-codex/gpt-5.4"));
     state.tabs.set("other-provider", fakeTab("anthropic/claude-opus-4-7"));
     state.tabs.set("busy", fakeTab("openai-codex/gpt-5.4", true));
@@ -329,7 +347,7 @@ describe("auth profile manager", () => {
 
   it("emits auth profiles after API key save even when session refresh fails", async () => {
     const userDir = tempUserDir();
-    const state = makeState(userDir);
+    const state = await makeState(userDir);
     state.tabs.set("active", fakeTab("openai-codex/gpt-5.4"));
     const sent: Record<string, unknown>[] = [];
     const deps = {
@@ -363,8 +381,8 @@ describe("auth profile manager", () => {
 
   it("auth_profile_use_for_tab records a worker tab without rebuilding the global session", async () => {
     const userDir = tempUserDir();
-    const state = withReadyState(makeState(userDir));
-    const profileId = addProfile(state, "openai-codex", "Codex Two");
+    const state = withReadyState(await makeState(userDir));
+    const profileId = await addProfile(state, "openai-codex", "Codex Two");
     saveAuthProfilesState(userDir, state.authProfiles);
     const sent: Record<string, unknown>[] = [];
     const deps = {
@@ -398,8 +416,8 @@ describe("auth profile manager", () => {
 
   it("auth_profile_apply refuses to switch a worker tab mid-prompt", async () => {
     const userDir = tempUserDir();
-    const state = makeState(userDir);
-    const profileId = addProfile(state, "openai-codex", "Codex Two");
+    const state = await makeState(userDir);
+    const profileId = await addProfile(state, "openai-codex", "Codex Two");
     // handleApplyForTab reloads profiles from disk (the worker's in-memory
     // list may be stale), so the profile must be persisted.
     saveAuthProfilesState(userDir, state.authProfiles);
@@ -418,7 +436,9 @@ describe("auth profile manager", () => {
     });
 
     // Busy guard: assignment unchanged, a notice is emitted, no recreate.
-    expect(state.tabAuthProfileIds.get("tab-worker")).toBe("openai-codex-other");
+    expect(state.tabAuthProfileIds.get("tab-worker")).toBe(
+      "openai-codex-other",
+    );
     expect(sent).toContainEqual(
       expect.objectContaining({ type: "notice", tabId: "tab-worker" }),
     );
@@ -426,8 +446,8 @@ describe("auth profile manager", () => {
 
   it("auth_profile_apply emits a change event after a worker tab switches", async () => {
     const userDir = tempUserDir();
-    const state = withReadyState(makeState(userDir));
-    const profileId = addProfile(state, "openai-codex", "Codex Two");
+    const state = withReadyState(await makeState(userDir));
+    const profileId = await addProfile(state, "openai-codex", "Codex Two");
     saveAuthProfilesState(userDir, state.authProfiles);
     state.tabs.set("tab-worker", fakeTab("openai-codex/gpt-5.5"));
     const sent: Record<string, unknown>[] = [];
@@ -451,8 +471,50 @@ describe("auth profile manager", () => {
     );
   });
 
+  it("auth_profile_apply warms a profile persisted by another bridge process", async () => {
+    // The global bridge runs the login flow and persists the profile; a
+    // per-tab worker only reloads the list from disk, so its services cache
+    // has never seen the id. The apply path must warm it before it tears the
+    // tab session down (pi >= 0.80.8 makes runtime construction async).
+    const userDir = tempUserDir();
+    const state = withReadyState(await makeState(userDir));
+    const persisted = createProfileMeta(loadAuthProfilesState(userDir), {
+      providerId: "openai-codex",
+      label: "Codex Elsewhere",
+      kind: "oauth",
+      now: 1,
+    });
+    saveAuthProfilesState(
+      userDir,
+      upsertProfileMeta(loadAuthProfilesState(userDir), persisted),
+    );
+    expect(state.authProfileServices.has(persisted.id)).toBe(false);
+    state.tabs.set("tab-worker", fakeTab("openai-codex/gpt-5.5"));
+    const sent: Record<string, unknown>[] = [];
+    const deps = {
+      send: (m: Record<string, unknown>) => sent.push(m),
+    } as DispatcherDeps;
+
+    await handleAuthProfileMessage(state, deps, {
+      type: "auth_profile_apply",
+      tabId: "tab-worker",
+      profileId: persisted.id,
+    });
+
+    expect(state.authProfileServices.has(persisted.id)).toBe(true);
+    expect(state.tabAuthProfileIds.get("tab-worker")).toBe(persisted.id);
+    expect(sent).toContainEqual(
+      expect.objectContaining({
+        type: "auth_profile_changed",
+        tabId: "tab-worker",
+        profileId: persisted.id,
+      }),
+    );
+    expect(sent.some((m) => m.type === "error")).toBe(false);
+  });
+
   it("auth_profile_apply is a no-op for an unknown profile id", async () => {
-    const state = makeState();
+    const state = await makeState();
     const deps = { send: vi.fn() } as unknown as DispatcherDeps;
 
     await handleAuthProfileMessage(state, deps, {
@@ -478,14 +540,16 @@ describe("auth profile manager", () => {
 
   it("returns undefined for malformed id_tokens or missing email", () => {
     expect(parseIdTokenEmail("not-a-jwt")).toBeUndefined();
-    const noEmail = Buffer.from(JSON.stringify({ sub: "abc" }), "utf8")
-      .toString("base64url");
+    const noEmail = Buffer.from(
+      JSON.stringify({ sub: "abc" }),
+      "utf8",
+    ).toString("base64url");
     expect(parseIdTokenEmail(`header.${noEmail}.sig`)).toBeUndefined();
     expect(parseIdTokenEmail("header.!!!notbase64!!!.sig")).toBeUndefined();
   });
 
   it("rejects deleting unknown or unsafe profile ids before removing files", async () => {
-    const state = makeState();
+    const state = await makeState();
     const deps = {
       send: vi.fn(),
     } as unknown as DispatcherDeps;

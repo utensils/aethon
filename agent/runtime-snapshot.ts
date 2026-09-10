@@ -19,7 +19,7 @@
 import { mkdirSync } from "node:fs";
 import { writeFile } from "node:fs/promises";
 import { Buffer } from "node:buffer";
-import type { Api, Model } from "@mariozechner/pi-ai";
+import type { Api, Model } from "@earendil-works/pi-ai";
 import type { AethonAgentState } from "./state";
 import type { RuntimeSnapshot } from "./system-prompt";
 import { logger } from "./logger";

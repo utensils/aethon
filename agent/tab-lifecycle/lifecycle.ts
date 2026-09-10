@@ -5,7 +5,7 @@
  * scoped to the tab's cwd. The per-tab subscriber is wired in here so
  * `handleSessionEvent` (in `./events.ts`) carries the routing context.
  *
- * Sessions usually share authStorage / modelRegistry / settingsManager /
+ * Sessions usually share modelRuntime / modelRegistry / settingsManager /
  * resourceLoader. Tabs with an auth profile get isolated auth/model services
  * so one desktop session can switch between multiple signed-in accounts.
  */
@@ -14,9 +14,9 @@ import {
   SessionManager,
   createAgentSession,
   type ExtensionUIContext,
-} from "@mariozechner/pi-coding-agent";
-import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
-import type { Api, Model } from "@mariozechner/pi-ai";
+} from "@earendil-works/pi-coding-agent";
+import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
+import type { Api, Model } from "@earendil-works/pi-ai";
 import { buildShellTools } from "../shell-tools";
 import { buildA2uiTools } from "../a2ui-tools";
 import { createAethonBashToolDefinition } from "../bash-tool";
@@ -41,7 +41,10 @@ import {
 import { wrapWithSourceGuard } from "../source-guard";
 import { logger } from "../logger";
 import type { BootTrace } from "../boot-trace";
-import { authProfileServicesForTab } from "../auth-profiles";
+import {
+  authProfileServicesForTab,
+  ensureTabAuthProfileServices,
+} from "../auth-profiles";
 import { emitGlobalReady } from "../dispatcherTypes";
 import type { AethonAgentState, TabRecord } from "../state";
 import type { CodexExtendedReasoningEffort } from "../codex-reasoning";
@@ -89,7 +92,9 @@ function resourceLoaderForTab(
     getThemes: () => base.getThemes(),
     getAgentsFiles: () => base.getAgentsFiles(),
     getSystemPrompt: () => base.getSystemPrompt(),
+    getSystemPromptSource: () => base.getSystemPromptSource(),
     getAppendSystemPrompt: () => base.getAppendSystemPrompt(),
+    getAppendSystemPromptSources: () => base.getAppendSystemPromptSources(),
     reload: () => base.reload(),
     extendResources: (paths) => {
       const count =
@@ -146,7 +151,10 @@ export function extensionUiContextForTab(): ExtensionUIContext {
     theme: passthroughTheme,
     getAllThemes: () => [],
     getTheme: () => undefined,
-    setTheme: () => ({ success: false, error: "Aethon bridge UI is read-only" }),
+    setTheme: () => ({
+      success: false,
+      error: "Aethon bridge UI is read-only",
+    }),
     getToolsExpanded: () => false,
     setToolsExpanded: () => {},
   };
@@ -255,6 +263,9 @@ export async function ensureTab(
   const devshellBashTool = createAethonBashToolDefinition(state, resolvedCwd, {
     spawnHook: buildDevshellSpawnHook(state, deps),
   });
+  // Warm the profile runtime first: it may have been created by another
+  // bridge process after this one booted (see ensureTabAuthProfileServices).
+  await ensureTabAuthProfileServices(state, tabId, options.initialModel);
   const authServices = authProfileServicesForTab(
     state,
     tabId,
@@ -265,8 +276,7 @@ export async function ensureTab(
   let created: Awaited<ReturnType<typeof createAgentSession>>;
   try {
     created = await createAgentSession({
-      authStorage: authServices.authStorage,
-      modelRegistry: authServices.modelRegistry,
+      modelRuntime: authServices.modelRuntime,
       settingsManager: state.settingsManager,
       sessionManager,
       ...(state.resourceLoader

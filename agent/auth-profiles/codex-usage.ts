@@ -5,7 +5,7 @@
  * account stays fully isolated, and there is no PATH / temp-dir fragility.
  *
  * Token handling is delegated to a caller-supplied `getAccessToken` (backed
- * by pi's `AuthStorage`), so OAuth refresh + single-use refresh-token
+ * by pi's `ModelRuntime`), so OAuth refresh + single-use refresh-token
  * rotation happen through the same cross-process lock pi uses — this module
  * never reads or writes auth.json itself. Designed to be reusable anywhere
  * in the UI that needs Codex usage/identity, not just the Accounts panel.
@@ -137,9 +137,7 @@ export function parseCodexUsageBody(
     if (typeof rateLimit.plan_type === "string" && !result.planType) {
       result.planType = rateLimit.plan_type;
     }
-    const primary = windowFrom(
-      rateLimit.primary_window ?? rateLimit.primary,
-    );
+    const primary = windowFrom(rateLimit.primary_window ?? rateLimit.primary);
     if (primary) result.primary = primary;
     const secondary = windowFrom(
       rateLimit.secondary_window ?? rateLimit.secondary,

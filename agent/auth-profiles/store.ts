@@ -1,4 +1,10 @@
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { dirname, join } from "node:path";
 
 export type AuthProfileKind = "oauth" | "api_key";
@@ -33,7 +39,10 @@ export function authProfilesStatePath(userDir: string): string {
   return join(authProfilesDir(userDir), "profiles.json");
 }
 
-export function authProfileAuthPath(userDir: string, profileId: string): string {
+export function authProfileAuthPath(
+  userDir: string,
+  profileId: string,
+): string {
   assertSafeProfileId(profileId);
   return join(authProfilesDir(userDir), "profiles", profileId, "auth.json");
 }
@@ -63,7 +72,9 @@ export function loadAuthProfilesState(userDir: string): AuthProfilesState {
   if (!existsSync(path)) return { ...EMPTY_STATE, defaultByProvider: {} };
   let parsed: Partial<AuthProfilesState>;
   try {
-    parsed = JSON.parse(readFileSync(path, "utf8")) as Partial<AuthProfilesState>;
+    parsed = JSON.parse(
+      readFileSync(path, "utf8"),
+    ) as Partial<AuthProfilesState>;
   } catch {
     return { ...EMPTY_STATE, defaultByProvider: {} };
   }
@@ -85,7 +96,10 @@ export function loadAuthProfilesState(userDir: string): AuthProfilesState {
   return { version: 1, profiles, defaultByProvider };
 }
 
-export function saveAuthProfilesState(userDir: string, state: AuthProfilesState): void {
+export function saveAuthProfilesState(
+  userDir: string,
+  state: AuthProfilesState,
+): void {
   const path = authProfilesStatePath(userDir);
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, JSON.stringify(state, null, 2));
@@ -121,7 +135,11 @@ export function upsertProfileMeta(
 ): AuthProfilesState {
   const profiles = state.profiles.filter((p) => p.id !== meta.id);
   profiles.push(meta);
-  profiles.sort((a, b) => a.providerId.localeCompare(b.providerId) || a.label.localeCompare(b.label));
+  profiles.sort(
+    (a, b) =>
+      a.providerId.localeCompare(b.providerId) ||
+      a.label.localeCompare(b.label),
+  );
   return { ...state, profiles };
 }
 

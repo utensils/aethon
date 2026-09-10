@@ -45,17 +45,14 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import {
-  AuthStorage,
   DefaultResourceLoader,
   type ExtensionFactory,
-  ModelRegistry,
   SessionManager,
   SettingsManager,
   getAgentDir,
-} from "@mariozechner/pi-coding-agent";
+} from "@earendil-works/pi-coding-agent";
 
 import { logger } from "./logger";
-import { registerOpenAIPreviewModels } from "./openai-preview-models";
 import {
   applyProviderTimeoutOverride,
   runtimeConfigFromEnv,
@@ -76,6 +73,10 @@ import {
 } from "./state";
 import { buildAethonApi } from "./aethon-api";
 import { loadAuthProfiles } from "./auth-profiles";
+import {
+  createAuthServices,
+  warmAuthProfileServices,
+} from "./auth-profiles/services-cache";
 import {
   getRuntimeSnapshot,
   scheduleStateFileWrite as scheduleStateFileWriteImpl,
@@ -152,12 +153,16 @@ async function main(): Promise<void> {
 
   // -- Pi service singletons ----------------------------------------------
   const endServicesInit = bootTrace.span("services-init");
-  state.authStorage = AuthStorage.create();
-  state.modelRegistry = ModelRegistry.create(state.authStorage);
-  registerOpenAIPreviewModels(state.modelRegistry);
+  const globalServices = await createAuthServices();
+  state.modelRuntime = globalServices.modelRuntime;
+  state.modelRegistry = globalServices.modelRegistry;
   state.settingsManager = SettingsManager.create(process.cwd());
   applyProviderTimeoutOverride(state);
   state.authProfiles = loadAuthProfiles(state.userDir);
+  // ModelRuntime construction is async, so every persisted profile is
+  // warmed here; the synchronous servicesForProfile() path only reads the
+  // cache afterwards.
+  await warmAuthProfileServices(state);
   endServicesInit();
 
   // -- User's persisted "disabled extensions" list -----------------------

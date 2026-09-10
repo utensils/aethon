@@ -1,7 +1,7 @@
 import {
   createBashToolDefinition,
   type ToolDefinition,
-} from "@mariozechner/pi-coding-agent";
+} from "@earendil-works/pi-coding-agent";
 import type { AethonAgentState } from "./state";
 import { applyBashTimeoutFloor } from "./runtime-config";
 

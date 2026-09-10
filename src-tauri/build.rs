@@ -255,7 +255,7 @@ fn ensure_sidecar(project_root: &Path, triple: &str) -> Result<(), String> {
     // node_modules tree.
     let pi_pkg = project_root
         .join("node_modules")
-        .join("@mariozechner")
+        .join("@earendil-works")
         .join("pi-coding-agent")
         .join("package.json");
     if pi_pkg.exists() {

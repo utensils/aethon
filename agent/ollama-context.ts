@@ -17,7 +17,7 @@
  *   - /api/show (fallback)  reports the model's max — the server may run smaller.
  */
 
-import type { Api, Model } from "@mariozechner/pi-ai";
+import type { Api, Model } from "@earendil-works/pi-ai";
 import { logger } from "./logger";
 
 const log = logger.scope("ollama-ctx");

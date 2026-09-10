@@ -3,7 +3,8 @@ import type { AethonAgentState } from "../state";
 import type { DispatcherDeps, InboundMessage } from "../dispatcherTypes";
 import { emitGlobalReady } from "../dispatcherTypes";
 import { createProfileMeta } from "./store";
-import { servicesForProfile } from "./services-cache";
+import type { AuthEvent, AuthPrompt } from "@earendil-works/pi-ai";
+import { ensureProfileServices, servicesForProfile } from "./services-cache";
 import {
   findProfile,
   removeProfile,
@@ -27,11 +28,11 @@ interface PendingOAuth {
 
 const pendingOAuth = new Map<string, PendingOAuth>();
 
-export function handleOAuthStart(
+export async function handleOAuthStart(
   state: AethonAgentState,
   deps: DispatcherDeps,
   msg: InboundMessage,
-): void {
+): Promise<void> {
   const providerId = stringField(msg.providerId);
   if (!providerId)
     throw new Error("auth_profile_login_start: providerId required");
@@ -74,7 +75,7 @@ export function handleOAuthStart(
     }
   }
 
-  const services = servicesForProfile(state, meta.id, { forceRefresh: true });
+  const services = await ensureProfileServices(state, meta.id);
   const challengeId = randomUUID();
   const pending: PendingOAuth = {
     profileId: meta.id,
@@ -88,10 +89,24 @@ export function handleOAuthStart(
     type: "auth_profile_login_event",
     event: { type: "started", challengeId, profileId: meta.id, providerId },
   });
-  void services.authStorage
-    .login(providerId, {
-      signal: pending.controller.signal,
-      onAuth: ({ url, instructions }) => {
+  const sendProgress = (message: string): void => {
+    deps.send({
+      type: "auth_profile_login_event",
+      event: {
+        type: "progress",
+        challengeId,
+        profileId: meta.id,
+        providerId,
+        message,
+      },
+    });
+  };
+  // pi's AuthInteraction: `notify` carries the auth URL / device code /
+  // progress, `prompt` asks for text (manual code, select, secret). The
+  // wire events sent to the frontend are unchanged from the pre-0.80 shape.
+  const notify = (event: AuthEvent): void => {
+    switch (event.type) {
+      case "auth_url":
         deps.send({
           type: "auth_profile_login_event",
           event: {
@@ -99,54 +114,60 @@ export function handleOAuthStart(
             challengeId,
             profileId: meta.id,
             providerId,
-            url,
-            instructions,
+            url: event.url,
+            instructions: event.instructions,
           },
         });
-      },
-      onProgress: (message) => {
+        return;
+      case "device_code":
         deps.send({
           type: "auth_profile_login_event",
           event: {
-            type: "progress",
+            type: "auth",
             challengeId,
             profileId: meta.id,
             providerId,
-            message,
+            url: event.verificationUri,
+            instructions: `Enter code ${event.userCode} to authorize.`,
           },
         });
-      },
-      onPrompt: ({ message, placeholder, allowEmpty }) =>
-        new Promise<string>((resolve) => {
-          pending.resolvePrompt = resolve;
-          deps.send({
-            type: "auth_profile_login_event",
-            event: {
-              type: "prompt",
-              challengeId,
-              profileId: meta.id,
-              providerId,
-              message,
-              placeholder,
-              allowEmpty,
-            },
-          });
-        }),
-      onManualCodeInput: () =>
-        new Promise<string>((resolve) => {
-          pending.resolvePrompt = resolve;
-          deps.send({
-            type: "auth_profile_login_event",
-            event: {
-              type: "prompt",
-              challengeId,
-              profileId: meta.id,
-              providerId,
-              message: "Paste the authorization code or callback URL.",
-              allowEmpty: false,
-            },
-          });
-        }),
+        return;
+      case "info":
+      case "progress":
+        sendProgress(event.message);
+        return;
+    }
+  };
+  const prompt = (request: AuthPrompt): Promise<string> =>
+    new Promise<string>((resolve) => {
+      pending.resolvePrompt = resolve;
+      const message =
+        request.type === "select"
+          ? `${request.message}\n${request.options
+              .map((option) => `${option.id} — ${option.label}`)
+              .join("\n")}`
+          : request.type === "manual_code"
+            ? request.message || "Paste the authorization code or callback URL."
+            : request.message;
+      deps.send({
+        type: "auth_profile_login_event",
+        event: {
+          type: "prompt",
+          challengeId,
+          profileId: meta.id,
+          providerId,
+          message,
+          placeholder:
+            request.type === "select" ? undefined : request.placeholder,
+          allowEmpty: false,
+        },
+      });
+    });
+  void services.modelRuntime
+    .login(providerId, "oauth", {
+      signal: pending.controller.signal,
+      notify,
+      prompt,
     })
     .then(async () => {
       pendingOAuth.delete(challengeId);

@@ -1,5 +1,5 @@
-declare module "pi-mcp-adapter/index.ts" {
-  import type { ExtensionFactory } from "@mariozechner/pi-coding-agent";
+declare module "pi-mcp-adapter" {
+  import type { ExtensionFactory } from "@earendil-works/pi-coding-agent";
 
   const extension: ExtensionFactory;
   export default extension;
