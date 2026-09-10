@@ -129,18 +129,18 @@ vi.mock("@monaco-editor/react", () => ({
 // the suffix is stripped by vitest's resolver and we end up importing
 // the worker source module itself, which then explodes on Monaco's
 // browser-only globals. Mock the ?worker bundles to harmless stubs.
-vi.mock("monaco-editor/esm/vs/editor/editor.worker?worker", () => ({
+vi.mock("monaco-editor/editor/editor.worker?worker", () => ({
   default: class {},
 }));
-vi.mock("monaco-editor/esm/vs/language/json/json.worker?worker", () => ({
+vi.mock("monaco-editor/language/json/json.worker?worker", () => ({
   default: class {},
 }));
-vi.mock("monaco-editor/esm/vs/language/css/css.worker?worker", () => ({
+vi.mock("monaco-editor/language/css/css.worker?worker", () => ({
   default: class {},
 }));
-vi.mock("monaco-editor/esm/vs/language/html/html.worker?worker", () => ({
+vi.mock("monaco-editor/language/html/html.worker?worker", () => ({
   default: class {},
 }));
-vi.mock("monaco-editor/esm/vs/language/typescript/ts.worker?worker", () => ({
+vi.mock("monaco-editor/language/typescript/ts.worker?worker", () => ({
   default: class {},
 }));
