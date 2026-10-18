@@ -1,6 +1,6 @@
 [package]
 name = "aethon-mobile"
-version = "0.12.0"
+version = "0.13.0"
 edition = "2024"
 license = "MIT"
 description = "Aethon iOS companion — thin Tauri shell that bridges the reused web UI to a paired desktop over the remote gateway"
